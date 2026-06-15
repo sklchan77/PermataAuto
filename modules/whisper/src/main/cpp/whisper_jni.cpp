@@ -240,7 +240,7 @@ Java_my_app_permata_whisper_Whisper_create(JNIEnv *env, jclass, jstring jModelPa
 }
 
 extern "C" JNIEXPORT void JNICALL
-Java_my.app.permata_whisper_Whisper_reconfigure(JNIEnv *env, jclass, jlong sessionPtr,
+Java_my_app_permata_whisper_Whisper_reconfigure(JNIEnv *env, jclass, jlong sessionPtr,
 																								jstring jlang) {
 	assert(sessionPtr);
 	auto session = reinterpret_cast<WhisperSession *>(sessionPtr);
