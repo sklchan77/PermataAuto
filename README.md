@@ -60,4 +60,4 @@ docker cp Permata:/home/mobiledevops/PermataAuto/permata/build/outputs/bundle/au
 
 
 ## Special Thanks
-AndreyPavlenko for his dedication to release the source code for and keep the development alive.
+AndreyPavlenko for his dedication to release the source code for everyone and keep the development alive.
