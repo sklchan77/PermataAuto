@@ -1,8 +1,5 @@
-## !!!Be aware of scam!!! The sites like https://permata-auto.com/ are 100% scam. This app is free and opensource!
-
-
 ## Permata Media Player
-[<img alt="Get it on Google Play" height="60" src="https://play.google.com/intl/en_us/badges/images/generic/en_badge_web_generic.png">](https://play.google.com/store/apps/details?id=my.app.permata)
+[<img alt="Get it on Google Play" height="60" src="https://play.google.com/intl/en_us/badges/images/generic/en_badge_web_generic.png">](https://play.google.com/store/apps/details?id=sklchan77)
 
 ## About
 Permata Media Player is a free, open source audio, video and TV player with a simple and intuitive interface. It is focused on playing media files organized in folders and playlists.
@@ -34,7 +31,7 @@ export ANDROID_SDK_ROOT=<path to android SDK>
 
 ### Clone the repository
 ```bash
-git clone --recurse-submodules https://github.com/sklchan77/Permata.git
+git clone --recurse-submodules https://github.com/sklchan77/PermataAuto.git
 cd Permata
 ```
 
@@ -52,21 +49,15 @@ find $PWD -name *.apk
 
 ### Building in docker
 ```bash
-docker run -ti --name Permata sklchan77/permata
+docker run -ti --name Permata sklchan77/PermataAuto
 ```
 Enter the requested key alias and password, when prompted.
 Build the required package using the above commands.
 To copy the built package to the host machine, open a new terminal and run:
 ```bash
-docker cp Permata:/home/mobiledevops/Permata/permata/build/outputs/bundle/autoRelease/ .
+docker cp Permata:/home/mobiledevops/PermataAuto/permata/build/outputs/bundle/autoRelease/ .
 ```
 
 
-## Donation
-If you like the application, please consider making a donation:
-
-[PayPal](https://www.paypal.com/donate/?hosted_button_id=NP5Q3YDSCJ98N)
-
-[CloudTips](https://pay.cloudtips.ru/p/a03a73da)
-
-[Yandex Money](https://money.yandex.ru/to/410014661137336)
+## Special Thanks
+AndreyPavlenko for his dedication to release the source code for and keep the development alive.
