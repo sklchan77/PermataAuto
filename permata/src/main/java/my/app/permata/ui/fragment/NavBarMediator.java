@@ -263,7 +263,7 @@ public class NavBarMediator extends PrefNavBarMediator
 			f.setContentProvider(g -> {
 				Context ctx = g.getContext();
 				ScalableTextView v = new ScalableTextView(ctx);
-				String url = "https://github.com/sklchan77/Permata";
+				String url = "https://github.com/sklchan77/PermataAuto";
 				String html = ctx.getString(R.string.about_html, VERSION_NAME, VERSION_CODE, url);
 				int pad = UiUtils.toIntPx(ctx, 10);
 				v.setPadding(pad, pad, pad, pad);
@@ -288,8 +288,8 @@ public class NavBarMediator extends PrefNavBarMediator
 				IntHolder selection = new IntHolder();
 				String[] wallets = new String[]{"PayPal", "CloudTips", "Yandex",};
 				String[] urls =
-						new String[]{"https://www.paypal.com/donate/?hosted_button_id=NP5Q3YDSCJ98N",
-								"https://pay.cloudtips.ru/p/a03a73da", "https://yoomoney.ru/to/410014661137336"};
+						new String[]{"https://www.paypal.com/donate/?hosted_button_id=sklchan77",
+								"https://pay.cloudtips.ru/p/sklchan77", "https://yoomoney.ru/to/sklchan77"};
 
 				a.createDialogBuilder().setTitle(R.drawable.coffee, R.string.donate)
 						.setSingleChoiceItems(wallets, 0, (dlg, which) -> selection.value = which)
