@@ -1,0 +1,38 @@
+gradle.ext.modules = []
+def abi = gradle.startParameter.projectProperties.get('ABI')
+gradle.ext.abiFilters = (abi != null) ? abi.split(",") : ['arm64-v8a', 'armeabi-v7a', 'x86_64']
+
+gradle.ext.localProps = new Properties()
+gradle.ext.enableGoogleServices = (System.getenv('NO_GS') == null)
+        && file('permata/google-services.json').isFile()
+def localPropsFile = file('local.properties')
+if (localPropsFile.isFile()) {
+    gradle.ext.localProps.load(localPropsFile.newDataInputStream())
+}
+
+if ((gradle.ext.localProps['storeFile'] == null ||
+        !file(gradle.ext.localProps['storeFile']).isFile())) {
+    def localProps = gradle.ext.localProps
+    localProps.putIfAbsent('storeFile', "${rootDir}/res/permata.jks".toString())
+    localProps.putIfAbsent('keyAlias', 'permata')
+    localProps.putIfAbsent('keyPassword', 'permata')
+    localProps.putIfAbsent('storePassword', localProps['keyPassword'])
+    apply from: "${rootDir}/res/build_jks.gradle"
+    localPropsFile.withOutputStream { out ->
+        localProps.store(out, null)
+    }
+}
+
+
+rootProject.name = 'Permata Music Player'
+include ':permata'
+include ':utils'
+project(':utils').projectDir = file('depends/utils')
+
+file('modules').eachDir {
+    def name = ':' + it.name
+    if ((':gdrive' == name) && !gradle.ext.enableGoogleServices) return
+    gradle.ext.modules.add(name)
+    include name
+    project(name).projectDir = it
+}

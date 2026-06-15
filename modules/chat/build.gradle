@@ -1,0 +1,26 @@
+android {
+    namespace = "my.app.permata.addon.chat"
+    defaultConfig {
+        versionCode 1
+        versionName "1.0"
+    }
+}
+
+
+ext {
+    addons = [
+            [
+                    name   : 'chat',
+                    icon   : 'chat',
+                    class  : 'my.app.permata.addon.chat.ChatAddon',
+                    enabled: false
+            ]
+    ]
+}
+
+dependencies {
+    implementation project(':utils')
+    implementation project(':permata')
+    implementation libs.androidMaterial
+    implementation libs.androidxMedia
+}

@@ -1,0 +1,36 @@
+android {
+    namespace = "my.app.permata.addon.web"
+    defaultConfig {
+        versionCode 1
+        versionName "1.0"
+    }
+}
+
+ext {
+    addons = [
+            [
+                    name : 'youtube',
+                    icon : 'youtube',
+                    class: 'my.app.permata.addon.web.yt.YoutubeAddon',
+                    order: 2
+            ],
+            [
+                    name : 'web_browser',
+                    icon : 'web',
+                    class: 'my.app.permata.addon.web.WebBrowserAddon',
+                    order: 3
+            ]
+    ]
+}
+
+dependencies {
+    implementation project(':utils')
+    implementation project(':permata')
+    implementation libs.androidxMedia
+    implementation libs.googlePlayFeatureDelivery
+    implementation libs.androidxAppcompat
+    implementation libs.androidMaterial
+    implementation libs.androidxConstraintlayout
+    implementation libs.androidxSwiperefreshlayout
+    implementation libs.androidxWebkit
+}

@@ -1,0 +1,382 @@
+<resources>
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+
+    
+    
+    
+    
+    
+
+    <string name="addons">Addons</string>
+    <string name="addon_name_tv">ទូរទស្សន៍</string>
+    <string name="addon_name_web_browser">Web កម្មវិធីរុករក</string>
+    
+    
+    
+    
+    
+    
+    
+    
+    
+
+    <string name="interface_prefs">Interface</string>
+    <string name="interface_prefs_aa">Android Auto</string>
+    <string name="playback_settings">ការកំណត់ការចាក់សារថ្មី</string>
+    <string name="playback_control">ការគ្រប់គ្រងការចាក់សារថ្មី</string>
+    <string name="engine_prefs">ម៉ាស៊ីន​ពហុមេឌៀ</string>
+
+    <string name="theme">ស្បែក​កម្មវិធី</string>
+    <string name="theme_sub">រូបរាង​បច្ចុប្បន្ន៖ %1$s</string>
+    <string name="theme_light">ពន្លឺ</string>
+    <string name="theme_dark">ងងឹត</string>
+    <string name="theme_system">ប្រព័ន្ធ</string>
+    <string name="theme_black">ខ្មៅ</string>
+    <string name="theme_star_wars">សង្គ្រាមផ្កាយ</string>
+    <string name="theme_purple">ពណ៌ស្វាយ</string>
+    <string name="theme_classic">បុរាណ</string>
+
+    <string name="nav_bar_pos">ទីតាំង Navbar</string>
+    <string name="nav_bar_pos_sub">ទីតាំងបច្ចុប្បន្ន៖ %1$s</string>
+    <string name="nav_bar_pos_bottom">បាត</string>
+    <string name="nav_bar_pos_left">ឆ្វេង</string>
+    <string name="nav_bar_pos_right">ស្តាំ</string>
+
+    <string name="show_track_icons">បង្ហាញ​រូបតំណាង​បទ</string>
+    <string name="lang">ភាសា</string>
+    <string name="trans_lang">ភាសាបកប្រែ</string>
+    <string name="hide_bars">លាក់​របារ</string>
+    <string name="hide_bars_sub">លាក់របារខាងលើ និងខាងក្រោម នៅពេលផ្ទាំងបញ្ជាលេចឡើង</string>
+    <string name="show_pg_up_down">បង្ហាញទំព័រឡើង/ចុះក្រោម</string>
+    <string name="use_dpad_cursor">ប្រើទស្សន៍ទ្រនិចសម្រាប់ការរុករក D-pad</string>
+    <string name="fullscreen_mode">របៀបពេញអេក្រង់</string>
+    <string name="nav_bar_size">ទំហំ Navbar</string>
+    <string name="tool_bar_size">ទំហំរបារឧបករណ៍</string>
+    <string name="control_panel_size">ទំហំផ្ទាំងបញ្ជា</string>
+    <string name="text_icon_size">ទំហំអត្ថបទ និងរូបតំណាង</string>
+    <string name="subtitles_size">ទំហំចំណងជើងរង</string>
+
+    <string name="key_bindings">ផ្លូវកាត់ក្តារចុច</string>
+    <string name="key_on_click">ចុច</string>
+    <string name="key_on_long_click">ចុច​យូរ</string>
+    <string name="key_on_dbl_click">ចុចពីរដង</string>
+    <string name="action_stop">បញ្ឈប់</string>
+    <string name="action_play">លេង</string>
+    <string name="action_pause">ផ្អាក</string>
+    <string name="action_play_pause">ចាក់/ផ្អាក</string>
+    <string name="action_prev">ចាក់បទមុន</string>
+    <string name="action_next">ចាក់​បទ​បន្ទាប់</string>
+    <string name="action_rw">ថយក្រោយ</string>
+    <string name="action_ff">ទៅមុខ​លឿន</string>
+    <string name="action_vol_up">បង្កើន​កម្រិតសំឡេង</string>
+    <string name="action_vol_down">បន្ថយ​កម្រិតសំឡេង</string>
+    <string name="action_vol_mute_unmute">បើក/បិទ​សំឡេង</string>
+    <string name="action_activate_voice_ctrl">បើកដំណើរការពាក្យបញ្ជាសំឡេង</string>
+    <string name="action_menu">ម៉ឺនុយ</string>
+    <string name="action_cp_menu">ម៉ឺនុយ​ផ្ទាំង​បញ្ជា</string>
+    <string name="action_back_or_exit">ថយ​ក្រោយ ឬ​ចេញ</string>
+    <string name="action_exit">ចេញ</string>
+    <string name="action_default">លំនាំដើម</string>
+    <string name="action_none">គ្មាន</string>
+
+    <string name="play_next_on_completion">ចាក់​បទ​បន្ទាប់​ដោយ​ស្វ័យ​ប្រវត្តិ</string>
+
+    <string name="rw_ff_click">RW/FF - ចុច</string>
+    <string name="rw_ff_long_click">RW/FF - ចុចឱ្យយូរ</string>
+    <string name="prev_next_long_click">មុន/បន្ទាប់ - ចុចឱ្យយូរ</string>
+    <string name="play_pause_stop">បញ្ឈប់​ដោយ​ចុច​ឲ្យ​យូរ​លើ​ការ​លេង/ផ្អាក</string>
+
+    <string name="time">ពេលវេលា</string>
+    <string name="time_unit">ឯកតាពេលវេលា</string>
+    <string name="time_unit_sub">តម្លៃបច្ចុប្បន្ន៖ %1$s</string>
+    <string name="time_unit_second">ទីពីរ</string>
+    <string name="time_unit_minute">នាទី</string>
+    <string name="time_unit_percent">ភាគរយ</string>
+
+    <string name="video_control">ការគ្រប់គ្រងវីដេអូ</string>
+    <string name="video_control_start_delay">បង្ហាញ​ពេល​ចាប់ផ្ដើម</string>
+    <string name="video_control_touch_delay">បង្ហាញ​ពេលប៉ះ</string>
+    <string name="video_control_seek_delay">បង្ហាញ​ការ​បញ្ជូន​បន្ត​/ថយក្រោយ​យ៉ាង​លឿន</string>
+    <string name="video_aa_show_status">បង្ហាញរបារស្ថានភាពនៅក្នុង Android Auto</string>
+
+    <string name="enable_exoplayer">បើក ExoPlayer</string>
+    <string name="enable_vlcplayer">បើក VLC</string>
+    <string name="preferred_audio_engine">ម៉ាស៊ីនអូឌីយ៉ូដែលពេញចិត្ត</string>
+    <string name="preferred_video_engine">ម៉ាស៊ីនវីដេអូដែលពេញចិត្ត</string>
+    <string name="engine_installed">ម៉ាស៊ីនមេឌៀដែលបានដំឡើង៖ %1$s</string>
+    <string name="engine_uninstalled">បាន​លុប​ម៉ាស៊ីន​មេឌៀ៖ %1$s</string>
+
+    <string name="preferred_media_scanner">ម៉ាស៊ីនស្កេនមេឌៀដែលពេញចិត្ត</string>
+    <string name="preferred_media_scanner_default">លំនាំដើម</string>
+    <string name="preferred_media_scanner_system">ប្រព័ន្ធ</string>
+
+    <string name="voice_search">ការ​ស្វែងរក​ដោយ​សំឡេង</string>
+    <string name="voice_control">ការ​គ្រប់គ្រង​ដោយ​សំឡេង</string>
+    <string name="voice_control_fb">ប៊ូតុង​អណ្តែត</string>
+    <string name="voice_control_sub_long">បើក​ការ​បញ្ជា​ដោយ​សំឡេង​ដោយ​ចុច​ឲ្យ​យូរ</string>
+    <string name="voice_control_subst">ការ​ជំនួស​ពាក្យ</string>
+    <string name="voice_control_subst_sub">ជំនួស​ពាក្យ​ដោយ​ពាក្យ ឬ​ឃ្លា​ផ្សេង</string>
+    <string name="voice_control_subst_hint">បើក៖ លេង\noff៖ ផ្អាក</string>
+
+    <string name="module_installation">ការដំឡើងម៉ូឌុល៖ %1$s</string>
+    <string name="install_pending">ការ​ដំឡើង​កំពុង​រង់ចាំ៖ %1$s</string>
+    <string name="downloading">កំពុងទាញយក %1$s</string>
+    <string name="installing">ដំឡើង %1$s</string>
+
+    <string name="speed">ល្បឿន</string>
+    <string name="audio_effects">បែបផែន​សំឡេង</string>
+    <string name="equalier">អេក្វាទ័រ</string>
+    <string name="preset_name">ឈ្មោះ​កំណត់​ជាមុន</string>
+    <string name="virtualizer">Spatialization</string>
+    <string name="auto">ស្វ័យប្រវត្តិ</string>
+    <string name="binaural">Binaural</string>
+    <string name="transaural">Transaural</string>
+    <string name="bass_boost">បង្កើន​សំឡេង​បាស</string>
+    <string name="vol_boost">បង្កើន​កម្រិតសំឡេង</string>
+    <string name="strength">កម្លាំង</string>
+    <string name="apply_to">អនុវត្ត​ទៅ</string>
+
+    <string name="video">វីដេអូ</string>
+    <string name="video_settings">ការកំណត់វីដេអូ</string>
+    <string name="video_scaling">ការ​ធ្វើ​មាត្រដ្ឋាន​វីដេអូ</string>
+    <string name="hw_accel">ការបង្កើនល្បឿនផ្នែករឹង</string>
+    <string name="hw_accel_auto">ស្វ័យប្រវត្តិ</string>
+    <string name="hw_accel_full">បញ្ចប់</string>
+    <string name="hw_accel_decoding">ការ​ឌិកូដ</string>
+    <string name="hw_accel_disabled">បាន​បិទ</string>
+    <string name="video_scaling_best">ការធ្វើមាត្រដ្ឋានល្អបំផុត</string>
+    <string name="video_scaling_fill">បំពេញអេក្រង់</string>
+    <string name="video_scaling_orig">ទំហំដើម</string>
+    
+    
+
+    <string name="audio">អូឌីយ៉ូ</string>
+    <string name="audio_delay">ពន្យាពេល​សំឡេង</string>
+    <string name="audio_delay_aa">ការពន្យាពេលសំឡេង - Android Auto</string>
+    <string name="preferred_audio_lang">ភាសាអូឌីយ៉ូដែលពេញចិត្ត</string>
+    <string name="preferred_audio_key">ចូលចិត្ត​ការ​ផ្សាយ​សំឡេង​ជាមួយ​នឹង​ពាក្យ​គន្លឹះ</string>
+    <string name="select_audio_stream">ជ្រើសរើស​ស្ទ្រីម​អូឌីយ៉ូ</string>
+
+    <string name="subtitles">ចំណងជើងរង</string>
+    <string name="subtitles_auto">បង្កើតដោយស្វ័យប្រវត្តិ</string>
+    <string name="subtitle_delay">ការពន្យារពេលចំណងជើងរង</string>
+    <string name="display_subtitles">បង្ហាញចំណងជើងរង</string>
+    <string name="preferred_sub_lang">ភាសាចំណងជើងរងដែលពេញចិត្ត</string>
+    <string name="preferred_sub_key">ចូលចិត្តចំណងជើងរងដែលមានពាក្យគន្លឹះ</string>
+    <string name="select_subtitles">ជ្រើសរើសចំណងជើងរង</string>
+
+    <string name="sub_gen_buf">ប្រវែងសតិបណ្ដោះអាសន្ន</string>
+    <string name="sub_gen_buf_sub">ផ្ទុកជាមុនចំនួនវិនាទីដែលបានបញ្ជាក់</string>
+    <string name="sub_gen_chunk">ប្រវែងដុំ</string>
+    <string name="sub_gen_chunk_sub">ដំណើរការសតិបណ្ដោះអាសន្នជាបំណែកនៃរយៈពេលដែលបានបញ្ជាក់</string>
+    <string name="sub_gen_model">គំរូ</string>
+    <string name="sub_gen_translate">បកប្រែ</string>
+    <string name="sub_gen_use_gpu">ប្រើ GPU</string>
+    <string name="sub_gen_single">ផ្នែកតែមួយ</string>
+    <string name="sub_gen_single_sub">ចម្លងបំណែកទាំងមូលជាផ្នែកតែមួយ</string>
+    <string name="sub_gen_downloading">សូមរង់ចាំខណៈពេលដែលគំរូត្រូវបានទាញយក។</string>
+    <string name="sub_gen_download_fail">បានបរាជ័យក្នុងការទាញយកម៉ូដែល៖ %s!</string>
+    <string name="sub_gen_cleanup">លុបម៉ូដែលដែលបានទាញយកផ្សេងទៀតចេញពីឃ្លាំងសម្ងាត់</string>
+    <string name="sub_gen_cleanup_done">បានលុប៖ %s</string>
+
+    
+    <string name="eq_hz">%1$s Hz</string>
+    <string name="eq_khz">%1$s kHz</string>
+
+    <string name="current_track">បទ​បច្ចុប្បន្ន</string>
+    <string name="current_folder">ថតបច្ចុប្បន្ន</string>
+
+    <string name="folders">ថតឯកសារ</string>
+    <string name="favorites">ចំណូលចិត្ត</string>
+    <string name="playlists">បញ្ជីចាក់</string>
+    <string name="search">ស្វែងរក</string>
+    <string name="filter">តម្រង</string>
+    <string name="settings">ការកំណត់</string>
+    <string name="menu">ម៉ឺនុយ</string>
+    <string name="exit">ចេញ</string>
+    <string name="cancel">បោះបង់</string>
+    <string name="got_to_current">បទ​បច្ចុប្បន្ន</string>
+
+    <string name="view">មើល</string>
+    <string name="title">ចំណងជើង</string>
+    <string name="subtitle">ចំណងជើងរង</string>
+    <string name="seq_num">លេខ​លំដាប់</string>
+    <string name="track_name">ឈ្មោះ</string>
+    <string name="file_name">ឈ្មោះឯកសារ</string>
+    <string name="date">កាលបរិច្ឆេទ</string>
+    <string name="random">ចៃដន្យ</string>
+    <string name="descending">ចុះក្រោម</string>
+    <string name="album">អាល់ប៊ុម</string>
+    <string name="artist">សិល្បករ</string>
+    <string name="duration">រយៈពេល</string>
+
+    <string name="sort_by">តម្រៀប​តាម</string>
+    <string name="do_not_sort">កុំ​តម្រៀប</string>
+
+    <string name="play">កំពុង​លេង</string>
+    <string name="pause">ផ្អាក</string>
+    <string name="stop">បញ្ឈប់</string>
+    <string name="prev">មុន</string>
+    <string name="next">បន្ទាប់</string>
+    <string name="rewind">ថយក្រោយ</string>
+    <string name="fast_forward">លឿន​ទៅ​មុខ</string>
+    <string name="repeat">ធ្វើម្តងទៀត</string>
+    <string name="repeat_disable">កុំធ្វើម្តងទៀត</string>
+    <string name="shuffle">ចៃដន្យ</string>
+    <string name="shuffle_disable">បិទការសាប់</string>
+    <string name="programme_guide">កម្មវិធីណែនាំ</string>
+    <string name="favorites_add">បន្ថែម​ទៅ​ចំណូលចិត្ត</string>
+    <string name="favorites_remove">លុប​ចេញ​ពី​សំណព្វ</string>
+    <string name="mark_watched">សម្គាល់​ថា​បាន​ឃើញ</string>
+    <string name="mark_unwatched">សម្គាល់​ថា​មិន​បាន​មើល</string>
+    <string name="preferred_media_engine">ម៉ាស៊ីនមេឌៀដែលពេញចិត្ត</string>
+    <string name="by_default">លំនាំដើម</string>
+
+    <string name="playlist_add">បន្ថែម​ទៅ​បញ្ជី​ចាក់</string>
+    <string name="playlist_remove_item">លុបចេញពីបញ្ជីចាក់</string>
+    <string name="playlist_create">បង្កើត​បញ្ជី​ចាក់</string>
+    <string name="playlist_remove">លុបបញ្ជីចាក់ចេញ</string>
+    <string name="playlist_name">ឈ្មោះ​បញ្ជី​ចាក់</string>
+
+    <string name="bookmarks">ចំណាំ</string>
+    <string name="create_bookmark">បង្កើត​ចំណាំ</string>
+    <string name="remove_bookmark">លុបចំណាំ</string>
+    <string name="remove_all_bookmarks">លុបចំណាំទាំងអស់ចេញ</string>
+    <string name="bookmark_name">ឈ្មោះ</string>
+    <string name="bookmark_time">ពេលវេលា</string>
+
+    <string name="folder_subtitle">ឯកសារ៖ %1$d។ ថតឯកសារ៖ %2$d.</string>
+    <string name="browsable_subtitle">បទ៖ %1$d។</string>
+    <string name="add_folder">បន្ថែម​ថត</string>
+    <string name="remove_folder">លុប​ថត​ចេញ</string>
+    <string name="select">ជ្រើសរើស</string>
+    <string name="select_all">ជ្រើសរើស​ទាំងអស់</string>
+    <string name="unselect_all">ឈប់​ជ្រើសរើស​ទាំងអស់</string>
+    <string name="refresh">ផ្ទុកឡើងវិញ</string>
+    <string name="rescan">ស្កេនឡើងវិញ</string>
+    <string name="share">ចែករំលែក</string>
+    <string name="edit">កែសម្រួល</string>
+    <string name="delete">លុប</string>
+    <string name="delete_confirm">លុប %1$s?</string>
+    <string name="delete_file_title">លុប​ឯកសារ</string>
+    <string name="delete_file_question">តើ​អ្នក​ប្រាកដ​ជា​ចង់​លុប​ឯកសារ​ឬ?</string>
+    <string name="delete_file_failed">មិន​អាច​លុប​ឯកសារ %1$s</string>
+    <string name="loading">កំពុង​ផ្ទុក…</string>
+    <string name="press_back_again">ចុចប៊ូតុងថយក្រោយម្តងទៀតដើម្បីចេញ។</string>
+    <string name="please_restart_app">សូមចាប់ផ្តើមកម្មវិធីឡើងវិញ។</string>
+    <string name="use_phone_to_grant_perm">សូម​ប្រើ​ទូរសព្ទ​របស់​អ្នក​ដើម្បី​ផ្តល់​ការ​អនុញ្ញាត​ដែលត្រូវការ។</string>
+
+    <string name="vfs_content">មាតិកា</string>
+    <string name="vfs_file_system">ប្រព័ន្ធ​ឯកសារ</string>
+    <string name="vfs_gdrive">Google Drive</string>
+    
+    
+    <string name="m3u_playlist">បញ្ជីចាក់ M3U</string>
+    <string name="m3u_playlist_name">ឈ្មោះ</string>
+    <string name="m3u_playlist_location">ទីតាំង</string>
+    <string name="m3u_playlist_location_hint">ឯកសារ ឬ URL http</string>
+    
+    
+    <string name="m3u_playlist_video">បញ្ជីចាក់វីដេអូ</string>
+
+    <string name="eq_manual">សៀវភៅដៃ</string>
+    <string name="eq_normal">ធម្មតា</string>
+    <string name="eq_classical">បុរាណ</string>
+    <string name="eq_dance">រាំ</string>
+    <string name="eq_flat">ផ្ទះល្វែង</string>
+    <string name="eq_folk">ប្រជាប្រិយ</string>
+    <string name="eq_heavy_metal">លោហៈធ្ងន់</string>
+    <string name="eq_hip_hop">ហ៊ីបហប</string>
+    <string name="eq_jazz">Jazz</string>
+    <string name="eq_pop">ប៉ុប</string>
+    <string name="eq_rock">រ៉ុក</string>
+
+    <string name="host">ម៉ាស៊ីន</string>
+    <string name="port">ច្រក</string>
+    <string name="path">ផ្លូវ</string>
+    <string name="share_name">ឈ្មោះចែករំលែក</string>
+    <string name="domain">ដែន</string>
+    <string name="username">ឈ្មោះ​អ្នក​ប្រើ</string>
+    <string name="password">ពាក្យសម្ងាត់</string>
+    <string name="private_key">សោឯកជន</string>
+    <string name="private_key_pass">ពាក្យសម្ងាត់សោឯកជន</string>
+
+    <string name="donate">ផ្តល់ជូនអ្នកអភិវឌ្ឍន៍នូវកាហ្វេមួយ</string>
+    <string name="donate_text">ប្រសិន​បើ​អ្នក​ចូល​ចិត្ត​កម្មវិធី អ្នក​អាច​ទិញ​កាហ្វេ​ឱ្យ​ខ្ញុំ​បាន។</string>
+    <string name="use_phone_for_donation">អ្នកអាចប្រើទូរសព្ទរបស់អ្នកដើម្បីបរិច្ចាគកាហ្វេ។</string>
+
+    <string name="timer">កម្មវិធីកំណត់ម៉ោង</string>
+    <string name="hours">ម៉ោង</string>
+    <string name="minutes">នាទី</string>
+
+    <string name="enable">បើក</string>
+    <string name="move_left">ផ្លាស់ទី​ទៅ​ឆ្វេង</string>
+    <string name="move_right">ផ្លាស់ទីទៅស្តាំ</string>
+    <string name="move_up">ផ្លាស់ទីឡើងលើ</string>
+    <string name="move_down">ផ្លាស់ទីចុះក្រោម</string>
+
+    <string name="sys_bars_on_video_touch">បង្ហាញរបារប្រព័ន្ធនៅលើវីដេអូប៉ះ</string>
+    <string name="play_video_landscape">ចាក់​វីដេអូ​ក្នុង​ទម្រង់​ផ្ដេក</string>
+    <string name="clock_pos">ទីតាំងនាឡិកា</string>
+    <string name="clock_pos_none">គ្មាន</string>
+    <string name="clock_pos_left">ឆ្វេង</string>
+    <string name="clock_pos_right">ស្តាំ</string>
+    <string name="clock_pos_center">មជ្ឈមណ្ឌល</string>
+    <string name="change_brightness">ប្តូរពន្លឺកំឡុងពេលចាក់វីដេអូ</string>
+    <string name="video_brightness">ពន្លឺ​វីដេអូ</string>
+    <string name="change_brightness_sub">ពន្លឺ​ក៏​អាច​ត្រូវ​បាន​ផ្លាស់​ប្តូរ​ដោយ​ប្រើ​ម្រាម​ដៃ​ពីរ​រំកិល</string>
+    <string name="watched_threshold">កំពុង​មើល​កម្រិត</string>
+    <string name="watched_threshold_sub">សម្គាល់​វីដេអូ​ថា​បាន​មើល ប្រសិន​បើ​ច្រើន​ជាង​ភាគរយ​នេះ​ត្រូវ​បាន​មើល</string>
+
+    <string name="other">ផ្សេងទៀត</string>
+    <string name="check_updates">ពិនិត្យ​មើល​បច្ចុប្បន្នភាព​នៅពេល​ចាប់ផ្ដើម</string>
+    <string name="update">អាប់ដេត</string>
+    <string name="update_question">កំណែ​ថ្មី %1$s មាន​ហើយ។\nតើ​អ្នក​ចង់​ធ្វើ​បច្ចុប្បន្នភាព​កម្មវិធី​ដែរ​ឬ​ទេ?</string>
+    <string name="export_prefs">ចំណូលចិត្តនាំចេញទៅឯកសារ</string>
+    <string name="export_prefs_sub">នាំចេញការកំណត់ ថតឯកសារ បញ្ជីចាក់។ល។ ទៅ​ឯកសារ</string>
+    <string name="export_prefs_ok">ចំណូលចិត្ត​ត្រូវ​បាន​រក្សា​ទុក​ក្នុង​ឯកសារ %1$s។</string>
+    <string name="export_prefs_failed">ចំណូលចិត្ត​នាំចេញ​បាន​បរាជ័យ៖ %1$s</string>
+    <string name="import_prefs">ចំណូលចិត្ត​នាំចូល​ពី​ឯកសារ</string>
+    <string name="import_prefs_sub">ចំណូលចិត្តនាំចូលពីឯកសារដែលបាននាំចេញពីមុន</string>
+    <string name="import_prefs_ok">ចំណូលចិត្ត​ត្រូវ​បាន​នាំចូល​ដោយ​ជោគជ័យ។\nសូម​ចាប់ផ្ដើម​កម្មវិធី​ឡើងវិញ។</string>
+    <string name="import_prefs_failed">បាន​បរាជ័យ​ក្នុង​ការ​នាំចូល​ចំណូលចិត្ត៖ %1$s</string>
+    <string name="prefs_not_found">រកមិនឃើញចំណូលចិត្តទេ</string>
+    <string name="open_log">បើកឯកសារកំណត់ហេតុ</string>
+    <string name="unlock_phone_and_grant">ដោះសោទូរសព្ទ ហើយផ្តល់ការអនុញ្ញាតដែលបានស្នើសុំ។</string>
+    <string name="screen_capture_rejected">សំណើ​ថត​អេក្រង់​ត្រូវ​បាន​បដិសេធ។</string>
+    <string name="accessibility_dsc">សេវាកម្ម​មធ្យោបាយ​ងាយស្រួល​ត្រូវ​បាន​ប្រើ​ដោយ Permata Mirror ដើម្បី​ក្លែង​ធ្វើ​ព្រឹត្តិការណ៍​ប៉ះ​លើ​អេក្រង់។</string>
+    <string name="media_projection_action_text">ចាប់ផ្តើមឥឡូវនេះ</string>
+
+    <string name="about">អំពី</string>
+    <string name="about_html"><![CDATA[<H1 តម្រឹម = \"មជ្ឈមណ្ឌល\"> កម្មវិធីចាក់មេឌៀហ្វឺម៉ាហ្គាតា </ h1>
+        <p> អ្នកលេងមេឌៀហ្វូម៉ាតាគឺជាកម្មវិធីចាក់អូឌីយ៉ូប្រភពនិងវីដេអូឥតគិតថ្លៃដែលមានលក្ខណៈសាមញ្ញនិង
+        ចំណុចប្រទាក់វិចារណញាណ។ </ p>
+        <p> <b> អ្នកនិពន្ធ: </ b> sklchan77 </ p>
+        <p> <p> ព្រីនៈ </ b>% 1 $ s (% 2 $ d) </ p>
+        <p> <b> ទំព័រដើម: </ b> <A HREF = \"% 3 $ s\">% 3 $ s </a> </ p>]]></string>
+
+    <string name="err_failed_to_play">បាន​បរាជ័យ​ក្នុង​ការ​លេង %s</string>
+    <string name="err_failed_to_play_cause">បាន​បរាជ័យ​ក្នុង​ការ​លេង %1$s៖ %2$s</string>
+    <string name="err_unsupported_source_type">ប្រភេទប្រភពដែលមិនគាំទ្រ៖ %s</string>
+    <string name="err_playlist_exists">បញ្ជី​ចាក់​មាន​រួច​ហើយ៖ %1$s</string>
+    <string name="err_invalid_playlist_name">ឈ្មោះ​បញ្ជី​ចាក់​មិន​ត្រឹមត្រូវ៖ %1$s</string>
+    <string name="err_failed_add_folder">បាន​បរាជ័យ​ក្នុង​ការ​បន្ថែម​ថត៖ %1$s</string>
+    <string name="err_failed_open_url">បាន​បរាជ័យ​ក្នុង​ការ​បើក URL៖ %1$s</string>
+    <string name="err_failed_install_module">បាន​បរាជ័យ​ក្នុង​ការ​ដំឡើង​ម៉ូឌុល៖ %1$s</string>
+    <string name="err_failed_to_download">បាន​បរាជ័យ​ក្នុង​ការ​ទាញ​យក %1$s</string>
+    <string name="err_no_audio_record_perm">ការ​អនុញ្ញាត​ថត​សំឡេង​មិន​ត្រូវ​បាន​ផ្តល់​ទេ</string>
+</resources>

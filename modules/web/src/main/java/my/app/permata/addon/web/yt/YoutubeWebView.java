@@ -1,0 +1,369 @@
+package my.app.permata.addon.web.yt;
+
+import static my.app.permata.addon.web.yt.YoutubeJsInterface.JS_ERR;
+import static my.app.permata.addon.web.yt.YoutubeJsInterface.JS_EVENT;
+import static my.app.permata.addon.web.yt.YoutubeJsInterface.JS_VIDEO_ENDED;
+import static my.app.permata.addon.web.yt.YoutubeJsInterface.JS_VIDEO_FOUND;
+import static my.app.permata.addon.web.yt.YoutubeJsInterface.JS_VIDEO_PAUSED;
+import static my.app.permata.addon.web.yt.YoutubeJsInterface.JS_VIDEO_PLAYING;
+import static my.app.permata.addon.web.yt.YoutubeJsInterface.JS_VIDEO_QUALITIES;
+
+import android.content.Context;
+import android.util.AttributeSet;
+import android.webkit.CookieManager;
+
+import androidx.annotation.NonNull;
+
+import java.util.List;
+
+import my.app.permata.BuildConfig;
+import my.app.permata.addon.web.PermataChromeClient;
+import my.app.permata.addon.web.PermataJsInterface;
+import my.app.permata.addon.web.PermataWebView;
+import my.app.permata.media.service.MediaSessionCallback;
+import my.app.permata.ui.activity.MainActivityDelegate;
+import my.app.utils.async.FutureSupplier;
+import my.app.utils.async.Promise;
+import my.app.utils.log.Log;
+import my.app.utils.pref.PreferenceStore;
+
+/**
+ * @author sklchan77
+ */
+public class YoutubeWebView extends PermataWebView {
+	private static final String CLEAR_HIGHEST_VIDEO_QUALITY_JS =
+			"function clearPermataQ() {\n" +
+					"  if (!window.__permataQ) return;\n" +
+					"  if (window.__permataQ.timeout) clearTimeout(window.__permataQ.timeout);\n" +
+					"  if (window.__permataQ.player && window.__permataQ.handler) {\n" +
+					"    try { window.__permataQ.player.removeEventListener('onStateChange', window.__permataQ.handler); } catch(e) {}\n" +
+					"  }\n" +
+					"  window.__permataQ = null;\n" +
+					"}\n";
+	private YoutubeJsInterface js;
+
+	public YoutubeWebView(Context context) {
+		super(context);
+	}
+
+	public YoutubeWebView(Context context, AttributeSet attrs) {
+		super(context, attrs);
+	}
+
+	public YoutubeWebView(Context context, AttributeSet attrs, int defStyle) {
+		super(context, attrs, defStyle);
+	}
+
+	@Override
+	protected PermataJsInterface createJsInterface() {
+		MainActivityDelegate a = MainActivityDelegate.get(getContext());
+		return js = new YoutubeJsInterface(this, new YoutubeMediaEngine(this, a));
+	}
+
+	@Override
+	public YoutubeAddon getAddon() {
+		return (YoutubeAddon) super.getAddon();
+	}
+
+	@Override
+	public void onPreferenceChanged(PreferenceStore store, List<PreferenceStore.Pref<?>> prefs) {
+		super.onPreferenceChanged(store, prefs);
+
+		if (getAddon().autoHighestQualityChanged(prefs)) {
+			if (getAddon().autoHighestQuality()) setHighestVideoQuality();
+			else clearHighestVideoQuality();
+		}
+
+		if (YoutubeSponsorBlock.isPreferenceChanged(prefs)) injectSponsorBlock();
+	}
+
+	@Override
+	public void loadUrl(@NonNull String url) {
+		Log.d("Loading URL: " + url);
+		super.loadUrl(url);
+	}
+
+	@Override
+	public void goBack() {
+		MediaSessionCallback cb = MainActivityDelegate.get(getContext()).getMediaSessionCallback();
+		if (cb.getEngine() instanceof YoutubeMediaEngine) cb.onStop();
+		super.goBack();
+	}
+
+	@Override
+	protected void pageLoaded(String uri) {
+		attachListeners();
+		injectSponsorBlock();
+		addFocusHighlight();
+		CookieManager.getInstance().flush();
+	}
+
+	protected void submitForm() {
+		if (!my.app.permata.BuildConfig.AUTO) return;
+		loadUrl("javascript:\n" +
+				"var e = new KeyboardEvent('keydown',\n" +
+				"{ code: 'Enter', key: 'Enter', keyCode: 13, view: window, bubbles: true });\n" +
+				"document.activeElement.dispatchEvent(e);\n" +
+				"e = new KeyboardEvent('keyup',\n" +
+				"{ code: 'Enter', key: 'Enter', keyCode: 13, view: window, bubbles: true });\n" +
+				"document.activeElement.dispatchEvent(e);");
+	}
+
+	private void attachListeners() {
+		String debug = BuildConfig.D ? JS_EVENT + "(" + JS_VIDEO_FOUND + ", null);\n" : "";
+		String scale = getAddon().getScale().prefName();
+		loadUrl("javascript:\n" +
+				"function attachVideoListeners(v) {\n" +
+				"  if (v.getAttribute('PermataAttached') === 'true') return;\n" +
+				"  v.setAttribute('PermataAttached', 'true');\n" +
+				"  v.setAttribute('style', 'object-fit:" + scale + "');\n" + debug +
+				"  if ((v.currentTime > 0) && !v.paused && !v.ended) " + JS_EVENT + "(" + JS_VIDEO_PLAYING +
+				", v.currentSrc);\n" +
+				"  v.addEventListener('playing', function(e) {" + JS_EVENT + "(" + JS_VIDEO_PLAYING +
+				", v.currentSrc);});\n" +
+				"  v.addEventListener('pause', function(e) {" + JS_EVENT + "(" + JS_VIDEO_PAUSED +
+				", v.currentSrc);});\n" +
+				"  v.addEventListener('ended', function(e) {" + JS_EVENT + "(" + JS_VIDEO_ENDED +
+				", null);});\n" +
+				"}\n" +
+				"function findVideo() {\n" +
+				"  var video = document.querySelectorAll('video');" +
+				"  video.forEach(attachVideoListeners);\n" +
+				"   setTimeout(findVideo, 1000);\n" +
+				"}\n" +
+				"findVideo();");
+	}
+
+	private void injectSponsorBlock() {
+		String script = YoutubeSponsorBlock.getScript(getContext(), getAddon().getPreferenceStore());
+		if (!script.isEmpty()) evaluateJavascript(script, result -> configureSponsorBlock());
+		else configureSponsorBlock();
+	}
+
+	private void configureSponsorBlock() {
+		evaluateJavascript("if (window.PermataSponsorBlock) window.PermataSponsorBlock.configure(" +
+				YoutubeSponsorBlock.getConfigJson(getAddon().getPreferenceStore()) + ");", null);
+	}
+
+	protected boolean requestFullScreen() {
+		loadUrl("javascript: var v = document.querySelector('video');\n" +
+				"if ('webkitRequestFullscreen' in v) v.webkitRequestFullscreen();\n" +
+				"else if ('requestFullscreen' in v) v.requestFullscreen();\n" +
+				"else " + JS_EVENT + "(" + JS_ERR + ", 'Method requestFullscreen not found in ' + v);");
+		return true;
+	}
+
+	void play() {
+		loadUrl("javascript:var v = document.querySelector('video'); if (v != null) v.play();");
+	}
+
+	void pause() {
+		loadUrl("javascript:var v = document.querySelector('video'); if (v != null) v.pause();");
+	}
+
+	void stop() {
+		loadUrl("javascript:var v = document.querySelector('video');\n" +
+				"if (v != null) { v.currentTime = 0; v.pause(); }");
+	}
+
+	void prev() {
+		prevNext(false);
+	}
+
+	void next() {
+		prevNext(true);
+	}
+
+	private void prevNext(boolean next) {
+		PermataChromeClient chrome = getWebChromeClient();
+		if (chrome == null) return;
+		chrome.exitFullScreen().thenRun(() -> evaluateJavascript("""
+				function prevNextVideo() {
+				  const buttons = document.querySelectorAll('button.player-middle-controls-prev-next-button');
+				  console.log('Prev/Next buttons:', buttons);
+				  if (buttons) buttons[%d].click();
+				}
+				setTimeout(prevNextVideo, 600);
+				""".formatted(next ? 1 : 0), null));
+	}
+
+	FutureSupplier<Long> getDuration() {
+		return getMilliseconds("duration");
+	}
+
+	FutureSupplier<Long> getPosition() {
+		return getMilliseconds("currentTime");
+	}
+
+	FutureSupplier<String> getVideoQualities() {
+		Promise<String> p = js.getResultPromise();
+		loadUrl("javascript:\n" +
+				"function retryGetVideoQualities(attempt, openMenu) {\n" +
+				"  if (attempt < 10) setTimeout(getVideoQualities, 100, attempt + 1, openMenu);\n" +
+				"  else " + JS_EVENT + '(' + JS_VIDEO_QUALITIES + ", null);\n" +
+				"  return null;\n" +
+				"}\n" +
+				"function getVideoQualities(attempt, openMenu) {\n" +
+				"  if (openMenu) {\n" +
+				"    var b = document.querySelector('.player-settings-icon');\n" +
+				"    if (b == null) return retryGetVideoQualities(attempt, true);\n" +
+				"    b.click();\n" +
+				"  }\n" +
+				"  var settings = document.querySelector('.player-quality-settings');\n" +
+				"  if (settings == null) return retryGetVideoQualities(attempt, false);\n" +
+				"  var select = settings.querySelector('.select');\n" +
+				"  if (select == null) return retryGetVideoQualities(attempt, false);\n" +
+				"  var options = select.querySelectorAll('.option');\n" +
+				"  var result = '';\n" +
+				"  for (let i = 0; i < options.length; i++) {\n" +
+				"    if (i != 0) result += ';';\n" +
+				"    if (i == select.selectedIndex) result += '*';\n" +
+				"    result += options[i].innerText;\n" +
+				"  }\n" +
+				"  " + JS_EVENT + '(' + JS_VIDEO_QUALITIES + ", result);\n" +
+				"  setTimeout(()=> {settings.parentNode.parentNode.querySelector('" +
+				".c3-material-button-button').click();}, 100);\n" +
+				"  return result;\n" +
+				"}\n" +
+				"getVideoQualities(0, true);");
+		return p;
+	}
+
+	void setVideoQuality(int idx) {
+		loadUrl("javascript:\n" +
+				"function retrySetVideoQuality(idx, attempt, openMenu) {\n" +
+				"  if (attempt < 10) setTimeout(setVideoQuality, 100, idx, attempt + 1, openMenu);\n" +
+				"  return false;\n" +
+				"}\n" +
+				"function setVideoQuality(idx, attempt, openMenu) {\n" +
+				"  if (openMenu) {\n" +
+				"    var b = document.querySelector('.player-settings-icon');\n" +
+				"    if (b == null) return retrySetVideoQuality(idx, attempt, true);\n" +
+				"    b.click();\n" +
+				"  }\n" +
+				"  var settings = document.querySelector('.player-quality-settings');\n" +
+				"  if (settings == null) return retrySetVideoQuality(idx, attempt, false);\n" +
+				"  var select = settings.querySelector('.select');\n" +
+				"  if (select == null) return retrySetVideoQuality(idx, attempt, false);\n" +
+				"  var options = select.querySelectorAll('.option');\n" +
+				"  var evt = document.createEvent(\"HTMLEvents\");\n" +
+				"  evt.initEvent(\"change\", true, true);\n" +
+				"  select.selectedIndex = idx;\n" +
+				"  options[idx].selected = true;\n" +
+				"  select.dispatchEvent(evt);\n" +
+				"  setTimeout(()=> {settings.parentNode.parentNode.querySelector('" +
+				".c3-material-button-button').click();}, 100);\n" +
+				"  return true;\n" +
+				"}\n" +
+				"setVideoQuality(" + idx + ", 0, true);");
+	}
+
+	void setHighestVideoQuality() {
+		loadUrl("javascript:\n" +
+				"(function() {\n" +
+				CLEAR_HIGHEST_VIDEO_QUALITY_JS +
+				"  clearPermataQ();\n" +
+				"  var state = window.__permataQ = { player: null, handler: null, timeout: null, attempts: 0 };\n" +
+				"  function getPlayer() {\n" +
+				"    return document.querySelector('#movie_player') || document.querySelector('.html5-video-player');\n" +
+				"  }\n" +
+				"  function applyHighest(p) {\n" +
+				"    if (!p || typeof p.getAvailableQualityLevels !== 'function') return false;\n" +
+				"    var levels = p.getAvailableQualityLevels();\n" +
+				"    if (!levels || levels.length === 0) return false;\n" +
+				"    var best = null;\n" +
+				"    for (var i = 0; i < levels.length; i++) {\n" +
+				"      if (levels[i] !== 'auto') { best = levels[i]; break; }\n" +
+				"    }\n" +
+				"    if (!best) return false;\n" +
+				"    if (p.getPlaybackQuality && p.getPlaybackQuality() === best) return true;\n" +
+				"    if (typeof p.setPlaybackQualityRange === 'function') p.setPlaybackQualityRange(best, best);\n" +
+				"    else if (typeof p.setPlaybackQuality === 'function') p.setPlaybackQuality(best);\n" +
+				"    else return false;\n" +
+				"    return true;\n" +
+				"  }\n" +
+				"  function install() {\n" +
+				"    var p = getPlayer();\n" +
+				"    if (!p || typeof p.addEventListener !== 'function') {\n" +
+				"      if (++state.attempts < 50) state.timeout = setTimeout(install, 200);\n" +
+				"      return;\n" +
+				"    }\n" +
+				"    state.player = p;\n" +
+				"    state.handler = function(s) {\n" +
+				"      if ((s === 1) || (s === 3)) applyHighest(getPlayer() || p);\n" +
+				"    };\n" +
+				"    p.addEventListener('onStateChange', state.handler);\n" +
+				"    applyHighest(p);\n" +
+				"  }\n" +
+				"  install();\n" +
+				"})();");
+	}
+
+	void clearHighestVideoQuality() {
+		loadUrl("javascript:\n" +
+				"(function() {\n" +
+				CLEAR_HIGHEST_VIDEO_QUALITY_JS +
+				"  clearPermataQ();\n" +
+				"})();");
+	}
+
+	private FutureSupplier<Long> getMilliseconds(String value) {
+		Promise<Long> p = new Promise<>();
+		evaluateJavascript(
+				"(function(){var v = document.querySelector('video'); return (v != null) ? v." + value +
+						" : 0})();",
+				v -> {
+					try {
+						p.complete((long) (Double.parseDouble(v) * 1000));
+					} catch (NumberFormatException ex) {
+						Log.d(ex);
+						p.complete(0L);
+					}
+				});
+		return p;
+	}
+
+	void setPosition(long position) {
+		double pos = position / 1000f;
+		loadUrl("javascript:var v = document.querySelector('video'); if (v != null) v.currentTime = " +
+				pos + ";");
+	}
+
+	FutureSupplier<Float> getSpeed() {
+		Promise<Float> p = new Promise<>();
+		evaluateJavascript(
+				"(function(){var v = document.querySelector('video'); return (v != null) ? v" +
+						".playbackRate" +
+						" " +
+						": 0})();",
+				v -> {
+					try {
+						p.complete(Float.parseFloat(v));
+					} catch (NumberFormatException ex) {
+						Log.d(ex);
+						p.complete(1f);
+					}
+				});
+		return p;
+	}
+
+	void setSpeed(float speed) {
+		loadUrl("javascript:var v = document.querySelector('video'); if (v != null) v.playbackRate =" +
+				" " +
+				speed + ";");
+	}
+
+	FutureSupplier<String> getVideoTitle() {
+		Promise<String> p = new Promise<>();
+		evaluateJavascript("document.title", p::complete);
+		return p;
+	}
+
+	void setScale(YoutubeAddon.VideoScale scale) {
+		getAddon().setScale(scale);
+		String p = scale.prefName();
+		loadUrl("javascript:" +
+				"document.querySelectorAll('video')" +
+				".forEach(v=> v.setAttribute('style', 'object-fit:" + p + "'));");
+	}
+}

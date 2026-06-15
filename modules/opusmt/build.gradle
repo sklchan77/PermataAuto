@@ -1,0 +1,25 @@
+android {
+    namespace = 'my.app.permata.opusmt'
+    defaultConfig {
+        versionCode 1
+        versionName '1.0'
+    }
+}
+
+ext {
+    addons = [
+            [
+                    name : 'opusmt_translate',
+                    icon : 'translate',
+                    class: 'my.app.permata.opusmt.OpusMtTranslateAddon',
+                    hasSettings: false
+            ]
+    ]
+}
+
+dependencies {
+    implementation project(':utils')
+    implementation project(':permata')
+    implementation libs.androidxAnnotation
+    implementation libs.onnxruntimeAndroid
+}

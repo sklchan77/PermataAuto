@@ -1,0 +1,28 @@
+android {
+    namespace = "my.app.permata.addon.cast"
+    defaultConfig {
+        versionCode 1
+        versionName "1.0"
+    }
+}
+
+
+ext {
+    addons = [
+            [
+                    name   : 'cast',
+                    icon   : 'cast',
+                    class  : 'my.app.permata.addon.cast.CastAddon',
+                    enabled: false
+            ]
+    ]
+}
+
+dependencies {
+    implementation project(':utils')
+    implementation project(':permata')
+    implementation libs.androidxAnnotation
+    implementation(libs.googlePlayServicesCast) {
+        exclude group: 'androidx.annotation', module: 'annotation'
+    }
+}

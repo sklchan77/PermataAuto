@@ -1,0 +1,265 @@
+package my.app.permata.ui.view;
+
+import static my.app.permata.R.id.subtitles_fragment;
+import static my.app.permata.ui.activity.MainActivityPrefs.L_SPLIT_PERCENT;
+import static my.app.permata.ui.activity.MainActivityPrefs.P_SPLIT_PERCENT;
+import static my.app.utils.async.Completed.completedVoid;
+
+import android.content.Context;
+import android.content.res.Configuration;
+import android.util.AttributeSet;
+import android.view.View;
+import android.widget.Toast;
+
+import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
+import androidx.constraintlayout.widget.ConstraintLayout;
+import androidx.constraintlayout.widget.Guideline;
+import androidx.swiperefreshlayout.widget.SwipeRefreshLayout;
+
+import my.app.permata.R;
+import my.app.permata.media.engine.MediaEngine;
+import my.app.permata.media.engine.SubtitleStreamInfo;
+import my.app.permata.media.lib.MediaLib;
+import my.app.permata.media.service.PermataServiceUiBinder;
+import my.app.permata.media.service.MediaSessionCallback;
+import my.app.permata.ui.activity.MainActivityDelegate;
+import my.app.permata.ui.activity.MainActivityListener;
+import my.app.permata.ui.fragment.MainActivityFragment;
+import my.app.permata.ui.fragment.SubtitlesFragment;
+import my.app.utils.app.App;
+import my.app.utils.async.FutureSupplier;
+import my.app.utils.async.Promise;
+import my.app.utils.function.DoubleSupplier;
+import my.app.utils.pref.PreferenceStore.Pref;
+import my.app.utils.ui.fragment.ActivityFragment;
+
+/**
+ * @author sklchan77
+ */
+public class BodyLayout extends SplitLayout
+		implements SwipeRefreshLayout.OnRefreshListener, SwipeRefreshLayout.OnChildScrollUpCallback,
+		MainActivityListener, PermataServiceUiBinder.Listener, MediaSessionCallback.Listener {
+	private Mode mode;
+	private FutureSupplier<?> startingPlayback = completedVoid();
+
+	public BodyLayout(@NonNull Context ctx, @Nullable AttributeSet attrs) {
+		super(ctx, attrs);
+
+		SwipeRefreshLayout srl = getSwipeRefresh();
+		srl.setId(R.id.swiperefresh);
+		srl.setOnRefreshListener(this);
+		srl.setOnChildScrollUpCallback(this);
+		setMode(Mode.FRAME);
+
+		MainActivityDelegate.getActivityDelegate(ctx).onSuccess(a -> {
+			PermataServiceUiBinder b = a.getMediaServiceBinder();
+			b.addBroadcastListener(this);
+			a.addBroadcastListener(this, FRAGMENT_CHANGED | ACTIVITY_DESTROY);
+			b.getMediaSessionCallback().addBroadcastListener(this);
+			onPlayableChanged(null, b.getCurrentItem());
+		});
+	}
+
+	@Override
+	protected int getLayout(boolean portrait) {
+		return portrait ? R.layout.body_layout : R.layout.body_layout_land;
+	}
+
+	@Override
+	protected Pref<DoubleSupplier> getSplitPercentPref(boolean portrait) {
+		return portrait ? P_SPLIT_PERCENT : L_SPLIT_PERCENT;
+	}
+
+	public Mode getMode() {
+		return mode;
+	}
+
+	public boolean isFrameMode() {
+		return getMode() == Mode.FRAME;
+	}
+
+	public boolean isVideoMode() {
+		return getMode() == Mode.VIDEO;
+	}
+
+	public boolean isBothMode() {
+		return getMode() == Mode.BOTH;
+	}
+
+	public void setMode(Mode mode) {
+		this.mode = mode;
+		Guideline gl = getGuideline();
+		ConstraintLayout.LayoutParams lp = (ConstraintLayout.LayoutParams) gl.getLayoutParams();
+		MainActivityDelegate a = getActivity();
+		VideoView vv = getVideoView();
+
+		switch (mode) {
+			case FRAME -> {
+				vv.setVisibility(GONE);
+				getSplitLine().setVisibility(GONE);
+				getSplitHandle().setVisibility(GONE);
+				getSwipeRefresh().setVisibility(VISIBLE);
+				lp.guidePercent = isPortrait() ? 0f : 1f;
+				a.setVideoMode(false, vv);
+			}
+			case VIDEO -> {
+				vv.setVisibility(VISIBLE);
+				getSplitLine().setVisibility(GONE);
+				getSplitHandle().setVisibility(GONE);
+				getSwipeRefresh().setVisibility(GONE);
+				lp.guidePercent = isPortrait() ? 1f : 0f;
+				vv.showVideo(true);
+				a.setVideoMode(true, vv);
+				App.get().getHandler().post(vv::requestFocus);
+			}
+			case BOTH -> {
+				vv.setVisibility(VISIBLE);
+				getSplitLine().setVisibility(VISIBLE);
+				getSplitHandle().setVisibility(VISIBLE);
+				getSwipeRefresh().setVisibility(VISIBLE);
+				lp.guidePercent = a.getPrefs().getFloatPref(getSplitPercentPref(isPortrait()));
+				vv.showVideo(true);
+				a.setVideoMode(true, vv);
+				MediaItemListView.focusActive(getContext(), vv);
+			}
+		}
+
+		gl.setLayoutParams(lp);
+		a.fireBroadcastEvent(MODE_CHANGED);
+	}
+
+	public VideoView getVideoView() {
+		return findViewById(R.id.video_view);
+	}
+
+	private SwipeRefreshLayout getSwipeRefresh() {
+		return findViewById(R.id.swiperefresh);
+	}
+
+	@Override
+	protected void onConfigurationChanged(Configuration newConfig) {
+		super.onConfigurationChanged(newConfig);
+		setMode(getMode());
+	}
+
+	@Override
+	public void onActivityEvent(MainActivityDelegate a, long e) {
+		if (handleActivityDestroyEvent(a, e)) {
+			PermataServiceUiBinder b = a.getMediaServiceBinder();
+			b.removeBroadcastListener(this);
+			b.getMediaSessionCallback().removeBroadcastListener(this);
+		} else if (e == FRAGMENT_CHANGED) {
+			if (a.getActiveMediaLibFragment() == null) {
+				setMode(Mode.FRAME);
+			} else {
+				MediaSessionCallback cb = a.getMediaSessionCallback();
+				MediaEngine eng = cb.getEngine();
+
+				if (eng == null) {
+					setMode(Mode.FRAME);
+					return;
+				}
+
+				MediaLib.PlayableItem i = eng.getSource();
+
+				if ((i != null) && i.isVideo() && eng.isSplitModeSupported() &&
+						(cb.getVideoView() == getVideoView())) {
+					setMode(Mode.BOTH);
+				} else {
+					setMode(Mode.FRAME);
+				}
+			}
+		}
+	}
+
+	public void playItem(MediaLib.PlayableItem i) {
+		startingPlayback.cancel();
+		MainActivityDelegate a = getActivity();
+
+		if (i.isVideo() && !getVideoView().isSurfaceCreated() &&
+				!a.getMediaSessionCallback().hasCustomEngineProvider()) {
+			setMode(BodyLayout.Mode.VIDEO);
+			getVideoView().onSurfaceCreated(() -> playItem(i));
+			return;
+		}
+
+		PermataServiceUiBinder b = a.getMediaServiceBinder();
+		MediaLib.PlayableItem cur = b.getCurrentItem();
+		startingPlayback = new Promise<Void>().thenRun(() -> startingPlayback = completedVoid());
+		a.setContentLoading(startingPlayback);
+		b.playItem(i);
+		MediaEngine eng = b.getCurrentEngine();
+		if (i.equals(cur) && (eng != null) && eng.isVideoModeRequired())
+			setMode(BodyLayout.Mode.VIDEO);
+	}
+
+	@Override
+	public void onPlayableChanged(MediaLib.PlayableItem oldItem, MediaLib.PlayableItem newItem) {
+		startingPlayback.cancel();
+		MainActivityDelegate a = getActivity();
+		if (!(a.getActiveFragment() instanceof MainActivityFragment f)) return;
+		if (f instanceof SubtitlesFragment) a.goToCurrent();
+		else if (!f.isVideoModeSupported()) return;
+		MediaEngine eng = a.getMediaServiceBinder().getCurrentEngine();
+
+		if ((newItem == null) || !newItem.isVideo() || (eng == null) || !eng.isSplitModeSupported()) {
+			setMode(Mode.FRAME);
+		} else {
+			if (!eng.isVideoModeRequired()) setMode(Mode.FRAME);
+			else if (isFrameMode()) setMode(Mode.VIDEO);
+			else getVideoView().showVideo(false);
+		}
+
+		if ((eng != null) && (newItem != null) && !newItem.isVideo() && (getMode() == Mode.FRAME)) {
+			eng.selectSubtitleStream();
+		}
+	}
+
+	@Override
+	public void onSubtitleStreamChanged(MediaSessionCallback cb, @Nullable SubtitleStreamInfo info) {
+		if (getMode() != Mode.FRAME) return;
+		var i = cb.getCurrentItem();
+		if ((i == null) || i.isVideo()) return;
+		var a = getActivity();
+		var f = a.getActiveFragment();
+		if (info == null) {
+			if (f instanceof SubtitlesFragment) a.goToCurrent();
+		} else if (f instanceof SubtitlesFragment) {
+			((SubtitlesFragment) f).restart();
+		} else {
+			a.showFragment(subtitles_fragment);
+		}
+	}
+
+	@Override
+	public void onPlaybackError(String message) {
+		onPlaybackStopped();
+		Toast.makeText(getContext(), message, Toast.LENGTH_LONG).show();
+	}
+
+	@Override
+	public void onPlaybackStopped() {
+		startingPlayback.cancel();
+		var a = getActivity();
+		if (a.getActiveFragment() instanceof SubtitlesFragment) a.goToCurrent();
+	}
+
+	@Override
+	public void onRefresh() {
+		ActivityFragment f = getActivity().getActiveFragment();
+		if (f != null) f.onRefresh(getSwipeRefresh()::setRefreshing);
+	}
+
+	@Override
+	public boolean canChildScrollUp(@NonNull SwipeRefreshLayout parent, @Nullable View child) {
+		MainActivityDelegate a = getActivity();
+		if (a.isMenuActive()) return true;
+		ActivityFragment f = a.getActiveFragment();
+		return (f != null) && f.canScrollUp();
+	}
+
+	public enum Mode {
+		FRAME, VIDEO, BOTH
+	}
+}

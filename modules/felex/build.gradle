@@ -1,0 +1,30 @@
+android {
+    namespace = "my.app.permata.addon.felex"
+    defaultConfig {
+        versionCode 1
+        versionName "1.0"
+    }
+}
+
+ext {
+    addons = [
+            [
+                    name : 'felex',
+                    icon : 'felex',
+                    class: 'my.app.permata.addon.felex.FelexAddon',
+                    order: 4,
+                    enabled: false
+            ]
+    ]
+}
+
+dependencies {
+    implementation project(':utils')
+    implementation project(':permata')
+    implementation libs.guava
+    implementation libs.androidxMedia
+    implementation libs.androidxAppcompat
+    implementation libs.androidMaterial
+    implementation libs.androidxConstraintlayout
+    implementation libs.androidxSwiperefreshlayout
+}

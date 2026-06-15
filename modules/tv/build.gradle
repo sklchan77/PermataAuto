@@ -1,0 +1,26 @@
+android {
+    namespace = "my.app.permata.addon.tv"
+    defaultConfig {
+        versionCode 1
+        versionName "1.0"
+    }
+}
+
+ext {
+    addons = [
+            [
+                    name : 'tv',
+                    icon : 'tv',
+                    class: 'my.app.permata.addon.tv.TvAddon',
+                    order: 1
+            ]
+    ]
+}
+
+dependencies {
+    implementation project(':utils')
+    implementation project(':permata')
+    implementation libs.androidxMedia
+    implementation libs.androidxAppcompat
+    implementation libs.androidMaterial
+}

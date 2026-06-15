@@ -1,0 +1,29 @@
+android {
+    namespace = "my.app.permata.addon.poi"
+    defaultConfig {
+        versionCode 1
+        versionName "1.0"
+    }
+}
+
+
+ext {
+    addons = [
+            [
+                    name   : 'poi',
+                    icon   : 'poi',
+                    class  : 'my.app.permata.addon.poi.PoiAddon',
+                    enabled: false,
+                    auto   : true
+            ]
+    ]
+}
+
+dependencies {
+    implementation project(':utils')
+    implementation project(':permata')
+    implementation libs.androidxCore
+    implementation libs.androidxAnnotation
+    implementation libs.androidxFragment
+    implementation libs.androidxAppcompat
+}

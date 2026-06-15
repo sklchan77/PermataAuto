@@ -1,0 +1,27 @@
+android {
+    namespace = 'my.app.permata.mlkit'
+    defaultConfig {
+        versionCode 1
+        versionName '1.0'
+    }
+}
+
+ext {
+    addons = [
+            [
+                    name : 'mlkit_translate',
+                    icon : 'translate',
+                    class: 'my.app.permata.mlkit.MlkitTranslateAddon',
+                    hasSettings: false
+            ]
+    ]
+}
+
+dependencies {
+    implementation project(':utils')
+    implementation project(':permata')
+    implementation libs.androidxAnnotation
+    implementation(libs.googleMlkitTranslate) {
+        exclude group: 'com.squareup.okio', module: 'okio'
+    }
+}

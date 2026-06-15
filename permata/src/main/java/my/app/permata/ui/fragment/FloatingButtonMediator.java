@@ -1,0 +1,85 @@
+package my.app.permata.ui.fragment;
+
+import static android.view.View.FOCUS_LEFT;
+import static android.view.View.FOCUS_RIGHT;
+import static android.view.View.FOCUS_UP;
+import static my.app.utils.ui.UiUtils.isVisible;
+
+import android.content.Context;
+import android.view.View;
+
+import androidx.annotation.Nullable;
+
+import my.app.permata.R;
+import my.app.permata.ui.activity.MainActivityDelegate;
+import my.app.permata.ui.view.MediaItemListView;
+import my.app.utils.ui.fragment.ActivityFragment;
+import my.app.utils.ui.view.FloatingButton;
+import my.app.utils.ui.view.FloatingButton.Mediator.BackMenu;
+import my.app.utils.ui.view.NavBarView;
+import my.app.utils.ui.view.ToolBarView;
+
+/**
+ * @author sklchan77
+ */
+public class FloatingButtonMediator implements BackMenu {
+	public static final FloatingButtonMediator instance = new FloatingButtonMediator();
+
+	@Override
+	public int getIcon(FloatingButton fb) {
+		MainActivityDelegate a = MainActivityDelegate.get(fb.getContext());
+		if (a.isVideoMode() || !a.isRootPage()) return getBackIcon();
+		if (isAddFolderEnabled(a.getActiveFragment())) return R.drawable.add_folder;
+		return getMenuIcon();
+	}
+
+	@Override
+	public void onClick(View v) {
+		MainActivityDelegate a = MainActivityDelegate.get(v.getContext());
+
+		if (a.isVideoMode() || !a.isRootPage()) {
+			a.onBackPressed();
+		} else {
+			ActivityFragment f = a.getActiveFragment();
+			if (isAddFolderEnabled(f)) ((FoldersFragment) f).addFolder();
+			else showMenu((FloatingButton) v);
+		}
+	}
+
+	@Override
+	public boolean onLongClick(View v) {
+		MainActivityDelegate a = MainActivityDelegate.get(v.getContext());
+		if (a.getPrefs().getVoiceControlFBPref()) {
+			a.startVoiceAssistant();
+			return true;
+		}
+		ActivityFragment f = a.getActiveFragment();
+		if (isAddFolderEnabled(f)) ((FoldersFragment) f).addFolderPicker();
+		else showMenu((FloatingButton) v);
+		return true;
+	}
+
+	@Nullable
+	@Override
+	public View focusSearch(FloatingButton fb, int direction) {
+		if (direction == FOCUS_RIGHT) {
+			Context ctx = fb.getContext();
+			NavBarView n = MainActivityDelegate.get(ctx).getNavBar();
+			return (isVisible(n) && n.isRight()) ? n.focusSearch() :
+					MediaItemListView.focusSearchLast(ctx, fb);
+		} else if (direction == FOCUS_LEFT) {
+			return MediaItemListView.focusSearchActive(fb.getContext(), fb);
+		} else if (direction == FOCUS_UP) {
+			var a = MainActivityDelegate.get(fb.getContext());
+			if (a.getActiveMenu() instanceof View v) return v.findFocus();
+			var tb = a.getToolBar();
+			if (isVisible(tb)) return tb.focusSearch();
+		}
+
+		return null;
+	}
+
+	private boolean isAddFolderEnabled(ActivityFragment f) {
+		return ((f instanceof FoldersFragment) && f.isRootPage());
+	}
+}

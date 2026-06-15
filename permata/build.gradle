@@ -1,0 +1,126 @@
+if (gradle.ext.enableGoogleServices) apply plugin: 'com.google.gms.google-services'
+
+android {
+    defaultConfig {
+        namespace = 'my.app.permata'
+        // FIX 1: Overrides the default string to bypass the hardcoded Android Auto blacklist filter
+        applicationId project.getProperties().getOrDefault('APP_ID', 'my.app.permata')
+        versionCode VERSION_CODE
+        versionName VERSION_NAME
+        base.archivesName = "permata-$versionName"
+
+        ndk {
+            //noinspection ChromeOsAbiSupport
+            abiFilters = gradle.ext.abiFilters
+        }
+    }
+
+    if (localProps['storeFile'] != null) {
+        signingConfigs {
+            release {
+                storeFile file(localProps["storeFile"])
+                storePassword localProps["storePassword"]
+                keyAlias localProps["keyAlias"]
+                keyPassword localProps["keyPassword"]
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            debuggable false
+            minifyEnabled true
+            resValue "string", "app_name_auto", "@string/app_name_auto_release"
+            resValue "string", "app_name_mobile", "@string/app_name_mobile_release"
+            resValue "string", "media_service_name_auto", "@string/media_service_name_auto_release"
+            resValue "string", "media_service_name_mobile", "@string/media_service_name_mobile_release"
+            resValue "string", "mirror_service_name", "@string/mirror_service_name_release"
+            resValue "string", "mirror_fs_service_name", "@string/mirror_fs_service_name_release"
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'),
+                    '../proguard-rules.pro', '../depends/utils/proguard-rules.pro'
+            signingConfig = signingConfigs.release
+            buildConfigField "boolean", 'D', 'false'
+        }
+
+        debug {
+            debuggable true
+            applicationIdSuffix '.debug'
+            resValue "string", "app_name_auto", "@string/app_name_auto_debug"
+            resValue "string", "app_name_mobile", "@string/app_name_mobile_debug"
+            resValue "string", "media_service_name_auto", "@string/media_service_name_auto_debug"
+            resValue "string", "media_service_name_mobile", "@string/media_service_name_mobile_debug"
+            resValue "string", "mirror_service_name", "@string/mirror_service_name_debug"
+            resValue "string", "mirror_fs_service_name", "@string/mirror_fs_service_name_debug"
+            signingConfig = signingConfigs.release
+            buildConfigField "boolean", 'D', 'true'
+        }
+    }
+
+    flavorDimensions += "version"
+
+    productFlavors {
+        mobile {
+            dimension "version"
+            resValue "string", "app_name", project.getProperties()
+                    .getOrDefault('APP_NAME', "@string/app_name_mobile")
+            resValue "string", "media_service_name", "@string/media_service_name_mobile"
+            resValue "drawable", "media_service_icon", "@drawable/launcher"
+            buildConfigField "boolean", 'AUTO', 'false'
+            buildConfigField "boolean", 'ENABLE_GS', "${gradle.ext.enableGoogleServices}"
+        }
+
+        auto {
+            dimension "version"
+            
+            // CONFIGURATION NOTICE: This dynamic layout appends '.auto' onto your custom package name setup.
+            applicationIdSuffix '.auto' + project.getProperties().getOrDefault('APP_ID_SFX', '')
+            resValue "string", "app_name", project.getProperties()
+                    .getOrDefault('APP_NAME', "@string/app_name_auto")
+            resValue "string", "media_service_name", "@string/media_service_name_auto"
+            resValue "drawable", "media_service_icon", "@drawable/media_service"
+            buildConfigField "boolean", 'AUTO', 'true'
+            buildConfigField "boolean", 'ENABLE_GS', "${gradle.ext.enableGoogleServices}"
+
+            dependencies {
+                implementation files('lib/auto/aauto.aar')
+                compileOnly files('lib/auto/xposed-api-82.jar')
+            }
+        }
+    }
+    packagingOptions {
+        resources {
+            excludes += ['META-INF/DEPENDENCIES', 'META-INF/LICENSE', 'META-INF/LICENSE.txt', 'META-INF/license.txt', 'META-INF/NOTICE', 'META-INF/NOTICE.txt', 'META-INF/notice.txt', 'META-INF/ASL2.0']
+        }
+    }
+
+    dynamicFeatures.addAll(gradle.ext.modules)
+
+    namespace = 'my.app.permata'
+}
+
+dependencies {
+    implementation project(':utils')
+    
+    // FIX 2: Explicitly loads the AndroidX media compatibility layer to enable MediaBrowserServiceCompat structure resolution.
+    implementation 'androidx.media:media:1.7.0'
+
+    implementation libs.androidxMedia
+    implementation libs.androidxAppcompat
+    implementation libs.androidMaterial
+    implementation libs.androidxConstraintlayout
+    implementation libs.androidxSwiperefreshlayout
+    implementation libs.googlePlayFeatureDelivery
+    implementation libs.googlePlayAssetDelivery
+    implementation libs.googlePlayAppUpdate
+    implementation libs.androidxTvprovider
+    implementation libs.androidxAnnotation
+    implementation libs.androidxLegacySupportCore
+    implementation libs.androidxLocalbroadcastmanager
+    implementation libs.transportApi
+    implementation libs.transportBackendCct
+    implementation libs.transportRuntime
+    implementation libs.firebaseEncodersJson
+    implementation libs.firebaseEncoders
+    implementation libs.javaxInject
+    autoImplementation libs.androidxCarApp
+}
