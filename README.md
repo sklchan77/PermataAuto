@@ -1,6 +1,6 @@
 <!-- PROJECT BANNER HERO -->
 <p align="center">
-  <img src="https://storage.seelen.io/production/from-user/9b48fbd0-19c3-49e3-a86c-0875904a51a7/19e35c5301a.webp" alt="Permata Auto Media Player Header" width="100%" style="border-radius: 8px; max-height: 280px; object-fit: cover;">
+  <img src="permata_bg.webp" alt="Permata Auto Media Player Header" width="100%" style="border-radius: 8px; max-height: 280px; object-fit: cover;">
 </p>
 
 # 📱 Permata Auto Media Player
