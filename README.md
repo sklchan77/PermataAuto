@@ -1,8 +1,8 @@
-## Permata Media Player
+## Permata Auto Media Player
 [<img alt="Get it on Google Play" height="60" src="https://play.google.com/intl/en_us/badges/images/generic/en_badge_web_generic.png">](https://play.google.com/store/apps/details?id=sklchan77)
 
 ## About
-Permata Media Player is a free, open source audio, video and TV player with a simple and intuitive interface. It is focused on playing media files organized in folders and playlists.
+Permata Auto Media Player is a free, open source audio, video and TV player with a simple and intuitive interface. It is focused on playing media files organized in folders and playlists.
 
 Supported features:
 
@@ -59,5 +59,5 @@ docker cp Permata:/home/mobiledevops/PermataAuto/permata/build/outputs/bundle/au
 ```
 
 
-## Special Thanks
-AndreyPavlenko for his dedication to release the source code for everyone and keep the development alive.
+## Special Thanks to
+Andrey Pavlenko for his dedication to release the source code for everyone to share and keep the development alive.
