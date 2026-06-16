@@ -1,6 +1,6 @@
 <!-- PROJECT BANNER HERO -->
 <p align="center">
-  <img src="permata_bg.webp" alt="Permata Auto Media Player Header" width="100%" style="border-radius: 8px; max-height: 280px; object-fit: cover;">
+  <img src="permata_bg.png" alt="Permata Auto Media Player Header" width="100%" style="border-radius: 8px; max-height: 280px; object-fit: cover;">
 </p>
 
 # 📱 Permata Auto Media Player
