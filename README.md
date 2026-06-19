@@ -87,6 +87,13 @@ Special thanks to **Andrey Pavlenko** for the unwavering commitment to releasing
 
 ---
 
+## Donation
+If you like the Permata Auto Media Player, please consider making a donation:
+
+[Wise](https://wise.com/pay/me/kimleongc16)
+
+---
+
 <p align="center">
   <sub>Licensed under the <b>GPL-3.0 License</b>. Built with precision for developers and drivers.</sub>
 </p>
