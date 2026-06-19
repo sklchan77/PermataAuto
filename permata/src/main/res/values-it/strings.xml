@@ -362,12 +362,12 @@
     <string name="media_projection_action_text">Avvia adesso</string>
 
     <string name="about">Info</string>
-    <string name="about_html"><![CDATA[<H1 align="center">Permata Media Player</H1>
-        <p>Permata Media Player è un riproduttore audio e video gratuito,
+    <string name="about_html"><![CDATA[<H1 align="center">Permata Auto Media Player</H1>
+        <p>Permata Auto Media Player è un riproduttore audio e video gratuito,
 		open source con un\'interfaccia semplice ed intuitiva.</p>
         <p><b>Autore:</b> sklchan77</p>
         <p><b>Versione:</b> %1$s (%2$d)</p>
-        <p><b>Sito web:</b> <a href="%3$s">%3$s</a></p>
+        <p><b>Sito web: </b> <a href="%3$s">%3$s</a></p>
         ]]></string>
 
     <string name="err_failed_to_play">Impossibile riprodurre %s</string>
