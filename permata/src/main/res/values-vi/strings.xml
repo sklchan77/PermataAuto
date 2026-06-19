@@ -362,12 +362,12 @@
     <string name="media_projection_action_text">Bắt đầu ngay</string>
 
     <string name="about">About</string>
-    <string name="about_html"><![CDATA[<H1 align="center">Permata Media Player</H1>
-        <p>Permata Media Player is a free, open source audio and video player with a simple and
+    <string name="about_html"><![CDATA[<H1 align="center">Permata Auto Media Player</H1>
+        <p>Permata Auto Media Player is an open source audio and video player with a simple and
         intuitive interface.</p>
         <p><b>Author:</b> sklchan77</p>
         <p><b>Version:</b> %1$s (%2$d)</p>
-        <p><b>Home page:</b> <a href="%3$s">%3$s</a></p>
+        <p><b>Home page: </b> <a href="%3$s">%3$s</a></p>
         ]]></string>
 
     <string name="err_failed_to_play">Lỗi phát nhạc %s</string>
