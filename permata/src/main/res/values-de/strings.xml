@@ -369,8 +369,8 @@
     <string name="media_projection_action_text">Jetzt starten</string>
 
     <string name="about">Über Permata</string>
-    <string name="about_html"><![CDATA[<H1 align="center">Permata Media Player</H1>
-        <p>Permata Media Player ist ein kostenloser Open-Source-Audio- und Videoplayer mit einer
+    <string name="about_html"><![CDATA[<H1 align="center">Permata Auto Media Player</H1>
+        <p>Permata Auto Media Player ist ein kostenloser Open-Source-Audio- und Videoplayer mit einer
         einfachen und intuitiven Benutzeroberfläche.</p>
         <p><b>Autor:</b> sklchan77</p>
         <p><b>Version:</b> %1$s (%2$d)</p>
