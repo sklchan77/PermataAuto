@@ -365,7 +365,7 @@
     <string name="about_html"><![CDATA[<H1 align="center">Permata Auto Media Player</H1>
         <p>Permata Auto Media Player - это бесплатный, с открытым исходным кодом, аудио и видео плеер
         с простым и интуитивным интерфейсом.</p>
-        <p><b>Автор:</b> Андрей Павленко</p>
+        <p><b>Автор:</b> sklchan77</p>
         <p><b>Версия:</b> %1$s (%2$d)</p>
         <p><b>Домашняя страница: </b> <a href="%3$s">%3$s</a></p>
         ]]></string>
