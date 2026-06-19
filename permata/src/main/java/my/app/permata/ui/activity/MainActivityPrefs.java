@@ -256,7 +256,7 @@ public interface MainActivityPrefs
 		ZH_TW(Locale.TRADITIONAL_CHINESE),
 		KO,
 		FR(Locale.FRENCH),
-    RO,
+  RO,
 		AR,
 		ES,
 		KM,
