@@ -374,7 +374,7 @@
         einfachen und intuitiven Benutzeroberfläche.</p>
         <p><b>Autor:</b> sklchan77</p>
         <p><b>Version:</b> %1$s (%2$d)</p>
-        <p><b>Homepage:</b> <a href="%3$s">%3$s</a></p>
+        <p><b>Homepage: </b> <a href="%3$s">%3$s</a></p>
         ]]></string>
 
     <string name="err_failed_to_play">Abspielen fehlgeschlagen %s</string>
