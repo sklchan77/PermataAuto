@@ -372,12 +372,12 @@ Por favor, reinicie la aplicación.</string>
     <string name="media_projection_action_text">Empieza ahora</string>
 
     <string name="about">Acerca de</string>
-    <string name="about_html"><![CDATA[<H1 align="center">Permata Media Player</H1>
-        <p>Permata Media Player es un reproductor de audio y vídeo gratuito y de código abierto con
+    <string name="about_html"><![CDATA[<H1 align="center">Permata Auto Media Player</H1>
+        <p>Permata Auto Media Player es un reproductor de audio y vídeo gratuito y de código abierto con
         una interfaz sencilla e intuitiva.</p>
         <p><b>Autor:</b> sklchan77</p>
         <p><b>Versión:</b> %1$s (%2$d)</p>
-        <p><b>Página principal:</b> <a href="%3$s">%3$s</a></p>
+        <p><b>Página principal: </b> <a href="%3$s">%3$s</a></p>
         ]]></string>
 
     <string name="err_failed_to_play">No se pudo jugar %s</string>
