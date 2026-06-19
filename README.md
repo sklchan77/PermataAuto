@@ -5,7 +5,7 @@
 
 # 📱 Permata Auto Media Player
 
-[<img alt="Get it on Google Play" height="60" src="https://play.google.com/intl/en_us/badges/images/generic/en_badge_web_generic.png">](https://play.google.com/store/apps/details?id=sklchan77)
+[<img alt="Get it on Google Play" height="60" src="https://play.google.com/intl/en_us/badges/images/generic/en_badge_web_generic.png">](https://play.google.com/apps/internaltest/4701386980581996483)
 
 ---
 
