@@ -369,12 +369,12 @@
     <string name="media_projection_action_text">지금 시작 합니다</string>
 
     <string name="about">앱정보</string>
-    <string name="about_html"><![CDATA[<H1 align="center">Permata Media Player</H1>
-        <p>Permata Media Player (페르마타 미디어 플레이어)는 간결하고 직관적인
+    <string name="about_html"><![CDATA[<H1 align="center">Permata Auto Media Player</H1>
+        <p>Permata Auto Media Player (페르마타 미디어 플레이어)는 간결하고 직관적인
         무료 오픈소스 오디오, 비디오 플레이어 입니다.</p>
         <p><b>제작자:</b> sklchan77</p>
         <p><b>앱버전:</b> %1$s (%2$d)</p>
-        <p><b>홈페이지:</b> <a href="%3$s">%3$s</a></p>
+        <p><b>홈페이지: </b> <a href="%3$s">%3$s</a></p>
         ]]></string>
 
     <string name="err_failed_to_play">재생에 실패 했습니다 %s</string>
