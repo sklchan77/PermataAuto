@@ -369,11 +369,11 @@
     <string name="media_projection_action_text">Iniciar agora</string>
 
     <string name="about">Sobre</string>
-    <string name="about_html"><![CDATA[<H1 align="center">Permata Leitor de Multimédia</H1>
-        <p>Permata Leitor de Multimédia é gratuito, de código aberto para audio e video, com uma interface simples e intuitiva.</p>
+    <string name="about_html"><![CDATA[<H1 align="center">Permata Auto Leitor de Multimédia</H1>
+        <p>Permata Auto Leitor de Multimédia é gratuito, de código aberto para audio e video, com uma interface simples e intuitiva.</p>
         <p><b>Autor:</b> sklchan77</p>
         <p><b>Versão:</b> %1$s (%2$d)</p>
-        <p><b>Página Inicial:</b> <a href="%3$s">%3$s</a></p>
+        <p><b>Página Inicial: </b> <a href="%3$s">%3$s</a></p>
         ]]></string>
 
     <string name="err_failed_to_play">Falha ao reproduzir %s</string>
