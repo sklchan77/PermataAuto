@@ -87,10 +87,10 @@ Special thanks to **Andrey Pavlenko** for the unwavering commitment to releasing
 
 ---
 
-## Donation
+## 🎁 Donation
 If you like the Permata Auto Media Player, please consider making a donation:
 
-[Wise](https://wise.com/pay/me/kimleongc16)
+## 🪎 [Wise](https://wise.com/pay/me/kimleongc16)
 
 ---
 
