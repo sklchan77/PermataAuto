@@ -286,10 +286,9 @@ public class NavBarMediator extends PrefNavBarMediator
 
 			DialogInterface.OnClickListener ok = (d, i) -> {
 				IntHolder selection = new IntHolder();
-				String[] wallets = new String[]{"PayPal", "CloudTips", "Yandex",};
+				String[] wallets = new String[]{"Wise",};
 				String[] urls =
-						new String[]{"https://www.paypal.com/donate/?hosted_button_id=sklchan77",
-								"https://pay.cloudtips.ru/p/sklchan77", "https://yoomoney.ru/to/sklchan77"};
+						new String[]{"https://wise.com/pay/me/kimleongc16"};
 
 				a.createDialogBuilder().setTitle(R.drawable.coffee, R.string.donate)
 						.setSingleChoiceItems(wallets, 0, (dlg, which) -> selection.value = which)
