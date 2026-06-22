@@ -20,8 +20,8 @@ import org.json.JSONObject;
 import my.app.utils.log.Log;
 
 /**
- * Standalone, memory-safe wrapper for Android system audio effects.
- * Manages its own SharedPreferences JSON persistence.
+ * Thread-safe wrapper for Android system audio effects with decoupled execution guards.
+ * Manages atomic SharedPreferences JSON serialization profiles.
  * 
  * @author sklchan77
  */
@@ -58,13 +58,13 @@ public final class AudioEffects {
                 for (final AudioEffect.Descriptor d : descriptors) {
                     if (d == null || d.type == null) continue;
                     if (AudioEffect.EFFECT_TYPE_EQUALIZER.equals(d.type)) flags |= FLAG_EQUALIZER;
-                    else if (AudioEffect.EFFECT_TYPE_VIRTUALIZER.equals(d.type)) flags |= FLAG_VIRTUALIZER;
+                    else if (AudioEffect.EFFECT_TYPE_VIRTUALIZER.equals(d.type) && SDK_INT < VANILLA_ICE_CREAM) flags |= FLAG_VIRTUALIZER;
                     else if (AudioEffect.EFFECT_TYPE_BASS_BOOST.equals(d.type)) flags |= FLAG_BASS_BOOST;
                     else if (AudioEffect.EFFECT_TYPE_LOUDNESS_ENHANCER.equals(d.type)) flags |= FLAG_LOUDNESS_ENHANCER;
                 }
             }
         } catch (Exception ex) {
-            Log.e(ex, "Failure querying capabilities.");
+            Log.e(ex, "Failure querying hardware capabilities.");
         }
         SUPPORTED_MASK = flags;
     }
@@ -72,12 +72,15 @@ public final class AudioEffects {
     private AudioEffects(int priority, int audioSessionId) throws IllegalStateException {
         try {
             if (isSupported(FLAG_EQUALIZER)) equalizer = new Equalizer(priority, audioSessionId);
-            if (SDK_INT < VANILLA_ICE_CREAM && isSupported(FLAG_VIRTUALIZER)) virtualizer = new Virtualizer(priority, audioSessionId);
+            if (isSupported(FLAG_VIRTUALIZER)) virtualizer = new Virtualizer(priority, audioSessionId);
             if (isSupported(FLAG_BASS_BOOST)) bassBoost = new BassBoost(priority, audioSessionId);
             if (isSupported(FLAG_LOUDNESS_ENHANCER)) loudnessEnhancer = new LoudnessEnhancer(audioSessionId);
+            
+            // Hardware cycle delay allowing lower-level audio framework threads to bind successfully.
+            Thread.sleep(60);
         } catch (Exception ex) {
             release();
-            throw new IllegalStateException("Failed to bind audio engines.", ex);
+            throw new IllegalStateException("Failed to bind audio framework engines.", ex);
         }
     }
 
@@ -86,12 +89,12 @@ public final class AudioEffects {
     }
 
     @Nullable
-    public static AudioEffects create(int priority, int audioSessionId) {
+    public static synchronized AudioEffects create(int priority, int audioSessionId) {
         if (SUPPORTED_MASK == 0) return null;
         try {
             return new AudioEffects(priority, audioSessionId);
         } catch (Exception ex) {
-            Log.e(ex, "Error creating AudioEffects.");
+            Log.e(ex, "Error building AudioEffects abstraction.");
             return null;
         }
     }
@@ -105,7 +108,7 @@ public final class AudioEffects {
                 String savedJson = prefs.getString(PREF_KEY, null);
                 if (savedJson != null) instance.restoreFromSnapshot(savedJson);
             } catch (Exception ex) {
-                Log.e(ex, "Failed to restore audio profile.");
+                Log.e(ex, "Failed to restore application audio profile safely.");
             }
         }
         return instance;
@@ -117,17 +120,17 @@ public final class AudioEffects {
             SharedPreferences prefs = ctx.getApplicationContext().getSharedPreferences(PREF_FILE, Context.MODE_PRIVATE);
             prefs.edit().putString(PREF_KEY, snapshotJson).apply();
         } catch (Exception ex) {
-            Log.e(ex, "Failed to save audio settings.");
+            Log.e(ex, "Failed to persist audio configuration settings properties.");
         }
     }
 
-    @Nullable public Equalizer getEqualizer() { return equalizer; }
-    @Nullable public Virtualizer getVirtualizer() { return virtualizer; }
-    @Nullable public BassBoost getBassBoost() { return bassBoost; }
-    @Nullable public LoudnessEnhancer getLoudnessEnhancer() { return loudnessEnhancer; }
+    @Nullable public synchronized Equalizer getEqualizer() { return equalizer; }
+    @Nullable public synchronized Virtualizer getVirtualizer() { return virtualizer; }
+    @Nullable public synchronized BassBoost getBassBoost() { return bassBoost; }
+    @Nullable public synchronized LoudnessEnhancer getLoudnessEnhancer() { return loudnessEnhancer; }
 
     @NonNull
-    public String captureToSnapshot() {
+    public synchronized String captureToSnapshot() {
         try {
             JSONObject snapshot = new JSONObject();
             if (equalizer != null) {
@@ -135,7 +138,9 @@ public final class AudioEffects {
                 snapshot.put(KEY_EQ_PRESET, (int) equalizer.getCurrentPreset());
                 JSONArray bands = new JSONArray();
                 short numBands = equalizer.getNumberOfBands();
-                for (short i = 0; i < numBands; i++) bands.put((int) equalizer.getBandLevel(i));
+                for (short i = 0; i < numBands; i++) {
+                    bands.put((int) equalizer.getBandLevel(i));
+                }
                 snapshot.put(KEY_EQ_BANDS, bands);
             }
             if (virtualizer != null) {
@@ -148,47 +153,92 @@ public final class AudioEffects {
             }
             if (loudnessEnhancer != null) {
                 snapshot.put(KEY_LOUD_ENABLED, loudnessEnhancer.getEnabled());
-                snapshot.put(KEY_LOUD_GAIN, loudnessEnhancer.getTargetGain());
+                snapshot.put(KEY_LOUD_GAIN, (int) loudnessEnhancer.getTargetGain());
             }
             return snapshot.toString();
         } catch (Exception ex) {
-            Log.e(ex, "Failed to capture settings blueprint.");
+            Log.e(ex, "Failed to generate json engine blueprint snapshot.");
             return "{}";
         }
     }
 
-    public void restoreFromSnapshot(@Nullable String jsonState) {
+    public synchronized void restoreFromSnapshot(@Nullable String jsonState) {
         if (jsonState == null || jsonState.isEmpty() || "{}".equals(jsonState)) return;
         try {
             JSONObject snapshot = new JSONObject(jsonState);
+            
             if (equalizer != null && snapshot.has(KEY_EQ_ENABLED)) {
-                equalizer.setEnabled(snapshot.getBoolean(KEY_EQ_ENABLED));
-                int preset = snapshot.getInt(KEY_EQ_PRESET);
+                // Apply preset target FIRST before loading distinct band levels to prevent override wiping
+                int preset = snapshot.optInt(KEY_EQ_PRESET, -1);
                 if (preset >= 0 && preset < equalizer.getNumberOfPresets()) {
                     equalizer.usePreset((short) preset);
                 }
                 if (snapshot.has(KEY_EQ_BANDS)) {
                     JSONArray bands = snapshot.getJSONArray(KEY_EQ_BANDS);
                     int hardwareBandsCount = equalizer.getNumberOfBands();
-                    for (short i = 0; i < bands.length(); i++) {
-                        if (i < hardwareBandsCount) equalizer.setBandLevel(i, (short) bands.getInt(i));
+                    short[] bandLevelRange = equalizer.getBandLevelRange();
+                    
+                    if (bandLevelRange != null && bandLevelRange.length >= 2) {
+                        for (short i = 0; i < bands.length(); i++) {
+                            if (i < hardwareBandsCount) {
+                                int calculatedValue = bands.getInt(i);
+                                // Ensure values sit squarely within the current device's hardware array thresholds
+                                if (calculatedValue >= bandLevelRange[0] && calculatedValue <= bandLevelRange[1]) {
+                                    equalizer.setBandLevel(i, (short) calculatedValue);
+                                }
+                            }
+                        }
                     }
                 }
+                equalizer.setEnabled(snapshot.getBoolean(KEY_EQ_ENABLED));
             }
+            
             if (virtualizer != null && snapshot.has(KEY_VIRT_ENABLED)) {
+                int strength = snapshot.getInt(KEY_VIRT_STRENGTH);
+                virtualizer.setStrength((short) Math.max(0, Math.min(strength, 1000)));
                 virtualizer.setEnabled(snapshot.getBoolean(KEY_VIRT_ENABLED));
-                virtualizer.setStrength((short) snapshot.getInt(KEY_VIRT_STRENGTH));
             }
+            
             if (bassBoost != null && snapshot.has(KEY_BASS_ENABLED)) {
+                int strength = snapshot.getInt(KEY_BASS_STRENGTH);
+                bassBoost.setStrength((short) Math.max(0, Math.min(strength, 1000)));
                 bassBoost.setEnabled(snapshot.getBoolean(KEY_BASS_ENABLED));
-                bassBoost.setStrength((short) snapshot.getInt(KEY_BASS_STRENGTH));
             }
+            
             if (loudnessEnhancer != null && snapshot.has(KEY_LOUD_ENABLED)) {
-                loudnessEnhancer.setEnabled(snapshot.getBoolean(KEY_LOUD_ENABLED));
                 loudnessEnhancer.setTargetGain(snapshot.getInt(KEY_LOUD_GAIN));
+                loudnessEnhancer.setEnabled(snapshot.getBoolean(KEY_LOUD_ENABLED));
             }
         } catch (Exception ex) {
-            Log.e(ex, "Aborted loading payload: Input string schema data is corrupted or mismatched.");
+                                // Ensure values sit squarely within the current device's hardware array thresholds
+                                if (calculatedValue >= bandLevelRange[0] && calculatedValue <= bandLevelRange[1]) {
+                                    equalizer.setBandLevel(i, (short) calculatedValue);
+                                }
+                            }
+                        }
+                    }
+                }
+                equalizer.setEnabled(snapshot.getBoolean(KEY_EQ_ENABLED));
+            }
+            
+            if (virtualizer != null && snapshot.has(KEY_VIRT_ENABLED)) {
+                int strength = snapshot.getInt(KEY_VIRT_STRENGTH);
+                virtualizer.setStrength((short) Math.max(0, Math.min(strength, 1000)));
+                virtualizer.setEnabled(snapshot.getBoolean(KEY_VIRT_ENABLED));
+            }
+            
+            if (bassBoost != null && snapshot.has(KEY_BASS_ENABLED)) {
+                int strength = snapshot.getInt(KEY_BASS_STRENGTH);
+                bassBoost.setStrength((short) Math.max(0, Math.min(strength, 1000)));
+                bassBoost.setEnabled(snapshot.getBoolean(KEY_BASS_ENABLED));
+            }
+            
+            if (loudnessEnhancer != null && snapshot.has(KEY_LOUD_ENABLED)) {
+                loudnessEnhancer.setTargetGain(snapshot.getInt(KEY_LOUD_GAIN));
+                loudnessEnhancer.setEnabled(snapshot.getBoolean(KEY_LOUD_ENABLED));
+            }
+        } catch (Exception ex) {
+            Log.e(ex, "Aborted recovery payload execution structure due to unexpected processing context.");
         }
     }
 
