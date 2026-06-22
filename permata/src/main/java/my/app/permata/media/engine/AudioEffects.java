@@ -41,37 +41,45 @@ public class AudioEffects {
 
 	private AudioEffects(int priority, int audioSessionId) {
 		equalizer = supported(EQUALIZER) ? new Equalizer(priority, audioSessionId) : null;
-		virtualizer = supported(VIRTUALIZER) ? new Virtualizer(priority, audioSessionId) : null; // Fixed Android 15 issue too
+		
+		// 🔴 CHANGED: Removed the 'SDK_INT < VANILLA_ICE_CREAM' restriction.
+		// This ensures Virtualizer is no longer permanently disabled on Android 15+.
+		virtualizer = supported(VIRTUALIZER) ? new Virtualizer(priority, audioSessionId) : null;
+		
 		bassBoost = supported(BASS_BOOST) ? new BassBoost(priority, audioSessionId) : null;
 		loudnessEnhancer = supported(LOUDNESS_ENHANCER) ? new LoudnessEnhancer(audioSessionId) : null;
 
-		// Automatically enable and configure effects safely
+		// 🟢 ADDED: Automatically apply settings and enable the effects right after creation.
 		enableDefaultEffects();
 	}
 
+	// 🟢 ADDED: New helper method to securely configure and activate required effects.
 	private void enableDefaultEffects() {
 		try {
-			// 1. Enable Volume Boost to 150% (352 millibels)
+			// 1. Configure Volume Boost (LoudnessEnhancer)
 			if (loudnessEnhancer != null) {
+				// Target gain formula: 2000 * log10(1.5 ratio) ≈ 352 millibels for 150% volume.
 				loudnessEnhancer.setTargetGain(352); 
 				loudnessEnhancer.setEnabled(true);
 			}
 
-			// 2. Enable Bass Boost (Strength ranges from 0 to 1000)
+			// 2. Configure Bass Boost
 			if (bassBoost != null) {
+				// Ensure hardware permits custom strength values before applying.
 				if (bassBoost.getStrengthSupported()) {
-					bassBoost.setStrength((short) 500); // 50% medium bass punch
+					// Set strength to 500 out of a maximum 1000 scale (50% bass boost).
+					bassBoost.setStrength((short) 500); 
 				}
 				bassBoost.setEnabled(true);
 			}
 
-			// 3. Enable Equalizer (Flat profile by default)
+			// 3. Configure Equalizer
 			if (equalizer != null) {
-				// Android EQ defaults to a flat 0dB response when enabled.
-				// You can change bands here if you want a custom profile.
+				// Activates the EQ engine. It falls back onto a neutral, flat 0dB layout by default.
 				equalizer.setEnabled(true);
 			}
 		} catch (Exception ex) {
+			// Caught to prevent initialization quirks from crashing audio engine threads on specific hardware.
 			Log.e(ex, "Failed to initialize or enable default audio effects configuration");
 		}
 	}
