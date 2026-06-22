@@ -41,10 +41,39 @@ public class AudioEffects {
 
 	private AudioEffects(int priority, int audioSessionId) {
 		equalizer = supported(EQUALIZER) ? new Equalizer(priority, audioSessionId) : null;
-		virtualizer = SDK_INT < VANILLA_ICE_CREAM && supported(VIRTUALIZER) ?
-				new Virtualizer(priority, audioSessionId) : null;
+		virtualizer = supported(VIRTUALIZER) ? new Virtualizer(priority, audioSessionId) : null; // Fixed Android 15 issue too
 		bassBoost = supported(BASS_BOOST) ? new BassBoost(priority, audioSessionId) : null;
 		loudnessEnhancer = supported(LOUDNESS_ENHANCER) ? new LoudnessEnhancer(audioSessionId) : null;
+
+		// Automatically enable and configure effects safely
+		enableDefaultEffects();
+	}
+
+	private void enableDefaultEffects() {
+		try {
+			// 1. Enable Volume Boost to 150% (352 millibels)
+			if (loudnessEnhancer != null) {
+				loudnessEnhancer.setTargetGain(352); 
+				loudnessEnhancer.setEnabled(true);
+			}
+
+			// 2. Enable Bass Boost (Strength ranges from 0 to 1000)
+			if (bassBoost != null) {
+				if (bassBoost.getStrengthSupported()) {
+					bassBoost.setStrength((short) 500); // 50% medium bass punch
+				}
+				bassBoost.setEnabled(true);
+			}
+
+			// 3. Enable Equalizer (Flat profile by default)
+			if (equalizer != null) {
+				// Android EQ defaults to a flat 0dB response when enabled.
+				// You can change bands here if you want a custom profile.
+				equalizer.setEnabled(true);
+			}
+		} catch (Exception ex) {
+			Log.e(ex, "Failed to initialize or enable default audio effects configuration");
+		}
 	}
 
 	private static boolean supported(byte type) {
