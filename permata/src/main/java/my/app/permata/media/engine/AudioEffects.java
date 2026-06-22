@@ -3,8 +3,6 @@ package my.app.permata.media.engine;
 import static android.os.Build.VERSION.SDK_INT;
 import static android.os.Build.VERSION_CODES.VANILLA_ICE_CREAM;
 
-import android.content.Context;
-import android.content.SharedPreferences;
 import android.media.audiofx.AudioEffect;
 import android.media.audiofx.BassBoost;
 import android.media.audiofx.Equalizer;
@@ -14,238 +12,153 @@ import android.media.audiofx.Virtualizer;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
-import org.json.JSONArray;
-import org.json.JSONObject;
+import java.util.Objects;
+import java.util.stream.Stream;
 
 import my.app.utils.log.Log;
 
 /**
- * Thread-safe wrapper for Android system audio effects with decoupled execution guards.
- * Manages atomic SharedPreferences JSON serialization profiles.
+ * Enhanced AudioEffects manager tailored for media engine pipelines.
+ * Patches unstable HAL (Hardware Abstraction Layer) crashes common in Android Auto environments.
  * 
  * @author sklchan77
  */
 public final class AudioEffects {
-    private static final byte FLAG_EQUALIZER = 1 << 0;
-    private static final byte FLAG_VIRTUALIZER = 1 << 1;
-    private static final byte FLAG_BASS_BOOST = 1 << 2;
-    private static final byte FLAG_LOUDNESS_ENHANCER = 1 << 3;
-    private static final byte SUPPORTED_MASK;
+	private static final byte EQUALIZER = 1 << 0;       // Modern bitwise shift definition
+	private static final byte VIRTUALIZER = 1 << 1;
+	private static final byte BASS_BOOST = 1 << 2;
+	private static final byte LOUDNESS_ENHANCER = 1 << 3;
+	private static final byte supported;
 
-    private static final String PREF_FILE = "audio_effects_engine_prefs";
-    private static final String PREF_KEY = "saved_effects_snapshot";
+	private final Equalizer equalizer;
+	private final Virtualizer virtualizer;
+	private final BassBoost bassBoost;
+	private final LoudnessEnhancer loudnessEnhancer;
 
-    private static final String KEY_EQ_ENABLED = "eq_enabled";
-    private static final String KEY_EQ_PRESET = "eq_preset";
-    private static final String KEY_EQ_BANDS = "eq_bands";
-    private static final String KEY_VIRT_ENABLED = "virt_enabled";
-    private static final String KEY_VIRT_STRENGTH = "virt_strength";
-    private static final String KEY_BASS_ENABLED = "bass_enabled";
-    private static final String KEY_BASS_STRENGTH = "bass_strength";
-    private static final String KEY_LOUD_ENABLED = "loud_enabled";
-    private static final String KEY_LOUD_GAIN = "loud_gain";
+	static {
+		byte s = 0;
+		try {
+			// Defensively wrap system query to prevent media server crashes on custom car ROMs
+			for (AudioEffect.Descriptor d : AudioEffect.queryEffects()) {
+				if (AudioEffect.EFFECT_TYPE_EQUALIZER.equals(d.type)) s |= EQUALIZER;
+				else if (AudioEffect.EFFECT_TYPE_VIRTUALIZER.equals(d.type)) s |= VIRTUALIZER;
+				else if (AudioEffect.EFFECT_TYPE_BASS_BOOST.equals(d.type)) s |= BASS_BOOST;
+				else if (AudioEffect.EFFECT_TYPE_LOUDNESS_ENHANCER.equals(d.type)) s |= LOUDNESS_ENHANCER;
+			}
+		} catch (Exception ex) {
+			Log.e(ex, "Failed to query hardware audio effects");
+		}
+		supported = s;
+	}
 
-    @Nullable private Equalizer equalizer;
-    @Nullable private Virtualizer virtualizer;
-    @Nullable private BassBoost bassBoost;
-    @Nullable private LoudnessEnhancer loudnessEnhancer;
+	private AudioEffects(int priority, int audioSessionId) {
+		// Isolate every instantiation step to guarantee partial success.
+		// If one effect is rejected by a broken car head unit, the others still load.
+		this.equalizer = supported(EQUALIZER) ? 
+				safeCreate(() -> new Equalizer(priority, audioSessionId), "Equalizer") : null;
+		
+		this.virtualizer = (SDK_INT < VANILLA_ICE_CREAM && supported(VIRTUALIZER)) ? 
+				safeCreate(() -> new Virtualizer(priority, audioSessionId), "Virtualizer") : null;
+		
+		this.bassBoost = supported(BASS_BOOST) ? 
+				safeCreate(() -> new BassBoost(priority, audioSessionId), "BassBoost") : null;
+		
+		this.loudnessEnhancer = supported(LOUDNESS_ENHANCER) ? 
+				safeCreate(() -> new LoudnessEnhancer(audioSessionId), "LoudnessEnhancer") : null;
+	}
 
-    static {
-        byte flags = 0;
-        try {
-            final AudioEffect.Descriptor[] descriptors = AudioEffect.queryEffects();
-            if (descriptors != null) {
-                for (final AudioEffect.Descriptor d : descriptors) {
-                    if (d == null || d.type == null) continue;
-                    if (AudioEffect.EFFECT_TYPE_EQUALIZER.equals(d.type)) flags |= FLAG_EQUALIZER;
-                    else if (AudioEffect.EFFECT_TYPE_VIRTUALIZER.equals(d.type) && SDK_INT < VANILLA_ICE_CREAM) flags |= FLAG_VIRTUALIZER;
-                    else if (AudioEffect.EFFECT_TYPE_BASS_BOOST.equals(d.type)) flags |= FLAG_BASS_BOOST;
-                    else if (AudioEffect.EFFECT_TYPE_LOUDNESS_ENHANCER.equals(d.type)) flags |= FLAG_LOUDNESS_ENHANCER;
-                }
-            }
-        } catch (Exception ex) {
-            Log.e(ex, "Failure querying hardware capabilities.");
-        }
-        SUPPORTED_MASK = flags;
-    }
+	private static boolean supported(byte type) {
+		return (supported & type) != 0;
+	}
 
-    private AudioEffects(int priority, int audioSessionId) throws IllegalStateException {
-        try {
-            if (isSupported(FLAG_EQUALIZER)) equalizer = new Equalizer(priority, audioSessionId);
-            if (isSupported(FLAG_VIRTUALIZER)) virtualizer = new Virtualizer(priority, audioSessionId);
-            if (isSupported(FLAG_BASS_BOOST)) bassBoost = new BassBoost(priority, audioSessionId);
-            if (isSupported(FLAG_LOUDNESS_ENHANCER)) loudnessEnhancer = new LoudnessEnhancer(audioSessionId);
-            
-            // Hardware cycle delay allowing lower-level audio framework threads to bind successfully.
-            Thread.sleep(60);
-        } catch (Exception ex) {
-            release();
-            throw new IllegalStateException("Failed to bind audio framework engines.", ex);
-        }
-    }
+	/**
+	 * Isolated component factory. Prevents a single faulty hardware driver from taking down 
+	 * the entire media playback pipeline.
+	 */
+	@Nullable
+	private static <T extends AudioEffect> T safeCreate(@NonNull AudioEffectFactory<T> factory, @NonNull String effectName) {
+		try {
+			return factory.create();
+		} catch (Exception ex) {
+			Log.w("AudioEffect " + effectName + " initialization failed. Retrying after hardware cooldown...", ex);
+			try {
+				// Yield thread execution context safely to allow Android's AudioFlinger to cycle states
+				Thread.sleep(250);
+				return factory.create();
+			} catch (InterruptedException ie) {
+				Thread.currentThread().interrupt(); // Restore standard interruption state
+				Log.e(ie, "Audio effect creation thread interrupted for " + effectName);
+				return null;
+			} catch (Exception retryEx) {
+				Log.e(retryEx, "Hardware continuously rejected creation of " + effectName);
+				return null;
+			}
+		}
+	}
 
-    private static boolean isSupported(byte featureFlag) {
-        return (SUPPORTED_MASK & featureFlag) != 0;
-    }
+	@Nullable
+	public static AudioEffects create(int priority, int audioSessionId) {
+		if (supported == 0) return null;
 
-    @Nullable
-    public static synchronized AudioEffects create(int priority, int audioSessionId) {
-        if (SUPPORTED_MASK == 0) return null;
-        try {
-            return new AudioEffects(priority, audioSessionId);
-        } catch (Exception ex) {
-            Log.e(ex, "Error building AudioEffects abstraction.");
-            return null;
-        }
-    }
+		AudioEffects instance = new AudioEffects(priority, audioSessionId);
 
-    @Nullable
-    public static AudioEffects createAndRestore(@NonNull Context ctx, int priority, int audioSessionId) {
-        AudioEffects instance = create(priority, audioSessionId);
-        if (instance != null) {
-            try {
-                SharedPreferences prefs = ctx.getApplicationContext().getSharedPreferences(PREF_FILE, Context.MODE_PRIVATE);
-                String savedJson = prefs.getString(PREF_KEY, null);
-                if (savedJson != null) instance.restoreFromSnapshot(savedJson);
-            } catch (Exception ex) {
-                Log.e(ex, "Failed to restore application audio profile safely.");
-            }
-        }
-        return instance;
-    }
+		// Use Java 8 Stream to check if the instance is functional.
+		// Returns null if the hardware layer completely blocked every single engine effect.
+		boolean hasFunctionalEffects = Stream.of(instance.equalizer, instance.virtualizer, 
+				                                 instance.bassBoost, instance.loudnessEnhancer)
+				                             .anyMatch(Objects::nonNull);
 
-    public void saveToStorage(@NonNull Context ctx) {
-        try {
-            String snapshotJson = captureToSnapshot();
-            SharedPreferences prefs = ctx.getApplicationContext().getSharedPreferences(PREF_FILE, Context.MODE_PRIVATE);
-            prefs.edit().putString(PREF_KEY, snapshotJson).apply();
-        } catch (Exception ex) {
-            Log.e(ex, "Failed to persist audio configuration settings properties.");
-        }
-    }
+		if (!hasFunctionalEffects) {
+			Log.e("AudioEffects wrapper cancelled: Zero functional backend engine components initialized.");
+			return null;
+		}
 
-    @Nullable public synchronized Equalizer getEqualizer() { return equalizer; }
-    @Nullable public synchronized Virtualizer getVirtualizer() { return virtualizer; }
-    @Nullable public synchronized BassBoost getBassBoost() { return bassBoost; }
-    @Nullable public synchronized LoudnessEnhancer getLoudnessEnhancer() { return loudnessEnhancer; }
+		return instance;
+	}
 
-    @NonNull
-    public synchronized String captureToSnapshot() {
-        try {
-            JSONObject snapshot = new JSONObject();
-            if (equalizer != null) {
-                snapshot.put(KEY_EQ_ENABLED, equalizer.getEnabled());
-                snapshot.put(KEY_EQ_PRESET, (int) equalizer.getCurrentPreset());
-                JSONArray bands = new JSONArray();
-                short numBands = equalizer.getNumberOfBands();
-                for (short i = 0; i < numBands; i++) {
-                    bands.put((int) equalizer.getBandLevel(i));
-                }
-                snapshot.put(KEY_EQ_BANDS, bands);
-            }
-            if (virtualizer != null) {
-                snapshot.put(KEY_VIRT_ENABLED, virtualizer.getEnabled());
-                snapshot.put(KEY_VIRT_STRENGTH, (int) virtualizer.getRoundedStrength());
-            }
-            if (bassBoost != null) {
-                snapshot.put(KEY_BASS_ENABLED, bassBoost.getEnabled());
-                snapshot.put(KEY_BASS_STRENGTH, (int) bassBoost.getRoundedStrength());
-            }
-            if (loudnessEnhancer != null) {
-                snapshot.put(KEY_LOUD_ENABLED, loudnessEnhancer.getEnabled());
-                snapshot.put(KEY_LOUD_GAIN, (int) loudnessEnhancer.getTargetGain());
-            }
-            return snapshot.toString();
-        } catch (Exception ex) {
-            Log.e(ex, "Failed to generate json engine blueprint snapshot.");
-            return "{}";
-        }
-    }
+	@Nullable
+	public Equalizer getEqualizer() {
+		return equalizer;
+	}
 
-    public synchronized void restoreFromSnapshot(@Nullable String jsonState) {
-        if (jsonState == null || jsonState.isEmpty() || "{}".equals(jsonState)) return;
-        try {
-            JSONObject snapshot = new JSONObject(jsonState);
-            
-            if (equalizer != null && snapshot.has(KEY_EQ_ENABLED)) {
-                // Apply preset target FIRST before loading distinct band levels to prevent override wiping
-                int preset = snapshot.optInt(KEY_EQ_PRESET, -1);
-                if (preset >= 0 && preset < equalizer.getNumberOfPresets()) {
-                    equalizer.usePreset((short) preset);
-                }
-                if (snapshot.has(KEY_EQ_BANDS)) {
-                    JSONArray bands = snapshot.getJSONArray(KEY_EQ_BANDS);
-                    int hardwareBandsCount = equalizer.getNumberOfBands();
-                    short[] bandLevelRange = equalizer.getBandLevelRange();
-                    
-                    if (bandLevelRange != null && bandLevelRange.length >= 2) {
-                        for (short i = 0; i < bands.length(); i++) {
-                            if (i < hardwareBandsCount) {
-                                int calculatedValue = bands.getInt(i);
-                                // Ensure values sit squarely within the current device's hardware array thresholds
-                                if (calculatedValue >= bandLevelRange[0] && calculatedValue <= bandLevelRange[1]) {
-                                    equalizer.setBandLevel(i, (short) calculatedValue);
-                                }
-                            }
-                        }
-                    }
-                }
-                equalizer.setEnabled(snapshot.getBoolean(KEY_EQ_ENABLED));
-            }
-            
-            if (virtualizer != null && snapshot.has(KEY_VIRT_ENABLED)) {
-                int strength = snapshot.getInt(KEY_VIRT_STRENGTH);
-                virtualizer.setStrength((short) Math.max(0, Math.min(strength, 1000)));
-                virtualizer.setEnabled(snapshot.getBoolean(KEY_VIRT_ENABLED));
-            }
-            
-            if (bassBoost != null && snapshot.has(KEY_BASS_ENABLED)) {
-                int strength = snapshot.getInt(KEY_BASS_STRENGTH);
-                bassBoost.setStrength((short) Math.max(0, Math.min(strength, 1000)));
-                bassBoost.setEnabled(snapshot.getBoolean(KEY_BASS_ENABLED));
-            }
-            
-            if (loudnessEnhancer != null && snapshot.has(KEY_LOUD_ENABLED)) {
-                loudnessEnhancer.setTargetGain(snapshot.getInt(KEY_LOUD_GAIN));
-                loudnessEnhancer.setEnabled(snapshot.getBoolean(KEY_LOUD_ENABLED));
-            }
-        } catch (Exception ex) {
-                                // Ensure values sit squarely within the current device's hardware array thresholds
-                                if (calculatedValue >= bandLevelRange[0] && calculatedValue <= bandLevelRange[1]) {
-                                    equalizer.setBandLevel(i, (short) calculatedValue);
-                                }
-                            }
-                        }
-                    }
-                }
-                equalizer.setEnabled(snapshot.getBoolean(KEY_EQ_ENABLED));
-            }
-            
-            if (virtualizer != null && snapshot.has(KEY_VIRT_ENABLED)) {
-                int strength = snapshot.getInt(KEY_VIRT_STRENGTH);
-                virtualizer.setStrength((short) Math.max(0, Math.min(strength, 1000)));
-                virtualizer.setEnabled(snapshot.getBoolean(KEY_VIRT_ENABLED));
-            }
-            
-            if (bassBoost != null && snapshot.has(KEY_BASS_ENABLED)) {
-                int strength = snapshot.getInt(KEY_BASS_STRENGTH);
-                bassBoost.setStrength((short) Math.max(0, Math.min(strength, 1000)));
-                bassBoost.setEnabled(snapshot.getBoolean(KEY_BASS_ENABLED));
-            }
-            
-            if (loudnessEnhancer != null && snapshot.has(KEY_LOUD_ENABLED)) {
-                loudnessEnhancer.setTargetGain(snapshot.getInt(KEY_LOUD_GAIN));
-                loudnessEnhancer.setEnabled(snapshot.getBoolean(KEY_LOUD_ENABLED));
-            }
-        } catch (Exception ex) {
-            Log.e(ex, "Aborted recovery payload execution structure due to unexpected processing context.");
-        }
-    }
+	@Nullable
+	public Virtualizer getVirtualizer() {
+		return virtualizer;
+	}
 
-    public synchronized void release() {
-        if (equalizer != null) { try { equalizer.release(); } catch (Exception ignored) {} equalizer = null; }
-        if (virtualizer != null) { try { virtualizer.release(); } catch (Exception ignored) {} virtualizer = null; }
-        if (bassBoost != null) { try { bassBoost.release(); } catch (Exception ignored) {} bassBoost = null; }
-        if (loudnessEnhancer != null) { try { loudnessEnhancer.release(); } catch (Exception ignored) {} loudnessEnhancer = null; }
-    }
+	@Nullable
+	public BassBoost getBassBoost() {
+		return bassBoost;
+	}
+
+	@Nullable
+	public LoudnessEnhancer getLoudnessEnhancer() {
+		return loudnessEnhancer;
+	}
+
+	/**
+	 * Safely unbinds native Android OS binders and releases memory hooks without crashing.
+	 */
+	public void release() {
+		safeRelease(equalizer);
+		safeRelease(virtualizer);
+		safeRelease(bassBoost);
+		safeRelease(loudnessEnhancer);
+	}
+
+	private static void safeRelease(@Nullable AudioEffect effect) {
+		if (effect != null) {
+			try {
+				effect.setEnabled(false); // Disable processing immediately to clear native queues
+				effect.release();         // Safe release of low-level media driver reference
+			} catch (Exception ex) {
+				Log.e(ex, "Exception trapped during safe hardware-level object release sequence");
+			}
+		}
+	}
+
+	@FunctionalInterface
+	private interface AudioEffectFactory<T extends AudioEffect> {
+		T create() throws Exception;
+	}
 }
