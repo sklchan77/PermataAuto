@@ -3,6 +3,8 @@ package my.app.permata.media.engine;
 import static android.os.Build.VERSION.SDK_INT;
 import static android.os.Build.VERSION_CODES.VANILLA_ICE_CREAM;
 
+import android.content.Context;
+import android.content.SharedPreferences;
 import android.media.audiofx.AudioEffect;
 import android.media.audiofx.BassBoost;
 import android.media.audiofx.Equalizer;
@@ -18,8 +20,9 @@ import org.json.JSONObject;
 import my.app.utils.log.Log;
 
 /**
- * Modernized, self-contained, and memory-safe wrapper for Android system audio effects.
- * Includes built-in JSON state serialization and deserialization for settings persistence.
+ * Modernized, completely standalone, and memory-safe wrapper for Android system audio effects.
+ * Handles its own JSON state serialization, deserialization, and persistent storage
+ * via SharedPreferences to remain configuration-stable after full app restarts.
  * 
  * @author sklchan77
  */
@@ -30,6 +33,10 @@ public final class AudioEffects {
     private static final byte FLAG_LOUDNESS_ENHANCER = 1 << 3;
 
     private static final byte SUPPORTED_MASK;
+
+    // Storage Constants
+    private static final String PREF_FILE_NAME = "audio_effects_engine_prefs";
+    private static final String PREF_KEY_SNAPSHOT = "saved_effects_snapshot";
 
     // JSON Keys for State Persistence
     private static final String KEY_EQ_ENABLED = "eq_enabled";
@@ -96,6 +103,9 @@ public final class AudioEffects {
         return (SUPPORTED_MASK & featureFlag) != 0;
     }
 
+    /**
+     * Standard factory method to construct audio effects from default settings.
+     */
     @Nullable
     public static AudioEffects create(final int priority, final int audioSessionId) {
         if (SUPPORTED_MASK == 0) {
@@ -108,6 +118,45 @@ public final class AudioEffects {
         } catch (Exception ex) {
             Log.e(ex, "Terminal error configuring device audio processing matrix pipeline.");
             return null;
+        }
+    }
+
+    /**
+     * Enhanced factory method that instantiates the engine and automatically restores 
+     * its historical configurations from local disk storage.
+     * 
+     * @param context An active application context to read local SharedPreferences.
+     */
+    @Nullable
+    public static AudioEffects createAndRestore(@NonNull Context context, final int priority, final int audioSessionId) {
+        AudioEffects instance = create(priority, audioSessionId);
+        if (instance != null) {
+            try {
+                SharedPreferences prefs = context.getApplicationContext().getSharedPreferences(PREF_FILE_NAME, Context.MODE_PRIVATE);
+                String savedJson = prefs.getString(PREF_KEY_SNAPSHOT, null);
+                if (savedJson != null) {
+                    instance.restoreFromSnapshot(savedJson);
+                }
+            } catch (Exception ex) {
+                Log.e(ex, "Failed to restore persistent audio profile during initialization sequence.");
+            }
+        }
+        return instance;
+    }
+
+    /**
+     * Saves the current physical runtime hardware parameters cleanly back to SharedPreferences.
+     * Call this whenever your UI knobs move or your playback process halts.
+     * 
+     * @param context An active application context to write to local storage.
+     */
+    public void saveToStorage(@NonNull Context context) {
+        try {
+            String snapshotJson = captureToSnapshot();
+            SharedPreferences prefs = context.getApplicationContext().getSharedPreferences(PREF_FILE_NAME, Context.MODE_PRIVATE);
+            prefs.edit().putString(PREF_KEY_SNAPSHOT, snapshotJson).apply();
+        } catch (Exception ex) {
+            Log.e(ex, "Failed to commit ongoing audio settings snapshot directly to storage.");
         }
     }
 
@@ -133,8 +182,6 @@ public final class AudioEffects {
 
     /**
      * Converts the current hardware audio configurations into a serialized JSON string.
-     * 
-     * @return A JSON string string containing the current state, or "{}" on error.
      */
     @NonNull
     public String captureToSnapshot() {
@@ -177,8 +224,6 @@ public final class AudioEffects {
 
     /**
      * Parses a serialized JSON snapshot string and pushes values directly back onto the active native hardware engines.
-     * 
-     * @param jsonState The JSON string retrieved from your database or SharedPreferences.
      */
     public void restoreFromSnapshot(@Nullable String jsonState) {
         if (jsonState == null || jsonState.isEmpty() || "{}".equals(jsonState)) return;
@@ -204,42 +249,4 @@ public final class AudioEffects {
                 }
             }
 
-            if (virtualizer != null && snapshot.has(KEY_VIRT_ENABLED)) {
-                virtualizer.setEnabled(snapshot.getBoolean(KEY_VIRT_ENABLED));
-                virtualizer.setStrength((short) snapshot.getInt(KEY_VIRT_STRENGTH));
-            }
-
-            if (bassBoost != null && snapshot.has(KEY_BASS_ENABLED)) {
-                bassBoost.setEnabled(snapshot.getBoolean(KEY_BASS_ENABLED));
-                bassBoost.setStrength((short) snapshot.getInt(KEY_BASS_STRENGTH));
-            }
-
-            if (loudnessEnhancer != null && snapshot.has(KEY_LOUD_ENABLED)) {
-                loudnessEnhancer.setEnabled(snapshot.getBoolean(KEY_LOUD_ENABLED));
-                loudnessEnhancer.setTargetGain(snapshot.getInt(KEY_LOUD_GAIN));
-            }
-
-        } catch (Exception ex) {
-            Log.e(ex, "Aborted loading payload: Input string schema data is corrupted or mismatched.");
-        }
-    }
-
-    public synchronized void release() {
-        if (equalizer != null) {
-            try { equalizer.release(); } catch (Exception ignored) {}
-            equalizer = null;
-        }
-        if (virtualizer != null) {
-            try { virtualizer.release(); } catch (Exception ignored) {}
-            virtualizer = null;
-        }
-        if (bassBoost != null) {
-            try { bassBoost.release(); } catch (Exception ignored) {}
-            bassBoost = null;
-        }
-        if (loudnessEnhancer != null) {
-            try { loudnessEnhancer.release(); } catch (Exception ignored) {}
-            loudnessEnhancer = null;
-        }
-    }
-}
+if (virtualizer != null && snapshot.has(KEY_VIRT_ENABLED)) {virtualizer.setEnabled(snapshot.getBoolean(KEY_VIRT_ENABLED));virtualizer.setStrength((short) snapshot.getInt(KEY_VIRT_STRENGTH));}if (bassBoost != null && snapshot.has(KEY_BASS_ENABLED)) {bassBoost.setEnabled(snapshot.getBoolean(KEY_BASS_ENABLED));bassBoost.setStrength((short) snapshot.getInt(KEY_BASS_STRENGTH));}if (loudnessEnhancer != null && snapshot.has(KEY_LOUD_ENABLED)) {loudnessEnhancer.setEnabled(snapshot.getBoolean(KEY_LOUD_ENABLED));loudnessEnhancer.setTargetGain(snapshot.getInt(KEY_LOUD_GAIN));}} catch (Exception ex) {Log.e(ex, "Aborted loading payload: Input string schema data is corrupted or mismatched.");}}public synchronized void release() {if (equalizer != null) {try { equalizer.release(); } catch (Exception ignored) {}equalizer = null;}if (virtualizer != null) {try { virtualizer.release(); } catch (Exception ignored) {}virtualizer = null;}if (bassBoost != null) {try { bassBoost.release(); } catch (Exception ignored) {}bassBoost = null;}if (loudnessEnhancer != null) {try { loudnessEnhancer.release(); } catch (Exception ignored) {}loudnessEnhancer = null;}}}
