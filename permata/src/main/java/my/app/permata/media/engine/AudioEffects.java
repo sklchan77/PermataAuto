@@ -22,7 +22,7 @@ import my.app.utils.log.Log;
 
 /**
  * Enterprise-grade, autonomous AudioEffects engine tailored for Fermata Auto.
- * Part 1: Architecture, Low-Level Capabilities, and Core Initializers.
+ * Part 1: Core Fields, Device Queries, and Component Instantiators.
  * 
  * @author sklchan77
  * @author Andrey Pavlenko (Original Author)
@@ -116,6 +116,33 @@ public final class AudioEffects {
 			}
 		}
 	}
+	/**
+	 * Overloaded Factory Fallback.
+	 * Directly resolves the signature required by MediaPlayerEngine.java without breaking existing architectures.
+	 * Persistence layers are bypassed when instantiated via this fallback signature.
+	 */
+	@Nullable
+	public static AudioEffects create(int priority, int audioSessionId) {
+		if (supported == 0 || audioSessionId <= 0) {
+			return null;
+		}
+
+		synchronized (ALLOCATION_LOCK) {
+			AudioEffects instance = new AudioEffects(priority, audioSessionId);
+
+			boolean functional = Stream.of(instance.equalizer, instance.virtualizer, 
+					                        instance.bassBoost, instance.loudnessEnhancer)
+					                    .anyMatch(Objects::nonNull);
+
+			if (!functional) {
+				Log.e("Fermata AudioEngine: Fallback block instantiation aborted. Hardware layers unresponsive.");
+				return null;
+			}
+
+			return instance;
+		}
+	}
+
 	/**
 	 * Thread-safe engine factory. Builds instances and loads previously saved settings seamlessly.
 	 */
