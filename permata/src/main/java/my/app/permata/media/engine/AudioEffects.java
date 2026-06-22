@@ -35,7 +35,6 @@ public final class AudioEffects {
     static {
         byte flags = 0;
         try {
-            // Retrieve system engine capacity safely away from direct initialization pipelines
             final AudioEffect.Descriptor[] descriptors = AudioEffect.queryEffects();
             if (descriptors != null) {
                 for (final AudioEffect.Descriptor d : descriptors) {
@@ -63,7 +62,6 @@ public final class AudioEffects {
             if (isSupported(FLAG_EQUALIZER)) {
                 equalizer = new Equalizer(priority, audioSessionId);
             }
-            // Explicitly filter legacy Virtualizer implementations out of modern platform HAL layers
             if (SDK_INT < VANILLA_ICE_CREAM && isSupported(FLAG_VIRTUALIZER)) {
                 virtualizer = new Virtualizer(priority, audioSessionId);
             }
@@ -74,7 +72,6 @@ public final class AudioEffects {
                 loudnessEnhancer = new LoudnessEnhancer(audioSessionId);
             }
         } catch (Exception ex) {
-            // Failure anywhere cascades into an absolute clean-up cycle to block native memory leaks
             release();
             throw new IllegalStateException("Failed to bind target hardware subsystem engines.", ex);
         }
@@ -84,9 +81,6 @@ public final class AudioEffects {
         return (SUPPORTED_MASK & featureFlag) != 0;
     }
 
-    /**
-     * Lazily constructs an instance of AudioEffects targeting a specific hardware audio output path.
-     */
     @Nullable
     public static AudioEffects create(final int priority, final int audioSessionId) {
         if (SUPPORTED_MASK == 0) {
@@ -122,9 +116,6 @@ public final class AudioEffects {
         return loudnessEnhancer;
     }
 
-    /**
-     * Flushes allocations, breaking links cleanly to give the GC zero overhead on references.
-     */
     public synchronized void release() {
         if (equalizer != null) {
             try { equalizer.release(); } catch (Exception ignored) {}
