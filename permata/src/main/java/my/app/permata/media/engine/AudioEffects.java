@@ -22,8 +22,7 @@ import my.app.utils.log.Log;
 
 /**
  * Enterprise-grade, autonomous AudioEffects engine tailored for Fermata Auto.
- * Features safe hardware state caching, parameter selectors, an anti-clipping
- * 150% volume boost routine, and self-contained SharedPreferences storage persistence.
+ * Part 1: Architecture, Low-Level Capabilities, and Core Initializers.
  * 
  * @author sklchan77
  * @author Andrey Pavlenko (Original Author)
@@ -50,10 +49,10 @@ public final class AudioEffects {
 	private static final String KEY_VOLUME_BOOST_ACTIVE = "volume_boost_active";
 	private static final String KEY_EQ_BAND_PREFIX = "eq_band_";
 
-	// Global synchronization mutex to prevent race conditions during rapid session allocation cycles
+	// Global synchronization mutex to prevent race conditions during session allocation cycles
 	private static final Object ALLOCATION_LOCK = new Object();
 
-	// Volatile markers ensure immediate thread-visibility across background ExoPlayer/VLC processing pipelines
+	// Volatile markers ensure immediate thread-visibility across background processing pipelines
 	@Nullable private volatile Equalizer equalizer;
 	@Nullable private volatile Virtualizer virtualizer;
 	@Nullable private volatile BassBoost bassBoost;
@@ -117,7 +116,6 @@ public final class AudioEffects {
 			}
 		}
 	}
-
 	/**
 	 * Thread-safe engine factory. Builds instances and loads previously saved settings seamlessly.
 	 */
@@ -139,7 +137,6 @@ public final class AudioEffects {
 				return null;
 			}
 
-			// Automatically parse and apply persisted states down to the newly allocated instance hardware
 			instance.loadAndApplyPersistedSettings(context.getApplicationContext());
 			return instance;
 		}
@@ -150,10 +147,6 @@ public final class AudioEffects {
 	@Nullable public BassBoost getBassBoost() { return bassBoost; }
 	@Nullable public LoudnessEnhancer getLoudnessEnhancer() { return loudnessEnhancer; }
 
-	/* ==================================================================================
-	 * AUDIO STATE PERSISTENCE CORE IMPLEMENTATION
-	 * ================================================================================== */
-
 	/**
 	 * Reads all saved parameters out of Android SharedPreferences and loads them directly onto the hardware.
 	 */
@@ -161,14 +154,12 @@ public final class AudioEffects {
 		try {
 			SharedPreferences prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
 			
-			// Load core toggle states
 			boolean eqEnabled = prefs.getBoolean(KEY_EQ_ENABLED, false);
 			boolean virtEnabled = prefs.getBoolean(KEY_VIRT_ENABLED, false);
 			boolean bassEnabled = prefs.getBoolean(KEY_BASS_ENABLED, false);
 			boolean loudEnabled = prefs.getBoolean(KEY_LOUD_ENABLED, false);
 			boolean volBoostActive = prefs.getBoolean(KEY_VOLUME_BOOST_ACTIVE, false);
 
-			// Apply underlying hardware parameters
 			if (bassBoost != null) {
 				short bassStrength = (short) prefs.getInt(KEY_BASS_STRENGTH, 0);
 				setBassBoostStrength(bassStrength);
@@ -192,12 +183,10 @@ public final class AudioEffects {
 				}
 			}
 
-			// Apply master functional toggles
 			setEqualizerEnabled(eqEnabled);
 			setVirtualizerEnabled(virtEnabled);
 			setBassBoostEnabled(bassEnabled);
 			
-			// Handle 150% volume boost fallback checks cleanly
 			if (volBoostActive) {
 				apply150PercentVolumeBoost(context);
 			} else {
@@ -210,10 +199,6 @@ public final class AudioEffects {
 			Log.e(ex, "Fermata AudioEngine: Error loading structural data out of storage mapping components.");
 		}
 	}
-
-	/* ==================================================================================
-	 * 150% ANTI-CLIPPING VOLUME CONTROLLER
-	 * ================================================================================== */
 
 	/**
 	 * Configures a clean 150% volume gain target (+3.52dB / 352mB) safely managed by look-ahead limiters.
@@ -255,4 +240,268 @@ public final class AudioEffects {
 			setLoudnessEnhancementGain(0);
 			setLoudnessEnhancerEnabled(false);
 			this.is150PercentBoostActive = false;
-equalizer = null;equalizerEnabled = false;safeRelease(virtualizer);virtualizer = null;virtualizerEnabled = false;safeRelease(bassBoost);bassBoost = null;bassBoostEnabled = false;safeRelease(loudnessEnhancer);loudnessEnhancer = null;loudnessEnhancerEnabled = false;is150PercentBoostActive = false;}}private static void safeRelease(@Nullable AudioEffect effect) {if (effect != null) {try {effect.setEnabled(false);effect.release();} catch (Exception ex) {Log.e(ex, "Fermata AudioEngine: Exception intercepted during a lower-tier component dump routine.");}}}@FunctionalInterfaceprivate interface AudioEffectFactory {T create() throws Exception;}public static final class EqualizerPreset {public final boolean masterSwitchEnabled;public final short bassBoostStrength;public final short virtualizerStrength;public final int loudnessGainmB;@NonNull public final short[] bandGains;public EqualizerPreset(boolean masterSwitchEnabled, short bassBoostStrength,short virtualizerStrength, int loudnessGainmB, @NonNull short[] bandGains) {this.masterSwitchEnabled = masterSwitchEnabled;this.bassBoostStrength = bassBoostStrength;this.virtualizerStrength = virtualizerStrength;this.loudnessGainmB = loudnessGainmB;this.bandGains = Arrays.copyOf(bandGains, bandGains.length);}}}
+			try {
+				context.getApplicationContext()
+				       .getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+				       .edit()
+				       .putInt(KEY_LOUD_GAIN, 0)
+				       .putBoolean(KEY_LOUD_ENABLED, false)
+				       .putBoolean(KEY_VOLUME_BOOST_ACTIVE, false)
+				       .apply();
+			} catch (Exception ex) {
+				Log.e(ex, "Fermata AudioEngine: Persistence pipeline clear failed for volume boost toggle.");
+			}
+		}
+	}
+
+	public boolean is150PercentBoostActive() {
+		return is150PercentBoostActive;
+	}
+	public void setEffectsEnabled(@NonNull Context context, boolean enabled) {
+		synchronized (ALLOCATION_LOCK) {
+			setEqualizerEnabled(context, enabled);
+			setVirtualizerEnabled(context, enabled);
+			setBassBoostEnabled(context, enabled);
+			if (!enabled && is150PercentBoostActive) {
+				disableVolumeBoost(context);
+			} else {
+				setLoudnessEnhancerEnabled(context, enabled);
+			}
+		}
+	}
+
+	public void setEqualizerEnabled(@NonNull Context context, boolean enabled) {
+		if (equalizer != null && safeToggleEffect(equalizer, enabled)) {
+			equalizerEnabled = enabled;
+			persistState(context, KEY_EQ_ENABLED, enabled);
+		}
+	}
+
+	public void setVirtualizerEnabled(@NonNull Context context, boolean enabled) {
+		if (virtualizer != null && SDK_INT < VANILLA_ICE_CREAM && safeToggleEffect(virtualizer, enabled)) {
+			virtualizerEnabled = enabled;
+			persistState(context, KEY_VIRT_ENABLED, enabled);
+		}
+	}
+
+	public void setBassBoostEnabled(@NonNull Context context, boolean enabled) {
+		if (bassBoost != null && safeToggleEffect(bassBoost, enabled)) {
+			bassBoostEnabled = enabled;
+			persistState(context, KEY_BASS_ENABLED, enabled);
+		}
+	}
+
+	public void setLoudnessEnhancerEnabled(@NonNull Context context, boolean enabled) {
+		if (loudnessEnhancer != null && safeToggleEffect(loudnessEnhancer, enabled)) {
+			loudnessEnhancerEnabled = enabled;
+			persistState(context, KEY_LOUD_ENABLED, enabled);
+			if (!enabled) {
+				persistState(context, KEY_VOLUME_BOOST_ACTIVE, false);
+				this.is150PercentBoostActive = false;
+			}
+		}
+	}
+
+	private void setEqualizerEnabled(boolean enabled) {
+		if (equalizer != null && safeToggleEffect(equalizer, enabled)) equalizerEnabled = enabled;
+	}
+
+	private void setVirtualizerEnabled(boolean enabled) {
+		if (virtualizer != null && SDK_INT < VANILLA_ICE_CREAM && safeToggleEffect(virtualizer, enabled)) virtualizerEnabled = enabled;
+	}
+
+	private void setBassBoostEnabled(boolean enabled) {
+		if (bassBoost != null && safeToggleEffect(bassBoost, enabled)) bassBoostEnabled = enabled;
+	}
+
+	private void setLoudnessEnhancerEnabled(boolean enabled) {
+		if (loudnessEnhancer != null && safeToggleEffect(loudnessEnhancer, enabled)) loudnessEnhancerEnabled = enabled;
+	}
+
+	private static boolean safeToggleEffect(@NonNull AudioEffect effect, boolean enabled) {
+		try {
+			if (effect.getEnabled() != enabled) {
+				effect.setEnabled(enabled);
+			}
+			return true;
+		} catch (Exception ex) {
+			Log.e(ex, "Fermata AudioEngine: Error changing toggle state on audio driver reference layer.");
+			return false;
+		}
+	}
+
+	public void setEqualizerBandGain(@NonNull Context context, short band, short gainmB) {
+		if (equalizer == null) return;
+		try {
+			short[] range = equalizer.getBandLevelRange();
+			if (range != null && range.length >= 2) {
+				short clampedGain = (short) Math.max(range[0], Math.min(range[1], gainmB));
+				equalizer.setBandLevel(band, clampedGain);
+				persistState(context, KEY_EQ_BAND_PREFIX + band, clampedGain);
+			}
+		} catch (Exception ex) {
+			Log.e(ex, "Fermata AudioEngine: Equalizer target parameter tracking adjustment failed.");
+		}
+	}
+
+	private void setEqualizerBandGain(short band, short gainmB) {
+		if (equalizer == null) return;
+		try {
+			short[] range = equalizer.getBandLevelRange();
+			if (range != null && range.length >= 2) {
+				equalizer.setBandLevel(band, (short) Math.max(range[0], Math.min(range[1], gainmB)));
+			}
+		} catch (Exception ex) {
+			Log.e(ex, "Fermata AudioEngine: EQ initialization config injection failed.");
+		}
+	}
+
+	public void setBassBoostStrength(@NonNull Context context, short strength) {
+		if (bassBoost == null) return;
+		try {
+			if (bassBoost.getStrengthSupported()) {
+				short clampedStrength = (short) Math.max((short)0, Math.min((short)1000, strength));
+				bassBoost.setStrength(clampedStrength);
+				persistState(context, KEY_BASS_STRENGTH, clampedStrength);
+			}
+		} catch (Exception ex) {
+			Log.e(ex, "Fermata AudioEngine: BassBoost parameter change configuration dropped.");
+		}
+	}
+
+	private void setBassBoostStrength(short strength) {
+		if (bassBoost != null && bassBoost.getStrengthSupported()) {
+			try { bassBoost.setStrength((short) Math.max((short)0, Math.min((short)1000, strength))); } catch (Exception ignored) {}
+		}
+	}
+
+	public void setVirtualizerStrength(@NonNull Context context, short strength) {
+		if (virtualizer == null || SDK_INT >= VANILLA_ICE_CREAM) return;
+		try {
+			if (virtualizer.getStrengthSupported()) {
+				short clampedStrength = (short) Math.max((short)0, Math.min((short)1000, strength));
+				virtualizer.setStrength(clampedStrength);
+				persistState(context, KEY_VIRT_STRENGTH, clampedStrength);
+			}
+		} catch (Exception ex) {
+			Log.e(ex, "Fermata AudioEngine: Virtualizer pipeline adjustments dropped.");
+		}
+	}
+
+	private void setVirtualizerStrength(short strength) {
+		if (virtualizer != null && SDK_INT < VANILLA_ICE_CREAM && virtualizer.getStrengthSupported()) {
+			try { virtualizer.setStrength((short) Math.max((short)0, Math.min((short)1000, strength))); } catch (Exception ignored) {}
+		}
+	}
+
+	public void setLoudnessEnhancementGain(@NonNull Context context, int gainmB) {
+		if (loudnessEnhancer == null) return;
+		try {
+			int clampedGain = Math.max(0, Math.min(3000, gainmB));
+			loudnessEnhancer.setTargetGain(clampedGain);
+			persistState(context, KEY_LOUD_GAIN, clampedGain);
+			if (clampedGain != GAIN_150_PERCENT_MB) {
+				persistState(context, KEY_VOLUME_BOOST_ACTIVE, false);
+				this.is150PercentBoostActive = false;
+			}
+		} catch (Exception ex) {
+			Log.e(ex, "Fermata AudioEngine: Volume normalization parameters adjustment failed.");
+		}
+	}
+
+	private void setLoudnessEnhancementGain(int gainmB) {
+		if (loudnessEnhancer != null) {
+			try { loudnessEnhancer.setTargetGain(Math.max(0, Math.min(3000, gainmB))); } catch (Exception ignored) {}
+		}
+	}
+
+	public void applySerializedPreset(@NonNull Context context, @NonNull EqualizerPreset preset) {
+		synchronized (ALLOCATION_LOCK) {
+			setEffectsEnabled(context, preset.masterSwitchEnabled);
+			setBassBoostStrength(context, preset.bassBoostStrength);
+			setVirtualizerStrength(context, preset.virtualizerStrength);
+			setLoudnessEnhancementGain(context, preset.loudnessGainmB);
+			
+			if (equalizer != null && preset.bandGains != null) {
+				short totalBands = (short) Math.min(equalizer.getNumberOfBands(), preset.bandGains.length);
+				for (short i = 0; i < totalBands; i++) {
+					setEqualizerBandGain(context, i, preset.bandGains[i]);
+				}
+			}
+		}
+	}
+
+	private static void persistState(@NonNull Context context, String key, boolean value) {
+		try {
+			context.getApplicationContext()
+			       .getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+			       .edit().putBoolean(key, value).apply();
+		} catch (Exception ex) {
+			Log.e(ex, "Fermata AudioEngine: Error updating persistent boolean flag mapping configurations.");
+		}
+	}
+
+	private static void persistState(@NonNull Context context, String key, int value) {
+		try {
+			context.getApplicationContext()
+			       .getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+			       .edit().putInt(key, value).apply();
+		} catch (Exception ex) {
+			Log.e(ex, "Fermata AudioEngine: Error updating persistent integer mapping metrics.");
+		}
+	}
+
+	public void release() {
+		synchronized (ALLOCATION_LOCK) {
+			safeRelease(equalizer);
+			equalizer = null;
+			equalizerEnabled = false;
+
+			safeRelease(virtualizer);
+			virtualizer = null;
+			virtualizerEnabled = false;
+
+			safeRelease(bassBoost);
+			bassBoost = null;
+			bassBoostEnabled = false;
+
+			safeRelease(loudnessEnhancer);
+			loudnessEnhancer = null;
+			loudnessEnhancerEnabled = false;
+			is150PercentBoostActive = false;
+		}
+	}
+
+	private static void safeRelease(@Nullable AudioEffect effect) {
+		if (effect != null) {
+			try {
+				effect.setEnabled(false); 
+				effect.release();         
+			} catch (Exception ex) {
+				Log.e(ex, "Fermata AudioEngine: Exception intercepted during a lower-tier component dump routine.");
+			}
+		}
+	}
+
+	@FunctionalInterface
+	private interface AudioEffectFactory<T extends AudioEffect> {
+		T create() throws Exception;
+	}
+
+	public static final class EqualizerPreset {
+		public final boolean masterSwitchEnabled;
+		public final short bassBoostStrength;
+		public final short virtualizerStrength;
+		public final int loudnessGainmB;
+		@NonNull public final short[] bandGains;
+
+		public EqualizerPreset(boolean masterSwitchEnabled, short bassBoostStrength, 
+		                       short virtualizerStrength, int loudnessGainmB, @NonNull short[] bandGains) {
+			this.masterSwitchEnabled = masterSwitchEnabled;
+			this.bassBoostStrength = bassBoostStrength;
+			this.virtualizerStrength = virtualizerStrength;
+			this.loudnessGainmB = loudnessGainmB;
+			this.bandGains = Arrays.copyOf(bandGains, bandGains.length);
+		}
+	}
+}
