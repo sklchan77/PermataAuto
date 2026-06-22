@@ -211,6 +211,107 @@ public interface MainActivityPrefs
 	}
 
 	static boolean hasGridViewPref(MainActivityDelegate a, List<Pref<?>> prefs) {
-		return prefs.contains(GRID_VIEW);
+		return prefs.contains(getGridViewPrefKey(a));
+	}
+
+	static Pref<BooleanSupplier> getGridViewPrefKey(MainActivityDelegate a) {
+		return (AUTO && a.isCarActivity()) ? GRID_VIEW_AA : GRID_VIEW;
+	}
+
+	default boolean getGridViewPref(MainActivityDelegate a) {
+		if (AUTO && a.isCarActivity()) return getBooleanPref(GRID_VIEW_AA);
+		return getBooleanPref(GRID_VIEW);
+	}
+
+	default void setGridViewPref(MainActivityDelegate a, boolean value) {
+		applyBooleanPref(getGridViewPrefKey(a), value);
+	}
+
+	default boolean getSysBarsOnVideoTouchPref() {
+		return getBooleanPref(SYS_BARS_ON_VIDEO_TOUCH);
+	}
+
+	default boolean getLandscapeVideoPref() {
+		return getBooleanPref(LANDSCAPE_VIDEO);
+	}
+
+	default boolean getChangeBrightnessPref() {
+		return getBooleanPref(CHANGE_BRIGHTNESS);
+	}
+
+	default int getBrightnessPref() {
+		return getIntPref(BRIGHTNESS);
+	}
+
+	default boolean getVoiceControlEnabledPref() {
+		return getBooleanPref(VOICE_CONTROl_ENABLED);
+	}
+
+	default boolean getVoiceControlFBPref() {
+		return getBooleanPref(VOICE_CONTROl_FB);
+	}
+
+	default String getVoiceControlLang(MainActivityDelegate a) {
+		return a.getPrefs().getStringPref(VOICE_CONTROL_LANG);
+	}
+
+	default int getClockPosPref() {
+		return getIntPref(CLOCK_POS);
+	}
+
+	default Locale getLocalePref() {
+		return Lang.get(getIntPref(LOCALE)).locale;
+	}
+
+	enum Lang {
+		EN(Locale.ENGLISH),
+		RU,
+		IT(Locale.ITALIAN),
+		TR,
+		DE(Locale.GERMAN),
+		PT,
+		VI,
+		PL,
+		HR,
+		JA,
+		ZH_TW(Locale.TRADITIONAL_CHINESE),
+		KO,
+		FR(Locale.FRENCH),
+  RO,
+		AR,
+		ES,
+		KM,
+    ;
+
+		private static final List<Lang> values = List.of(values());
+		private static final Map<String, Lang> nameToValue = new HashMap<>();
+		public final Locale locale;
+
+		static {
+			for (var v : values) {
+				nameToValue.put(v.locale.getLanguage(), v);
+			}
+		}
+
+		Lang() {
+			locale = new Locale(name().toLowerCase());
+		}
+
+		Lang(Locale locale) {
+			this.locale = locale;
+		}
+
+		public static List<Lang> getValues() {
+			return values;
+		}
+
+		public static Lang get(int pref) {
+			return ((pref < 0) || (pref >= Lang.values.size())) ? Lang.EN : Lang.values.get(pref);
+		}
+
+		public static Lang get(String name) {
+			var value = nameToValue.get(name);
+			return (value == null) ? Lang.EN : value;
+		}
 	}
 }
