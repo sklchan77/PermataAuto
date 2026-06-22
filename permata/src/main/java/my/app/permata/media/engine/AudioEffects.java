@@ -9,13 +9,17 @@ import android.media.audiofx.Equalizer;
 import android.media.audiofx.LoudnessEnhancer;
 import android.media.audiofx.Virtualizer;
 
+import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
+
+import org.json.JSONArray;
+import org.json.JSONObject;
 
 import my.app.utils.log.Log;
 
 /**
- * Modernized, memory-safe wrapper for Android system audio effects.
- * Optimized to prevent leaks and gracefully handle platform architectural deprecations.
+ * Modernized, self-contained, and memory-safe wrapper for Android system audio effects.
+ * Includes built-in JSON state serialization and deserialization for settings persistence.
  * 
  * @author sklchan77
  */
@@ -26,6 +30,17 @@ public final class AudioEffects {
     private static final byte FLAG_LOUDNESS_ENHANCER = 1 << 3;
 
     private static final byte SUPPORTED_MASK;
+
+    // JSON Keys for State Persistence
+    private static final String KEY_EQ_ENABLED = "eq_enabled";
+    private static final String KEY_EQ_PRESET = "eq_preset";
+    private static final String KEY_EQ_BANDS = "eq_bands";
+    private static final String KEY_VIRT_ENABLED = "virt_enabled";
+    private static final String KEY_VIRT_STRENGTH = "virt_strength";
+    private static final String KEY_BASS_ENABLED = "bass_enabled";
+    private static final String KEY_BASS_STRENGTH = "bass_strength";
+    private static final String KEY_LOUD_ENABLED = "loud_enabled";
+    private static final String KEY_LOUD_GAIN = "loud_gain";
 
     @Nullable private Equalizer equalizer;
     @Nullable private Virtualizer virtualizer;
@@ -114,6 +129,99 @@ public final class AudioEffects {
     @Nullable
     public LoudnessEnhancer getLoudnessEnhancer() {
         return loudnessEnhancer;
+    }
+
+    /**
+     * Converts the current hardware audio configurations into a serialized JSON string.
+     * 
+     * @return A JSON string string containing the current state, or "{}" on error.
+     */
+    @NonNull
+    public String captureToSnapshot() {
+        try {
+            JSONObject snapshot = new JSONObject();
+
+            if (equalizer != null) {
+                snapshot.put(KEY_EQ_ENABLED, equalizer.getEnabled());
+                snapshot.put(KEY_EQ_PRESET, (int) equalizer.getCurrentPreset());
+                
+                JSONArray bands = new JSONArray();
+                short numBands = equalizer.getNumberOfBands();
+                for (short i = 0; i < numBands; i++) {
+                    bands.put((int) equalizer.getBandLevel(i));
+                }
+                snapshot.put(KEY_EQ_BANDS, bands);
+            }
+
+            if (virtualizer != null) {
+                snapshot.put(KEY_VIRT_ENABLED, virtualizer.getEnabled());
+                snapshot.put(KEY_VIRT_STRENGTH, (int) virtualizer.getRoundedStrength());
+            }
+
+            if (bassBoost != null) {
+                snapshot.put(KEY_BASS_ENABLED, bassBoost.getEnabled());
+                snapshot.put(KEY_BASS_STRENGTH, (int) bassBoost.getRoundedStrength());
+            }
+
+            if (loudnessEnhancer != null) {
+                snapshot.put(KEY_LOUD_ENABLED, loudnessEnhancer.getEnabled());
+                snapshot.put(KEY_LOUD_GAIN, loudnessEnhancer.getTargetGain());
+            }
+
+            return snapshot.toString();
+        } catch (Exception ex) {
+            Log.e(ex, "Failed to compile audio framework settings state blueprint.");
+            return "{}";
+        }
+    }
+
+    /**
+     * Parses a serialized JSON snapshot string and pushes values directly back onto the active native hardware engines.
+     * 
+     * @param jsonState The JSON string retrieved from your database or SharedPreferences.
+     */
+    public void restoreFromSnapshot(@Nullable String jsonState) {
+        if (jsonState == null || jsonState.isEmpty() || "{}".equals(jsonState)) return;
+
+        try {
+            JSONObject snapshot = new JSONObject(jsonState);
+
+            if (equalizer != null && snapshot.has(KEY_EQ_ENABLED)) {
+                equalizer.setEnabled(snapshot.getBoolean(KEY_EQ_ENABLED));
+                int preset = snapshot.getInt(KEY_EQ_PRESET);
+                
+                if (preset >= 0 && preset < equalizer.getNumberOfPresets()) {
+                    equalizer.usePreset((short) preset);
+                } 
+                if (snapshot.has(KEY_EQ_BANDS)) {
+                    JSONArray bands = snapshot.getJSONArray(KEY_EQ_BANDS);
+                    int hardwareBandsCount = equalizer.getNumberOfBands();
+                    for (short i = 0; i < bands.length(); i++) {
+                        if (i < hardwareBandsCount) {
+                            equalizer.setBandLevel(i, (short) bands.getInt(i));
+                        }
+                    }
+                }
+            }
+
+            if (virtualizer != null && snapshot.has(KEY_VIRT_ENABLED)) {
+                virtualizer.setEnabled(snapshot.getBoolean(KEY_VIRT_ENABLED));
+                virtualizer.setStrength((short) snapshot.getInt(KEY_VIRT_STRENGTH));
+            }
+
+            if (bassBoost != null && snapshot.has(KEY_BASS_ENABLED)) {
+                bassBoost.setEnabled(snapshot.getBoolean(KEY_BASS_ENABLED));
+                bassBoost.setStrength((short) snapshot.getInt(KEY_BASS_STRENGTH));
+            }
+
+            if (loudnessEnhancer != null && snapshot.has(KEY_LOUD_ENABLED)) {
+                loudnessEnhancer.setEnabled(snapshot.getBoolean(KEY_LOUD_ENABLED));
+                loudnessEnhancer.setTargetGain(snapshot.getInt(KEY_LOUD_GAIN));
+            }
+
+        } catch (Exception ex) {
+            Log.e(ex, "Aborted loading payload: Input string schema data is corrupted or mismatched.");
+        }
     }
 
     public synchronized void release() {
