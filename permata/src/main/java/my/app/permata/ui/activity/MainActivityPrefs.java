@@ -83,27 +83,6 @@ public interface MainActivityPrefs
 		return MainActivityDelegate.Prefs.instance;
 	}
 
-	/**
-	 * PER-CHANNEL STORAGE: Dynamically puts serialized strings directly inside permata.xml
-	 */
-	default void saveChannelAudioEffects(String channelId, String serializedData) {
-		if (channelId == null || serializedData == null) return;
-		String uniqueKey = "CH_EQ_" + Math.abs(channelId.hashCode());
-		Pref<Supplier<String>> dynamicPref = Pref.s(uniqueKey, (String) null);
-		applyStringPref(dynamicPref, serializedData);
-	}
-
-	/**
-	 * PER-CHANNEL STORAGE: Retreives serialized string configuration data from permata.xml
-	 */
-	@Nullable
-	default String getChannelAudioEffects(String channelId) {
-		if (channelId == null) return null;
-		String uniqueKey = "CH_EQ_" + Math.abs(channelId.hashCode());
-		Pref<Supplier<String>> dynamicPref = Pref.s(uniqueKey, (String) null);
-		return getStringPref(dynamicPref);
-	}
-
 	static boolean hasThemePref(MainActivityDelegate a, List<Pref<?>> prefs) {
 		if (AUTO && a.isCarActivity()) return prefs.contains(THEME_AA);
 		return prefs.contains(THEME_MAIN);
