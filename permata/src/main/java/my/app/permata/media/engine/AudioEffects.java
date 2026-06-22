@@ -1,137 +1,129 @@
 package my.app.permata.media.engine;
 
-import static android.os.Build.VERSION.SDK_INT;
-import static android.os.Build.VERSION_CODES.VANILLA_ICE_CREAM;
-
-import android.media.audiofx.AudioEffect;
 import android.media.audiofx.BassBoost;
 import android.media.audiofx.Equalizer;
 import android.media.audiofx.LoudnessEnhancer;
 import android.media.audiofx.Virtualizer;
-import android.os.Build;
-
+import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
-
+import org.json.JSONArray;
+import org.json.JSONObject;
 import my.app.utils.log.Log;
 
 /**
- * @author sklchan77
+ * Persistence utility helper to map AudioEffects states to/from JSON strings.
  */
-public class AudioEffects {
-	private static final byte EQUALIZER = 1;
-	private static final byte VIRTUALIZER = 2;
-	private static final byte BASS_BOOST = 4;
-	private static final byte LOUDNESS_ENHANCER = 8;
-	private static final byte supported;
-	private final Equalizer equalizer;
-	private final Virtualizer virtualizer;
-	private final BassBoost bassBoost;
-	private final LoudnessEnhancer loudnessEnhancer;
+public final class AudioEffectsStateBridge {
 
-	static {
-		byte s = 0;
-		for (AudioEffect.Descriptor d : AudioEffect.queryEffects()) {
-			if (AudioEffect.EFFECT_TYPE_EQUALIZER.equals(d.type)) s |= EQUALIZER;
-			else if (AudioEffect.EFFECT_TYPE_VIRTUALIZER.equals(d.type)) s |= VIRTUALIZER;
-			else if (AudioEffect.EFFECT_TYPE_BASS_BOOST.equals(d.type)) s |= BASS_BOOST;
-			else if (AudioEffect.EFFECT_TYPE_LOUDNESS_ENHANCER.equals(d.type)) s |= LOUDNESS_ENHANCER;
-		}
-		supported = s;
-	}
+    private static final String KEY_EQ_ENABLED = "eq_enabled";
+    private static final String KEY_EQ_PRESET = "eq_preset";
+    private static final String KEY_EQ_BANDS = "eq_bands";
+    private static final String KEY_VIRT_ENABLED = "virt_enabled";
+    private static final String KEY_VIRT_STRENGTH = "virt_strength";
+    private static final String KEY_BASS_ENABLED = "bass_enabled";
+    private static final String KEY_BASS_STRENGTH = "bass_strength";
+    private static final String KEY_LOUD_ENABLED = "loud_enabled";
+    private static final String KEY_LOUD_GAIN = "loud_gain";
 
-	private AudioEffects(int priority, int audioSessionId) {
-		equalizer = supported(EQUALIZER) ? new Equalizer(priority, audioSessionId) : null;
-		
-		// 🔴 CHANGED: Removed the 'SDK_INT < VANILLA_ICE_CREAM' restriction.
-		// This ensures Virtualizer is no longer permanently disabled on Android 15+.
-		virtualizer = supported(VIRTUALIZER) ? new Virtualizer(priority, audioSessionId) : null;
-		
-		bassBoost = supported(BASS_BOOST) ? new BassBoost(priority, audioSessionId) : null;
-		loudnessEnhancer = supported(LOUDNESS_ENHANCER) ? new LoudnessEnhancer(audioSessionId) : null;
+    /**
+     * Extracts the active configuration from an AudioEffects engine and packs it into a JSON string.
+     */
+    @NonNull
+    public static String captureToSnapshot(@NonNull AudioEffects effects) {
+        try {
+            JSONObject snapshot = new JSONObject();
 
-		// 🟢 ADDED: Automatically apply settings and enable the effects right after creation.
-		enableDefaultEffects();
-	}
+            // 1. Equalizer State Collection
+            Equalizer eq = effects.getEqualizer();
+            if (eq != null) {
+                snapshot.put(KEY_EQ_ENABLED, eq.getEnabled());
+                snapshot.put(KEY_EQ_PRESET, (int) eq.getCurrentPreset());
+                
+                JSONArray bands = new JSONArray();
+                short numBands = eq.getNumberOfBands();
+                for (short i = 0; i < numBands; i++) {
+                    bands.put((int) eq.getBandLevel(i));
+                }
+                snapshot.put(KEY_EQ_BANDS, bands);
+            }
 
-	// 🟢 ADDED: New helper method to securely configure and activate required effects.
-	private void enableDefaultEffects() {
-		try {
-			// 1. Configure Volume Boost (LoudnessEnhancer)
-			if (loudnessEnhancer != null) {
-				// Target gain formula: 2000 * log10(1.5 ratio) ≈ 352 millibels for 150% volume.
-				loudnessEnhancer.setTargetGain(352); 
-				loudnessEnhancer.setEnabled(true);
-			}
+            // 2. Virtualizer State Collection
+            Virtualizer virt = effects.getVirtualizer();
+            if (virt != null) {
+                snapshot.put(KEY_VIRT_ENABLED, virt.getEnabled());
+                snapshot.put(KEY_VIRT_STRENGTH, (int) virt.getRoundedStrength());
+            }
 
-			// 2. Configure Bass Boost
-			if (bassBoost != null) {
-				// Ensure hardware permits custom strength values before applying.
-				if (bassBoost.getStrengthSupported()) {
-					// Set strength to 500 out of a maximum 1000 scale (50% bass boost).
-					bassBoost.setStrength((short) 500); 
-				}
-				bassBoost.setEnabled(true);
-			}
+            // 3. BassBoost State Collection
+            BassBoost bass = effects.getBassBoost();
+            if (bass != null) {
+                snapshot.put(KEY_BASS_ENABLED, bass.getEnabled());
+                snapshot.put(KEY_BASS_STRENGTH, (int) bass.getRoundedStrength());
+            }
 
-			// 3. Configure Equalizer
-			if (equalizer != null) {
-				// Activates the EQ engine. It falls back onto a neutral, flat 0dB layout by default.
-				equalizer.setEnabled(true);
-			}
-		} catch (Exception ex) {
-			// Caught to prevent initialization quirks from crashing audio engine threads on specific hardware.
-			Log.e(ex, "Failed to initialize or enable default audio effects configuration");
-		}
-	}
+            // 4. LoudnessEnhancer State Collection
+            LoudnessEnhancer loud = effects.getLoudnessEnhancer();
+            if (loud != null) {
+                snapshot.put(KEY_LOUD_ENABLED, loud.getEnabled());
+                snapshot.put(KEY_LOUD_GAIN, loud.getTargetGain());
+            }
 
-	private static boolean supported(byte type) {
-		return (supported & type) != 0;
-	}
+            return snapshot.toString();
+        } catch (Exception ex) {
+            Log.e(ex, "Failed to compile audio framework settings state blueprint.");
+            return "{}";
+        }
+    }
 
-	@Nullable
-	public static AudioEffects create(int priority, int audioSessionId) {
-		if (supported == 0) return null;
+    /**
+     * Parses a JSON snapshot and securely pushes values back onto the native hardware loops.
+     */
+    public static void restoreFromSnapshot(@NonNull AudioEffects targetEffects, @Nullable String jsonState) {
+        if (jsonState == null || jsonState.isEmpty() || "{}".equals(jsonState)) return;
 
-		try {
-			return new AudioEffects(priority, audioSessionId);
-		} catch (Exception ex) {
-			// Sometimes it fails with RuntimeException: AudioEffect: set/get parameter error
-			Log.w("Failed to create AudioEffects - retrying...");
+        try {
+            JSONObject snapshot = new JSONObject(jsonState);
 
-			try {
-				Thread.sleep(300);
-				return new AudioEffects(priority, audioSessionId);
-			} catch (Exception ex1) {
-				Log.e(ex1, "Failed to create AudioEffects");
-				return null;
-			}
-		}
-	}
+            // 1. Equalizer Restructuring Execution
+            Equalizer eq = targetEffects.getEqualizer();
+            if (eq != null && snapshot.has(KEY_EQ_ENABLED)) {
+                eq.setEnabled(snapshot.getBoolean(KEY_EQ_ENABLED));
+                int preset = snapshot.getInt(KEY_EQ_PRESET);
+                if (preset >= 0 && preset < eq.getNumberOfPresets()) {
+                    eq.usePreset((short) preset);
+                } else if (snapshot.has(KEY_EQ_BANDS)) {
+                    JSONArray bands = snapshot.getJSONArray(KEY_EQ_BANDS);
+                    for (short i = 0; i < bands.length(); i++) {
+                        if (i < eq.getNumberOfBands()) {
+                            eq.setBandLevel(i, (short) bands.getInt(i));
+                        }
+                    }
+                }
+            }
 
-	@Nullable
-	public Equalizer getEqualizer() {
-		return equalizer;
-	}
+            // 2. Virtualizer Restructuring Execution
+            Virtualizer virt = targetEffects.getVirtualizer();
+            if (virt != null && snapshot.has(KEY_VIRT_ENABLED)) {
+                virt.setEnabled(snapshot.getBoolean(KEY_VIRT_ENABLED));
+                virt.setStrength((short) snapshot.getInt(KEY_VIRT_STRENGTH));
+            }
 
-	@Nullable
-	public Virtualizer getVirtualizer() {
-		return virtualizer;
-	}
+            // 3. BassBoost Restructuring Execution
+            BassBoost bass = targetEffects.getBassBoost();
+            if (bass != null && snapshot.has(KEY_BASS_ENABLED)) {
+                bass.setEnabled(snapshot.getBoolean(KEY_BASS_ENABLED));
+                bass.setStrength((short) snapshot.getInt(KEY_BASS_STRENGTH));
+            }
 
-	@Nullable
-	public BassBoost getBassBoost() {
-		return bassBoost;
-	}
+            // 4. LoudnessEnhancer Restructuring Execution
+            LoudnessEnhancer loud = targetEffects.getLoudnessEnhancer();
+            if (loud != null && snapshot.has(KEY_LOUD_ENABLED)) {
+                loud.setEnabled(snapshot.getBoolean(KEY_LOUD_ENABLED));
+                loud.setTargetGain(snapshot.getInt(KEY_LOUD_GAIN));
+            }
 
-	@Nullable
-	public LoudnessEnhancer getLoudnessEnhancer() {
-		return loudnessEnhancer;
-	}
-
-	public void release() {
-		if (equalizer != null) equalizer.release();
-		if (virtualizer != null) virtualizer.release();
-		if (bassBoost != null) bassBoost.release();
-		if (loudnessEnhancer != null) loudnessEnhancer.release();
-	}
+        } catch (Exception ex) {
+            Log.e(ex, "Aborted data loading: Input payload schema state is corrupted or mismatched.");
+        }
+    }
 }
