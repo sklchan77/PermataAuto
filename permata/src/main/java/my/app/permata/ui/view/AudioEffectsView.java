@@ -27,11 +27,13 @@ import android.widget.SeekBar;
 import android.widget.TextView;
 
 import androidx.annotation.IdRes;
+import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.appcompat.widget.AppCompatSeekBar;
 
 import java.util.Arrays;
 import java.util.List;
+import java.util.Objects;
 
 import my.app.permata.R;
 import my.app.permata.media.engine.AudioEffects;
@@ -45,6 +47,7 @@ import my.app.utils.function.BooleanSupplier;
 import my.app.utils.function.IntSupplier;
 import my.app.utils.function.ShortConsumer;
 import my.app.utils.function.Supplier;
+import my.app.utils.log.Log;
 import my.app.utils.pref.BasicPreferenceStore;
 import my.app.utils.pref.PreferenceStore;
 import my.app.utils.pref.PreferenceStore.Pref;
@@ -53,25 +56,23 @@ import my.app.utils.pref.PreferenceView.BooleanOpts;
 import my.app.utils.pref.PreferenceView.ListOpts;
 import my.app.utils.ui.UiUtils;
 
-/**
- * @author sklchan77
- */
 public class AudioEffectsView extends ScrollView implements PreferenceStore.Listener {
+	private static final String TAG = "AudioEffectsView";
+
 	private final Pref<BooleanSupplier> TRACK = Pref.b("TRACK", false);
 	private final Pref<BooleanSupplier> FOLDER = Pref.b("FOLDER", false);
-	@Nullable
-	private PreferenceStore store;
-	@Nullable
-	private PreferenceStore ctrlPrefs;
-	@Nullable
-	private AudioEffects effects;
+	
+	@Nullable private PreferenceStore store;
+	@Nullable private PreferenceStore ctrlPrefs;
+	@Nullable private AudioEffects effects;
+	@Nullable private PlayableItem activeItem;
 
-	public AudioEffectsView(Context context) {
+	public AudioEffectsView(@NonNull Context context) {
 		this(context, null);
 		setLayoutParams(new ScrollView.LayoutParams(MATCH_PARENT, WRAP_CONTENT));
 	}
 
-	public AudioEffectsView(Context context, AttributeSet attrs) {
+	public AudioEffectsView(@NonNull Context context, @Nullable AttributeSet attrs) {
 		super(context, attrs);
 		setBackgroundColor(Color.TRANSPARENT);
 	}
@@ -80,11 +81,13 @@ public class AudioEffectsView extends ScrollView implements PreferenceStore.List
 	public AudioEffects getEffects() {
 		return effects;
 	}
-
-	public void init(MediaSessionCallback cb, AudioEffects effects, PlayableItem pi) {
+	public void init(@NonNull MediaSessionCallback cb, @NonNull AudioEffects effects, @NonNull PlayableItem pi) {
 		this.effects = effects;
+		this.activeItem = pi;
 		this.store = new BasicPreferenceStore();
 		this.store.addBroadcastListener(this);
+		
+		removeAllViews();
 		inflate(getContext(), R.layout.audio_effects, this);
 
 		Equalizer eq = effects.getEqualizer();
@@ -92,7 +95,6 @@ public class AudioEffectsView extends ScrollView implements PreferenceStore.List
 		BassBoost bass = effects.getBassBoost();
 		LoudnessEnhancer le = effects.getLoudnessEnhancer();
 
-		// Equalizer
 		if (eq != null) {
 			ctrlPrefs = cb.getPlaybackControlPrefs();
 			short numPresets = eq.getNumberOfPresets();
@@ -101,17 +103,18 @@ public class AudioEffectsView extends ScrollView implements PreferenceStore.List
 			int preset = getEqPreset(pi, ctrlPrefs);
 			if (preset < 0) preset = -preset + numPresets;
 
-			configureSwitch(findViewById(R.id.equalizer_switch), () -> eq);
+			configureSwitch(findViewById(R.id.equalizer_switch), 
+				() -> eq.getEnabled(), 
+				checked -> effects.setEqualizerEnabled(getContext().getApplicationContext(), checked));
+				
 			findViewById(R.id.equalizer_preset_save).setOnClickListener(this::savePreset);
 			findViewById(R.id.equalizer_preset_delete).setOnClickListener(this::deletePreset);
 			createBands(eq);
 
 			presetNames[0] = getResources().getString(R.string.eq_manual);
-
 			for (short i = 0; i < numPresets; i++) {
 				presetNames[i + 1] = presetName(eq.getPresetName(i));
 			}
-
 			for (int i = 0; i < userPresets.length; i++) {
 				presetNames[i + numPresets + 1] = MediaPrefs.getUserPresetName(userPresets[i]);
 			}
@@ -132,10 +135,14 @@ public class AudioEffectsView extends ScrollView implements PreferenceStore.List
 			hide(R.id.equalizer, R.id.equalizer_title, R.id.equalizer_switch);
 		}
 
-		// Virtualizer
 		if (virt != null) {
-			configureSwitch(findViewById(R.id.virtualizer_switch), () -> virt);
-			configureSeek(findViewById(R.id.virtualizer_seek), virt::getRoundedStrength, virt::setStrength);
+			configureSwitch(findViewById(R.id.virtualizer_switch), 
+				() -> virt.getEnabled(), 
+				checked -> effects.setVirtualizerEnabled(getContext().getApplicationContext(), checked));
+				
+			configureSeek(findViewById(R.id.virtualizer_seek), 
+				virt::getRoundedStrength, 
+				strength -> effects.setVirtualizerStrength(getContext().getApplicationContext(), strength));
 
 			PreferenceView pref = findViewById(R.id.virtualizer_mode);
 			pref.setPreference(null, () -> {
@@ -145,32 +152,37 @@ public class AudioEffectsView extends ScrollView implements PreferenceStore.List
 				o.title = R.string.string_format;
 				o.formatTitle = true;
 				o.values = new int[]{R.string.auto, R.string.binaural, R.string.transaural};
-				o.valuesMap = new int[]{VIRTUALIZATION_MODE_AUTO, VIRTUALIZATION_MODE_BINAURAL,
-						VIRTUALIZATION_MODE_TRANSAURAL};
+				o.valuesMap = new int[]{VIRTUALIZATION_MODE_AUTO, VIRTUALIZATION_MODE_BINAURAL, VIRTUALIZATION_MODE_TRANSAURAL};
 				return o;
 			});
 		} else {
 			hide(R.id.virtualizer, R.id.virtualizer_title, R.id.virtualizer_switch);
 		}
 
-		// BassBoost
 		if (bass != null) {
-			configureSwitch(findViewById(R.id.bass_switch), () -> bass);
-			configureSeek(findViewById(R.id.bass_seek), bass::getRoundedStrength, bass::setStrength);
+			configureSwitch(findViewById(R.id.bass_switch), 
+				() -> bass.getEnabled(), 
+				checked -> effects.setBassBoostEnabled(getContext().getApplicationContext(), checked));
+				
+			configureSeek(findViewById(R.id.bass_seek), 
+				bass::getRoundedStrength, 
+				strength -> effects.setBassBoostStrength(getContext().getApplicationContext(), strength));
 		} else {
 			hide(R.id.bass, R.id.bass_title, R.id.bass_switch);
 		}
 
-		// LoudnessEnhancer
 		if (le != null) {
-			configureSwitch(findViewById(R.id.vol_boost_switch), () -> le);
-			configureSeek(findViewById(R.id.vol_boost_seek), () -> (int) (le.getTargetGain() / 10),
-					g -> le.setTargetGain(g * 10));
+			configureSwitch(findViewById(R.id.vol_boost_switch), 
+				() -> le.getEnabled(), 
+				checked -> effects.setLoudnessEnhancerEnabled(getContext().getApplicationContext(), checked));
+				
+			configureSeek(findViewById(R.id.vol_boost_seek), 
+				() -> (int) (le.getTargetGain() / 10),
+				g -> effects.setLoudnessEnhancementGain(getContext().getApplicationContext(), g * 10));
 		} else {
 			hide(R.id.vol_boost, R.id.vol_boost_title, R.id.vol_boost_switch);
 		}
 
-		// Apply to
 		if (pi.getPrefs().getBooleanPref(AE_ENABLED)) {
 			store.applyBooleanPref(TRACK, true);
 		} else if (pi.getParent().getPrefs().getBooleanPref(AE_ENABLED)) {
@@ -197,20 +209,21 @@ public class AudioEffectsView extends ScrollView implements PreferenceStore.List
 	}
 
 	public void cleanup() {
+		if (store != null) {
+			store.removeBroadcastListener(this);
+		}
 		removeAllViews();
 		store = null;
 		ctrlPrefs = null;
 		effects = null;
+		activeItem = null;
 	}
-
-	public void apply(MediaSessionCallback cb) {
+	public void apply(@NonNull MediaSessionCallback cb) {
 		if (store == null) return;
 
 		MediaEngine eng = cb.getEngine();
-
 		if (eng != null) {
 			PlayableItem pi = eng.getSource();
-
 			if (pi != null) {
 				if (store.getBooleanPref(TRACK)) {
 					apply(pi.getPrefs());
@@ -225,28 +238,28 @@ public class AudioEffectsView extends ScrollView implements PreferenceStore.List
 				}
 			}
 		}
-
 		apply(cb.getPlaybackControlPrefs());
 	}
 
-	private void apply(PreferenceStore ps) {
+	private void apply(@NonNull PreferenceStore ps) {
 		runWithRetry(() -> applyPrefs(ps));
 	}
 
-	private void applyPrefs(PreferenceStore ps) {
+	private void applyPrefs(@NonNull PreferenceStore ps) {
 		try (PreferenceStore.Edit e = ps.editPreferenceStore()) {
-			PreferenceStore store = requireNonNull(this.store);
-			AudioEffects effects = requireNonNull(this.effects);
-			Equalizer eq = requireNonNull(effects.getEqualizer());
-			Virtualizer virt = requireNonNull(effects.getVirtualizer());
-			BassBoost bass = requireNonNull(effects.getBassBoost());
-			LoudnessEnhancer le = requireNonNull(effects.getLoudnessEnhancer());
+			PreferenceStore currentStore = requireNonNull(this.store);
+			AudioEffects engineEffects = requireNonNull(this.effects);
+			
+			Equalizer eq = engineEffects.getEqualizer();
+			Virtualizer virt = engineEffects.getVirtualizer();
+			BassBoost bass = engineEffects.getBassBoost();
+			LoudnessEnhancer le = engineEffects.getLoudnessEnhancer();
 			boolean enabled = false;
 
-			if (eq.getEnabled()) {
+			if (eq != null && eq.getEnabled()) {
 				enabled = true;
 				e.setBooleanPref(MediaPrefs.EQ_ENABLED, true);
-				int preset = store.getIntPref(MediaPrefs.EQ_PRESET);
+				int preset = currentStore.getIntPref(MediaPrefs.EQ_PRESET);
 				short numPresets = eq.getNumberOfPresets();
 
 				if (preset == 0) {
@@ -264,10 +277,10 @@ public class AudioEffectsView extends ScrollView implements PreferenceStore.List
 				e.removePref(MediaPrefs.EQ_BANDS);
 			}
 
-			if (virt.getEnabled()) {
+			if (virt != null && virt.getEnabled()) {
 				enabled = true;
 				e.setBooleanPref(MediaPrefs.VIRT_ENABLED, true);
-				e.setIntPref(MediaPrefs.VIRT_MODE, store.getIntPref(MediaPrefs.VIRT_MODE));
+				e.setIntPref(MediaPrefs.VIRT_MODE, currentStore.getIntPref(MediaPrefs.VIRT_MODE));
 				e.setIntPref(MediaPrefs.VIRT_STRENGTH, virt.getRoundedStrength());
 			} else {
 				e.removePref(MediaPrefs.VIRT_ENABLED);
@@ -275,7 +288,7 @@ public class AudioEffectsView extends ScrollView implements PreferenceStore.List
 				e.removePref(MediaPrefs.VIRT_STRENGTH);
 			}
 
-			if (bass.getEnabled()) {
+			if (bass != null && bass.getEnabled()) {
 				enabled = true;
 				e.setBooleanPref(MediaPrefs.BASS_ENABLED, true);
 				e.setIntPref(MediaPrefs.BASS_STRENGTH, bass.getRoundedStrength());
@@ -284,7 +297,7 @@ public class AudioEffectsView extends ScrollView implements PreferenceStore.List
 				e.removePref(MediaPrefs.BASS_STRENGTH);
 			}
 
-			if (le.getEnabled()) {
+			if (le != null && le.getEnabled()) {
 				enabled = true;
 				e.setBooleanPref(MediaPrefs.VOL_BOOST_ENABLED, true);
 				e.setIntPref(MediaPrefs.VOL_BOOST_STRENGTH, (int) (le.getTargetGain() / 10));
@@ -298,7 +311,7 @@ public class AudioEffectsView extends ScrollView implements PreferenceStore.List
 		}
 	}
 
-	private void clearPrefs(PreferenceStore ps) {
+	private void clearPrefs(@NonNull PreferenceStore ps) {
 		try (PreferenceStore.Edit e = ps.editPreferenceStore()) {
 			e.removePref(MediaPrefs.AE_ENABLED);
 			e.removePref(MediaPrefs.EQ_ENABLED);
@@ -314,7 +327,7 @@ public class AudioEffectsView extends ScrollView implements PreferenceStore.List
 		}
 	}
 
-	private void createBands(Equalizer eq) {
+	private void createBands(@NonNull Equalizer eq) {
 		short[] range = eq.getBandLevelRange();
 		int sbMax = range[1] - range[0];
 		String minText = String.valueOf(range[0] / 100);
@@ -331,6 +344,7 @@ public class AudioEffectsView extends ScrollView implements PreferenceStore.List
 			TextView max = bandView.findViewById(R.id.eq_band_max);
 			float freq = (float) eq.getCenterFreq(i) / 1000;
 			short band = i;
+			
 			sb.setMax(sbMax);
 			sb.setProgress(eq.getBandLevel(i) - range[0]);
 			min.setText(minText);
@@ -351,8 +365,7 @@ public class AudioEffectsView extends ScrollView implements PreferenceStore.List
 			}
 		}
 	}
-
-	private void setBandValues(Equalizer eq) {
+	private void setBandValues(@NonNull Equalizer eq) {
 		short[] range = eq.getBandLevelRange();
 		ViewGroup bandsView = findViewById(R.id.equalizer_bands);
 
@@ -363,7 +376,7 @@ public class AudioEffectsView extends ScrollView implements PreferenceStore.List
 		}
 	}
 
-	private void setUserBandValues(Equalizer eq, String[] presets, int preset) {
+	private void setUserBandValues(@NonNull Equalizer eq, @NonNull String[] presets, int preset) {
 		short[] range = eq.getBandLevelRange();
 		int[] bands = MediaPrefs.getUserPresetBands(presets[preset]);
 		ViewGroup bandsView = findViewById(R.id.equalizer_bands);
@@ -371,82 +384,100 @@ public class AudioEffectsView extends ScrollView implements PreferenceStore.List
 		for (short n = eq.getNumberOfBands(), i = 0; (i < n) && (i < bands.length); i++) {
 			ViewGroup band = (ViewGroup) bandsView.getChildAt(i);
 			AppCompatSeekBar sb = band.findViewById(R.id.eq_band_seek);
-			eq.setBandLevel(i, (short) bands[i]);
+			
+			if (effects != null) {
+				effects.setEqualizerBandGain(getContext().getApplicationContext(), i, (short) bands[i]);
+			}
 			sb.setProgress(eq.getBandLevel(i) - range[0]);
 		}
 	}
 
-	private void configureSwitch(CompoundButton sw, Supplier<AudioEffect> effect) {
-		sw.setChecked(effect.get().getEnabled());
-		sw.setOnCheckedChangeListener((b, checked) -> runWithRetry(() -> effect.get().setEnabled(checked)));
+	private void configureSwitch(@NonNull CompoundButton sw, @NonNull BooleanSupplier checkSupplier, @NonNull my.app.utils.function.Consumer<Boolean> changeAction) {
+		sw.setOnCheckedChangeListener(null);
+		sw.setChecked(checkSupplier.getAsBoolean());
+		sw.setOnCheckedChangeListener((b, checked) -> runWithRetry(() -> changeAction.accept(checked)));
 	}
 
-	private void configureSeek(SeekBar sb, IntSupplier get, ShortConsumer set) {
+	private void configureSeek(@NonNull SeekBar sb, @NonNull IntSupplier get, @NonNull ShortConsumer set) {
 		sb.setMax(1000);
 		sb.setProgress(get.getAsInt());
 		sb.setOnSeekBarChangeListener(new SeekBarListener() {
 			@Override
 			public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
-				runWithRetry(() -> set.accept((short) progress));
+				if (fromUser) {
+					runWithRetry(() -> set.accept((short) progress));
+				}
 			}
 		});
 	}
 
-	private void eqBandChanged(Equalizer eq, short band, int progress, boolean fromUser) {
-		if (!fromUser) return;
+	private void eqBandChanged(@NonNull Equalizer eq, short band, int progress, boolean fromUser) {
+		if (!fromUser || effects == null) return;
 
-		PreferenceStore store = requireNonNull(this.store);
+		PreferenceStore currentStore = requireNonNull(this.store);
 		short[] range = eq.getBandLevelRange();
-		eq.setBandLevel(band, (short) (progress + range[0]));
+		short calculatedGain = (short) (progress + range[0]);
+		
+		effects.setEqualizerBandGain(getContext().getApplicationContext(), band, calculatedGain);
 
-		int p = store.getIntPref(MediaPrefs.EQ_PRESET);
-		if ((p != 0) && (p <= eq.getNumberOfPresets())) store.applyIntPref(EQ_PRESET, 0);
+		int p = currentStore.getIntPref(MediaPrefs.EQ_PRESET);
+		if ((p != 0) && (p <= eq.getNumberOfPresets())) {
+			currentStore.applyIntPref(EQ_PRESET, 0);
+		}
 	}
 
-	private void savePreset(View v) {
+	private void savePreset(@NonNull View v) {
 		PreferenceView pref = findViewById(R.id.equalizer_preset);
 		ListOpts opts = (ListOpts) pref.getOpts();
+		if (opts == null) return;
+		
 		int p = opts.store.getIntPref(MediaPrefs.EQ_PRESET);
-		Equalizer eq = requireNonNull(requireNonNull(effects).getEqualizer());
+		AudioEffects engineEffects = requireNonNull(effects);
+		Equalizer eq = requireNonNull(engineEffects.getEqualizer());
 		short numPresets = eq.getNumberOfPresets();
-		PreferenceStore ctrlPrefs = requireNonNull(this.ctrlPrefs);
+		PreferenceStore currentCtrlPrefs = requireNonNull(this.ctrlPrefs);
 
 		if (p > numPresets) {
 			int[] bands = getBandValues(eq);
-			String[] userPresets = ctrlPrefs.getStringArrayPref(MediaPrefs.EQ_USER_PRESETS);
+			String[] userPresets = currentCtrlPrefs.getStringArrayPref(MediaPrefs.EQ_USER_PRESETS);
 			userPresets[p - numPresets - 1] = MediaPrefs.toUserPreset(opts.stringValues[p], bands);
-			ctrlPrefs.applyStringArrayPref(MediaPrefs.EQ_USER_PRESETS, userPresets);
+			currentCtrlPrefs.applyStringArrayPref(MediaPrefs.EQ_USER_PRESETS, userPresets);
 		} else {
 			UiUtils.queryText(getContext(), R.string.preset_name, R.drawable.equalizer).onSuccess(name -> {
 				if (name == null) return;
 
 				int[] bands = getBandValues(eq);
-				String[] userPresets = ctrlPrefs.getStringArrayPref(MediaPrefs.EQ_USER_PRESETS);
+				String[] userPresets = currentCtrlPrefs.getStringArrayPref(MediaPrefs.EQ_USER_PRESETS);
 				userPresets = Arrays.copyOf(userPresets, userPresets.length + 1);
 				userPresets[userPresets.length - 1] = MediaPrefs.toUserPreset(name, bands);
 				opts.stringValues = Arrays.copyOf(opts.stringValues, opts.stringValues.length + 1);
 				opts.stringValues[opts.stringValues.length - 1] = name;
-				ctrlPrefs.applyStringArrayPref(MediaPrefs.EQ_USER_PRESETS, userPresets);
+				currentCtrlPrefs.applyStringArrayPref(MediaPrefs.EQ_USER_PRESETS, userPresets);
 				opts.store.applyIntPref(MediaPrefs.EQ_PRESET, opts.stringValues.length - 1);
 			});
 		}
 	}
 
-	private void deletePreset(View v) {
+	private void deletePreset(@NonNull View v) {
 		PreferenceView pref = findViewById(R.id.equalizer_preset);
 		ListOpts opts = (ListOpts) pref.getOpts();
+		if (opts == null) return;
+		
 		int p = opts.store.getIntPref(MediaPrefs.EQ_PRESET);
-		Equalizer eq = requireNonNull(requireNonNull(effects).getEqualizer());
+		AudioEffects engineEffects = requireNonNull(effects);
+		Equalizer eq = requireNonNull(engineEffects.getEqualizer());
 		short numPresets = eq.getNumberOfPresets();
-		PreferenceStore ctrlPrefs = requireNonNull(this.ctrlPrefs);
-		String[] userPresets = ctrlPrefs.getStringArrayPref(MediaPrefs.EQ_USER_PRESETS);
+		PreferenceStore currentCtrlPrefs = requireNonNull(this.ctrlPrefs);
+		
+		String[] userPresets = currentCtrlPrefs.getStringArrayPref(MediaPrefs.EQ_USER_PRESETS);
 		userPresets = CollectionUtils.remove(userPresets, (p - numPresets - 1));
 		opts.stringValues = CollectionUtils.remove(opts.stringValues, p);
-		ctrlPrefs.applyStringArrayPref(MediaPrefs.EQ_USER_PRESETS, userPresets);
+		currentCtrlPrefs.applyStringArrayPref(MediaPrefs.EQ_USER_PRESETS, userPresets);
 		opts.store.applyIntPref(MediaPrefs.EQ_PRESET, 0);
 	}
 
-	private int[] getBandValues(Equalizer eq) {
+	@NonNull
+	private int[] getBandValues(@NonNull Equalizer eq) {
 		short n = eq.getNumberOfBands();
 		int[] bands = new int[n];
 		for (short i = 0; i < n; i++) {
@@ -457,20 +488,22 @@ public class AudioEffectsView extends ScrollView implements PreferenceStore.List
 
 	private void hide(@IdRes int... ids) {
 		for (int id : ids) {
-			findViewById(id).setVisibility(GONE);
+			View view = findViewById(id);
+			if (view != null) view.setVisibility(GONE);
 		}
 	}
 
 	private void show(@IdRes int id) {
-		findViewById(id).setVisibility(VISIBLE);
+		View view = findViewById(id);
+		if (view != null) view.setVisibility(VISIBLE);
 	}
 
 	@Override
-	public void onPreferenceChanged(PreferenceStore store, List<Pref<?>> prefs) {
+	public void onPreferenceChanged(@NonNull PreferenceStore store, @NonNull List<Pref<?>> prefs) {
 		runWithRetry(() -> preferenceChanged(store, prefs));
 	}
 
-	private void preferenceChanged(PreferenceStore store, List<Pref<?>> prefs) {
+	private void preferenceChanged(@NonNull PreferenceStore store, @NonNull List<Pref<?>> prefs) {
 		if (prefs.contains(MediaPrefs.EQ_PRESET)) {
 			int p = store.getIntPref(MediaPrefs.EQ_PRESET);
 
@@ -480,8 +513,8 @@ public class AudioEffectsView extends ScrollView implements PreferenceStore.List
 				return;
 			}
 
-			AudioEffects effects = requireNonNull(this.effects);
-			Equalizer eq = requireNonNull(effects.getEqualizer());
+			AudioEffects engineEffects = requireNonNull(this.effects);
+			Equalizer eq = requireNonNull(engineEffects.getEqualizer());
 			short numPresets = eq.getNumberOfPresets();
 
 			if (p > numPresets) {
@@ -495,11 +528,20 @@ public class AudioEffectsView extends ScrollView implements PreferenceStore.List
 
 			hide(R.id.equalizer_preset_save, R.id.equalizer_preset_delete);
 			eq.usePreset((short) (p - 1));
+			
+			if (effects != null) {
+				short totalBands = eq.getNumberOfBands();
+				for (short i = 0; i < totalBands; i++) {
+					effects.setEqualizerBandGain(getContext().getApplicationContext(), i, eq.getBandLevel(i));
+				}
+			}
 			setBandValues(eq);
+			
 		} else if (prefs.contains(MediaPrefs.VIRT_MODE)) {
-			AudioEffects effects = requireNonNull(this.effects);
-			Virtualizer virt = requireNonNull(effects.getVirtualizer());
+			AudioEffects engineEffects = requireNonNull(this.effects);
+			Virtualizer virt = requireNonNull(engineEffects.getVirtualizer());
 			virt.forceVirtualizationMode(store.getIntPref(MediaPrefs.VIRT_MODE));
+			
 		} else if (prefs.contains(TRACK) && store.getBooleanPref(TRACK)) {
 			store.applyBooleanPref(FOLDER, false);
 		} else if (prefs.contains(FOLDER) && store.getBooleanPref(FOLDER)) {
@@ -508,62 +550,48 @@ public class AudioEffectsView extends ScrollView implements PreferenceStore.List
 	}
 
 	@Override
-	public View focusSearch(View focused, int direction) {
-		if ((direction == FOCUS_UP) && (focused != null) && (focused.getId() == R.id.equalizer_switch)) {
-			View v = MainActivityDelegate.get(getContext()).getToolBar()
-					.findViewById(my.app.utils.R.id.tool_bar_back_button);
-			if (v.getVisibility() == VISIBLE) return v;
+	@Nullable
+	public View focusSearch(@NonNull View focused, int direction) {
+		if ((direction == FOCUS_UP) && (focused.getId() == R.id.equalizer_switch)) {
+			MainActivityDelegate delegate = MainActivityDelegate.get(getContext());
+			if (delegate != null && delegate.getToolBar() != null) {
+				View v = delegate.getToolBar().findViewById(my.app.utils.R.id.tool_bar_back_button);
+				if (v != null && v.getVisibility() == VISIBLE) return v;
+			}
 		}
-
 		return super.focusSearch(focused, direction);
 	}
 
-	private String presetName(String name) {
+	@NonNull
+	private String presetName(@NonNull String name) {
 		switch (name) {
-			case "Manual":
-				return getResources().getString(R.string.eq_manual);
-			case "Normal":
-				return getResources().getString(R.string.eq_normal);
-			case "Classical":
-				return getResources().getString(R.string.eq_classical);
-			case "Dance":
-				return getResources().getString(R.string.eq_dance);
-			case "Flat":
-				return getResources().getString(R.string.eq_flat);
-			case "Folk":
-				return getResources().getString(R.string.eq_folk);
-			case "Heavy Metal":
-				return getResources().getString(R.string.eq_heavy_metal);
-			case "Hip Hop":
-				return getResources().getString(R.string.eq_hip_hop);
-			case "Jazz":
-				return getResources().getString(R.string.eq_jazz);
-			case "Pop":
-				return getResources().getString(R.string.eq_pop);
-			case "Rock":
-				return getResources().getString(R.string.eq_rock);
-			default:
-				return name;
+			case "Manual": return getResources().getString(R.string.eq_manual);
+			case "Normal": return getResources().getString(R.string.eq_normal);
+			case "Classical": return getResources().getString(R.string.eq_classical);
+			case "Dance": return getResources().getString(R.string.eq_dance);
+			case "Flat": return getResources().getString(R.string.eq_flat);
+			case "Folk": return getResources().getString(R.string.eq_folk);
+			case "Heavy Metal": return getResources().getString(R.string.eq_heavy_metal);
+			case "Hip Hop": return getResources().getString(R.string.eq_hip_hop);
+			case "Jazz": return getResources().getString(R.string.eq_jazz);
+			case "Pop": return getResources().getString(R.string.eq_pop);
+			case "Rock": return getResources().getString(R.string.eq_rock);
+			default: return name;
 		}
 	}
 
-	private static int getEqPreset(PlayableItem pi, PreferenceStore ctrlPrefs) {
+	private static int getEqPreset(@NonNull PlayableItem pi, @NonNull PreferenceStore ctrlPrefs) {
 		MediaPrefs prefs = pi.getPrefs();
-
 		if (prefs.getBooleanPref(AE_ENABLED)) {
 			return prefs.getIntPref(EQ_PRESET);
 		} else {
 			prefs = pi.getParent().getPrefs();
-			return prefs.getBooleanPref(AE_ENABLED) ? prefs.getIntPref(EQ_PRESET) :
-					ctrlPrefs.getIntPref(EQ_PRESET);
+			return prefs.getBooleanPref(AE_ENABLED) ? prefs.getIntPref(EQ_PRESET) : ctrlPrefs.getIntPref(EQ_PRESET);
 		}
 	}
 
 	private static abstract class SeekBarListener implements SeekBar.OnSeekBarChangeListener {
-		public void onStartTrackingTouch(SeekBar seekBar) {
-		}
-
-		public void onStopTrackingTouch(SeekBar seekBar) {
-		}
+		@Override public void onStartTrackingTouch(SeekBar seekBar) {}
+		@Override public void onStopTrackingTouch(SeekBar seekBar) {}
 	}
 }
