@@ -749,11 +749,20 @@ public class ControlPanelView extends ConstraintLayout
 		}
 	}
 
-	private final class SpeedMenuHandler extends BasicPreferenceStore {
+private final class SpeedMenuHandler extends BasicPreferenceStore {
 		void build(OverlayMenu.Builder b, Item item) {
 			PreferenceSet set = new PreferenceSet();
-			set.addFloatPref(o -> { o.title = R.string.speed; o.store = item.getPrefs(); o.pref = MediaPrefs.SPEED; o.seekMin = 0.25f; o.seekMax = 4.00f; o.seekScale = 0.05f; });
+			set.addFloatPref(o -> {
+				o.title = R.string.speed;
+				o.store = item.getPrefs();
+				o.pref = MediaPrefs.SPEED;
+				o.seekMin = 25;       // Swapped float 0.25f to integer 25
+				o.seekMax = 400;      // Swapped float 4.00f to integer 400
+				o.seekScale = 5;      // Swapped float 0.05f to integer 5
+			});
 			set.addToMenu(b, true);
 		}
+	}
+
 	}
 }
