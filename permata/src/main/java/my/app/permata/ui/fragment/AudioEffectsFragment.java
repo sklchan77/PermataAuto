@@ -65,7 +65,6 @@ public class AudioEffectsFragment extends MainActivityFragment implements
 
 	@Override
 	public void onDestroy() {
-		// Clean up leaks reliably on host activity destruction steps
 		getMainActivity().onSuccess(this::removeListeners);
 		super.onDestroy();
 	}
@@ -88,7 +87,6 @@ public class AudioEffectsFragment extends MainActivityFragment implements
 	@Override
 	public void onViewCreated(@NonNull View view, @Nullable Bundle savedInstanceState) {
 		super.onViewCreated(view, savedInstanceState);
-		// Force view calculation parameters validation check on visibility creation step
 		onHiddenChanged(isHidden());
 	}
 
@@ -117,9 +115,6 @@ public class AudioEffectsFragment extends MainActivityFragment implements
 		getMainActivity().onSuccess(delegate -> handleVisibilityUpdate(delegate, hidden));
 	}
 
-	/**
-	 * Main pipeline control router verifying visibility configurations and channel-specific initializations.
-	 */
 	private void handleVisibilityUpdate(@NonNull MainActivityDelegate delegate, boolean hidden) {
 		AudioEffectsView view = getView();
 		if (view == null) return;
@@ -139,11 +134,10 @@ public class AudioEffectsFragment extends MainActivityFragment implements
 			AudioEffects effects = engine.getAudioEffects();
 
 			if (item != null && effects != null) {
-				// Fixed compilation node: changed item.getPath() to item.getLocation()
-				String channelId = item.getLocation(); 
+				// Patched compilation node: extract String from Uri safely
+				String channelId = item.getLocation() != null ? item.getLocation().toString() : null; 
 				
 				if (channelId != null) {
-					// Dynamically trigger hardware layer re-sync inside AudioEffects engine
 					Context ctx = getContext();
 					if (ctx != null && !Objects.equals(boundChannelId, channelId)) {
 						effects.loadAndApplyPersistedSettingsForChannel(ctx.getApplicationContext(), channelId);
@@ -156,7 +150,6 @@ public class AudioEffectsFragment extends MainActivityFragment implements
 			}
 		}
 		
-		// Terminate fragment view seamlessly if driver layer components are invalid
 		close(delegate);
 	}
 
@@ -221,11 +214,10 @@ public class AudioEffectsFragment extends MainActivityFragment implements
 					return;
 				}
 
-				// Fixed compilation node: changed item.getPath() to item.getLocation()
-				String currentChannelId = item.getLocation();
+				// Patched compilation node: extract String from Uri safely
+				String currentChannelId = item.getLocation() != null ? item.getLocation().toString() : null;
 				boolean channelChanged = !Objects.equals(boundChannelId, currentChannelId);
 
-				// Redraw layout context tracking nodes if hardware references or channel keys shift
 				if (view.getEffects() != effects || channelChanged) {
 					view.cleanup();
 					
