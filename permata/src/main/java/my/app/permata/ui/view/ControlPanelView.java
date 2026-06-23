@@ -10,6 +10,7 @@ import static my.app.utils.ui.UiUtils.toIntPx;
 
 import android.content.Context;
 import android.content.res.TypedArray;
+import android.net.Uri;
 import android.os.Bundle;
 import android.os.Parcelable;
 import android.util.AttributeSet;
@@ -144,6 +145,7 @@ public class ControlPanelView extends ConstraintLayout
 		b.bindProgressTotal(findViewById(R.id.seek_total));
 		b.bound();
 	}
+
 	void computeSize() {
 		MainActivityDelegate a = getActivity();
 		if (a != null) {
@@ -214,7 +216,6 @@ public class ControlPanelView extends ConstraintLayout
 	public boolean isActive() {
 		return mask != 0;
 	}
-
 	@Override
 	public void setVisibility(int visibility) {
 		MainActivityDelegate a = getActivity();
@@ -223,7 +224,6 @@ public class ControlPanelView extends ConstraintLayout
 		if (visibility == VISIBLE) {
 			mask |= MASK_VISIBLE;
 			if ((mask & MASK_VIDEO_MODE) != 0) return;
-
 			super.setVisibility(VISIBLE);
 			if (a.getPrefs().getHideBarsPref(a)) {
 				a.setBarsHidden(true);
@@ -233,7 +233,6 @@ public class ControlPanelView extends ConstraintLayout
 			mask &= ~MASK_VISIBLE;
 			super.setVisibility(GONE);
 			a.getFloatingButton().setVisibility(VISIBLE);
-
 			if (a.isBarsHidden()) {
 				a.setBarsHidden(false);
 				setShowHideBarsIcon(a);
@@ -241,12 +240,12 @@ public class ControlPanelView extends ConstraintLayout
 		}
 		checkPlaybackTimer(a);
 	}
+
 	public void enableVideoMode(@Nullable VideoView v) {
 		MainActivityDelegate a = getActivity();
 		if (a == null) return;
 		hideTimer = null;
 		mask |= MASK_VIDEO_MODE;
-
 		a.setBarsHidden(true);
 		setShowHideBarsIcon(a);
 
@@ -347,6 +346,7 @@ public class ControlPanelView extends ConstraintLayout
 
 	@Override public boolean onDoubleTap(@NonNull MotionEvent e) { if (!(gestureSource instanceof VideoView)) return false; Objects.requireNonNull(getActivity()).getMediaServiceBinder().onPlayPauseButtonClick(); return true; }
 	@Override public boolean onSingleTapConfirmed(@NonNull MotionEvent e) { if (!(gestureSource instanceof VideoView)) return false; return onTouch((VideoView) gestureSource); }
+
 	public boolean onTouch(@NonNull VideoView video) {
 		MainActivityDelegate a = getActivity();
 		if (a == null) return false;
@@ -359,7 +359,6 @@ public class ControlPanelView extends ConstraintLayout
 
 		int delay = getTouchDelay();
 		if (delay == 0) return false;
-
 		View info = video.getVideoInfoView();
 		View fb = a.getFloatingButton();
 
@@ -380,7 +379,6 @@ public class ControlPanelView extends ConstraintLayout
 		checkPlaybackTimer(a);
 		return true;
 	}
-
 	public void onVideoViewTouch(@NonNull VideoView view, @NonNull MotionEvent e) {
 		gestureSource = view;
 		gestureDetector.onTouchEvent(e);
@@ -479,7 +477,8 @@ public class ControlPanelView extends ConstraintLayout
 		if (i != null) {
 			AudioEffects audioEffectsEngine = eng.getAudioEffects();
 			if (audioEffectsEngine != null) {
-				String trackChannelSignature = i.getLocation(); // Patched compilation node
+				Uri loc = i.getLocation();
+				String trackChannelSignature = (loc != null) ? loc.toString() : null; // Patched Uri conversion
 				if (trackChannelSignature != null) {
 					audioEffectsEngine.loadAndApplyPersistedSettingsForChannel(getContext().getApplicationContext(), trackChannelSignature);
 				}
@@ -523,12 +522,10 @@ public class ControlPanelView extends ConstraintLayout
 					if (currentMenu != null) currentMenu.show(b -> new TimerMenuHandler(a).build(b));
 				});
 			}
-
 			if (getVisibility() != VISIBLE) {
 				playbackTimer.setVisibility(GONE);
 				return;
 			}
-
 			try (SharedTextBuilder tb = SharedTextBuilder.get()) {
 				TextUtils.timeToString(tb, t);
 				playbackTimer.setText(tb);
