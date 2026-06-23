@@ -168,7 +168,7 @@ public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener 
 
 	@SuppressLint("SwitchIntDef")
 	@Override
-	public void prepare(@NonNull PlayableItem source) {
+	public void prepare(PlayableItem source) {
 		synchronized (engineLock) {
 			if (this.source == null) {
 				stopped(false);
@@ -183,11 +183,20 @@ public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener 
 			Uri uri = source.getLocation();
 			MediaItem m = MediaItem.fromUri(uri);
 			this.isHls = Util.inferContentType(uri) == C.CONTENT_TYPE_HLS;
-			
+
+			// --- NEW: Dynamic Audio Effects Per-File Channel Profile Sync ---
+			AudioEffects fx = getAudioEffects();
+			if (fx != null) {
+				String channelIdentifier = "exo_file_" + uri.hashCode();
+				fx.loadAndApplyPersistedSettingsForChannel(player.getApplicationLooper() != null ? App.get().getAppContext() : App.get().getAppContext(), channelIdentifier);
+			}
+			// -----------------------------------------------------------------
+
 			player.setMediaItem(m);
 			player.prepare();
 		}
 	}
+
 
 	@Override
 	public void start() {
@@ -372,10 +381,22 @@ public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener 
 				if (group.getType() != C.TRACK_TYPE_AUDIO) continue;
 				for (int j = 0; j < group.length; j++) {
 					if (info.getId() != (i * 1000L + j)) continue;
+					
+					// 1. Force the structural track selection override down to ExoPlayer parameters
 					player.setTrackSelectionParameters(player.getTrackSelectionParameters().buildUpon()
 							.setOverrideForType(new androidx.media3.common.TrackSelectionOverride(
 									group.getMediaTrackGroup(), j))
 							.build());
+							
+					// --- NEW: Audio Stream Track Switch Presets Migration Loop ---
+					synchronized (engineLock) {
+						AudioEffects fx = getAudioEffects();
+						if (fx != null && source != null) {
+							String streamTrackIdentifier = "exo_file_" + source.getLocation().hashCode() + "_track_" + info.getId();
+							fx.loadAndApplyPersistedSettingsForChannel(App.get().getAppContext(), streamTrackIdentifier);
+						}
+					}
+					// -----------------------------------------------------------
 					return;
 				}
 			}
@@ -383,6 +404,7 @@ public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener 
 			Log.e(ex, "Failed setting active exoplayer audio track target override.");
 		}
 	}
+
 	@NonNull
 	@Override
 	public FutureSupplier<Void> selectSubtitleStream() {
@@ -426,6 +448,7 @@ public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener 
 			return subFiles;
 		});
 	}
+
 
 	@Override
 	public void close() {
@@ -480,8 +503,14 @@ public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener 
 				}
 			} else if (playbackState == Player.STATE_ENDED) {
 				stopped(false);
+				
+				// --- NEW: Clear Active Channel Mapping State ---
+				Optional.ofNullable(getAudioEffects()).ifPresent(fx -> fx.resetToGlobalSettings(App.get().getAppContext()));
+				// -----------------------------------------------
+				
 				Optional.ofNullable(listener).ifPresent(l -> l.onEngineEnded(this));
 			}
+
 		}
 	}
 
@@ -679,3 +708,4 @@ public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener 
 		}
 	}
 }
+
