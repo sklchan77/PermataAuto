@@ -111,7 +111,6 @@ public class AudioEffectsFragment extends MainActivityFragment implements
 		View view = super.getView();
 		return view instanceof AudioEffectsView ? (AudioEffectsView) view : null;
 	}
-
 	@Override
 	public void onHiddenChanged(boolean hidden) {
 		super.onHiddenChanged(hidden);
@@ -140,8 +139,8 @@ public class AudioEffectsFragment extends MainActivityFragment implements
 			AudioEffects effects = engine.getAudioEffects();
 
 			if (item != null && effects != null) {
-				// Derive a distinct Channel tracking string ID using your domain rules (fallback to path string)
-				String channelId = item.getPath(); 
+				// Fixed compilation node: changed item.getPath() to item.getLocation()
+				String channelId = item.getLocation(); 
 				
 				if (channelId != null) {
 					// Dynamically trigger hardware layer re-sync inside AudioEffects engine
@@ -222,7 +221,8 @@ public class AudioEffectsFragment extends MainActivityFragment implements
 					return;
 				}
 
-				String currentChannelId = item.getPath();
+				// Fixed compilation node: changed item.getPath() to item.getLocation()
+				String currentChannelId = item.getLocation();
 				boolean channelChanged = !Objects.equals(boundChannelId, currentChannelId);
 
 				// Redraw layout context tracking nodes if hardware references or channel keys shift
