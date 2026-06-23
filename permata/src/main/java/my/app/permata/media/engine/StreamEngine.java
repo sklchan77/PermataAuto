@@ -122,8 +122,16 @@ public class StreamEngine implements MediaEngine, MediaEngine.Listener {
 				endTime = end;
 				duration = Completed.completed(end - start);
 			}
+			
+			// --- NEW: Dynamic Audio Effects Per-Stream Channel Profile Sync ---
+			Optional.ofNullable(eng.getAudioEffects()).ifPresent(fx -> {
+				String channelIdentifier = "stream_" + src.getLocation().hashCode();
+				fx.loadAndApplyPersistedSettingsForChannel(App.get().getAppContext(), channelIdentifier);
+			});
+			// ------------------------------------------------------------------
 		}
 	}
+
 	private void updateSource() {
 		synchronized (lock) {
 			if (state != STATE_PLAYING) return;
@@ -197,6 +205,13 @@ public class StreamEngine implements MediaEngine, MediaEngine.Listener {
 	private void reset() {
 		synchronized (lock) {
 			stopTimer();
+			
+			// --- NEW: Clear Active Channel Mapping State ---
+			Optional.ofNullable(eng.getAudioEffects()).ifPresent(fx -> 
+				fx.resetToGlobalSettings(App.get().getAppContext())
+			);
+			// -----------------------------------------------
+			
 			source = null;
 			state = STATE_STOPPED;
 			position = -1;
@@ -205,6 +220,7 @@ public class StreamEngine implements MediaEngine, MediaEngine.Listener {
 			startTime = endTime = lag = startStamp = bufferingStamp = 0L;
 		}
 	}
+
 
 	private void stopTimer() {
 		synchronized (lock) {
@@ -360,7 +376,25 @@ public class StreamEngine implements MediaEngine, MediaEngine.Listener {
 	@Override public List<AudioStreamInfo> getAudioStreamInfo() { return eng.getAudioStreamInfo(); }
 	@Override public FutureSupplier<List<SubtitleStreamInfo>> getSubtitleStreamInfo() { return eng.getSubtitleStreamInfo(); }
 	@Nullable @Override public AudioStreamInfo getCurrentAudioStreamInfo() { return eng.getCurrentAudioStreamInfo(); }
-	@Override public void setCurrentAudioStream(@Nullable AudioStreamInfo i) { eng.setCurrentAudioStream(i); }
+	@Override
+	public void setCurrentAudioStream(@Nullable AudioStreamInfo i) {
+		// Route track target selections safely to downstream hardware layers
+		eng.setCurrentAudioStream(i);
+		
+		// --- NEW: Audio Stream Track Switch Presets Migration Loop ---
+		if (i != null) {
+			synchronized (lock) {
+				if (source != null) {
+					Optional.ofNullable(eng.getAudioEffects()).ifPresent(fx -> {
+						String streamTrackIdentifier = "stream_" + source.getLocation().hashCode() + "_track_" + i.getId();
+						fx.loadAndApplyPersistedSettingsForChannel(App.get().getAppContext(), streamTrackIdentifier);
+					});
+				}
+			}
+		}
+		// -------------------------------------------------------------
+	}
+
 	@Nullable @Override public SubtitleStreamInfo getCurrentSubtitleStreamInfo() { return eng.getCurrentSubtitleStreamInfo(); }
 	@Override public void setCurrentSubtitleStream(@Nullable SubtitleStreamInfo i) { eng.setCurrentSubtitleStream(i); }
 	@Override public boolean isAudioDelaySupported() { return eng.isAudioDelaySupported(); }
