@@ -146,6 +146,16 @@ public class MediaPlayerEngine extends MediaEngineBase
 				}
 				
 				currentState = State.INITIALIZED;
+				
+				// --- NEW: Dynamic Audio Effects Core Channel Profile Sync ---
+				AudioEffects fx = getAudioEffects();
+				if (fx != null) {
+					// Creates a unique string token using the stream location hash code
+					String channelIdentifier = "file_" + u.hashCode();
+					fx.loadAndApplyPersistedSettingsForChannel(ctx, channelIdentifier);
+				}
+				// -------------------------------------------------------------
+
 				player.prepareAsync();
 				currentState = State.PREPARING;
 			} catch (Exception ex) {
@@ -155,6 +165,7 @@ public class MediaPlayerEngine extends MediaEngineBase
 			}
 		}
 	}
+
 
 	@Override
 	public void start() {
@@ -380,12 +391,22 @@ public class MediaPlayerEngine extends MediaEngineBase
 			try {
 				if (i != null) {
 					player.selectTrack((int) i.getId());
+					
+					// --- NEW: Audio Stream Track Switch Presets Migration Loop ---
+					AudioEffects fx = getAudioEffects();
+					if (fx != null && source != null) {
+						// Generates a track-specific identifier appending the track stream layout ID
+						String streamTrackIdentifier = "file_" + source.getLocation().hashCode() + "_track_" + i.getId();
+						fx.loadAndApplyPersistedSettingsForChannel(ctx, streamTrackIdentifier);
+					}
+					// -----------------------------------------------------------
 				}
 			} catch (Exception ex) {
 				Log.e(ex, "Failed configuring physical audio layout routing parameters context definitions mapping switch: ", i);
 			}
 		}
 	}
+
 
 	@Override
 	public void mute(Context ctx) {
@@ -434,6 +455,11 @@ public class MediaPlayerEngine extends MediaEngineBase
 			if (currentState == State.RELEASED) return;
 			currentState = State.COMPLETED;
 			stopped(false);
+			
+			// --- NEW: Clear Active Channel Mapping State ---
+			Optional.ofNullable(getAudioEffects()).ifPresent(fx -> fx.resetToGlobalSettings(ctx));
+			// -----------------------------------------------
+
 			try {
 				player.reset();
 				currentState = State.IDLE;
@@ -443,6 +469,7 @@ public class MediaPlayerEngine extends MediaEngineBase
 			Optional.ofNullable(listener).ifPresent(l -> l.onEngineEnded(this));
 		}
 	}
+
 
 	@Override
 	public void onVideoSizeChanged(MediaPlayer mp, int width, int height) {
