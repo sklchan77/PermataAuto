@@ -23,6 +23,7 @@ import my.app.utils.log.Log;
 /**
  * Enterprise-grade, autonomous AudioEffects engine tailored for Permata Auto.
  * Part 1: Core Fields, Device Queries, and Component Instantiators.
+ * Upgraded to fully support automated state persistence per unique channel tracking maps.
  * 
  * @author sklchan77
  */
@@ -34,7 +35,7 @@ public final class AudioEffects {
 	private static final byte supported;
 
 	// Precise millibel constant mapping to a 1.5x (150%) amplitude gain step
-	private static final int GAIN_150_PERCENT_MB = 352; 
+	private static final int GAIN_150_PERCENT_MB = 352;
 
 	// Persistence Keys
 	private static final String PREFS_NAME = "permata_audio_effects_prefs";
@@ -62,6 +63,9 @@ public final class AudioEffects {
 	private volatile boolean bassBoostEnabled;
 	private volatile boolean loudnessEnhancerEnabled;
 	private volatile boolean is150PercentBoostActive;
+	
+	// Holds the active unique tracking index context signature (null maps to the fallback global default layout)
+	@Nullable private String activeChannelId = null;
 
 	static {
 		byte s = 0;
@@ -79,23 +83,15 @@ public final class AudioEffects {
 	}
 
 	private AudioEffects(int priority, int audioSessionId) {
-		this.equalizer = supported(EQUALIZER) ? 
-				safeCreate(() -> new Equalizer(priority, audioSessionId), "Equalizer") : null;
-		
-		this.virtualizer = (SDK_INT < VANILLA_ICE_CREAM && supported(VIRTUALIZER)) ? 
-				safeCreate(() -> new Virtualizer(priority, audioSessionId), "Virtualizer") : null;
-		
-		this.bassBoost = supported(BASS_BOOST) ? 
-				safeCreate(() -> new BassBoost(priority, audioSessionId), "BassBoost") : null;
-		
-		this.loudnessEnhancer = supported(LOUDNESS_ENHANCER) ? 
-				safeCreate(() -> new LoudnessEnhancer(audioSessionId), "LoudnessEnhancer") : null;
+		this.equalizer = supported(EQUALIZER) ? safeCreate(() -> new Equalizer(priority, audioSessionId), "Equalizer") : null;
+		this.virtualizer = (SDK_INT < VANILLA_ICE_CREAM && supported(VIRTUALIZER)) ? safeCreate(() -> new Virtualizer(priority, audioSessionId), "Virtualizer") : null;
+		this.bassBoost = supported(BASS_BOOST) ? safeCreate(() -> new BassBoost(priority, audioSessionId), "BassBoost") : null;
+		this.loudnessEnhancer = supported(LOUDNESS_ENHANCER) ? safeCreate(() -> new LoudnessEnhancer(audioSessionId), "LoudnessEnhancer") : null;
 	}
 
 	private static boolean supported(byte type) {
 		return (supported & type) != 0;
 	}
-
 	@Nullable
 	private static <T extends AudioEffect> T safeCreate(@NonNull AudioEffectFactory<T> factory, @NonNull String effectName) {
 		try {
@@ -106,7 +102,7 @@ public final class AudioEffects {
 				Thread.sleep(250);
 				return factory.create();
 			} catch (InterruptedException ie) {
-				Thread.currentThread().interrupt(); 
+				Thread.currentThread().interrupt();
 				Log.e(ie, "Permata AudioEngine: Recovery routine interrupted for " + effectName);
 				return null;
 			} catch (Exception retryEx) {
@@ -115,29 +111,23 @@ public final class AudioEffects {
 			}
 		}
 	}
+
 	/**
-	 * Overloaded Factory Fallback.
-	 * Directly resolves the signature required by MediaPlayerEngine.java without breaking existing architectures.
-	 * Persistence layers are bypassed when instantiated via this fallback signature.
+	 * Overloaded Factory Fallback. Directly resolves the signature required by MediaPlayerEngine.java
+	 * without breaking existing architectures. Persistence layers are bypassed when instantiated via this fallback signature.
 	 */
 	@Nullable
 	public static AudioEffects create(int priority, int audioSessionId) {
 		if (supported == 0 || audioSessionId <= 0) {
 			return null;
 		}
-
 		synchronized (ALLOCATION_LOCK) {
 			AudioEffects instance = new AudioEffects(priority, audioSessionId);
-
-			boolean functional = Stream.of(instance.equalizer, instance.virtualizer, 
-					                        instance.bassBoost, instance.loudnessEnhancer)
-					                    .anyMatch(Objects::nonNull);
-
+			boolean functional = Stream.of(instance.equalizer, instance.virtualizer, instance.bassBoost, instance.loudnessEnhancer).anyMatch(Objects::nonNull);
 			if (!functional) {
 				Log.e("Permata AudioEngine: Fallback block instantiation aborted. Hardware layers unresponsive.");
 				return null;
 			}
-
 			return instance;
 		}
 	}
@@ -150,19 +140,13 @@ public final class AudioEffects {
 		if (supported == 0 || audioSessionId <= 0) {
 			return null;
 		}
-
 		synchronized (ALLOCATION_LOCK) {
 			AudioEffects instance = new AudioEffects(priority, audioSessionId);
-
-			boolean functional = Stream.of(instance.equalizer, instance.virtualizer, 
-					                        instance.bassBoost, instance.loudnessEnhancer)
-					                    .anyMatch(Objects::nonNull);
-
+			boolean functional = Stream.of(instance.equalizer, instance.virtualizer, instance.bassBoost, instance.loudnessEnhancer).anyMatch(Objects::nonNull);
 			if (!functional) {
 				Log.e("Permata AudioEngine: Block instantiation aborted. Hardware layers are fully unresponsive.");
 				return null;
 			}
-
 			instance.loadAndApplyPersistedSettings(context.getApplicationContext());
 			return instance;
 		}
@@ -172,117 +156,142 @@ public final class AudioEffects {
 	@Nullable public Virtualizer getVirtualizer() { return virtualizer; }
 	@Nullable public BassBoost getBassBoost() { return bassBoost; }
 	@Nullable public LoudnessEnhancer getLoudnessEnhancer() { return loudnessEnhancer; }
+	/**
+	 * Public API to dynamically re-sync hardware parameters to an isolated target stream track or channel.
+	 */
+	public void loadAndApplyPersistedSettingsForChannel(@NonNull Context context, @NonNull String channelId) {
+		synchronized (ALLOCATION_LOCK) {
+			this.activeChannelId = channelId;
+			loadAndApplyPersistedSettings(context);
+		}
+	}
+
+	/**
+	 * Clears the per-channel index memory and reverts the instance state engine back to global processing curves.
+	 */
+	public void resetToGlobalSettings(@NonNull Context context) {
+		synchronized (ALLOCATION_LOCK) {
+			this.activeChannelId = null;
+			loadAndApplyPersistedSettings(context);
+		}
+	}
 
 	/**
 	 * Reads all saved parameters out of Android SharedPreferences and loads them directly onto the hardware.
+	 * Dynamically branches based on whether a unique track channel identifier signature is active.
 	 */
 	private void loadAndApplyPersistedSettings(@NonNull Context context) {
 		try {
 			SharedPreferences prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
-			
-			boolean eqEnabled = prefs.getBoolean(KEY_EQ_ENABLED, false);
-			boolean virtEnabled = prefs.getBoolean(KEY_VIRT_ENABLED, false);
-			boolean bassEnabled = prefs.getBoolean(KEY_BASS_ENABLED, false);
-			boolean loudEnabled = prefs.getBoolean(KEY_LOUD_ENABLED, false);
-			boolean volBoostActive = prefs.getBoolean(KEY_VOLUME_BOOST_ACTIVE, false);
+			final String pfx = (activeChannelId == null) ? "" : activeChannelId + "_";
+
+			boolean eqEnabled = prefs.getBoolean(pfx + KEY_EQ_ENABLED, false);
+			boolean virtEnabled = prefs.getBoolean(pfx + KEY_VIRT_ENABLED, false);
+			boolean bassEnabled = prefs.getBoolean(pfx + KEY_BASS_ENABLED, false);
+			boolean loudEnabled = prefs.getBoolean(pfx + KEY_LOUD_ENABLED, false);
+			boolean volBoostActive = prefs.getBoolean(pfx + KEY_VOLUME_BOOST_ACTIVE, false);
 
 			if (bassBoost != null) {
-				short bassStrength = (short) prefs.getInt(KEY_BASS_STRENGTH, 0);
-				setBassBoostStrength(bassStrength);
+				short bassStrength = (short) prefs.getInt(pfx + KEY_BASS_STRENGTH, 0);
+				setBassBoostStrengthInternal(bassStrength);
 			}
-
 			if (virtualizer != null && SDK_INT < VANILLA_ICE_CREAM) {
-				short virtStrength = (short) prefs.getInt(KEY_VIRT_STRENGTH, 0);
-				setVirtualizerStrength(virtStrength);
+				short virtStrength = (short) prefs.getInt(pfx + KEY_VIRT_STRENGTH, 0);
+				setVirtualizerStrengthInternal(virtStrength);
 			}
-
 			if (loudnessEnhancer != null) {
-				int targetGain = prefs.getInt(KEY_LOUD_GAIN, 0);
-				setLoudnessEnhancementGain(targetGain);
+				int targetGain = prefs.getInt(pfx + KEY_LOUD_GAIN, 0);
+				setLoudnessEnhancementGainInternal(targetGain);
 			}
-
 			if (equalizer != null) {
 				short bands = equalizer.getNumberOfBands();
 				for (short i = 0; i < bands; i++) {
-					short savedGain = (short) prefs.getInt(KEY_EQ_BAND_PREFIX + i, 0);
-					setEqualizerBandGain(i, savedGain);
+					short savedGain = (short) prefs.getInt(pfx + KEY_EQ_BAND_PREFIX + i, 0);
+					setEqualizerBandGainInternal(i, savedGain);
 				}
 			}
 
-			setEqualizerEnabled(eqEnabled);
-			setVirtualizerEnabled(virtEnabled);
-			setBassBoostEnabled(bassEnabled);
-			
+			setEqualizerEnabledInternal(eqEnabled);
+			setVirtualizerEnabledInternal(virtEnabled);
+			setBassBoostEnabledInternal(bassEnabled);
+
 			if (volBoostActive) {
-				apply150PercentVolumeBoost(context);
+				apply150PercentVolumeBoostInternal();
 			} else {
-				setLoudnessEnhancerEnabled(loudEnabled);
+				setLoudnessEnhancerEnabledInternal(loudEnabled);
 				this.is150PercentBoostActive = false;
 			}
-			
-			Log.i("Permata AudioEngine: State storage tracking profiles synced up successfully.");
+			Log.i("Permata AudioEngine: State storage tracking profiles synced up successfully. Channel Pfx: " + pfx);
 		} catch (Exception ex) {
 			Log.e(ex, "Permata AudioEngine: Error loading structural data out of storage mapping components.");
 		}
 	}
 
-	/**
-	 * Configures a clean 150% volume gain target (+3.52dB / 352mB) safely managed by look-ahead limiters.
-	 * Persists state seamlessly to the application storage block.
-	 */
-	public void apply150PercentVolumeBoost(@NonNull Context context) {
-		synchronized (ALLOCATION_LOCK) {
-			if (loudnessEnhancer == null) {
-				Log.w("Permata AudioEngine: Cannot apply 150% boost; hardware LoudnessEnhancer is missing.");
-				return;
-			}
-			
-			setLoudnessEnhancementGain(GAIN_150_PERCENT_MB);
-			setLoudnessEnhancerEnabled(true);
-			this.is150PercentBoostActive = true;
-
-			try {
-				context.getApplicationContext()
-				       .getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-				       .edit()
-				       .putInt(KEY_LOUD_GAIN, GAIN_150_PERCENT_MB)
-				       .putBoolean(KEY_LOUD_ENABLED, true)
-				       .putBoolean(KEY_VOLUME_BOOST_ACTIVE, true)
-				       .apply();
-			} catch (Exception ex) {
-				Log.e(ex, "Permata AudioEngine: Persistence pipeline commit failed for volume boost toggle.");
-			}
-			Log.i("Permata AudioEngine: Anti-clipping 150% volume boost sequence engaged and cached.");
+	private void persistState(@NonNull Context context, String key, boolean value) {
+		try {
+			final String pfx = (activeChannelId == null) ? "" : activeChannelId + "_";
+			context.getApplicationContext()
+					.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+					.edit()
+					.putBoolean(pfx + key, value)
+					.apply();
+		} catch (Exception ex) {
+			Log.e(ex, "Permata AudioEngine: Error updating persistent boolean flag configurations.");
 		}
 	}
 
-	/**
-	 * Disables the explicit 150% volume boost multiplier and updates persistence storage.
-	 */
+	private void persistState(@NonNull Context context, String key, int value) {
+		try {
+			final String pfx = (activeChannelId == null) ? "" : activeChannelId + "_";
+			context.getApplicationContext()
+					.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+					.edit()
+					.putInt(pfx + key, value)
+					.apply();
+		} catch (Exception ex) {
+			Log.e(ex, "Permata AudioEngine: Error updating persistent integer mapping metrics.");
+		}
+	}
+	public void apply150PercentVolumeBoost(@NonNull Context context) {
+		synchronized (ALLOCATION_LOCK) {
+			if (apply150PercentVolumeBoostInternal()) {
+				persistState(context, KEY_LOUD_GAIN, GAIN_150_PERCENT_MB);
+				persistState(context, KEY_LOUD_ENABLED, true);
+				persistState(context, KEY_VOLUME_BOOST_ACTIVE, true);
+			}
+		}
+	}
+
+	private boolean apply150PercentVolumeBoostInternal() {
+		if (loudnessEnhancer == null) {
+			Log.w("Permata AudioEngine: Cannot apply 150% boost; hardware LoudnessEnhancer is missing.");
+			return false;
+		}
+		setLoudnessEnhancementGainInternal(GAIN_150_PERCENT_MB);
+		boolean active = safeToggleEffect(loudnessEnhancer, true);
+		if (active) {
+			this.loudnessEnhancerEnabled = true;
+			this.is150PercentBoostActive = true;
+		}
+		return active;
+	}
+
 	public void disableVolumeBoost(@NonNull Context context) {
 		synchronized (ALLOCATION_LOCK) {
 			if (loudnessEnhancer == null) return;
-
-			setLoudnessEnhancementGain(0);
-			setLoudnessEnhancerEnabled(false);
+			setLoudnessEnhancementGainInternal(0);
+			safeToggleEffect(loudnessEnhancer, false);
+			this.loudnessEnhancerEnabled = false;
 			this.is150PercentBoostActive = false;
-			try {
-				context.getApplicationContext()
-				       .getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-				       .edit()
-				       .putInt(KEY_LOUD_GAIN, 0)
-				       .putBoolean(KEY_LOUD_ENABLED, false)
-				       .putBoolean(KEY_VOLUME_BOOST_ACTIVE, false)
-				       .apply();
-			} catch (Exception ex) {
-				Log.e(ex, "Permata AudioEngine: Persistence pipeline clear failed for volume boost toggle.");
-			}
+
+			persistState(context, KEY_LOUD_GAIN, 0);
+			persistState(context, KEY_LOUD_ENABLED, false);
+			persistState(context, KEY_VOLUME_BOOST_ACTIVE, false);
 		}
 	}
 
-	public boolean is150PercentBoostActive() {
-		return is150PercentBoostActive;
-	}
+	public boolean is150PercentBoostActive() { return is150PercentBoostActive; }
+
 	public void setEffectsEnabled(@NonNull Context context, boolean enabled) {
 		synchronized (ALLOCATION_LOCK) {
 			setEqualizerEnabled(context, enabled);
@@ -297,51 +306,55 @@ public final class AudioEffects {
 	}
 
 	public void setEqualizerEnabled(@NonNull Context context, boolean enabled) {
-		if (equalizer != null && safeToggleEffect(equalizer, enabled)) {
-			equalizerEnabled = enabled;
-			persistState(context, KEY_EQ_ENABLED, enabled);
-		}
-	}
-
-	public void setVirtualizerEnabled(@NonNull Context context, boolean enabled) {
-		if (virtualizer != null && SDK_INT < VANILLA_ICE_CREAM && safeToggleEffect(virtualizer, enabled)) {
-			virtualizerEnabled = enabled;
-			persistState(context, KEY_VIRT_ENABLED, enabled);
-		}
-	}
-
-	public void setBassBoostEnabled(@NonNull Context context, boolean enabled) {
-		if (bassBoost != null && safeToggleEffect(bassBoost, enabled)) {
-			bassBoostEnabled = enabled;
-			persistState(context, KEY_BASS_ENABLED, enabled);
-		}
-	}
-
-	public void setLoudnessEnhancerEnabled(@NonNull Context context, boolean enabled) {
-		if (loudnessEnhancer != null && safeToggleEffect(loudnessEnhancer, enabled)) {
-			loudnessEnhancerEnabled = enabled;
-			persistState(context, KEY_LOUD_ENABLED, enabled);
-			if (!enabled) {
-				persistState(context, KEY_VOLUME_BOOST_ACTIVE, false);
-				this.is150PercentBoostActive = false;
+		synchronized (ALLOCATION_LOCK) {
+			if (setEqualizerEnabledInternal(enabled)) {
+				persistState(context, KEY_EQ_ENABLED, enabled);
 			}
 		}
 	}
 
-	private void setEqualizerEnabled(boolean enabled) {
-		if (equalizer != null && safeToggleEffect(equalizer, enabled)) equalizerEnabled = enabled;
+	private boolean setEqualizerEnabledInternal(boolean enabled) {
+		return equalizer != null && safeToggleEffect(equalizer, enabled) && (equalizerEnabled = enabled || true);
 	}
 
-	private void setVirtualizerEnabled(boolean enabled) {
-		if (virtualizer != null && SDK_INT < VANILLA_ICE_CREAM && safeToggleEffect(virtualizer, enabled)) virtualizerEnabled = enabled;
+	public void setVirtualizerEnabled(@NonNull Context context, boolean enabled) {
+		synchronized (ALLOCATION_LOCK) {
+			if (setVirtualizerEnabledInternal(enabled)) {
+				persistState(context, KEY_VIRT_ENABLED, enabled);
+			}
+		}
 	}
 
-	private void setBassBoostEnabled(boolean enabled) {
-		if (bassBoost != null && safeToggleEffect(bassBoost, enabled)) bassBoostEnabled = enabled;
+	private boolean setVirtualizerEnabledInternal(boolean enabled) {
+		return virtualizer != null && SDK_INT < VANILLA_ICE_CREAM && safeToggleEffect(virtualizer, enabled) && (virtualizerEnabled = enabled || true);
 	}
 
-	private void setLoudnessEnhancerEnabled(boolean enabled) {
-		if (loudnessEnhancer != null && safeToggleEffect(loudnessEnhancer, enabled)) loudnessEnhancerEnabled = enabled;
+	public void setBassBoostEnabled(@NonNull Context context, boolean enabled) {
+		synchronized (ALLOCATION_LOCK) {
+			if (setBassBoostEnabledInternal(enabled)) {
+				persistState(context, KEY_BASS_ENABLED, enabled);
+			}
+		}
+	}
+
+	private boolean setBassBoostEnabledInternal(boolean enabled) {
+		return bassBoost != null && safeToggleEffect(bassBoost, enabled) && (bassBoostEnabled = enabled || true);
+	}
+
+	public void setLoudnessEnhancerEnabled(@NonNull Context context, boolean enabled) {
+		synchronized (ALLOCATION_LOCK) {
+			if (setLoudnessEnhancerEnabledInternal(enabled)) {
+				persistState(context, KEY_LOUD_ENABLED, enabled);
+				if (!enabled) {
+					persistState(context, KEY_VOLUME_BOOST_ACTIVE, false);
+					this.is150PercentBoostActive = false;
+				}
+			}
+		}
+	}
+
+	private boolean setLoudnessEnhancerEnabledInternal(boolean enabled) {
+		return loudnessEnhancer != null && safeToggleEffect(loudnessEnhancer, enabled) && (loudnessEnhancerEnabled = enabled || true);
 	}
 
 	private static boolean safeToggleEffect(@NonNull AudioEffect effect, boolean enabled) {
@@ -357,87 +370,93 @@ public final class AudioEffects {
 	}
 
 	public void setEqualizerBandGain(@NonNull Context context, short band, short gainmB) {
-		if (equalizer == null) return;
+		synchronized (ALLOCATION_LOCK) {
+			if (setEqualizerBandGainInternal(band, gainmB)) {
+				persistState(context, KEY_EQ_BAND_PREFIX + band, (int) gainmB);
+			}
+		}
+	}
+
+	private boolean setEqualizerBandGainInternal(short band, short gainmB) {
+		if (equalizer == null) return false;
 		try {
 			short[] range = equalizer.getBandLevelRange();
 			if (range != null && range.length >= 2) {
 				short clampedGain = (short) Math.max(range[0], Math.min(range[1], gainmB));
 				equalizer.setBandLevel(band, clampedGain);
-				persistState(context, KEY_EQ_BAND_PREFIX + band, clampedGain);
+				return true;
 			}
 		} catch (Exception ex) {
 			Log.e(ex, "Permata AudioEngine: Equalizer target parameter tracking adjustment failed.");
 		}
-	}
-
-	private void setEqualizerBandGain(short band, short gainmB) {
-		if (equalizer == null) return;
-		try {
-			short[] range = equalizer.getBandLevelRange();
-			if (range != null && range.length >= 2) {
-				equalizer.setBandLevel(band, (short) Math.max(range[0], Math.min(range[1], gainmB)));
-			}
-		} catch (Exception ex) {
-			Log.e(ex, "Permata AudioEngine: EQ initialization config injection failed.");
-		}
+		return false;
 	}
 
 	public void setBassBoostStrength(@NonNull Context context, short strength) {
-		if (bassBoost == null) return;
+		synchronized (ALLOCATION_LOCK) {
+			if (setBassBoostStrengthInternal(strength)) {
+				persistState(context, KEY_BASS_STRENGTH, (int) strength);
+			}
+		}
+	}
+
+	private boolean setBassBoostStrengthInternal(short strength) {
+		if (bassBoost == null) return false;
 		try {
 			if (bassBoost.getStrengthSupported()) {
-				short clampedStrength = (short) Math.max((short)0, Math.min((short)1000, strength));
+				short clampedStrength = (short) Math.max((short) 0, Math.min((short) 1000, strength));
 				bassBoost.setStrength(clampedStrength);
-				persistState(context, KEY_BASS_STRENGTH, clampedStrength);
+				return true;
 			}
 		} catch (Exception ex) {
 			Log.e(ex, "Permata AudioEngine: BassBoost parameter change configuration dropped.");
 		}
-	}
-
-	private void setBassBoostStrength(short strength) {
-		if (bassBoost != null && bassBoost.getStrengthSupported()) {
-			try { bassBoost.setStrength((short) Math.max((short)0, Math.min((short)1000, strength))); } catch (Exception ignored) {}
-		}
+		return false;
 	}
 
 	public void setVirtualizerStrength(@NonNull Context context, short strength) {
-		if (virtualizer == null || SDK_INT >= VANILLA_ICE_CREAM) return;
+		synchronized (ALLOCATION_LOCK) {
+			if (setVirtualizerStrengthInternal(strength)) {
+				persistState(context, KEY_VIRT_STRENGTH, (int) strength);
+			}
+		}
+	}
+
+	private boolean setVirtualizerStrengthInternal(short strength) {
+		if (virtualizer == null || SDK_INT >= VANILLA_ICE_CREAM) return false;
 		try {
 			if (virtualizer.getStrengthSupported()) {
-				short clampedStrength = (short) Math.max((short)0, Math.min((short)1000, strength));
+				short clampedStrength = (short) Math.max((short) 0, Math.min((short) 1000, strength));
 				virtualizer.setStrength(clampedStrength);
-				persistState(context, KEY_VIRT_STRENGTH, clampedStrength);
+				return true;
 			}
 		} catch (Exception ex) {
 			Log.e(ex, "Permata AudioEngine: Virtualizer pipeline adjustments dropped.");
 		}
-	}
-
-	private void setVirtualizerStrength(short strength) {
-		if (virtualizer != null && SDK_INT < VANILLA_ICE_CREAM && virtualizer.getStrengthSupported()) {
-			try { virtualizer.setStrength((short) Math.max((short)0, Math.min((short)1000, strength))); } catch (Exception ignored) {}
-		}
+		return false;
 	}
 
 	public void setLoudnessEnhancementGain(@NonNull Context context, int gainmB) {
-		if (loudnessEnhancer == null) return;
-		try {
-			int clampedGain = Math.max(0, Math.min(3000, gainmB));
-			loudnessEnhancer.setTargetGain(clampedGain);
-			persistState(context, KEY_LOUD_GAIN, clampedGain);
-			if (clampedGain != GAIN_150_PERCENT_MB) {
-				persistState(context, KEY_VOLUME_BOOST_ACTIVE, false);
-				this.is150PercentBoostActive = false;
+		synchronized (ALLOCATION_LOCK) {
+			if (setLoudnessEnhancementGainInternal(gainmB)) {
+				persistState(context, KEY_LOUD_GAIN, gainmB);
+				if (gainmB != GAIN_150_PERCENT_MB) {
+					persistState(context, KEY_VOLUME_BOOST_ACTIVE, false);
+					this.is150PercentBoostActive = false;
+				}
 			}
-		} catch (Exception ex) {
-			Log.e(ex, "Permata AudioEngine: Volume normalization parameters adjustment failed.");
 		}
 	}
 
-	private void setLoudnessEnhancementGain(int gainmB) {
-		if (loudnessEnhancer != null) {
-			try { loudnessEnhancer.setTargetGain(Math.max(0, Math.min(3000, gainmB))); } catch (Exception ignored) {}
+	private boolean setLoudnessEnhancementGainInternal(int gainmB) {
+		if (loudnessEnhancer == null) return false;
+		try {
+			int clampedGain = Math.max(0, Math.min(3000, gainmB));
+			loudnessEnhancer.setTargetGain(clampedGain);
+			return true;
+		} catch (Exception ex) {
+			Log.e(ex, "Permata AudioEngine: Volume normalization parameters adjustment failed.");
+			return false;
 		}
 	}
 
@@ -447,7 +466,7 @@ public final class AudioEffects {
 			setBassBoostStrength(context, preset.bassBoostStrength);
 			setVirtualizerStrength(context, preset.virtualizerStrength);
 			setLoudnessEnhancementGain(context, preset.loudnessGainmB);
-			
+
 			if (equalizer != null && preset.bandGains != null) {
 				short totalBands = (short) Math.min(equalizer.getNumberOfBands(), preset.bandGains.length);
 				for (short i = 0; i < totalBands; i++) {
@@ -457,52 +476,22 @@ public final class AudioEffects {
 		}
 	}
 
-	private static void persistState(@NonNull Context context, String key, boolean value) {
-		try {
-			context.getApplicationContext()
-			       .getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-			       .edit().putBoolean(key, value).apply();
-		} catch (Exception ex) {
-			Log.e(ex, "Permata AudioEngine: Error updating persistent boolean flag mapping configurations.");
-		}
-	}
-
-	private static void persistState(@NonNull Context context, String key, int value) {
-		try {
-			context.getApplicationContext()
-			       .getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-			       .edit().putInt(key, value).apply();
-		} catch (Exception ex) {
-			Log.e(ex, "Permata AudioEngine: Error updating persistent integer mapping metrics.");
-		}
-	}
-
 	public void release() {
 		synchronized (ALLOCATION_LOCK) {
-			safeRelease(equalizer);
-			equalizer = null;
-			equalizerEnabled = false;
-
-			safeRelease(virtualizer);
-			virtualizer = null;
-			virtualizerEnabled = false;
-
-			safeRelease(bassBoost);
-			bassBoost = null;
-			bassBoostEnabled = false;
-
-			safeRelease(loudnessEnhancer);
-			loudnessEnhancer = null;
-			loudnessEnhancerEnabled = false;
+			safeRelease(equalizer); equalizer = null; equalizerEnabled = false;
+			safeRelease(virtualizer); virtualizer = null; virtualizerEnabled = false;
+			safeRelease(bassBoost); bassBoost = null; bassBoostEnabled = false;
+			safeRelease(loudnessEnhancer); loudnessEnhancer = null; loudnessEnhancerEnabled = false;
 			is150PercentBoostActive = false;
+			activeChannelId = null;
 		}
 	}
 
 	private static void safeRelease(@Nullable AudioEffect effect) {
 		if (effect != null) {
 			try {
-				effect.setEnabled(false); 
-				effect.release();         
+				effect.setEnabled(false);
+				effect.release();
 			} catch (Exception ex) {
 				Log.e(ex, "Permata AudioEngine: Exception intercepted during a lower-tier component dump routine.");
 			}
@@ -521,8 +510,7 @@ public final class AudioEffects {
 		public final int loudnessGainmB;
 		@NonNull public final short[] bandGains;
 
-		public EqualizerPreset(boolean masterSwitchEnabled, short bassBoostStrength, 
-		                       short virtualizerStrength, int loudnessGainmB, @NonNull short[] bandGains) {
+		public EqualizerPreset(boolean masterSwitchEnabled, short bassBoostStrength, short virtualizerStrength, int loudnessGainmB, @NonNull short[] bandGains) {
 			this.masterSwitchEnabled = masterSwitchEnabled;
 			this.bassBoostStrength = bassBoostStrength;
 			this.virtualizerStrength = virtualizerStrength;
