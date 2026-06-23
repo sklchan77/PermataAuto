@@ -201,7 +201,9 @@ public abstract class MediaEngineBase implements MediaEngine {
 			}
 			return filter.apply();
 		}).map(children -> {
-			if (children == null || children.isEmpty()) return emptyList();
+
+if (children == null || children.isEmpty()) return java.util.Collections.emptyList();
+
 
 			int[] idCounter = { 0xFFFF };
 			var list = children.stream()
