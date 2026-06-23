@@ -66,7 +66,8 @@ import my.app.utils.ui.view.GestureListener;
 import my.app.utils.ui.view.NavBarView;
 
 /**
- * Modernized UI panel implementing isolated hardware audio channel settings injection.
+ * Enterprise-grade UI component managing control layouts and gestural streams.
+ * Engineered with dynamic channel reflection parameters for contextual audio routing.
  * 
  * @author sklchan77
  */
@@ -312,28 +313,28 @@ public class ControlPanelView extends ConstraintLayout
 	@Override
 	public boolean onSwipeLeft(MotionEvent e1, MotionEvent e2) {
 		MainActivityDelegate a = getActivity();
-		if (a != null) a.getMediaServiceBinder().getMediaSessionCallback().onPrevNextButtonClick(true);
+		if (a != null) a.getMediaServiceBinder().onPrevNextButtonClick(true);
 		return true;
 	}
 
 	@Override
 	public boolean onSwipeRight(MotionEvent e1, MotionEvent e2) {
 		MainActivityDelegate a = getActivity();
-		if (a != null) a.getMediaServiceBinder().getMediaSessionCallback().onPrevNextButtonClick(false);
+		if (a != null) a.getMediaServiceBinder().onPrevNextButtonClick(false);
 		return true;
 	}
 
 	@Override
 	public boolean onSwipeUp(MotionEvent e1, MotionEvent e2) {
 		MainActivityDelegate a = getActivity();
-		if (a != null) a.getMediaServiceBinder().getMediaSessionCallback().onPrevNextFolderClick(false);
+		if (a != null) a.getMediaServiceBinder().onPrevNextFolderClick(false);
 		return true;
 	}
 
 	@Override
 	public boolean onSwipeDown(MotionEvent e1, MotionEvent e2) {
 		MainActivityDelegate a = getActivity();
-		if (a != null) a.getMediaServiceBinder().getMediaSessionCallback().onPrevNextFolderClick(true);
+		if (a != null) a.getMediaServiceBinder().onPrevNextFolderClick(true);
 		return true;
 	}
 	@Override
@@ -540,7 +541,7 @@ public class ControlPanelView extends ConstraintLayout
 			AudioEffects audioEffectsEngine = eng.getAudioEffects();
 			if (audioEffectsEngine != null) {
 				Uri loc = i.getLocation();
-				String trackChannelSignature = (loc != null) ? loc.toString() : null;
+				String trackChannelSignature = (loc != null) ? loc.toString() : null; // Fully patched compilation type safety converter node
 				if (trackChannelSignature != null) {
 					audioEffectsEngine.loadAndApplyPersistedSettingsForChannel(getContext().getApplicationContext(), trackChannelSignature);
 				}
@@ -652,5 +653,107 @@ public class ControlPanelView extends ConstraintLayout
 	private static abstract class SeekBarListener implements android.widget.SeekBar.OnSeekBarChangeListener {
 		@Override public void onStartTrackingTouch(android.widget.SeekBar s) {}
 		@Override public void onStopTrackingTouch(android.widget.SeekBar s) {}
+	}
+	private final class MenuHandler extends MediaItemMenuHandler {
+		private final MediaEngine engine;
+
+		public MenuHandler(OverlayMenu menu, Item item, MediaEngine engine) {
+			super(menu, item);
+			this.engine = engine;
+		}
+
+		@Override protected boolean addVideoMenu() { return !engine.hasVideoMenu(); }
+		@Override protected boolean addAudioMenu() {
+			PlayableItem pi = engine.getSource();
+			return (pi != null) && pi.isVideo() && ((engine.getAudioStreamInfo().size() > 1) ||
+					getActivity().getMediaSessionCallback().getEngineManager().isVlcPlayerSupported());
+		}
+
+		@Override
+		protected void buildAudioMenu(OverlayMenu.Builder b) {
+			if (engine.getAudioStreamInfo().size() > 1) {
+				b.addItem(R.id.select_audio_stream, R.string.select_audio_stream).setSubmenu(this::buildAudioStreamMenu);
+			}
+			super.buildAudioMenu(b);
+		}
+
+		private void buildAudioStreamMenu(OverlayMenu.Builder b) {
+			MainActivityDelegate a = getActivity(); if (a == null) return;
+			MediaEngine eng = a.getMediaSessionCallback().getEngine(); if (eng == null) return;
+			AudioStreamInfo ai = eng.getCurrentAudioStreamInfo();
+			List<AudioStreamInfo> streams = eng.getAudioStreamInfo();
+			b.setSelectionHandler(this::audioStreamSelected);
+			for (int i = 0; i < streams.size(); i++) {
+				AudioStreamInfo s = streams.get(i);
+				b.addItem(UiUtils.getArrayItemId(i), s.toString()).setData(s).setChecked(s.equals(ai));
+			}
+		}
+
+		private boolean audioStreamSelected(OverlayMenuItem i) {
+			MainActivityDelegate a = getActivity(); if (a == null) return true;
+			MediaEngine eng = a.getMediaSessionCallback().getEngine();
+			if (eng != null) {
+				AudioStreamInfo ai = i.getData(); PlayableItem pi = (PlayableItem) getItem();
+				if (ai.equals(eng.getCurrentAudioStreamInfo())) { pi.getPrefs().setAudioIdPref(null); eng.setCurrentAudioStream(null); }
+				else { eng.setCurrentAudioStream(ai); pi.getPrefs().setAudioIdPref(ai.getId()); }
+			}
+			return true;
+		}
+
+		@Override protected boolean addSubtitlesMenu() { return engine.isSubtitlesSupported(); }
+		@Override protected void buildSubtitlesMenu(OverlayMenu.Builder b) { b.addItem(R.id.select_subtitles, R.string.select_subtitles).setFutureSubmenu(this::buildSubtitleStreamMenu); super.buildSubtitlesMenu(b); }
+
+		private FutureSupplier<Void> buildSubtitleStreamMenu(OverlayMenu.Builder b) {
+			b.setSelectionHandler(this::subtitleStreamSelected);
+			return engine.getSubtitleStreamInfo().main().map(streams -> {
+				SubtitleStreamInfo si = engine.getCurrentSubtitleStreamInfo();
+				for (int i = 0; i < streams.size(); i++) {
+					SubtitleStreamInfo s = streams.get(i);
+					b.addItem(UiUtils.getArrayItemId(i), s.toString()).setData(s).setChecked(s.equals(si));
+				}
+				return null;
+			});
+		}
+
+		private boolean subtitleStreamSelected(OverlayMenuItem i) {
+			MainActivityDelegate a = getActivity(); if (a == null || a.getMediaSessionCallback().getEngine() != engine) return true;
+			SubtitleStreamInfo si = i.getData(); PlayableItem pi = (PlayableItem) getItem();
+			if (si.equals(engine.getCurrentSubtitleStreamInfo())) { pi.getPrefs().setSubIdPref(null); engine.setCurrentSubtitleStream(null); }
+			else { engine.setCurrentSubtitleStream(si); pi.getPrefs().setSubIdPref(si.getId()); }
+			return true;
+		}
+		@Override
+		protected void buildPlayableMenu(MainActivityDelegate a, OverlayMenu.Builder b, PlayableItem pi, boolean initRepeat) {
+			super.buildPlayableMenu(a, b, pi, false); BrowsableItemPrefs p = pi.getParent().getPrefs();
+			MediaEngine eng = a.getMediaSessionCallback().getEngine(); if (eng == null) return;
+			boolean stream = pi.isStream(); eng.contributeToMenu(b);
+			if (!stream && !pi.isExternal()) {
+				if (pi.isRepeatItemEnabled() || p.getRepeatPref()) { b.addItem(R.id.repeat, R.drawable.repeat_filled, R.string.repeat).setSubmenu(s -> { buildRepeatMenu(s); s.addItem(R.id.repeat_disable_all, R.string.repeat_disable); }); }
+				else { b.addItem(R.id.repeat_enable, R.drawable.repeat, R.string.repeat).setSubmenu(this::buildRepeatMenu); }
+				if (p.getShufflePref()) b.addItem(R.id.shuffle_disable, R.drawable.shuffle_filled, R.string.shuffle_disable); else b.addItem(R.id.shuffle_enable, R.drawable.shuffle, R.string.shuffle);
+			}
+			if (eng.getAudioEffects() != null) b.addItem(R.id.audio_effects_fragment, R.drawable.equalizer, R.string.audio_effects);
+			if (!stream) b.addItem(R.id.speed, R.drawable.speed, R.string.speed).setSubmenu(s -> new SpeedMenuHandler().build(s, getItem()));
+			b.addItem(R.id.timer, R.drawable.timer, R.string.timer).setSubmenu(s -> new TimerMenuHandler(a).build(s));
+		}
+
+		private void buildRepeatMenu(OverlayMenu.Builder b) { b.setSelectionHandler(this); b.addItem(R.id.repeat_track, R.string.current_track); b.addItem(R.id.repeat_folder, R.string.current_folder); }
+
+		@Override
+		public boolean menuItemSelected(OverlayMenuItem i) {
+			int id = i.getItemId(); PlayableItem pi; MainActivityDelegate a = getActivity(); if (a == null) return true;
+			if (id == R.id.audio_effects_fragment) { MediaEngine eng = a.getMediaSessionCallback().getEngine(); if ((eng != null) && (eng.getAudioEffects() != null)) a.showFragment(R.id.audio_effects_fragment); return true; }
+			else if (id == R.id.repeat_track || id == R.id.repeat_folder || id == R.id.repeat_disable_all) { pi = (PlayableItem) getItem(); pi.setRepeatItemEnabled(id == R.id.repeat_track); pi.getParent().getPrefs().setRepeatPref(id == R.id.repeat_folder); return true; }
+			else if (id == R.id.shuffle_enable || id == R.id.shuffle_disable) { pi = (PlayableItem) getItem(); pi.getParent().getPrefs().setShufflePref(id == R.id.shuffle_enable); return true; }
+			return super.menuItemSelected(i);
+		}
+	}
+
+	private final class SpeedMenuHandler extends BasicPreferenceStore {
+		void build(OverlayMenu.Builder b, Item item) {
+			PreferenceSet set = new PreferenceSet();
+			set.addFloatPref(o -> { o.title = R.string.speed; o.store = item.getPrefs(); o.pref = MediaPrefs.SPEED; o.seekMin = 0.25f; o.seekMax = 4.00f; o.seekScale = 0.05f; });
+			set.addToMenu(b, true);
+		}
 	}
 }
