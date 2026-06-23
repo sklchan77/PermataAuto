@@ -67,6 +67,7 @@ import my.app.utils.ui.view.NavBarView;
 /**
  * Modernized control interface routing media panel interactions.
  * Patched to hook seamlessly with local channel tracking audio states.
+ * @author sklchan77
  */
 public class ControlPanelView extends ConstraintLayout
 		implements MainActivityListener, PreferenceStore.Listener, OverlayMenu.SelectionHandler,
