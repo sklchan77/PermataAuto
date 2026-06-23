@@ -1,17 +1,18 @@
 package my.app.permata.engine.exoplayer;
 
-import static androidx.media3.common.PlaybackException.ERROR_CODE_UNSPECIFIED;
 import static java.util.Collections.emptyList;
 import static java.util.Objects.requireNonNull;
 import static my.app.utils.async.Completed.completed;
 import static my.app.utils.async.Completed.completedNull;
 import static my.app.utils.async.Completed.completedVoid;
+import static my.app.utils.misc.Assert.assertMainThread;
 
 import android.annotation.SuppressLint;
 import android.content.Context;
 import android.media.AudioManager;
 import android.net.Uri;
 import android.os.Bundle;
+import android.support.v4.media.MediaDescriptionCompat;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
@@ -168,7 +169,7 @@ public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener 
 
 	@SuppressLint("SwitchIntDef")
 	@Override
-	public void prepare(PlayableItem source) {
+	public void prepare(@NonNull PlayableItem source) {
 		synchronized (engineLock) {
 			if (this.source == null) {
 				stopped(false);
@@ -184,19 +185,17 @@ public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener 
 			MediaItem m = MediaItem.fromUri(uri);
 			this.isHls = Util.inferContentType(uri) == C.CONTENT_TYPE_HLS;
 
-			// --- NEW: Dynamic Audio Effects Per-File Channel Profile Sync ---
+			// Fixed: App.get() context mapping integration loop
 			AudioEffects fx = getAudioEffects();
 			if (fx != null) {
 				String channelIdentifier = "exo_file_" + uri.hashCode();
-				fx.loadAndApplyPersistedSettingsForChannel(player.getApplicationLooper() != null ? App.get().getAppContext() : App.get().getAppContext(), channelIdentifier);
+				fx.loadAndApplyPersistedSettingsForChannel(App.get(), channelIdentifier);
 			}
-			// -----------------------------------------------------------------
 
 			player.setMediaItem(m);
 			player.prepare();
 		}
 	}
-
 
 	@Override
 	public void start() {
@@ -381,22 +380,19 @@ public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener 
 				if (group.getType() != C.TRACK_TYPE_AUDIO) continue;
 				for (int j = 0; j < group.length; j++) {
 					if (info.getId() != (i * 1000L + j)) continue;
-					
-					// 1. Force the structural track selection override down to ExoPlayer parameters
 					player.setTrackSelectionParameters(player.getTrackSelectionParameters().buildUpon()
 							.setOverrideForType(new androidx.media3.common.TrackSelectionOverride(
 									group.getMediaTrackGroup(), j))
 							.build());
 							
-					// --- NEW: Audio Stream Track Switch Presets Migration Loop ---
+					// Fixed: App.get() context mapping track isolation
 					synchronized (engineLock) {
 						AudioEffects fx = getAudioEffects();
 						if (fx != null && source != null) {
 							String streamTrackIdentifier = "exo_file_" + source.getLocation().hashCode() + "_track_" + info.getId();
-							fx.loadAndApplyPersistedSettingsForChannel(App.get().getAppContext(), streamTrackIdentifier);
+							fx.loadAndApplyPersistedSettingsForChannel(App.get(), streamTrackIdentifier);
 						}
 					}
-					// -----------------------------------------------------------
 					return;
 				}
 			}
@@ -448,7 +444,6 @@ public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener 
 			return subFiles;
 		});
 	}
-
 
 	@Override
 	public void close() {
@@ -504,13 +499,11 @@ public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener 
 			} else if (playbackState == Player.STATE_ENDED) {
 				stopped(false);
 				
-				// --- NEW: Clear Active Channel Mapping State ---
-				Optional.ofNullable(getAudioEffects()).ifPresent(fx -> fx.resetToGlobalSettings(App.get().getAppContext()));
-				// -----------------------------------------------
+				// Fixed: App.get() context mapping on stream end
+				Optional.ofNullable(getAudioEffects()).ifPresent(fx -> fx.resetToGlobalSettings(App.get()));
 				
 				Optional.ofNullable(listener).ifPresent(l -> l.onEngineEnded(this));
 			}
-
 		}
 	}
 
@@ -533,6 +526,10 @@ public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener 
 		return accessor.createSubStreamGrid();
 	}
 
+	// =========================================================================
+	// NESTED TRANSLATION RESOLUTION ACCESSOR COMPONENT
+	// =========================================================================
+
 	static class Accessor {
 		private volatile ExoPlayerEngine player;
 		private volatile long subGenTimeOffset;
@@ -547,7 +544,7 @@ public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener 
 		}
 
 		void drainBuffer() {
-			Util.assertMainThread();
+			assertMainThread(); // Fixed: Aligned cleanly with baseline static framework import
 			ExoPlayerEngine p = this.player;
 			if (p == null) return;
 			if (p.drainBuffer != null) p.drainBuffer.run();
@@ -608,7 +605,7 @@ public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener 
 		}
 
 		private void batchTranslate(Translator tr, String targetLang, List<Subtitles.Text> subs) {
-			Util.assertMainThread();
+			assertMainThread();
 			boolean prependPrev = false;
 			if (!subStream.isEmpty()) {
 				var lastItem = subStream.get(subStream.size() - 1);
@@ -696,12 +693,13 @@ public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener 
 		}
 
 		private SubGrid createSubStreamGrid() {
-			Util.assertMainThread();
+			assertMainThread();
 			if (subStream == null) subStream = new Subtitles.Stream();
 			if (transLang == null) return new SubGrid(subStream);
 			if (subTransStream == null) subTransStream = new Subtitles.Stream();
 			
-			var m = new EnumMap<SubGrid.Position, Subtitles.Stream>(SubGrid.Position.class);
+			// Fixed: Explicit type upcasting mapping strictly to the baseline Subtitles interface expectations
+			java.util.Map<SubGrid.Position, Subtitles> m = new EnumMap<>(SubGrid.Position.class);
 			m.put(SubGrid.Position.BOTTOM_LEFT, subStream);
 			m.put(SubGrid.Position.BOTTOM_RIGHT, subTransStream);
 			return new SubGrid(m);
