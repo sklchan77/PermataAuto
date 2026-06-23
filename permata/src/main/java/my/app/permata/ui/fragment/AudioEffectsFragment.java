@@ -1,6 +1,7 @@
 package my.app.permata.ui.fragment;
 
 import android.annotation.SuppressLint;
+import android.content.Context;
 import android.os.Bundle;
 import android.support.v4.media.session.PlaybackStateCompat;
 import android.view.LayoutInflater;
@@ -9,6 +10,8 @@ import android.view.ViewGroup;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
+
+import java.util.Objects;
 
 import my.app.permata.R;
 import my.app.permata.media.engine.AudioEffects;
@@ -20,12 +23,21 @@ import my.app.permata.ui.activity.MainActivityDelegate;
 import my.app.permata.ui.activity.MainActivityListener;
 import my.app.permata.ui.view.AudioEffectsView;
 import my.app.utils.async.FutureSupplier;
+import my.app.utils.log.Log;
 
 /**
+ * Enterprise-grade, modern UI controller for managing system audio engineering curves.
+ * Upgraded to fully leverage automated state persistence via localized channel tracking signatures.
+ * 
  * @author sklchan77
  */
 public class AudioEffectsFragment extends MainActivityFragment implements
 		MediaSessionCallback.Listener, MainActivityListener {
+
+	private static final String TAG = "AudioEffectsFragment";
+	
+	// Keeps track of the current channel to prevent redundant binding/sync iterations
+	@Nullable private String boundChannelId = null;
 
 	@Override
 	public int getFragmentId() {
@@ -33,175 +45,208 @@ public class AudioEffectsFragment extends MainActivityFragment implements
 	}
 
 	@Override
+	@NonNull
 	public CharSequence getTitle() {
-		return getResources().getString(R.string.audio_effects);
+		Context ctx = getContext();
+		return ctx != null ? ctx.getString(R.string.audio_effects) : "Audio Effects";
 	}
 
 	@SuppressLint("RestrictedApi")
 	@Override
 	public void onCreate(@Nullable Bundle savedInstanceState) {
 		super.onCreate(savedInstanceState);
-		getMainActivity().onSuccess(a -> {
-			PermataServiceUiBinder b = a.getMediaServiceBinder();
-			a.addBroadcastListener(this, ACTIVITY_FINISH | ACTIVITY_DESTROY);
-			b.getMediaSessionCallback().addBroadcastListener(this);
+		getMainActivity().onSuccess(delegate -> {
+			PermataServiceUiBinder binder = delegate.getMediaServiceBinder();
+			delegate.addBroadcastListener(this, ACTIVITY_FINISH | ACTIVITY_DESTROY);
+			binder.getMediaSessionCallback().addBroadcastListener(this);
+			Log.d(TAG, "AudioEffects Fragment lifecycle bindings linked successfully.");
 		});
 	}
 
 	@Override
 	public void onDestroy() {
-		super.onDestroy();
+		// Clean up leaks reliably on host activity destruction steps
 		getMainActivity().onSuccess(this::removeListeners);
+		super.onDestroy();
 	}
 
-	private void removeListeners(MainActivityDelegate a) {
-		a.removeBroadcastListener(this);
-		a.getMediaSessionCallback().removeBroadcastListener(this);
+	private void removeListeners(@NonNull MainActivityDelegate delegate) {
+		delegate.removeBroadcastListener(this);
+		MediaSessionCallback callback = delegate.getMediaServiceBinder().getMediaSessionCallback();
+		if (callback != null) {
+			callback.removeBroadcastListener(this);
+		}
+		Log.d(TAG, "Dangling broadcast listeners unlinked during destruction workflows.");
 	}
 
 	@Nullable
 	@Override
 	public View onCreateView(@NonNull LayoutInflater inflater, @Nullable ViewGroup container, @Nullable Bundle savedInstanceState) {
-		return new AudioEffectsView(getContext());
+		return new AudioEffectsView(inflater.getContext());
 	}
 
 	@Override
 	public void onViewCreated(@NonNull View view, @Nullable Bundle savedInstanceState) {
 		super.onViewCreated(view, savedInstanceState);
+		// Force view calculation parameters validation check on visibility creation step
 		onHiddenChanged(isHidden());
 	}
 
 	@Override
 	public void onDestroyView() {
-		super.onDestroyView();
-
-		getMainActivity().onSuccess(a -> {
-			PermataServiceUiBinder b = a.getMediaServiceBinder();
+		getMainActivity().onSuccess(delegate -> {
 			AudioEffectsView view = getView();
-			if (view == null) return;
-			view.apply(b.getMediaSessionCallback());
+			if (view != null) {
+				view.apply(delegate.getMediaServiceBinder().getMediaSessionCallback());
+				view.cleanup();
+			}
 		});
+		boundChannelId = null;
+		super.onDestroyView();
 	}
 
 	@Nullable
 	@Override
 	public AudioEffectsView getView() {
-		return (AudioEffectsView) super.getView();
+		View view = super.getView();
+		return view instanceof AudioEffectsView ? (AudioEffectsView) view : null;
 	}
 
 	@Override
 	public void onHiddenChanged(boolean hidden) {
 		super.onHiddenChanged(hidden);
+		getMainActivity().onSuccess(delegate -> handleVisibilityUpdate(delegate, hidden));
+	}
 
-		getMainActivity().onSuccess(a -> {
-			PermataServiceUiBinder b = a.getMediaServiceBinder();
-			AudioEffectsView view = getView();
-			if (view == null) return;
-			MediaSessionCallback cb = b.getMediaSessionCallback();
+	/**
+	 * Main pipeline control router verifying visibility configurations and channel-specific initializations.
+	 */
+	private void handleVisibilityUpdate(@NonNull MainActivityDelegate delegate, boolean hidden) {
+		AudioEffectsView view = getView();
+		if (view == null) return;
 
-			if (hidden) {
-				view.apply(cb);
-				view.cleanup();
-				return;
-			}
+		MediaSessionCallback callback = delegate.getMediaServiceBinder().getMediaSessionCallback();
 
-			MediaEngine eng = cb.getEngine();
+		if (hidden) {
+			view.apply(callback);
+			view.cleanup();
+			boundChannelId = null;
+			return;
+		}
 
-			if (eng != null) {
-				PlayableItem pi = eng.getSource();
+		MediaEngine engine = callback.getEngine();
+		if (engine != null) {
+			PlayableItem item = engine.getSource();
+			AudioEffects effects = engine.getAudioEffects();
 
-				if (pi != null) {
-					AudioEffects effects = eng.getAudioEffects();
-
-					if (effects != null) {
-						view.init(cb, effects, pi);
-						return;
+			if (item != null && effects != null) {
+				// Derive a distinct Channel tracking string ID using your domain rules (fallback to path string)
+				String channelId = item.getPath(); 
+				
+				if (channelId != null) {
+					// Dynamically trigger hardware layer re-sync inside AudioEffects engine
+					Context ctx = getContext();
+					if (ctx != null && !Objects.equals(boundChannelId, channelId)) {
+						effects.loadAndApplyPersistedSettingsForChannel(ctx.getApplicationContext(), channelId);
+						boundChannelId = channelId;
 					}
 				}
+				
+				view.init(callback, effects, item);
+				return;
 			}
-
-			close(a);
-		});
+		}
+		
+		// Terminate fragment view seamlessly if driver layer components are invalid
+		close(delegate);
 	}
 
 	@Override
 	public boolean onBackPressed() {
-		getMainActivity().onSuccess(a -> {
-			AudioEffectsView view = getView();
-			if (view != null) view.apply(a.getMediaServiceBinder().getMediaSessionCallback());
-			close(a);
-		});
+		getMainActivity().onSuccess(this::close);
 		return true;
 	}
 
-	private void applyAndCleanup(MainActivityDelegate a) {
+	private void applyAndCleanup(@NonNull MainActivityDelegate delegate) {
 		AudioEffectsView view = getView();
-
 		if (view != null) {
-			view.apply(a.getMediaServiceBinder().getMediaSessionCallback());
+			view.apply(delegate.getMediaServiceBinder().getMediaSessionCallback());
 			view.cleanup();
 		}
+		boundChannelId = null;
 	}
 
-	private void close(MainActivityDelegate a) {
-		AudioEffectsView view = getView();
-
-		if (view != null) {
-			view.apply(a.getMediaServiceBinder().getMediaSessionCallback());
-			view.cleanup();
-		}
-
-		a.backToNavFragment();
+	private void close(@NonNull MainActivityDelegate delegate) {
+		applyAndCleanup(delegate);
+		delegate.backToNavFragment();
 	}
 
 	@NonNull
 	private FutureSupplier<MainActivityDelegate> getMainActivity() {
-		return MainActivityDelegate.getActivityDelegate(getContext());
+		return MainActivityDelegate.getActivityDelegate(Objects.requireNonNull(getContext()));
 	}
 
 	@SuppressLint("SwitchIntDef")
 	@Override
-	public void onPlaybackStateChanged(MediaSessionCallback cb, PlaybackStateCompat state) {
+	public void onPlaybackStateChanged(@NonNull MediaSessionCallback callback, @NonNull PlaybackStateCompat state) {
 		if (isHidden()) return;
 
-		AudioEffectsView view;
+		AudioEffectsView view = getView();
+		if (view == null) return;
 
 		switch (state.getState()) {
 			case PlaybackStateCompat.STATE_SKIPPING_TO_NEXT:
 			case PlaybackStateCompat.STATE_SKIPPING_TO_PREVIOUS:
 			case PlaybackStateCompat.STATE_SKIPPING_TO_QUEUE_ITEM:
-				view = getView();
-
-				if (view != null) {
-					view.apply(cb);
-					view.cleanup();
-				}
-
+				view.apply(callback);
+				view.cleanup();
+				boundChannelId = null;
 				break;
+
 			case PlaybackStateCompat.STATE_STOPPED:
 				getMainActivity().onSuccess(this::close);
 				break;
-			default:
-				MediaEngine eng = cb.getEngine();
-				PlayableItem pi;
-				AudioEffects effects;
 
-				if ((eng == null) || ((pi = eng.getSource()) == null)
-						|| ((effects = eng.getAudioEffects()) == null) || ((view = getView()) == null)) {
+			default:
+				MediaEngine engine = callback.getEngine();
+				if (engine == null) {
 					getMainActivity().onSuccess(this::close);
-				} else if (view.getEffects() != effects) {
-					view.cleanup();
-					view.init(cb, effects, pi);
+					return;
 				}
+
+				PlayableItem item = engine.getSource();
+				AudioEffects effects = engine.getAudioEffects();
+
+				if (item == null || effects == null) {
+					getMainActivity().onSuccess(this::close);
+					return;
+				}
+
+				String currentChannelId = item.getPath();
+				boolean channelChanged = !Objects.equals(boundChannelId, currentChannelId);
+
+				// Redraw layout context tracking nodes if hardware references or channel keys shift
+				if (view.getEffects() != effects || channelChanged) {
+					view.cleanup();
+					
+					Context ctx = getContext();
+					if (ctx != null && currentChannelId != null && channelChanged) {
+						effects.loadAndApplyPersistedSettingsForChannel(ctx.getApplicationContext(), currentChannelId);
+						boundChannelId = currentChannelId;
+					}
+					
+					view.init(callback, effects, item);
+				}
+				break;
 		}
 	}
 
 	@Override
-	public void onActivityEvent(MainActivityDelegate a, long e) {
-		if (e == ACTIVITY_FINISH) {
-			applyAndCleanup(a);
-		} else if (e == ACTIVITY_DESTROY) {
-			removeListeners(a);
+	public void onActivityEvent(@NonNull MainActivityDelegate delegate, long event) {
+		if (event == ACTIVITY_FINISH) {
+			applyAndCleanup(delegate);
+		} else if (event == ACTIVITY_DESTROY) {
+			removeListeners(delegate);
 		}
 	}
 }
