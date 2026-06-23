@@ -37,7 +37,7 @@ public final class AudioEffects {
 	private static final int GAIN_150_PERCENT_MB = 352; 
 
 	// Persistence Keys
-	private static final String PREFS_NAME = "fermata_audio_effects_prefs";
+	private static final String PREFS_NAME = "permata_audio_effects_prefs";
 	private static final String KEY_EQ_ENABLED = "eq_enabled";
 	private static final String KEY_VIRT_ENABLED = "virt_enabled";
 	private static final String KEY_BASS_ENABLED = "bass_enabled";
