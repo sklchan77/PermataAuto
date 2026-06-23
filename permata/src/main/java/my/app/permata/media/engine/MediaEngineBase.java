@@ -266,7 +266,7 @@ if (children == null || children.isEmpty()) return java.util.Collections.emptyLi
 				videoView = null;
 				
 				// --- NEW: Reset Active Channel Parameters on Global Engine Stop ---
-				Optional.ofNullable(getAudioEffects()).ifPresent(fx -> fx.resetToGlobalSettings(App.get().getAppContext()));
+Optional.ofNullable(getAudioEffects()).ifPresent(fx -> fx.resetToGlobalSettings(App.get())); 
 				// ------------------------------------------------------------------
 				
 				if (subMgr != null) {
@@ -437,7 +437,7 @@ if (children == null || children.isEmpty()) return java.util.Collections.emptyLi
 				return loading = load.main().map(sg -> {
 					synchronized (subMgrLock) {
 						if (sg == null || sub != null || inf != streamInfo) return null;
-						sub = new SubScheduler(App.get().getOriginalHandler(), sg, this, MediaEngineBase.this::subSchedulerClock);
+sub = new SubScheduler(App.get().getHandler(), sg, this, MediaEngineBase.this::subSchedulerClock); 
 						if (getEngineState() == STATE_PLAYING && !consumers.isEmpty()) {
 							start();
 						}
@@ -514,7 +514,7 @@ if (children == null || children.isEmpty()) return java.util.Collections.emptyLi
 					sub.stop(false);
 					sub.start(position, getSubtitleDelay(), speed);
 					if (!isPlaying()) {
-						App.get().getOriginalHandler().submit(() -> {
+App.get().getHandler().submit(() -> { 
 							synchronized (subMgrLock) {
 								if (!isPlaying() && sub != null) sub.stop(true);
 							}
