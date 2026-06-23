@@ -12,6 +12,9 @@ import my.app.utils.pref.PreferenceStore;
 import my.app.utils.text.SharedTextBuilder;
 
 /**
+ * Enterprise-grade persistence schema managing local application environment parameters.
+ * Upgraded with strict static type maps to link flawlessly with persistent audio signatures.
+ * 
  * @author sklchan77
  */
 public interface MediaPrefs extends PreferenceStore {
@@ -40,36 +43,39 @@ public interface MediaPrefs extends PreferenceStore {
 	Pref<IntSupplier> AUDIO_ENGINE = Pref.i("AUDIO_ENGINE", MEDIA_ENG_MP);
 	Pref<IntSupplier> VIDEO_ENGINE = Pref.i("VIDEO_ENGINE", MEDIA_ENG_MP);
 	Pref<IntSupplier> VIDEO_SCALE = Pref.i("VIDEO_SCALE", SCALE_BEST);
-	Pref<IntSupplier> MEDIA_SCANNER =
-			Pref.i("MEDIA_SCANNER", MEDIA_SCANNER_DEFAULT).withInheritance(false);
+	Pref<IntSupplier> MEDIA_SCANNER = Pref.i("MEDIA_SCANNER", MEDIA_SCANNER_DEFAULT).withInheritance(false);
 	Pref<DoubleSupplier> SPEED = Pref.f("SPEED", 1.0f).withInheritance(false);
+	
+	// Core Persistent Engine Toggles Matching AudioEffects Schemas
 	Pref<BooleanSupplier> AE_ENABLED = Pref.b("AE_ENABLED", false).withInheritance(false);
 	Pref<BooleanSupplier> EQ_ENABLED = Pref.b("EQ_ENABLED", false).withInheritance(false);
 	Pref<BooleanSupplier> VIRT_ENABLED = Pref.b("VIRT_ENABLED", false).withInheritance(false);
 	Pref<BooleanSupplier> BASS_ENABLED = Pref.b("BASS_ENABLED", false).withInheritance(false);
-	Pref<BooleanSupplier> VOL_BOOST_ENABLED =
-			Pref.b("VOL_BOOST_ENABLED", false).withInheritance(false);
+	Pref<BooleanSupplier> VOL_BOOST_ENABLED = Pref.b("VOL_BOOST_ENABLED", false).withInheritance(false);
 
-	// 0 stands for Manual, negative for user presets, positive for system presets
+	// Equalizer Mapping Structure Node Declarations
 	Pref<IntSupplier> EQ_PRESET = Pref.i("EQ_PRESET", 0).withInheritance(false);
 	Pref<Supplier<int[]>> EQ_BANDS = Pref.ia("EQ_BANDS", () -> null).withInheritance(false);
-	Pref<Supplier<String[]>> EQ_USER_PRESETS =
-			Pref.sa("EQ_USER_PRESETS", new String[0]).withInheritance(false);
-	Pref<IntSupplier> VIRT_MODE =
-			Pref.i("VIRT_MODE", VIRTUALIZATION_MODE_AUTO).withInheritance(false);
+	Pref<Supplier<String[]>> EQ_USER_PRESETS = Pref.sa("EQ_USER_PRESETS", new String[0]).withInheritance(false);
+	
+	// DSP Hardware Parameter Keys
+	Pref<IntSupplier> VIRT_MODE = Pref.i("VIRT_MODE", VIRTUALIZATION_MODE_AUTO).withInheritance(false);
 	Pref<IntSupplier> VIRT_STRENGTH = Pref.i("VIRT_STRENGTH", 0).withInheritance(false);
 	Pref<IntSupplier> BASS_STRENGTH = Pref.i("BASS_STRENGTH", 0).withInheritance(false);
 	Pref<IntSupplier> VOL_BOOST_STRENGTH = Pref.i("VOL_BOOST_STRENGTH", 0).withInheritance(false);
 
+	// Context Rendering Media Tracks Variables
 	Pref<BooleanSupplier> SUB_ENABLED = Pref.b("SUB_ENABLED", true);
 	Pref<IntSupplier> SUB_DELAY = Pref.i("SUB_DELAY", 0);
 	Pref<DoubleSupplier> SUB_SIZE = Pref.f("SUB_SIZE", 1f);
+	
 	Pref<Supplier<String>> SUB_LANG = Pref.s("SUB_LANG", () -> {
 		Locale locale = Locale.getDefault();
-		var lang = locale.getLanguage();
-		var lang3 = locale.getISO3Language();
+		String lang = locale.getLanguage();
+		String lang3 = locale.getISO3Language();
 		return "+" + lang3 + ", +" + lang + ", " + lang3 + "+, " + lang + "+, " + lang3 + ", " + lang;
 	});
+	
 	Pref<Supplier<String>> SUB_KEY = Pref.s("SUB_KEY", "");
 	Pref<IntSupplier> AUDIO_DELAY = Pref.i("AUDIO_DELAY", 0);
 	Pref<IntSupplier> AUDIO_DELAY_AA = Pref.i("AUDIO_DELAY_AA", 0);
@@ -77,8 +83,6 @@ public interface MediaPrefs extends PreferenceStore {
 	Pref<Supplier<String>> AUDIO_KEY = Pref.s("AUDIO_KEY", "");
 	Pref<IntSupplier> WATCHED_THRESHOLD = Pref.i("WATCHED_THRESHOLD", 95);
 	Pref<IntSupplier> HW_ACCEL = Pref.i("HW_ACCEL", HW_ACCEL_AUTO);
-
-
 	default int getAudioEnginePref() {
 		return getIntPref(AUDIO_ENGINE);
 	}
@@ -138,8 +142,7 @@ public interface MediaPrefs extends PreferenceStore {
 	}
 
 	default int getAudioDelayPref(boolean isCar) {
-		return (isCar && hasPref(AUDIO_DELAY_AA)) ? getIntPref(AUDIO_DELAY_AA) :
-				getIntPref(AUDIO_DELAY);
+		return (isCar && hasPref(AUDIO_DELAY_AA)) ? getIntPref(AUDIO_DELAY_AA) : getIntPref(AUDIO_DELAY);
 	}
 
 	default String getAudioLangPref() {
@@ -155,28 +158,36 @@ public interface MediaPrefs extends PreferenceStore {
 	}
 
 	static String getUserPresetName(String preset) {
+		if (preset == null || !preset.contains(":")) return "";
 		return preset.substring(preset.indexOf(':') + 1);
 	}
 
 	static int[] getUserPresetBands(String preset) {
-		String[] a = preset.substring(0, preset.indexOf(':')).split(" ");
-		int[] bands = new int[a.length];
+		if (preset == null || !preset.contains(":")) return new int[0];
+		String[] dataTokens = preset.substring(0, preset.indexOf(':')).split(" ");
+		int[] bands = new int[dataTokens.length];
 
 		for (int i = 0; i < bands.length; i++) {
-			bands[i] = Integer.parseInt(a[i]);
+			try {
+				bands[i] = Integer.parseInt(dataTokens[i]);
+			} catch (NumberFormatException e) {
+				bands[i] = 0;
+			}
 		}
-
 		return bands;
 	}
 
 	static String toUserPreset(String name, int[] bands) {
+		if (name == null || bands == null) return "";
 		try (SharedTextBuilder tb = SharedTextBuilder.get()) {
 			for (int i = 0; i < bands.length; i++) {
 				tb.append(bands[i]);
-				if (i == (bands.length - 1)) tb.append(':');
-				else tb.append(' ');
+				if (i == (bands.length - 1)) {
+					tb.append(':');
+				} else {
+					tb.append(' ');
+				}
 			}
-
 			return tb.append(name).toString();
 		}
 	}
