@@ -1,4 +1,4 @@
-package my.app.permata.media.engine;
+package my.app.permata.engine.vlc;
 
 import static android.view.ViewGroup.LayoutParams.MATCH_PARENT;
 import static java.util.Collections.emptyList;
@@ -63,7 +63,6 @@ import my.app.utils.log.Log;
 public class VlcEngine extends MediaEngineBase 
 		implements MediaPlayer.EventListener, IVLCVout.OnNewVideoLayoutListener {
 
-	@SuppressWarnings({"FieldCanBeLocal", "unused"})
 	private final VlcEngineProvider provider;
 	private final LibVLC vlc;
 	private final MediaPlayer player;
