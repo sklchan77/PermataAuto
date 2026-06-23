@@ -64,11 +64,6 @@ import my.app.utils.ui.menu.OverlayMenuItem;
 import my.app.utils.ui.view.GestureListener;
 import my.app.utils.ui.view.NavBarView;
 
-/**
- * Modernized control interface routing media panel interactions.
- * Patched to hook seamlessly with local channel tracking audio states.
- * @author sklchan77
- */
 public class ControlPanelView extends ConstraintLayout
 		implements MainActivityListener, PreferenceStore.Listener, OverlayMenu.SelectionHandler,
 		GestureListener {
@@ -219,6 +214,7 @@ public class ControlPanelView extends ConstraintLayout
 	public boolean isActive() {
 		return mask != 0;
 	}
+
 	@Override
 	public void setVisibility(int visibility) {
 		MainActivityDelegate a = getActivity();
@@ -245,7 +241,6 @@ public class ControlPanelView extends ConstraintLayout
 		}
 		checkPlaybackTimer(a);
 	}
-
 	public void enableVideoMode(@Nullable VideoView v) {
 		MainActivityDelegate a = getActivity();
 		if (a == null) return;
@@ -309,6 +304,7 @@ public class ControlPanelView extends ConstraintLayout
 	@Override public boolean onSwipeRight(MotionEvent e1, MotionEvent e2) { Objects.requireNonNull(getActivity()).getMediaServiceBinder().onPrevNextButtonClick(false); return true; }
 	@Override public boolean onSwipeUp(MotionEvent e1, MotionEvent e2) { Objects.requireNonNull(getActivity()).getMediaServiceBinder().onPrevNextFolderClick(false); return true; }
 	@Override public boolean onSwipeDown(MotionEvent e1, MotionEvent e2) { Objects.requireNonNull(getActivity()).getMediaServiceBinder().onPrevNextFolderClick(true); return true; }
+
 	@Override
 	public boolean onScroll(MotionEvent e1, MotionEvent e2, float distanceX, float distanceY) {
 		boolean horizontal = Math.abs(distanceX) >= Math.abs(distanceY);
@@ -349,19 +345,8 @@ public class ControlPanelView extends ConstraintLayout
 		return true;
 	}
 
-	@Override
-	public boolean onDoubleTap(@NonNull MotionEvent e) {
-		if (!(gestureSource instanceof VideoView)) return false;
-		Objects.requireNonNull(getActivity()).getMediaServiceBinder().onPlayPauseButtonClick();
-		return true;
-	}
-
-	@Override
-	public boolean onSingleTapConfirmed(@NonNull MotionEvent e) {
-		if (!(gestureSource instanceof VideoView)) return false;
-		return onTouch((VideoView) gestureSource);
-	}
-
+	@Override public boolean onDoubleTap(@NonNull MotionEvent e) { if (!(gestureSource instanceof VideoView)) return false; Objects.requireNonNull(getActivity()).getMediaServiceBinder().onPlayPauseButtonClick(); return true; }
+	@Override public boolean onSingleTapConfirmed(@NonNull MotionEvent e) { if (!(gestureSource instanceof VideoView)) return false; return onTouch((VideoView) gestureSource); }
 	public boolean onTouch(@NonNull VideoView video) {
 		MainActivityDelegate a = getActivity();
 		if (a == null) return false;
@@ -449,6 +434,7 @@ public class ControlPanelView extends ConstraintLayout
 			setShowHideBarsIcon(a);
 		}
 	}
+
 	public View focusSearch() {
 		View v = findViewById(R.id.seek_bar);
 		return isVisible(v) ? v : findViewById(R.id.control_play_pause);
@@ -481,22 +467,9 @@ public class ControlPanelView extends ConstraintLayout
 		return super.focusSearch(focused, direction);
 	}
 
-	private boolean isLine1(@NonNull View v) {
-		int id = v.getId();
-		return id == R.id.seek_bar || id == R.id.show_hide_bars || id == R.id.control_menu_button;
-	}
-
-	private void showHideBars(@NonNull View v) {
-		MainActivityDelegate a = getActivity();
-		if (a != null) {
-			a.setBarsHidden(!a.isBarsHidden());
-			setShowHideBarsIcon(a);
-		}
-	}
-
-	public void showMenu() {
-		if (isActive()) showMenu(this);
-	}
+	private boolean isLine1(@NonNull View v) { int id = v.getId(); return id == R.id.seek_bar || id == R.id.show_hide_bars || id == R.id.control_menu_button; }
+	private void showHideBars(@NonNull View v) { MainActivityDelegate a = getActivity(); if (a != null) { a.setBarsHidden(!a.isBarsHidden()); setShowHideBarsIcon(a); } }
+	public void showMenu() { if (isActive()) showMenu(this); }
 
 	private void showMenu(@NonNull View v) {
 		MainActivityDelegate a = getActivity();
@@ -506,7 +479,7 @@ public class ControlPanelView extends ConstraintLayout
 		if (i != null) {
 			AudioEffects audioEffectsEngine = eng.getAudioEffects();
 			if (audioEffectsEngine != null) {
-				String trackChannelSignature = i.getPath();
+				String trackChannelSignature = i.getLocation(); // Patched compilation node
 				if (trackChannelSignature != null) {
 					audioEffectsEngine.loadAndApplyPersistedSettingsForChannel(getContext().getApplicationContext(), trackChannelSignature);
 				}
@@ -515,29 +488,10 @@ public class ControlPanelView extends ConstraintLayout
 		}
 	}
 
-	@Nullable
-	private OverlayMenu getMenu(@NonNull MainActivityDelegate a) {
-		return a.findViewById(R.id.control_menu);
-	}
-
-	private void setShowHideBarsIcon(@NonNull MainActivityDelegate a) {
-		a.post(() -> {
-			if (showHideBars != null) {
-				showHideBars.setImageResource(a.isBarsHidden() ? R.drawable.expand : my.app.utils.R.drawable.collapse);
-			}
-		});
-	}
-
-	@Nullable
-	private MainActivityDelegate getActivity() {
-		return MainActivityDelegate.get(getContext());
-	}
-
-	@Override
-	public boolean menuItemSelected(@NonNull OverlayMenuItem item) {
-		return true;
-	}
-
+	@Nullable private OverlayMenu getMenu(@NonNull MainActivityDelegate a) { return a.findViewById(R.id.control_menu); }
+	private void setShowHideBarsIcon(@NonNull MainActivityDelegate a) { a.post(() -> { if (showHideBars != null) { showHideBars.setImageResource(a.isBarsHidden() ? R.drawable.expand : my.app.utils.R.drawable.collapse); } }); }
+	@Nullable private MainActivityDelegate getActivity() { return MainActivityDelegate.get(getContext()); }
+	@Override public boolean menuItemSelected(@NonNull OverlayMenuItem item) { return true; }
 	private void checkPlaybackTimer(@NonNull MainActivityDelegate a) {
 		MediaSessionCallback cb = a.getMediaSessionCallback();
 		int t = cb.getPlaybackTimer();
@@ -584,7 +538,68 @@ public class ControlPanelView extends ConstraintLayout
 		}
 	}
 
-	// Structural helper definitions continued downstream...
+	private int getStartDelay() { return (prefs == null) ? 0 : prefs.getVideoControlStartDelayPref() * 1000; }
+	private int getTouchDelay() { return (prefs == null) ? 5000 : prefs.getVideoControlTouchDelayPref() * 1000; }
+	private int getSeekDelay() { return (prefs == null) ? 3000 : prefs.getVideoControlSeekDelayPref() * 1000; }
+
+	private final class HideTimer implements Runnable {
+		final MainActivityDelegate activity;
+		final int delay;
+		final boolean seekMode;
+		final View[] views;
+
+		HideTimer(MainActivityDelegate activity, int delay, boolean seekMode, View... views) {
+			this.activity = activity;
+			this.delay = delay;
+			this.seekMode = seekMode;
+			this.views = views;
+		}
+
+		@Override
+		public void run() {
+			if ((hideTimer != this) || ((mask & MASK_VIDEO_MODE) == 0)) return;
+			if (ControlPanelView.this.hasFocus()) {
+				hideTimer = new HideTimer(activity, delay, seekMode, views);
+				activity.postDelayed(hideTimer, delay);
+				return;
+			}
+			if (activity.getPrefs().getSysBarsOnVideoTouchPref()) activity.setFullScreen(true);
+			ControlPanelView.super.setVisibility(GONE);
+			for (View v : views) { if (v != null) v.setVisibility(GONE); }
+		}
+	}
+
+	private final class TimerMenuHandler extends BasicPreferenceStore implements OverlayMenu.CloseHandler {
+		private final Pref<IntSupplier> H = Pref.i("H", 0);
+		private final Pref<IntSupplier> M = Pref.i("M", 0);
+		private final MainActivityDelegate activity;
+		private boolean changed;
+		private boolean closed;
+
+		TimerMenuHandler(MainActivityDelegate activity) { this.activity = activity; }
+
+		void build(OverlayMenu.Builder b) {
+			PreferenceSet set = new PreferenceSet();
+			int time = activity.getMediaSessionCallback().getPlaybackTimer();
+			if (time > 0) {
+				int h = time / 3600;
+				int m = (time - h * 3600) / 60;
+				applyIntPref(H, h);
+				applyIntPref(M, m);
+			}
+			set.addIntPref(o -> { o.title = R.string.hours; o.store = this; o.pref = H; o.seekMin = 0; o.seekMax = 12; });
+			set.addIntPref(o -> { o.title = R.string.minutes; o.store = this; o.pref = M; o.seekMin = 0; o.seekMax = 60; o.seekScale = 5; });
+			set.addToMenu(b, true);
+			b.setCloseHandlerHandler(this);
+			changed = false;
+			startTimer();
+		}
+
+		@Override public void applyIntPref(boolean removeDefault, Pref<? extends IntSupplier> pref, int value) { super.applyIntPref(removeDefault, pref, value); changed = true; startTimer(); }
+		@Override public void menuClosed(OverlayMenu menu) { closed = true; if (!changed) return; int h = getIntPref(H); int m = getIntPref(M); activity.getMediaSessionCallback().setPlaybackTimer(h * 3600 + m * 60); ControlPanelView.this.checkPlaybackTimer(activity); }
+		private void startTimer() { activity.postDelayed(() -> { if (!closed) { OverlayMenu m = ControlPanelView.this.getMenu(activity); if (m != null) m.hide(); } }, 60000); }
+	}
+
 	private static abstract class SeekBarListener implements android.widget.SeekBar.OnSeekBarChangeListener {
 		@Override public void onStartTrackingTouch(android.widget.SeekBar s) {}
 		@Override public void onStopTrackingTouch(android.widget.SeekBar s) {}
