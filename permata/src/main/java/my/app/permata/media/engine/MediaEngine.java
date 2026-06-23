@@ -12,16 +12,21 @@ import static my.app.utils.text.TextUtils.isBlank;
 
 import android.content.Context;
 import android.media.AudioManager;
+import android.net.Uri;
+import android.os.Bundle;
+import android.support.v4.media.MediaDescriptionCompat;
 
+import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.media.AudioFocusRequestCompat;
 import androidx.media.AudioManagerCompat;
 
 import java.io.Closeable;
-import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
-import java.util.StringTokenizer;
+import java.util.Optional;
+import java.util.stream.Collectors;
 
 import my.app.permata.media.lib.MediaLib.PlayableItem;
 import my.app.permata.media.sub.SubGrid;
@@ -35,14 +40,19 @@ import my.app.utils.text.TextUtils;
 import my.app.utils.ui.menu.OverlayMenu;
 
 /**
+ * Enterprise-Grade Unified MediaEngine Contract for Permata Auto.
+ * Fully modernized with fluid Stream selections, type-safe null mappings,
+ * and robust focus management.
+ * 
  * @author sklchan77
  */
 public interface MediaEngine extends Closeable {
+
 	FutureSupplier<SubGrid> NO_SUBTITLES = completed(SubGrid.EMPTY);
 
 	int getId();
 
-	void prepare(PlayableItem source);
+	void prepare(@NonNull PlayableItem source);
 
 	void start();
 
@@ -55,22 +65,27 @@ public interface MediaEngine extends Closeable {
 	}
 
 	default boolean canSeek() {
-		PlayableItem src = getSource();
-		return (src != null) && src.isSeekable();
+		return Optional.ofNullable(getSource())
+				.map(PlayableItem::isSeekable)
+				.orElse(false);
 	}
 
 	default boolean muteOnTransientFocusLoss() {
 		return !canPause();
 	}
 
+	@Nullable
 	PlayableItem getSource();
 
+	@NonNull
 	FutureSupplier<Long> getDuration();
 
+	@NonNull
 	FutureSupplier<Long> getPosition();
 
 	void setPosition(long position);
 
+	@NonNull
 	FutureSupplier<Float> getSpeed();
 
 	void setSpeed(float speed);
@@ -89,6 +104,7 @@ public interface MediaEngine extends Closeable {
 		return null;
 	}
 
+	@NonNull
 	default List<AudioStreamInfo> getAudioStreamInfo() {
 		return Collections.emptyList();
 	}
@@ -113,7 +129,7 @@ public interface MediaEngine extends Closeable {
 	default boolean isSubtitlesSupported() {
 		return false;
 	}
-
+	@NonNull
 	default FutureSupplier<List<SubtitleStreamInfo>> getSubtitleStreamInfo() {
 		return completedEmptyList();
 	}
@@ -125,31 +141,40 @@ public interface MediaEngine extends Closeable {
 
 	default void setCurrentSubtitleStream(@Nullable SubtitleStreamInfo i) {}
 
+	@NonNull
 	default FutureSupplier<Void> selectSubtitleStream() {
 		var src = getSource();
 		if (src == null) return completedVoid();
+		
 		var prefs = src.getPrefs();
-
-		if (prefs.getSubEnabledPref()) {
+		if (prefs != null && prefs.getSubEnabledPref()) {
 			int delay = prefs.getSubDelayPref();
-			if (delay != 0) setSubtitleDelay(delay);
-			return selectMediaStream(prefs::getSubIdPref, prefs::getSubLangPref, prefs::getSubKeyPref,
-					this::getSubtitleStreamInfo, si -> {
-						if (getSource() == src) setCurrentSubtitleStream(si);
-					});
+			if (delay != 0) {
+				setSubtitleDelay(delay);
+			}
+			return selectMediaStream(
+					prefs::getSubIdPref,
+					prefs::getSubLangPref,
+					prefs::getSubKeyPref,
+					this::getSubtitleStreamInfo,
+					si -> {
+						if (getSource() == src) {
+							setCurrentSubtitleStream(si);
+						}
+					}
+			);
 		}
-
 		return completedVoid();
 	}
 
+	@NonNull
 	default FutureSupplier<SubGrid> getCurrentSubtitles() {
 		return NO_SUBTITLES;
 	}
 
+	default void addSubtitleConsumer(@NonNull BiConsumer<SubGrid.Position, Subtitles.Text> consumer) {}
 
-	default void addSubtitleConsumer(BiConsumer<SubGrid.Position, Subtitles.Text> consumer) {}
-
-	default void removeSubtitleConsumer(BiConsumer<SubGrid.Position, Subtitles.Text> consumer) {}
+	default void removeSubtitleConsumer(@NonNull BiConsumer<SubGrid.Position, Subtitles.Text> consumer) {}
 
 	default int getSubtitleDelay() {
 		return 0;
@@ -157,66 +182,91 @@ public interface MediaEngine extends Closeable {
 
 	default void setSubtitleDelay(int milliseconds) {}
 
+	/**
+	 * Modernized Stream filtering selection pipeline replacing legacy StringTokenizer loop mechanics.
+	 */
+	@NonNull
 	static <I extends MediaStreamInfo> FutureSupplier<Void> selectMediaStream(
-			Supplier<Long> idSupplier, Supplier<String> langSupplier, Supplier<String> keySupplier,
-			Supplier<FutureSupplier<List<I>>> streamSupplier, Consumer<I> streamConsumer) {
-		Long id = idSupplier.get();
+			@NonNull Supplier<Long> idSupplier,
+			@NonNull Supplier<String> langSupplier,
+			@NonNull Supplier<String> keySupplier,
+			@NonNull Supplier<FutureSupplier<List<I>>> streamSupplier,
+			@NonNull Consumer<I> streamConsumer) {
 
-		if ((id == null || id == -1) && isBlank(langSupplier.get()) && isBlank(keySupplier.get())) {
+		Long id = idSupplier.get();
+		String rawLang = langSupplier.get();
+		String rawKey = keySupplier.get();
+
+		if ((id == null || id == -1) && isBlank(rawLang) && isBlank(rawKey)) {
 			return completedVoid();
 		}
 
 		return streamSupplier.get().main().map(streams -> {
-			if (streams.isEmpty()) return null;
+			if (streams == null || streams.isEmpty()) return null;
 
+			// Priority 1: Match by explicit Track ID Configuration
 			if (id != null && id != -1) {
 				for (I i : streams) {
-					if (id == i.getId()) {
+					if (i != null && id.equals(i.getId())) {
 						streamConsumer.accept(i);
 						return null;
 					}
 				}
 			}
 
-			String langPattern = langSupplier.get().trim();
-			boolean hasMatching = false;
+			// Priority 2: Match by Language Tags mapping metrics
+			String langPattern = Optional.ofNullable(rawLang).map(String::trim).orElse("");
+			final boolean[] hasMatching = { false };
+			List<I> filteredStreams = streams;
 
 			if (!langPattern.isEmpty()) {
-				List<I> filtered = null;
+				List<String> langTokens = Arrays.stream(langPattern.split(","))
+						.map(String::trim)
+						.filter(s -> !s.isEmpty())
+						.toList();
 
-				for (var st = new StringTokenizer(langPattern, ","); st.hasMoreTokens(); ) {
-					String l = st.nextToken().trim();
-					if (l.isEmpty()) continue;
-					for (I i : streams) {
-						for (var lang : new String[]{i.getIsoLanguage(), i.getLanguage()}) {
-							if (lang == null) continue;
-							if (lang.equalsIgnoreCase(l) ||
-									(l.startsWith("+") && lang.endsWith(" + " + l.substring(1).trim())) ||
-									(l.endsWith("+") &&
-											lang.startsWith(l.substring(0, l.length() - 1).trim() + " + "))) {
-								hasMatching = true;
-								if (filtered == null) filtered = new ArrayList<>(streams.size());
-								if (!filtered.contains(i)) filtered.add(i);
+				if (!langTokens.isEmpty()) {
+					filteredStreams = streams.stream().filter(i -> {
+						if (i == null) return false;
+						
+						List<String> availableLangs = Arrays.asList(i.getIsoLanguage(), i.getLanguage());
+						for (String token : langTokens) {
+							for (String lang : availableLangs) {
+								if (lang == null) continue;
+								if (lang.equalsIgnoreCase(token)) {
+									hasMatching[0] = true;
+									return true;
+								}
+								if (token.startsWith("+") && lang.endsWith(token.substring(1).trim())) {
+									hasMatching[0] = true;
+									return true;
+								}
+								if (token.endsWith("+") && lang.startsWith(token.substring(0, token.length() - 1).trim())) {
+									hasMatching[0] = true;
+									return true;
+								}
 							}
 						}
-					}
+						return false;
+					}).collect(Collectors.toList());
 				}
-
-				if (filtered != null) streams = filtered;
 			}
 
-			String key = keySupplier.get().trim();
+			// Priority 3: Match by Metadata text keywords
+			String keyPattern = Optional.ofNullable(rawKey).map(String::trim).orElse("");
+			if (!keyPattern.isEmpty()) {
+				List<String> keyTokens = Arrays.stream(keyPattern.split(","))
+						.map(String::trim)
+						.filter(s -> !s.isEmpty())
+						.map(String::toLowerCase)
+						.toList();
 
-			if (!key.isEmpty()) {
-				for (var st = new StringTokenizer(key, ","); st.hasMoreTokens(); ) {
-					String k = st.nextToken().trim();
-
-					if (!k.isEmpty()) {
-						k = k.toLowerCase();
-
-						for (I i : streams) {
+				if (!keyTokens.isEmpty()) {
+					for (String k : keyTokens) {
+						for (I i : filteredStreams) {
+							if (i == null) continue;
 							String dsc = i.getDescription();
-							if ((dsc != null) && TextUtils.containsWord(dsc.toLowerCase(), k)) {
+							if (dsc != null && TextUtils.containsWord(dsc.toLowerCase(), k)) {
 								streamConsumer.accept(i);
 								return null;
 							}
@@ -225,74 +275,79 @@ public interface MediaEngine extends Closeable {
 				}
 			}
 
-			if (hasMatching) streamConsumer.accept(streams.get(0));
+			// Fallback: Bind first match element from filtering sequence configuration
+			if (hasMatching[0] && !filteredStreams.isEmpty()) {
+				streamConsumer.accept(filteredStreams.get(0));
+			}
 			return null;
 		});
 	}
-
 	default boolean isVideoModeRequired() {
-		PlayableItem src = getSource();
-		return (src != null) && src.isVideo();
+		return Optional.ofNullable(getSource())
+				.map(PlayableItem::isVideo)
+				.orElse(false);
 	}
 
 	default boolean isSplitModeSupported() {
 		return true;
 	}
 
-	default boolean setSurfaceSize(VideoView view) {
+	default boolean setSurfaceSize(@NonNull VideoView view) {
 		return false;
 	}
 
-	default boolean requestAudioFocus(@Nullable AudioManager audioManager,
-																		@Nullable AudioFocusRequestCompat audioFocusReq) {
-		return (audioManager == null) || (audioFocusReq == null) ||
-				(AudioManagerCompat.requestAudioFocus(audioManager, audioFocusReq) ==
-						AUDIOFOCUS_REQUEST_GRANTED);
+	default boolean requestAudioFocus(@Nullable AudioManager audioManager, @Nullable AudioFocusRequestCompat audioFocusReq) {
+		if (audioManager == null || audioFocusReq == null) return true;
+		return AudioManagerCompat.requestAudioFocus(audioManager, audioFocusReq) == AUDIOFOCUS_REQUEST_GRANTED;
 	}
 
-	default void releaseAudioFocus(@Nullable AudioManager audioManager,
-																 @Nullable AudioFocusRequestCompat audioFocusReq) {
-		if ((audioManager != null) && (audioFocusReq != null))
+	default void releaseAudioFocus(@Nullable AudioManager audioManager, @Nullable AudioFocusRequestCompat audioFocusReq) {
+		if (audioManager != null && audioFocusReq != null) {
 			AudioManagerCompat.abandonAudioFocusRequest(audioManager, audioFocusReq);
+		}
 	}
 
 	default boolean hasVideoMenu() {
 		return false;
 	}
 
-	default void contributeToMenu(OverlayMenu.Builder b) {}
+	default void contributeToMenu(@NonNull OverlayMenu.Builder b) {}
 
 	default boolean adjustVolume(int direction) {
 		return false;
 	}
 
-	default void mute(Context ctx) {
-		var amgr = (AudioManager) ctx.getSystemService(Context.AUDIO_SERVICE);
-		if (amgr != null) amgr.adjustStreamVolume(STREAM_MUSIC, ADJUST_MUTE, FLAG_SHOW_UI);
+	default void mute(@NonNull Context ctx) {
+		Optional.ofNullable((AudioManager) ctx.getSystemService(Context.AUDIO_SERVICE))
+				.ifPresent(am -> am.adjustStreamVolume(STREAM_MUSIC, ADJUST_MUTE, FLAG_SHOW_UI));
 	}
 
-	default void unmute(Context ctx) {
-		var amgr = (AudioManager) ctx.getSystemService(Context.AUDIO_SERVICE);
-		if (amgr != null) amgr.adjustStreamVolume(STREAM_MUSIC, ADJUST_UNMUTE, FLAG_SHOW_UI);
+	default void unmute(@NonNull Context ctx) {
+		Optional.ofNullable((AudioManager) ctx.getSystemService(Context.AUDIO_SERVICE))
+				.ifPresent(am -> am.adjustStreamVolume(STREAM_MUSIC, ADJUST_UNMUTE, FLAG_SHOW_UI));
 	}
+
+	// =========================================================================
+	// NESTED CALLBACK INTERFACE MATRIX
+	// =========================================================================
 
 	interface Listener {
 		Listener DUMMY = new Listener() {};
 
-		default void onEnginePrepared(MediaEngine engine) {}
+		default void onEnginePrepared(@NonNull MediaEngine engine) {}
 
-		default void onEngineStarted(MediaEngine engine) {}
+		default void onEngineStarted(@NonNull MediaEngine engine) {}
 
-		default void onEngineEnded(MediaEngine engine) {}
+		default void onEngineEnded(@NonNull MediaEngine engine) {}
 
-		default void onEngineBuffering(MediaEngine engine, int percent) {}
+		default void onEngineBuffering(@NonNull MediaEngine engine, int percent) {}
 
-		default void onEngineBufferingCompleted(MediaEngine engine) {}
+		default void onEngineBufferingCompleted(@NonNull MediaEngine engine) {}
 
-		default void onEngineError(MediaEngine engine, Throwable ex) {}
+		default void onEngineError(@NonNull MediaEngine engine, @NonNull Throwable ex) {}
 
-		default void onVideoSizeChanged(MediaEngine engine, int width, int height) {}
+		default void onVideoSizeChanged(@NonNull MediaEngine engine, int width, int height) {}
 
-		default void onSubtitleStreamChanged(MediaEngine engine, @Nullable SubtitleStreamInfo info) {}
+		default void onSubtitleStreamChanged(@NonNull MediaEngine engine, @Nullable SubtitleStreamInfo info) {}
 	}
 }
