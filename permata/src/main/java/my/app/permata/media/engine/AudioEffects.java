@@ -21,11 +21,10 @@ import java.util.stream.Stream;
 import my.app.utils.log.Log;
 
 /**
- * Enterprise-grade, autonomous AudioEffects engine tailored for Fermata Auto.
+ * Enterprise-grade, autonomous AudioEffects engine tailored for Permata Auto.
  * Part 1: Core Fields, Device Queries, and Component Instantiators.
  * 
  * @author sklchan77
- * @author Andrey Pavlenko (Original Author)
  */
 public final class AudioEffects {
 	private static final byte EQUALIZER = 1 << 0;
@@ -74,7 +73,7 @@ public final class AudioEffects {
 				else if (AudioEffect.EFFECT_TYPE_LOUDNESS_ENHANCER.equals(d.type)) s |= LOUDNESS_ENHANCER;
 			}
 		} catch (Exception ex) {
-			Log.e(ex, "Fermata AudioEngine: Critical system capability query fault dropped out.");
+			Log.e(ex, "Permata AudioEngine: Critical system capability query fault dropped out.");
 		}
 		supported = s;
 	}
@@ -102,16 +101,16 @@ public final class AudioEffects {
 		try {
 			return factory.create();
 		} catch (Exception ex) {
-			Log.w("Fermata AudioEngine: " + effectName + " initialization failed. Running HAL recovery routine...", ex);
+			Log.w("Permata AudioEngine: " + effectName + " initialization failed. Running HAL recovery routine...", ex);
 			try {
 				Thread.sleep(250);
 				return factory.create();
 			} catch (InterruptedException ie) {
 				Thread.currentThread().interrupt(); 
-				Log.e(ie, "Fermata AudioEngine: Recovery routine interrupted for " + effectName);
+				Log.e(ie, "Permata AudioEngine: Recovery routine interrupted for " + effectName);
 				return null;
 			} catch (Exception retryEx) {
-				Log.e(retryEx, "Fermata AudioEngine: Low-level driver rejected " + effectName + " permanently.");
+				Log.e(retryEx, "Permata AudioEngine: Low-level driver rejected " + effectName + " permanently.");
 				return null;
 			}
 		}
@@ -135,7 +134,7 @@ public final class AudioEffects {
 					                    .anyMatch(Objects::nonNull);
 
 			if (!functional) {
-				Log.e("Fermata AudioEngine: Fallback block instantiation aborted. Hardware layers unresponsive.");
+				Log.e("Permata AudioEngine: Fallback block instantiation aborted. Hardware layers unresponsive.");
 				return null;
 			}
 
@@ -160,7 +159,7 @@ public final class AudioEffects {
 					                    .anyMatch(Objects::nonNull);
 
 			if (!functional) {
-				Log.e("Fermata AudioEngine: Block instantiation aborted. Hardware layers are fully unresponsive.");
+				Log.e("Permata AudioEngine: Block instantiation aborted. Hardware layers are fully unresponsive.");
 				return null;
 			}
 
@@ -221,9 +220,9 @@ public final class AudioEffects {
 				this.is150PercentBoostActive = false;
 			}
 			
-			Log.i("Fermata AudioEngine: State storage tracking profiles synced up successfully.");
+			Log.i("Permata AudioEngine: State storage tracking profiles synced up successfully.");
 		} catch (Exception ex) {
-			Log.e(ex, "Fermata AudioEngine: Error loading structural data out of storage mapping components.");
+			Log.e(ex, "Permata AudioEngine: Error loading structural data out of storage mapping components.");
 		}
 	}
 
@@ -234,7 +233,7 @@ public final class AudioEffects {
 	public void apply150PercentVolumeBoost(@NonNull Context context) {
 		synchronized (ALLOCATION_LOCK) {
 			if (loudnessEnhancer == null) {
-				Log.w("Fermata AudioEngine: Cannot apply 150% boost; hardware LoudnessEnhancer is missing.");
+				Log.w("Permata AudioEngine: Cannot apply 150% boost; hardware LoudnessEnhancer is missing.");
 				return;
 			}
 			
@@ -251,9 +250,9 @@ public final class AudioEffects {
 				       .putBoolean(KEY_VOLUME_BOOST_ACTIVE, true)
 				       .apply();
 			} catch (Exception ex) {
-				Log.e(ex, "Fermata AudioEngine: Persistence pipeline commit failed for volume boost toggle.");
+				Log.e(ex, "Permata AudioEngine: Persistence pipeline commit failed for volume boost toggle.");
 			}
-			Log.i("Fermata AudioEngine: Anti-clipping 150% volume boost sequence engaged and cached.");
+			Log.i("Permata AudioEngine: Anti-clipping 150% volume boost sequence engaged and cached.");
 		}
 	}
 
@@ -276,7 +275,7 @@ public final class AudioEffects {
 				       .putBoolean(KEY_VOLUME_BOOST_ACTIVE, false)
 				       .apply();
 			} catch (Exception ex) {
-				Log.e(ex, "Fermata AudioEngine: Persistence pipeline clear failed for volume boost toggle.");
+				Log.e(ex, "Permata AudioEngine: Persistence pipeline clear failed for volume boost toggle.");
 			}
 		}
 	}
@@ -352,7 +351,7 @@ public final class AudioEffects {
 			}
 			return true;
 		} catch (Exception ex) {
-			Log.e(ex, "Fermata AudioEngine: Error changing toggle state on audio driver reference layer.");
+			Log.e(ex, "Permata AudioEngine: Error changing toggle state on audio driver reference layer.");
 			return false;
 		}
 	}
@@ -367,7 +366,7 @@ public final class AudioEffects {
 				persistState(context, KEY_EQ_BAND_PREFIX + band, clampedGain);
 			}
 		} catch (Exception ex) {
-			Log.e(ex, "Fermata AudioEngine: Equalizer target parameter tracking adjustment failed.");
+			Log.e(ex, "Permata AudioEngine: Equalizer target parameter tracking adjustment failed.");
 		}
 	}
 
@@ -379,7 +378,7 @@ public final class AudioEffects {
 				equalizer.setBandLevel(band, (short) Math.max(range[0], Math.min(range[1], gainmB)));
 			}
 		} catch (Exception ex) {
-			Log.e(ex, "Fermata AudioEngine: EQ initialization config injection failed.");
+			Log.e(ex, "Permata AudioEngine: EQ initialization config injection failed.");
 		}
 	}
 
@@ -392,7 +391,7 @@ public final class AudioEffects {
 				persistState(context, KEY_BASS_STRENGTH, clampedStrength);
 			}
 		} catch (Exception ex) {
-			Log.e(ex, "Fermata AudioEngine: BassBoost parameter change configuration dropped.");
+			Log.e(ex, "Permata AudioEngine: BassBoost parameter change configuration dropped.");
 		}
 	}
 
@@ -411,7 +410,7 @@ public final class AudioEffects {
 				persistState(context, KEY_VIRT_STRENGTH, clampedStrength);
 			}
 		} catch (Exception ex) {
-			Log.e(ex, "Fermata AudioEngine: Virtualizer pipeline adjustments dropped.");
+			Log.e(ex, "Permata AudioEngine: Virtualizer pipeline adjustments dropped.");
 		}
 	}
 
@@ -432,7 +431,7 @@ public final class AudioEffects {
 				this.is150PercentBoostActive = false;
 			}
 		} catch (Exception ex) {
-			Log.e(ex, "Fermata AudioEngine: Volume normalization parameters adjustment failed.");
+			Log.e(ex, "Permata AudioEngine: Volume normalization parameters adjustment failed.");
 		}
 	}
 
@@ -464,7 +463,7 @@ public final class AudioEffects {
 			       .getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 			       .edit().putBoolean(key, value).apply();
 		} catch (Exception ex) {
-			Log.e(ex, "Fermata AudioEngine: Error updating persistent boolean flag mapping configurations.");
+			Log.e(ex, "Permata AudioEngine: Error updating persistent boolean flag mapping configurations.");
 		}
 	}
 
@@ -474,7 +473,7 @@ public final class AudioEffects {
 			       .getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 			       .edit().putInt(key, value).apply();
 		} catch (Exception ex) {
-			Log.e(ex, "Fermata AudioEngine: Error updating persistent integer mapping metrics.");
+			Log.e(ex, "Permata AudioEngine: Error updating persistent integer mapping metrics.");
 		}
 	}
 
@@ -505,7 +504,7 @@ public final class AudioEffects {
 				effect.setEnabled(false); 
 				effect.release();         
 			} catch (Exception ex) {
-				Log.e(ex, "Fermata AudioEngine: Exception intercepted during a lower-tier component dump routine.");
+				Log.e(ex, "Permata AudioEngine: Exception intercepted during a lower-tier component dump routine.");
 			}
 		}
 	}
