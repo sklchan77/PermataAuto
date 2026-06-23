@@ -14,9 +14,9 @@ import android.net.Uri;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
-import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
+import java.util.Map;
+import java.util.Optional;
 
 import my.app.permata.media.lib.MediaLib.PlayableItem;
 import my.app.permata.media.pref.MediaPrefs;
@@ -25,24 +25,43 @@ import my.app.utils.async.FutureSupplier;
 import my.app.utils.log.Log;
 
 /**
+ * Enterprise-Grade Unified MediaPlayerEngine for Permata Auto.
+ * Fully modernized with thread-safe state monitors and functional streams.
+ * 
  * @author sklchan77
  */
 public class MediaPlayerEngine extends MediaEngineBase
 		implements MediaPlayer.OnPreparedListener, MediaPlayer.OnCompletionListener,
 		MediaPlayer.OnVideoSizeChangedListener, MediaPlayer.OnErrorListener {
+
+	private enum State { IDLE, INITIALIZED, PREPARING, PREPARED, STARTED, PAUSED, STOPPED, COMPLETED, ERROR, RELEASED }
+
+	// Shared State Fields (Single-instance memory footprint)
 	private final Context ctx;
 	private final MediaPlayer player;
-	private final AudioEffects audioEffects;
+	@Nullable private final AudioEffects audioEffects;
+	
+	private final Object stateLock = new Object();
+	private State currentState = State.IDLE;
 	private PlayableItem source;
 
-	public MediaPlayerEngine(Context ctx, Listener listener) {
+	// =========================================================================
+	// SECTION 1: CORE LIFECYCLE & STATE MANAGEMENT
+	// =========================================================================
+
+	public MediaPlayerEngine(@NonNull Context ctx, @NonNull Listener listener) {
 		super(listener);
-		this.ctx = ctx;
-		player = new MediaPlayer();
+		this.ctx = ctx.getApplicationContext();
+		this.player = new MediaPlayer();
+		
 		int sessionId = player.getAudioSessionId();
-		audioEffects = AudioEffects.create(0, sessionId);
-		AudioAttributes attrs = new AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA)
-				.setContentType(AudioAttributes.CONTENT_TYPE_MUSIC).build();
+		this.audioEffects = AudioEffects.create(this.ctx, 0, sessionId);
+		
+		AudioAttributes attrs = new AudioAttributes.Builder()
+				.setUsage(AudioAttributes.USAGE_MEDIA)
+				.setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
+				.build();
+				
 		player.setAudioAttributes(attrs);
 		player.setOnPreparedListener(this);
 		player.setOnCompletionListener(this);
@@ -56,62 +75,148 @@ public class MediaPlayerEngine extends MediaEngineBase
 	}
 
 	@Override
-	public void prepare(PlayableItem source) {
-		stopped(false);
-		this.source = source;
-		Uri u = source.getLocation();
+	public void close() {
+		synchronized (stateLock) {
+			if (currentState == State.RELEASED) return;
+			currentState = State.RELEASED;
+		}
+		
+		super.close();
 
-		try {
-			player.reset();
-			String scheme = u.getScheme();
-			if (SCHEME_CONTENT.equals(scheme)) {
-				player.setDataSource(ctx, u);
-			} else if ((scheme != null) && scheme.startsWith("http")) {
-				String agent = source.getUserAgent();
-				if (agent != null) {
-					player.setDataSource(ctx, u, Collections.singletonMap("User-Agent", agent));
-				} else {
-					player.setDataSource(u.toString());
+		// Offload native player hardware disposal to a safe background thread
+		new Thread(() -> {
+			try {
+				if (player.isPlaying()) {
+					player.stop();
 				}
-			} else {
-				player.setDataSource(ctx, u);
+			} catch (Exception ignore) {}
+
+			Optional.ofNullable(audioEffects).ifPresent(AudioEffects::release);
+			
+			try {
+				player.release();
+			} catch (Exception ex) {
+				Log.e(ex, "Error thrown during hardware media framework native teardown sequence execution hook.");
 			}
-			player.prepareAsync();
-		} catch (Exception ex) {
-			listener.onEngineError(this, ex);
-			this.source = null;
+		}).start();
+		
+		synchronized (stateLock) {
+			source = null;
 		}
 	}
 
+	@NonNull
 	@Override
-	public void start() {
-		player.start();
-		started();
-		listener.onEngineStarted(this);
-	}
-
-	@Override
-	public void stop() {
-		stopped(false);
-		player.stop();
-		player.reset();
-		source = null;
-	}
-
-	@Override
-	public void pause() {
-		stopped(true);
-		player.pause();
+	public AudioEffects getAudioEffects() {
+		return audioEffects;
 	}
 
 	@Override
 	public PlayableItem getSource() {
 		return source;
 	}
+	// =========================================================================
+	// SECTION 2: PLAYBACK CONTROL & STREAM API EXTENSIONS
+	// =========================================================================
+
+	@Override
+	public void prepare(@NonNull PlayableItem source) {
+		synchronized (stateLock) {
+			if (currentState == State.RELEASED) return;
+			stopped(false);
+			this.source = source;
+			Uri u = source.getLocation();
+
+			try {
+				player.reset();
+				currentState = State.IDLE;
+				
+				String scheme = u.getScheme();
+				if (SCHEME_CONTENT.equals(scheme)) {
+					player.setDataSource(ctx, u);
+				} else if (scheme != null && scheme.startsWith("http")) {
+					String agent = source.getUserAgent();
+					if (agent != null) {
+						player.setDataSource(ctx, u, Map.of("User-Agent", agent));
+					} else {
+						player.setDataSource(u.toString());
+					}
+				} else {
+					player.setDataSource(ctx, u);
+				}
+				
+				currentState = State.INITIALIZED;
+				player.prepareAsync();
+				currentState = State.PREPARING;
+			} catch (Exception ex) {
+				currentState = State.ERROR;
+				Optional.ofNullable(listener).ifPresent(l -> l.onEngineError(this, ex));
+				this.source = null;
+			}
+		}
+	}
+
+	@Override
+	public void start() {
+		synchronized (stateLock) {
+			if (currentState == State.PREPARED || currentState == State.STARTED || currentState == State.PAUSED || currentState == State.COMPLETED) {
+				try {
+					player.start();
+					currentState = State.STARTED;
+					started();
+					Optional.ofNullable(listener).ifPresent(l -> l.onEngineStarted(this));
+				} catch (IllegalStateException ex) {
+					Log.e(ex, "Failed executing transition into play state pipeline loop.");
+				}
+			}
+		}
+	}
+
+	@Override
+	public void stop() {
+		synchronized (stateLock) {
+			if (currentState == State.RELEASED || currentState == State.IDLE) return;
+			stopped(false);
+			try {
+				if (currentState == State.STARTED || currentState == State.PAUSED || currentState == State.PREPARED || currentState == State.COMPLETED) {
+					player.stop();
+				}
+				player.reset();
+				currentState = State.IDLE;
+			} catch (IllegalStateException ex) {
+				Log.d(ex, "Hardware device wrapper pipeline reset step rejected.");
+			}
+			source = null;
+		}
+	}
+
+	@Override
+	public void pause() {
+		synchronized (stateLock) {
+			if (currentState == State.STARTED) {
+				try {
+					player.pause();
+					currentState = State.PAUSED;
+					stopped(true);
+				} catch (IllegalStateException ex) {
+					Log.d(ex, "Suspension execution directive tracking was ignored.");
+				}
+			}
+		}
+	}
 
 	@Override
 	public FutureSupplier<Long> getDuration() {
-		return completed((source == null) || !source.isSeekable() ? 0L : player.getDuration());
+		synchronized (stateLock) {
+			if (source == null || !source.isSeekable() || currentState == State.IDLE || currentState == State.INITIALIZED || currentState == State.PREPARING || currentState == State.ERROR || currentState == State.RELEASED) {
+				return completed(0L);
+			}
+			try {
+				return completed((long) player.getDuration());
+			} catch (IllegalStateException ex) {
+				return completed(0L);
+			}
+		}
 	}
 
 	@Override
@@ -127,15 +232,30 @@ public class MediaPlayerEngine extends MediaEngineBase
 	}
 
 	private long pos() {
-		return (source != null) ? (player.getCurrentPosition() - source.getOffset()) : 0;
+		synchronized (stateLock) {
+			if (source == null || currentState == State.IDLE || currentState == State.INITIALIZED || currentState == State.PREPARING || currentState == State.ERROR || currentState == State.RELEASED) {
+				return 0L;
+			}
+			try {
+				return ((long) player.getCurrentPosition() - source.getOffset());
+			} catch (IllegalStateException ex) {
+				return 0L;
+			}
+		}
 	}
 
 	@Override
 	public void setPosition(long position) {
-		if (source == null) return;
-		long pos = source.getOffset() + position;
-		player.seekTo((int) pos);
-		syncSub(pos, speed(), true);
+		synchronized (stateLock) {
+			if (source == null || currentState == State.IDLE || currentState == State.INITIALIZED || currentState == State.PREPARING || currentState == State.ERROR || currentState == State.RELEASED) return;
+			long pos = source.getOffset() + position;
+			try {
+				player.seekTo((int) pos);
+				syncSub(pos, speed(), true);
+			} catch (IllegalStateException ex) {
+				Log.e(ex, "State configuration blocked seeking target sequence execution index step.");
+			}
+		}
 	}
 
 	@Override
@@ -144,162 +264,214 @@ public class MediaPlayerEngine extends MediaEngineBase
 	}
 
 	private float speed() {
-		try {
-			var speed = player.getPlaybackParams().getSpeed();
-			return (speed <= 0f) ? 1f : speed;
-		} catch (IllegalStateException ex) {
-			Log.d(ex);
-			return 1f;
+		synchronized (stateLock) {
+			if (currentState == State.RELEASED || currentState == State.ERROR || currentState == State.IDLE) return 1f;
+			try {
+				PlaybackParams params = player.getPlaybackParams();
+				if (params == null) return 1f;
+				float speed = params.getSpeed();
+				return (speed <= 0f) ? 1f : speed;
+			} catch (Exception ex) {
+				Log.d(ex);
+				return 1f;
+			}
 		}
 	}
 
 	@Override
 	public void setSpeed(float speed) {
-		try {
-			PlaybackParams p = player.getPlaybackParams();
-			p.setSpeed(speed);
-			player.setPlaybackParams(p);
-			syncSub(pos(), speed, true);
-		} catch (Exception ex) {
-			Log.e(ex, "Failed to set speed: ", speed);
+		synchronized (stateLock) {
+			if (currentState == State.RELEASED || currentState == State.ERROR || currentState == State.IDLE) return;
+			try {
+				PlaybackParams p = player.getPlaybackParams();
+				if (p == null) p = new PlaybackParams();
+				p.setSpeed(speed);
+				player.setPlaybackParams(p);
+				syncSub(pos(), speed, true);
+			} catch (Exception ex) {
+				Log.e(ex, "Failed setting framework variable speed targets metrics value parameters: ", speed);
+			}
 		}
 	}
 
 	@Override
 	public void setVideoView(VideoView view) {
-		try {
-			super.setVideoView(view);
-			player.setDisplay((view == null) ? null : view.getVideoSurface().getHolder());
-		} catch (IllegalStateException | IllegalArgumentException ex) {
-			Log.e(ex, "Failed to set display");
+		synchronized (stateLock) {
+			if (currentState == State.RELEASED) return;
+			try {
+				super.setVideoView(view);
+				player.setDisplay(view == null ? null : view.getVideoSurface().getHolder());
+			} catch (Exception ex) {
+				Log.e(ex, "Failed mapping low-tier view surface handler layers references.");
+			}
 		}
 	}
 
 	@Override
 	public float getVideoWidth() {
-		return player.getVideoWidth();
+		synchronized (stateLock) {
+			if (currentState == State.IDLE || currentState == State.INITIALIZED || currentState == State.ERROR || currentState == State.RELEASED) return 0f;
+			try {
+				return player.getVideoWidth();
+			} catch (IllegalStateException e) {
+				return 0f;
+			}
+		}
 	}
 
 	@Override
 	public float getVideoHeight() {
-		return player.getVideoHeight();
-	}
-
-	@NonNull
-	@Override
-	public AudioEffects getAudioEffects() {
-		return audioEffects;
+		synchronized (stateLock) {
+			if (currentState == State.IDLE || currentState == State.INITIALIZED || currentState == State.ERROR || currentState == State.RELEASED) return 0f;
+			try {
+				return player.getVideoHeight();
+			} catch (IllegalStateException e) {
+				return 0f;
+			}
+		}
 	}
 
 	@Override
 	public List<AudioStreamInfo> getAudioStreamInfo() {
-		try {
-			var tracks = player.getTrackInfo();
-			if (tracks.length == 0) return emptyList();
-			var streams = new ArrayList<AudioStreamInfo>(tracks.length);
-			for (int i = 0; i < tracks.length; i++) {
-				var t = tracks[i];
-				if (t.getTrackType() != MEDIA_TRACK_TYPE_AUDIO) continue;
-				streams.add(new AudioStreamInfo(i, t.getLanguage(), null));
+		synchronized (stateLock) {
+			if (currentState == State.RELEASED || currentState == State.IDLE || currentState == State.INITIALIZED || currentState == State.PREPARING) return emptyList();
+			try {
+				MediaPlayer.TrackInfo[] tracks = player.getTrackInfo();
+				if (tracks == null || tracks.length == 0) return emptyList();
+				
+				return java.util.stream.IntStream.range(0, tracks.length)
+						.filter(i -> tracks[i] != null && tracks[i].getTrackType() == MEDIA_TRACK_TYPE_AUDIO)
+						.mapToObj(i -> new AudioStreamInfo(i, tracks[i].getLanguage(), null))
+						.collect(java.util.stream.Collectors.toList());
+			} catch (Exception ex) {
+				Log.e(ex, "Failure thrown when requesting audio tracks allocation mappings definitions layouts.");
+				return emptyList();
 			}
-			return streams;
-		} catch (Exception ex) {
-			Log.e(ex, "Failed get audio tracks");
-			return emptyList();
 		}
 	}
 
 	@Nullable
 	@Override
 	public AudioStreamInfo getCurrentAudioStreamInfo() {
-		try {
-			var id = player.getSelectedTrack(MEDIA_TRACK_TYPE_AUDIO);
-			if (id < 0) return null;
-			var t = player.getTrackInfo()[id];
-			return new AudioStreamInfo(id, t.getLanguage(), null);
-		} catch (Exception ex) {
-			Log.e(ex, "Failed get selected audio stream");
-			return null;
+		synchronized (stateLock) {
+			if (currentState == State.RELEASED || currentState == State.IDLE || currentState == State.INITIALIZED || currentState == State.PREPARING) return null;
+			try {
+				int id = player.getSelectedTrack(MEDIA_TRACK_TYPE_AUDIO);
+				MediaPlayer.TrackInfo[] tracks = player.getTrackInfo();
+				
+				if (id < 0 || tracks == null || id >= tracks.length) return null;
+				
+				MediaPlayer.TrackInfo t = tracks[id];
+				if (t != null && t.getTrackType() == MEDIA_TRACK_TYPE_AUDIO) {
+					return new AudioStreamInfo(id, t.getLanguage(), null);
+				}
+				return null;
+			} catch (Exception ex) {
+				Log.e(ex, "Failure querying parameters specifications data out of current track profile block details.");
+				return null;
+			}
 		}
 	}
 
 	@Override
 	public void setCurrentAudioStream(@Nullable AudioStreamInfo i) {
-		try {
-			if (i != null) player.selectTrack((int) i.getId());
-		} catch (Exception ex) {
-			Log.e(ex, "Failed selected audio stream: ", i);
+		synchronized (stateLock) {
+			if (currentState == State.RELEASED || currentState == State.IDLE || currentState == State.INITIALIZED) return;
+			try {
+				if (i != null) {
+					player.selectTrack((int) i.getId());
+				}
+			} catch (Exception ex) {
+				Log.e(ex, "Failed configuring physical audio layout routing parameters context definitions mapping switch: ", i);
+			}
 		}
-	}
-
-	@Override
-	public void close() {
-		super.close();
-
-		try {
-			if (player.isPlaying()) player.stop();
-		} catch (IllegalStateException ignore) {
-		}
-
-		if (audioEffects != null) audioEffects.release();
-		player.release();
-		source = null;
 	}
 
 	@Override
 	public void mute(Context ctx) {
-		player.setVolume(0f, 0f);
+		synchronized (stateLock) {
+			if (currentState == State.RELEASED) return;
+			try {
+				player.setVolume(0f, 0f);
+			} catch (IllegalStateException ignore) {}
+		}
 	}
 
 	@Override
 	public void unmute(Context ctx) {
-		player.setVolume(1f, 1f);
+		synchronized (stateLock) {
+			if (currentState == State.RELEASED) return;
+			try {
+				player.setVolume(1f, 1f);
+			} catch (IllegalStateException ignore) {}
+		}
 	}
+	// =========================================================================
+	// SECTION 3: ASYNCHRONOUS FRAMEWORK EVENTS
+	// =========================================================================
 
 	@Override
 	public void onPrepared(MediaPlayer mp) {
-		if (source == null) return;
-		long off = source.getOffset();
-		if (off > 0) player.seekTo((int) off);
-		listener.onEnginePrepared(this);
+		synchronized (stateLock) {
+			if (currentState == State.RELEASED) return;
+			currentState = State.PREPARED;
+			
+			long off = source != null ? source.getOffset() : 0L;
+			if (off > 0) {
+				try {
+					player.seekTo((int) off);
+				} catch (IllegalStateException ex) {
+					Log.d(ex, "Initial timeline seek offset application parameter context variant dropped.");
+				}
+			}
+			Optional.ofNullable(listener).ifPresent(l -> l.onEnginePrepared(this));
+		}
 	}
 
 	@Override
 	public void onCompletion(MediaPlayer mp) {
-		stopped(false);
-		player.reset();
-		listener.onEngineEnded(this);
+		synchronized (stateLock) {
+			if (currentState == State.RELEASED) return;
+			currentState = State.COMPLETED;
+			stopped(false);
+			try {
+				player.reset();
+				currentState = State.IDLE;
+			} catch (Exception e) {
+				Log.e(e, "State context tracking reset routine failed during completing pipeline sequences.");
+			}
+			Optional.ofNullable(listener).ifPresent(l -> l.onEngineEnded(this));
+		}
 	}
 
 	@Override
 	public void onVideoSizeChanged(MediaPlayer mp, int width, int height) {
-		listener.onVideoSizeChanged(this, width, height);
+		if (currentState == State.RELEASED) return;
+		Optional.ofNullable(listener).ifPresent(l -> l.onVideoSizeChanged(this, width, height));
 	}
 
 	@Override
 	public boolean onError(MediaPlayer mp, int what, int extra) {
-		MediaEngineException err;
-
-		switch (extra) {
-			case MediaPlayer.MEDIA_ERROR_IO -> err = new MediaEngineException("MEDIA_ERROR_IO");
-			case MediaPlayer.MEDIA_ERROR_MALFORMED ->
-					err = new MediaEngineException("MEDIA_ERROR_MALFORMED");
-			case MediaPlayer.MEDIA_ERROR_UNSUPPORTED ->
-					err = new MediaEngineException("MEDIA_ERROR_UNSUPPORTED");
-			case MediaPlayer.MEDIA_ERROR_TIMED_OUT ->
-					err = new MediaEngineException("MEDIA_ERROR_TIMED_OUT");
-			default -> {
-				if (what == MediaPlayer.MEDIA_ERROR_SERVER_DIED) {
-					err = new MediaEngineException("MEDIA_ERROR_SERVER_DIED");
-				} else if ((what == MediaPlayer.MEDIA_ERROR_UNKNOWN) || !player.isPlaying()) {
-					err = new MediaEngineException("MEDIA_ERROR_UNKNOWN");
-				} else {
-					return true;
-				}
-			}
+		synchronized (stateLock) {
+			if (currentState == State.RELEASED) return true;
+			currentState = State.ERROR;
 		}
 
-		listener.onEngineError(this, err);
+		MediaEngineException err = switch (extra) {
+			case MediaPlayer.MEDIA_ERROR_IO -> new MediaEngineException("MEDIA_ERROR_IO");
+			case MediaPlayer.MEDIA_ERROR_MALFORMED -> new MediaEngineException("MEDIA_ERROR_MALFORMED");
+			case MediaPlayer.MEDIA_ERROR_UNSUPPORTED -> new MediaEngineException("MEDIA_ERROR_UNSUPPORTED");
+			case MediaPlayer.MEDIA_ERROR_TIMED_OUT -> new MediaEngineException("MEDIA_ERROR_TIMED_OUT");
+			default -> {
+				if (what == MediaPlayer.MEDIA_ERROR_SERVER_DIED) {
+					yield new MediaEngineException("MEDIA_ERROR_SERVER_DIED");
+				} else {
+					yield new MediaEngineException("MEDIA_ERROR_UNKNOWN");
+				}
+			}
+		};
+
+		Optional.ofNullable(listener).ifPresent(l -> l.onEngineError(this, err));
 		return true;
 	}
 }
