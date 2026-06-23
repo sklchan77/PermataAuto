@@ -262,6 +262,11 @@ public abstract class MediaEngineBase implements MediaEngine {
 			} else {
 				state = STATE_STOPPED;
 				videoView = null;
+				
+				// --- NEW: Reset Active Channel Parameters on Global Engine Stop ---
+				Optional.ofNullable(getAudioEffects()).ifPresent(fx -> fx.resetToGlobalSettings(App.get().getAppContext()));
+				// ------------------------------------------------------------------
+				
 				if (subMgr != null) {
 					subMgr.stop(false);
 					subMgr = null;
@@ -269,6 +274,7 @@ public abstract class MediaEngineBase implements MediaEngine {
 			}
 		}
 	}
+
 
 	protected void syncSub(long position, float speed, boolean restart) {
 		synchronized (engineLock) {
