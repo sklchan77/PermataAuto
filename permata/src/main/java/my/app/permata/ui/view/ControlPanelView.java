@@ -311,7 +311,7 @@ public class ControlPanelView extends ConstraintLayout implements MainActivityLi
 	private final class SpeedMenuHandler extends BasicPreferenceStore {
 		void build(OverlayMenu.Builder b, Item item) {
 			PreferenceSet set = new PreferenceSet();
-			set.addDoublePref(o -> {
+			set.addFloatPref(o -> {
 				o.title = R.string.speed;
 				o.store = item.getPrefs();
 				o.pref = MediaPrefs.SPEED;
@@ -322,7 +322,6 @@ public class ControlPanelView extends ConstraintLayout implements MainActivityLi
 			set.addToMenu(b, true);
 		}
 	}
-
 
 	private static abstract class SeekBarListener implements android.widget.SeekBar.OnSeekBarChangeListener {
 		@Override public void onStartTrackingTouch(android.widget.SeekBar s) {}
