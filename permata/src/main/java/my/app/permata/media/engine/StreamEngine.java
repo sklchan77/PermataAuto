@@ -126,7 +126,7 @@ public class StreamEngine implements MediaEngine, MediaEngine.Listener {
 			// --- NEW: Dynamic Audio Effects Per-Stream Channel Profile Sync ---
 			Optional.ofNullable(eng.getAudioEffects()).ifPresent(fx -> {
 				String channelIdentifier = "stream_" + src.getLocation().hashCode();
-				fx.loadAndApplyPersistedSettingsForChannel(App.get().getAppContext(), channelIdentifier);
+			fx.loadAndApplyPersistedSettingsForChannel(App.get(), channelIdentifier); 
 			});
 			// ------------------------------------------------------------------
 		}
@@ -208,7 +208,7 @@ public class StreamEngine implements MediaEngine, MediaEngine.Listener {
 			
 			// --- NEW: Clear Active Channel Mapping State ---
 			Optional.ofNullable(eng.getAudioEffects()).ifPresent(fx -> 
-				fx.resetToGlobalSettings(App.get().getAppContext())
+fx.resetToGlobalSettings(App.get()) 
 			);
 			// -----------------------------------------------
 			
@@ -387,7 +387,7 @@ public class StreamEngine implements MediaEngine, MediaEngine.Listener {
 				if (source != null) {
 					Optional.ofNullable(eng.getAudioEffects()).ifPresent(fx -> {
 						String streamTrackIdentifier = "stream_" + source.getLocation().hashCode() + "_track_" + i.getId();
-						fx.loadAndApplyPersistedSettingsForChannel(App.get().getAppContext(), streamTrackIdentifier);
+					fx.loadAndApplyPersistedSettingsForChannel(App.get(), streamTrackIdentifier); 
 					});
 				}
 			}
