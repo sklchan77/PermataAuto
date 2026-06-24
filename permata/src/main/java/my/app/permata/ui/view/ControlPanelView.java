@@ -1076,15 +1076,13 @@ public class ControlPanelView extends ConstraintLayout implements
 
     @Override
     protected void onDetachedFromWindow() {
+        // 1. Clear all callbacks scheduled on this specific view instance
         removeCallbacks(null); 
         
-        if (this.hideTimer != null) {
-            MainActivityDelegate a = getActivity();
-            if (a != null) {
-                a.removeCallbacks(this.hideTimer);
-            }
-        }
+        // 2. Nullify the timer reference to trip the HideTimer cancellation guard clause
+        this.hideTimer = null; 
         
+        // 3. Safely unregister broadcast listeners from the delegate
         try {
             MainActivityDelegate delegate = getActivity();
             if (delegate != null) {
@@ -1099,4 +1097,5 @@ public class ControlPanelView extends ConstraintLayout implements
         
         super.onDetachedFromWindow();
     }
+
 }
