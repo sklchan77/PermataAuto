@@ -199,7 +199,7 @@ public class MainActivity extends SplitCompatActivityBase
 			}, 1, MINUTES);
 		}
 
-		String reqUrl = "https://api.github.com/repos/sklchan77/Permata/releases/latest";
+		String reqUrl = "https://api.github.com/repos/sklchan77/PermataAuto/releases/latest";
 		HttpConnection.connect(o -> o.url(reqUrl), (resp, err) -> {
 			if (err != null) {
 				Log.e(err, "Failed to check updates");
