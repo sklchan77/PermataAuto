@@ -34,8 +34,8 @@ public final class AudioEffects {
 	private static final byte LOUDNESS_ENHANCER = 1 << 3;
 	private static final byte supported;
 
-	// Precise millibel constant mapping to a 1.5x (150%) amplitude gain step
-	private static final int GAIN_150_PERCENT_MB = 352;
+	// Precise 352 millibel constant mapping to a 1.5x (150%) amplitude gain step (reset back to 100%)
+	private static final int GAIN_150_PERCENT_MB = 0;
 
 	// Persistence Keys
 	private static final String PREFS_NAME = "permata_audio_effects_prefs";
