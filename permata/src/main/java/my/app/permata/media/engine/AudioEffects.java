@@ -1,8 +1,6 @@
 package my.app.permata.media.engine;
 
 import static android.os.Build.VERSION.SDK_INT;
-import static android.os.Build.VERSION.VERSION_CODES.VANILLA_ICE_CREAM;
-
 import android.content.Context;
 import android.content.SharedPreferences;
 import android.media.audiofx.AudioEffect;
@@ -79,7 +77,7 @@ public final class AudioEffects {
 
     private AudioEffects(int priority, int audioSessionId) {
         this.equalizer = supported(EQUALIZER) ? safeCreate(() -> new Equalizer(priority, audioSessionId), "Equalizer") : null;
-        this.virtualizer = (SDK_INT < VANILLA_ICE_CREAM && supported(VIRTUALIZER)) ? safeCreate(() -> new Virtualizer(priority, audioSessionId), "Virtualizer") : null;
+        this.virtualizer = (SDK_INT < 35 && supported(VIRTUALIZER)) ? safeCreate(() -> new Virtualizer(priority, audioSessionId), "Virtualizer") : null;
         this.bassBoost = supported(BASS_BOOST) ? safeCreate(() -> new BassBoost(priority, audioSessionId), "BassBoost") : null;
         this.loudnessEnhancer = supported(LOUDNESS_ENHANCER) ? safeCreate(() -> new LoudnessEnhancer(audioSessionId), "LoudnessEnhancer") : null;
     }
@@ -187,7 +185,7 @@ public final class AudioEffects {
                 short bassStrength = (short) prefs.getInt(pfx + KEY_BASS_STRENGTH, 0);
                 setBassBoostStrengthInternal(bassStrength);
             }
-            if (virtualizer != null && SDK_INT < VANILLA_ICE_CREAM) {
+            if (virtualizer != null && SDK_INT < 35) {
                 short virtStrength = (short) prefs.getInt(pfx + KEY_VIRT_STRENGTH, 0);
                 setVirtualizerStrengthInternal(virtStrength);
             }
@@ -393,7 +391,7 @@ public final class AudioEffects {
     }
 
     private boolean setVirtualizerEnabledInternal(boolean enabled) {
-        if (virtualizer == null || SDK_INT >= VANILLA_ICE_CREAM || virtualizerEnabled == enabled) return false;
+        if (virtualizer == null || SDK_INT >= 35 || virtualizerEnabled == enabled) return false;
         boolean success = safeToggleEffect(virtualizer, enabled);
         if (success) this.virtualizerEnabled = enabled;
         return success;
@@ -557,7 +555,7 @@ public final class AudioEffects {
     }
 
     private boolean setVirtualizerStrengthInternal(short strength) {
-        if (virtualizer == null || SDK_INT >= VANILLA_ICE_CREAM) return false;
+        if (virtualizer == null || SDK_INT >= 35) return false;
         try {
             if (virtualizer.getStrengthSupported()) {
                 short clampedStrength = (short) Math.max(0, Math.min(1000, strength));
