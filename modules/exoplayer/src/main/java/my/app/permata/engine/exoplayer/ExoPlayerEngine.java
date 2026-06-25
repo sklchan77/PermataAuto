@@ -158,7 +158,6 @@ public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener 
         DefaultLivePlaybackSpeedControl liveSpeedControl = new DefaultLivePlaybackSpeedControl.Builder()
                 .setFallbackMinPlaybackSpeed(0.95f)
                 .setFallbackMaxPlaybackSpeed(1.05f)
-                .setMaxLiveOffsetErrorMsMs(15_000)
                 .build();
 
         this.player = new ExoPlayer.Builder(appCtx, renderersFactory)
