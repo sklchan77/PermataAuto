@@ -90,6 +90,7 @@ import my.app.utils.text.SharedTextBuilder;
  * async thread isolation, and proactive memory leak mitigations.
  * Optimized for continuous deep-buffered live streaming playback profiles with adaptive network recovery.
  * Fully calibrated for compliant live-edge stream window seeking and fallback extractor parsing tolerances.
+ * Verified Java 8 / 11 syntax compliant.
  *
  * @author sklchan77 (Optimized Modern Version)
  */
@@ -100,11 +101,12 @@ public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener 
     private static final ExecutorService asyncIoExecutor = Executors.newSingleThreadExecutor();
 
     static {
+        String standardUserAgent = "Mozilla/5.0 (Linux; Android 10; TV) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/100.0.0.0 Mobile Safari/537.36 Permata/" + BuildConfig.VERSION_NAME;
         CronetEngine cre = null;
         try {
             cre = CronetUtil.buildCronetEngine(
                     PermataApplication.get(),
-                    "Permata/" + BuildConfig.VERSION_NAME,
+                    standardUserAgent,
                     true
             );
         } catch (Exception e) {
@@ -117,7 +119,9 @@ public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener 
             CookieManager cookieManager = new CookieManager();
             cookieManager.setCookiePolicy(CookiePolicy.ACCEPT_ORIGINAL_SERVER);
             CookieHandler.setDefault(cookieManager);
-            httpDsFactory = new DefaultHttpDataSource.Factory();
+            httpDsFactory = new DefaultHttpDataSource.Factory()
+                    .setUserAgent(standardUserAgent)
+                    .setAllowCrossProtocolRedirects(true);
         }
     }
 
@@ -135,8 +139,7 @@ public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener 
     private volatile boolean buffering;
     private volatile boolean isHls;
     private volatile Runnable drainBuffer;
-
-        public ExoPlayerEngine(@NonNull Context ctx, @NonNull Listener listener) {
+    public ExoPlayerEngine(@NonNull Context ctx, @NonNull Listener listener) {
         super(listener);
         Context appCtx = ctx.getApplicationContext();
 
@@ -172,8 +175,7 @@ public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener 
                 .setLoadErrorHandlingPolicy(customErrorPolicy);
 
         // 3. Mid-stream resolution optimization via customized buildVideoRenderers (Eliminates video flash frames)
-
-      // Optimization: Force hardware asynchronous codec processing loops to safeguard against frames dropping
+        // Optimization: Force hardware asynchronous codec processing loops to safeguard against frames dropping
         DefaultRenderersFactory renderersFactory = new DefaultRenderersFactory(appCtx) {
             @Override
             protected void buildVideoRenderers(
@@ -217,7 +219,6 @@ public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener 
                 )
                 .setPrioritizeTimeOverSizeThresholds(true)
                 .build();
-
         DefaultLivePlaybackSpeedControl liveSpeedControl = new DefaultLivePlaybackSpeedControl.Builder()
                 .setFallbackMinPlaybackSpeed(0.95f)
                 .setFallbackMaxPlaybackSpeed(1.05f)
@@ -286,10 +287,10 @@ public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener 
             try {
                 java.net.URL url = new java.net.URL(uri.toString());
                 conn = (java.net.HttpURLConnection) url.openConnection();
-                conn.setRequestMethod("HEAD"); // Low-overhead request: grabs headers only, no video bytes
+                conn.setRequestMethod("HEAD"); // Low-overhead request: grabs headers only
                 conn.setConnectTimeout(2500);  // Quick timeout to keep the player responsive
                 conn.setReadTimeout(2500);
-                conn.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 10) AppleWebKit/537.36");
+                conn.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 10; TV) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/100.0.0.0 Mobile Safari/537.36");
 
                 int responseCode = conn.getResponseCode();
                 // Fall back to GET if the streaming server doesn't allow HEAD requests
@@ -299,17 +300,19 @@ public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener 
                     conn.setRequestMethod("GET");
                     conn.setConnectTimeout(2500);
                     conn.setReadTimeout(2500);
-                    conn.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 10) AppleWebKit/537.36");
+                    conn.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 10; TV) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/100.0.0.0 Mobile Safari/537.36");
                 }
 
-                String contentType = conn.getContentType();
-                if (contentType != null) {
-                    contentType = contentType.toLowerCase().split(";")[0].trim();
-                    if (contentType.contains("mpegurl") || contentType.contains("apple.mpegurl") || contentType.contains("mpeg.url")) {
+                String contentTypeHeader = conn.getContentType();
+                if (contentTypeHeader != null) {
+                    String[] parts = contentTypeHeader.toLowerCase().split(";");
+                    String contentType = parts.length > 0 ? parts[0].trim() : "";
+                    
+                    if (contentType.contains("mpegurl") || contentType.contains("apple.mpegurl") || contentType.contains("mpeg.url") || contentType.contains("application/vnd.apple.mpegurl")) {
                         inferredMimeType = androidx.media3.common.MimeTypes.APPLICATION_M3U8;
                     } else if (contentType.contains("dash+xml")) {
                         inferredMimeType = androidx.media3.common.MimeTypes.APPLICATION_MPD;
-                    } else if (contentType.contains("video/mp2t") || contentType.contains("application/vnd.apple.mpegurl")) {
+                    } else if (contentType.contains("video/mp2t")) {
                         inferredMimeType = androidx.media3.common.MimeTypes.APPLICATION_M3U8;
                     }
                 }
@@ -385,11 +388,10 @@ public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener 
                 }
             });
 
-            // Route through the new universal resolution module
+            // Route through the universal resolution module
             universallyResolveAndPrepare(source, uri);
         }
     }
-
     @Override
     public void start() {
         synchronized (engineLock) {
@@ -631,7 +633,8 @@ public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener 
             return super.selectSubtitleStream();
         }
         setCurrentSubtitleStream(new SubtitleStreamInfo.Generated(ps.getStringPref(SubGenAddon.LANG)));
-        if (BuildConfig.AUTO && !src.isVideo() && (listener instanceof MediaSessionCallback cb)) {
+        if (BuildConfig.AUTO && !src.isVideo() && (listener instanceof MediaSessionCallback)) {
+            MediaSessionCallback cb = (MediaSessionCallback) listener;
             addSubtitleConsumer(cb);
         }
         return completedVoid();
