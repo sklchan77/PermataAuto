@@ -34,6 +34,7 @@ import androidx.media3.datasource.cronet.CronetDataSource;
 import androidx.media3.datasource.cronet.CronetUtil;
 import androidx.media3.extractor.DefaultExtractorsFactory;
 import androidx.media3.extractor.ts.TsExtractor;
+import androidx.media3.extractor.ts.DefaultTsPayloadReaderFactory;
 import androidx.media3.exoplayer.DefaultLoadControl;
 import androidx.media3.exoplayer.DefaultLivePlaybackSpeedControl;
 import androidx.media3.exoplayer.DefaultRenderersFactory;
@@ -134,7 +135,8 @@ public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener 
     private volatile boolean buffering;
     private volatile boolean isHls;
     private volatile Runnable drainBuffer;
-    public ExoPlayerEngine(@NonNull Context ctx, @NonNull Listener listener) {
+
+        public ExoPlayerEngine(@NonNull Context ctx, @NonNull Listener listener) {
         super(listener);
         Context appCtx = ctx.getApplicationContext();
 
@@ -161,16 +163,17 @@ public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener 
             }
         };
 
-        // Permissive extractor configurations matching VLC parser robustness
+        // Permissive extractor configurations matching VLC parser robustness (Corrected references)
         DefaultExtractorsFactory extractorsFactory = new DefaultExtractorsFactory()
-                .setTsExtractorFlags(TsExtractor.FLAG_DETECT_ACCESS_UNITS | TsExtractor.FLAG_ALLOW_NON_IDR_KEYFRAMES);
+                .setTsExtractorFlags(DefaultTsPayloadReaderFactory.FLAG_DETECT_ACCESS_UNITS | DefaultTsPayloadReaderFactory.FLAG_ALLOW_NON_IDR_KEYFRAMES);
 
         this.mediaSourceFactory = new DefaultMediaSourceFactory(appCtx, extractorsFactory)
                 .setDataSourceFactory(dsFactory)
                 .setLoadErrorHandlingPolicy(customErrorPolicy);
 
         // 3. Mid-stream resolution optimization via customized buildVideoRenderers (Eliminates video flash frames)
-        // Optimization: Force hardware asynchronous codec processing loops to safeguard against frames dropping
+
+      // Optimization: Force hardware asynchronous codec processing loops to safeguard against frames dropping
         DefaultRenderersFactory renderersFactory = new DefaultRenderersFactory(appCtx) {
             @Override
             protected void buildVideoRenderers(
