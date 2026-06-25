@@ -156,12 +156,12 @@ public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener 
             }
         };
 
-        // Fix: Removed the removed .setStreamKeys(emptyList()) modifier to align with modern Media3 specifications
         MediaSource.Factory msFactory = new DefaultMediaSourceFactory(appCtx)
                 .setDataSourceFactory(dsFactory)
                 .setLoadErrorHandlingPolicy(customErrorPolicy);
 
         // 3. Mid-stream resolution optimization via customized buildVideoRenderers (Eliminates video flash frames)
+        // Optimization: Force hardware asynchronous codec processing loops to safeguard against frames dropping
         DefaultRenderersFactory renderersFactory = new DefaultRenderersFactory(appCtx) {
             @Override
             protected void buildVideoRenderers(
@@ -188,11 +188,15 @@ public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener 
                                 .setPcmBufferMultiplicationFactor(16)
                                 .setOffloadBufferDurationUs(120_000_000)
                                 .build())
+                        // Optimization: Enable dynamic track clock adjustments during bitrate adaptations
+                        .setEnableAudioTrackPlaybackParams(true)
                         .setAudioProcessorChain(new DefaultAudioSink.DefaultAudioProcessorChain(audioProc))
                         .build();
             }
         };
-
+        
+        // Force asynchronous processing behavior onto the core renderers factory instance
+        renderersFactory.forceEnableMediaCodecAsynchronousQueueing();
 
         DefaultLoadControl loadControl = new DefaultLoadControl.Builder()
                 .setBufferDurationsMs(45_000, 75_000, 10_000, 10_000)
