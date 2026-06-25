@@ -198,10 +198,10 @@ public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener 
         // Optimized adaptive buffer window allowing universal live compatibility
         DefaultLoadControl loadControl = new DefaultLoadControl.Builder()
                 .setBufferDurationsMs(
-                        15_000, // minBufferMs: Drop down to 15s to support short-window live servers safely
-                        50_000, // maxBufferMs: Allow scaling cache up to 50s if the server history permits it
-                        2_500,  // bufferForPlaybackMs: Fast initial start (Wait for 2.5s of data instead of forcing 10s)
-                        5_000   // bufferForPlaybackAfterRebufferMs: Balanced rebuffer recovery threshold
+                        3_000, // minBufferMs: Drop down to 3s to support short-window live servers safely
+                        30_000, // maxBufferMs: Allow scaling cache up to 30s if the server history permits it
+                        3_000,  // bufferForPlaybackMs: Fast initial start (Wait for 3s of data instead of forcing 10s)
+                        6_000   // bufferForPlaybackAfterRebufferMs: Balanced rebuffer recovery threshold
                 )
                 .setPrioritizeTimeOverSizeThresholds(true)
                 .build();
