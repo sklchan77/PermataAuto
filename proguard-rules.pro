@@ -12,9 +12,14 @@
 -dontwarn com.jcraft.jsch.PageantConnector
 -dontwarn okio.*
 
--keepnames class androidx.media3.exoplayer.ExoPlayerImpl { *; }
--keepnames class androidx.media3.exoplayer.ExoPlayerImplInternal { *; }
-
-# PROGUARD ADDITIONS FOR YOUR CUSTOM PACKAGE ROOT
+# PROGUARD RULES FOR YOUR CUSTOM PACKAGE ROOT & REFLECTION ACCESSORS
 -keepnames class my.app.** { *; }
 -keep class my.app.permata.** { *; }
+
+# CRITICAL FIX: Explicitly lock the exact fields queried by ExoPlayerEngine's reflection engine hooks
+-keep class androidx.media3.exoplayer.ExoPlayerImpl {
+    androidx.media3.exoplayer.ExoPlayerImplInternal internalPlayer;
+}
+-keep class androidx.media3.exoplayer.ExoPlayerImplInternal {
+    androidx.media3.common.util.HandlerWrapper handler;
+}
