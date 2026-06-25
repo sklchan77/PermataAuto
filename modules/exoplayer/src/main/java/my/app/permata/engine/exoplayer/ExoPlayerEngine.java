@@ -217,6 +217,7 @@ public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener 
                 )
                 .setPrioritizeTimeOverSizeThresholds(true)
                 .build();
+
         DefaultLivePlaybackSpeedControl liveSpeedControl = new DefaultLivePlaybackSpeedControl.Builder()
                 .setFallbackMinPlaybackSpeed(0.95f)
                 .setFallbackMaxPlaybackSpeed(1.05f)
@@ -257,6 +258,103 @@ public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener 
             }
         });
     }
+
+    /**
+     * Universally determines the media container type by evaluating URL structures 
+     * and performing background network sniffing when extensions are completely absent.
+     */
+    private void universallyResolveAndPrepare(@NonNull PlayableItem sourceItem, @NonNull Uri uri) {
+        String urlString = uri.toString().toLowerCase();
+        String path = uri.getPath() != null ? uri.getPath().toLowerCase() : "";
+
+        // Fast Path: Standard extensions resolve instantly without any network overhead
+        if (path.contains(".m3u8") || urlString.contains("format=m3u8") || urlString.contains("type=m3u8")) {
+            applyMediaSource(sourceItem, uri, androidx.media3.common.MimeTypes.APPLICATION_M3U8);
+            return;
+        } else if (path.contains(".mpd")) {
+            applyMediaSource(sourceItem, uri, androidx.media3.common.MimeTypes.APPLICATION_MPD);
+            return;
+        } else if (path.contains(".ism")) {
+            applyMediaSource(sourceItem, uri, androidx.media3.common.MimeTypes.APPLICATION_SS);
+            return;
+        }
+
+        // Asynchronous Network Sniff Path: Performed if the stream is an extensionless live node
+        asyncIoExecutor.execute(() -> {
+            String inferredMimeType = null;
+            java.net.HttpURLConnection conn = null;
+            try {
+                java.net.URL url = new java.net.URL(uri.toString());
+                conn = (java.net.HttpURLConnection) url.openConnection();
+                conn.setRequestMethod("HEAD"); // Low-overhead request: grabs headers only, no video bytes
+                conn.setConnectTimeout(2500);  // Quick timeout to keep the player responsive
+                conn.setReadTimeout(2500);
+                conn.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 10) AppleWebKit/537.36");
+
+                int responseCode = conn.getResponseCode();
+                // Fall back to GET if the streaming server doesn't allow HEAD requests
+                if (responseCode == java.net.HttpURLConnection.HTTP_BAD_METHOD || responseCode == 405) {
+                    conn.disconnect();
+                    conn = (java.net.HttpURLConnection) url.openConnection();
+                    conn.setRequestMethod("GET");
+                    conn.setConnectTimeout(2500);
+                    conn.setReadTimeout(2500);
+                    conn.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 10) AppleWebKit/537.36");
+                }
+
+                String contentType = conn.getContentType();
+                if (contentType != null) {
+                    contentType = contentType.toLowerCase().split(";")[0].trim();
+                    if (contentType.contains("mpegurl") || contentType.contains("apple.mpegurl") || contentType.contains("mpeg.url")) {
+                        inferredMimeType = androidx.media3.common.MimeTypes.APPLICATION_M3U8;
+                    } else if (contentType.contains("dash+xml")) {
+                        inferredMimeType = androidx.media3.common.MimeTypes.APPLICATION_MPD;
+                    } else if (contentType.contains("video/mp2t") || contentType.contains("application/vnd.apple.mpegurl")) {
+                        inferredMimeType = androidx.media3.common.MimeTypes.APPLICATION_M3U8;
+                    }
+                }
+            } catch (Exception e) {
+                Log.w("Network MIME sniffing encountered an issue: " + e.getMessage() + ". Executing fallback checks.");
+            } finally {
+                if (conn != null) {
+                    try { conn.disconnect(); } catch (Exception ignored) {}
+                }
+            }
+
+            // Smart Fallback Framework: If network check fails, scan for common IPTV keywords and ports
+            if (inferredMimeType == null) {
+                int port = uri.getPort();
+                if (urlString.contains("/live/") || urlString.contains("/stream/") || urlString.contains("playlist")
+                        || port == 8000 || port == 8080 || port == 8880 || port == 3999) {
+                    inferredMimeType = androidx.media3.common.MimeTypes.APPLICATION_M3U8; // Universal IPTV default
+                }
+            }
+
+            final String finalMime = inferredMimeType;
+            App.get().run(() -> applyMediaSource(sourceItem, uri, finalMime));
+        });
+    }
+    private void applyMediaSource(@NonNull PlayableItem sourceItem, @NonNull Uri uri, @Nullable String mimeType) {
+        synchronized (engineLock) {
+            if (player == null || this.source != sourceItem) return;
+
+            MediaItem.Builder mediaItemBuilder = new MediaItem.Builder().setUri(uri);
+            if (mimeType != null) {
+                mediaItemBuilder.setMimeType(mimeType);
+            }
+
+            MediaItem mediaItem = mediaItemBuilder.build();
+            MediaSource mediaSource = mediaSourceFactory.createMediaSource(mediaItem);
+
+            this.isHls = (mimeType != null && mimeType.equals(androidx.media3.common.MimeTypes.APPLICATION_M3U8))
+                    || mediaSource.getClass().getSimpleName().contains("Hls")
+                    || Util.inferContentType(uri) == C.CONTENT_TYPE_HLS;
+
+            player.setMediaSource(mediaSource);
+            player.prepare();
+        }
+    }
+
     @Override
     public int getId() {
         return MediaPrefs.MEDIA_ENG_EXO;
@@ -277,12 +375,6 @@ public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener 
             this.buffering = false;
 
             Uri uri = source.getLocation();
-            
-            MediaItem mediaItem = MediaItem.fromUri(uri);
-            MediaSource mediaSource = mediaSourceFactory.createMediaSource(mediaItem);
-            
-            this.isHls = mediaSource.getClass().getSimpleName().contains("Hls") 
-                      || Util.inferContentType(uri) == C.CONTENT_TYPE_HLS;
 
             final int uriHash = uri.hashCode();
             asyncIoExecutor.execute(() -> {
@@ -293,12 +385,11 @@ public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener 
                 }
             });
 
-            if (player != null) {
-                player.setMediaSource(mediaSource);
-                player.prepare();
-            }
+            // Route through the new universal resolution module
+            universallyResolveAndPrepare(source, uri);
         }
     }
+
     @Override
     public void start() {
         synchronized (engineLock) {
