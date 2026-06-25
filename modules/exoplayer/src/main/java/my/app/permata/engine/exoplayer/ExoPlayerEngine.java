@@ -72,11 +72,12 @@ import my.app.permata.media.pref.MediaPrefs;
 import my.app.permata.media.service.MediaSessionCallback;
 import my.app.permata.media.sub.SubGrid;
 import my.app.permata.media.sub.Subtitles;
-import my.app.ui.view.VideoView;
+import my.app.permata.ui.view.VideoView;
 import my.app.utils.app.App;
 import my.app.utils.async.FutureSupplier;
 import my.app.utils.log.Log;
 import my.app.utils.text.SharedTextBuilder;
+
 /**
  * Enterprise-Grade ExoPlayerEngine for Permata Auto Media Player.
  * Re-engineered with explicit synchronized bounds monitors, Media3 capability matrices,
@@ -148,6 +149,7 @@ public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener 
                         .build();
             }
         };
+
         DefaultLoadControl loadControl = new DefaultLoadControl.Builder()
                 .setBufferDurationsMs(45_000, 75_000, 10_000, 10_000)
                 .setPrioritizeTimeOverSizeThresholds(true)
@@ -156,7 +158,6 @@ public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener 
         DefaultLivePlaybackSpeedControl liveSpeedControl = new DefaultLivePlaybackSpeedControl.Builder()
                 .setFallbackMinPlaybackSpeed(0.95f)
                 .setFallbackMaxPlaybackSpeed(1.05f)
-                .setMinPossibleLiveOffsetMs(30_000)
                 .setMaxLiveOffsetErrorMsMs(15_000)
                 .build();
 
