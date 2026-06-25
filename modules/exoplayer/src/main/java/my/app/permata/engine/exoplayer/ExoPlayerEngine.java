@@ -195,11 +195,14 @@ public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener 
             }
         };
         
-        // Force asynchronous processing behavior onto the core renderers factory instance
-        renderersFactory.forceEnableMediaCodecAsynchronousQueueing();
-
+        // Optimized adaptive buffer window allowing universal live compatibility
         DefaultLoadControl loadControl = new DefaultLoadControl.Builder()
-                .setBufferDurationsMs(45_000, 75_000, 10_000, 10_000)
+                .setBufferDurationsMs(
+                        15_000, // minBufferMs: Drop down to 15s to support short-window live servers safely
+                        50_000, // maxBufferMs: Allow scaling cache up to 50s if the server history permits it
+                        2_500,  // bufferForPlaybackMs: Fast initial start (Wait for 2.5s of data instead of forcing 10s)
+                        5_000   // bufferForPlaybackAfterRebufferMs: Balanced rebuffer recovery threshold
+                )
                 .setPrioritizeTimeOverSizeThresholds(true)
                 .build();
 
@@ -216,6 +219,7 @@ public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener 
                 .build();
 
         this.player.addListener(this);
+
         this.audioEffects = AudioEffects.create(appCtx, 0, player.getAudioSessionId());
 
         asyncIoExecutor.execute(() -> {
@@ -247,6 +251,8 @@ public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener 
     public int getId() {
         return MediaPrefs.MEDIA_ENG_EXO;
     }
+
+
     @SuppressLint("SwitchIntDef")
     @Override
     public void prepare(@NonNull PlayableItem source) {
@@ -264,12 +270,8 @@ public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener 
             Uri uri = source.getLocation();
             this.isHls = Util.inferContentType(uri) == C.CONTENT_TYPE_HLS;
 
-            MediaItem m = new MediaItem.Builder()
-                    .setUri(uri)
-                    .setLiveConfiguration(new MediaItem.LiveConfiguration.Builder()
-                            .setTargetOffsetMs(45_000)
-                            .build())
-                    .build();
+            // Fix: Swapped out the fixed 45s constraint. Let ExoPlayer natively map the stream's manifest limits
+            MediaItem m = MediaItem.fromUri(uri);
 
             final int uriHash = uri.hashCode();
             asyncIoExecutor.execute(() -> {
@@ -286,6 +288,8 @@ public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener 
             }
         }
     }
+
+
     @Override
     public void start() {
         synchronized (engineLock) {
@@ -633,9 +637,21 @@ public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener 
     public void onVideoSizeChanged(@NonNull VideoSize videoSize) {
         Optional.ofNullable(listener).ifPresent(l -> l.onVideoSizeChanged(this, videoSize.width, videoSize.height));
     }
+
+
     @Override
     public void onPlayerError(@NonNull PlaybackException error) {
         synchronized (engineLock) {
+            // Fix: Intercept rolling live window dropouts and automatically recover by jumping back to live edge
+            if (error.errorCode == PlaybackException.ERROR_CODE_BEHIND_LIVE_WINDOW) {
+                Log.d("Behind live window timeline frame slot. Performing live-edge recovery seek step.");
+                if (player != null) {
+                    player.seekToDefaultPosition();
+                    player.prepare();
+                }
+                return;
+            }
+
             this.preparing = false;
             this.buffering = false;
             Optional.ofNullable(listener).ifPresent(l -> l.onEngineError(this, error));
@@ -646,6 +662,7 @@ public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener 
     protected SubGrid createSubStreamGrid() {
         return accessor.createSubStreamGrid();
     }
+
     // =====================================================================================
     // NESTED TRANSLATION RESOLUTION ACCESSOR COMPONENT
     // =====================================================================================
