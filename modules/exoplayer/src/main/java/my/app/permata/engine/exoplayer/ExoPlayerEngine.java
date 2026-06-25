@@ -537,13 +537,13 @@ public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener 
                     Optional.ofNullable(listener).ifPresent(l -> l.onEnginePrepared(this));
 
                     var prefs = source.getPrefs();
-                    // Fix: Re-ordered arguments so that the Long preference supplier is matched correctly first
+                    // Fix: Wrapped the 4th param in a Supplier lambda, and converted 5th param to a matching Consumer method reference
                     MediaEngine.selectMediaStream(
                             prefs::getAudioIdPref,
                             prefs::getAudioLangPref,
                             prefs::getAudioKeyPref,
-                            completed(getAudioStreamInfo()),
-                            () -> this.setCurrentAudioStream(getCurrentAudioStreamInfo())
+                            () -> completed(getAudioStreamInfo()),
+                            this::setCurrentAudioStream
                     );
                 }
 
