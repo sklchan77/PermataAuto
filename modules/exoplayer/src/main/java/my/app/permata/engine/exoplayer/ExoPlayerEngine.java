@@ -32,6 +32,8 @@ import androidx.media3.datasource.DefaultDataSource;
 import androidx.media3.datasource.DefaultHttpDataSource;
 import androidx.media3.datasource.cronet.CronetDataSource;
 import androidx.media3.datasource.cronet.CronetUtil;
+import androidx.media3.extractor.DefaultExtractorsFactory;
+import androidx.media3.extractor.ts.TsExtractor;
 import androidx.media3.exoplayer.DefaultLoadControl;
 import androidx.media3.exoplayer.DefaultLivePlaybackSpeedControl;
 import androidx.media3.exoplayer.DefaultRenderersFactory;
@@ -80,11 +82,13 @@ import my.app.utils.app.App;
 import my.app.utils.async.FutureSupplier;
 import my.app.utils.log.Log;
 import my.app.utils.text.SharedTextBuilder;
+
 /**
  * Enterprise-Grade ExoPlayerEngine for Permata Auto Media Player.
  * Re-engineered with explicit synchronized bounds monitors, Media3 capability matrices,
  * async thread isolation, and proactive memory leak mitigations.
  * Optimized for continuous deep-buffered live streaming playback profiles with adaptive network recovery.
+ * Fully calibrated for compliant live-edge stream window seeking and fallback extractor parsing tolerances.
  *
  * @author sklchan77 (Optimized Modern Version)
  */
@@ -115,6 +119,7 @@ public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener 
             httpDsFactory = new DefaultHttpDataSource.Factory();
         }
     }
+
     private final Accessor accessor = new Accessor(this);
     private final Timeline.Period period = new Timeline.Period();
     private final PendingLoadAudioProcessor audioProc = new PendingLoadAudioProcessor(accessor);
@@ -122,13 +127,13 @@ public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener 
     private ExoPlayer player;
     private AudioEffects audioEffects;
     private final Object engineLock = new Object();
+    private final MediaSource.Factory mediaSourceFactory;
     
     private volatile PlayableItem source;
     private volatile boolean preparing;
     private volatile boolean buffering;
     private volatile boolean isHls;
     private volatile Runnable drainBuffer;
-
     public ExoPlayerEngine(@NonNull Context ctx, @NonNull Listener listener) {
         super(listener);
         Context appCtx = ctx.getApplicationContext();
@@ -156,7 +161,11 @@ public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener 
             }
         };
 
-        MediaSource.Factory msFactory = new DefaultMediaSourceFactory(appCtx)
+        // Permissive extractor configurations matching VLC parser robustness
+        DefaultExtractorsFactory extractorsFactory = new DefaultExtractorsFactory()
+                .setTsExtractorFlags(TsExtractor.FLAG_DETECT_ACCESS_UNITS | TsExtractor.FLAG_ALLOW_NON_IDR_KEYFRAMES);
+
+        this.mediaSourceFactory = new DefaultMediaSourceFactory(appCtx, extractorsFactory)
                 .setDataSourceFactory(dsFactory)
                 .setLoadErrorHandlingPolicy(customErrorPolicy);
 
@@ -195,24 +204,23 @@ public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener 
             }
         };
         
-        // Optimized adaptive buffer window allowing universal live compatibility
+        // Optimized adaptive buffer window avoiding starving on short-window live sliding streams
         DefaultLoadControl loadControl = new DefaultLoadControl.Builder()
                 .setBufferDurationsMs(
-                        15_000, // minBufferMs: Drop down to 15s to support short-window live servers safely
+                        3_000,  // minBufferMs: Calibrated to 3s to support shallow sliding windows safely
                         50_000, // maxBufferMs: Allow scaling cache up to 50s if the server history permits it
-                        2_500,  // bufferForPlaybackMs: Fast initial start (Wait for 2.5s of data instead of forcing 10s)
-                        5_000   // bufferForPlaybackAfterRebufferMs: Balanced rebuffer recovery threshold
+                        1_500,  // bufferForPlaybackMs: Fast initial start (Wait for 1.5s of data instead of forcing 10s)
+                        2_500   // bufferForPlaybackAfterRebufferMs: Balanced rebuffer recovery threshold
                 )
                 .setPrioritizeTimeOverSizeThresholds(true)
                 .build();
-
         DefaultLivePlaybackSpeedControl liveSpeedControl = new DefaultLivePlaybackSpeedControl.Builder()
                 .setFallbackMinPlaybackSpeed(0.95f)
                 .setFallbackMaxPlaybackSpeed(1.05f)
                 .build();
 
         this.player = new ExoPlayer.Builder(appCtx, renderersFactory)
-                .setMediaSourceFactory(msFactory)
+                .setMediaSourceFactory(mediaSourceFactory)
                 .setLoadControl(loadControl)
                 .setLivePlaybackSpeedControl(liveSpeedControl)
                 .setBandwidthMeter(bandwidthMeter)
@@ -246,12 +254,10 @@ public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener 
             }
         });
     }
-
     @Override
     public int getId() {
         return MediaPrefs.MEDIA_ENG_EXO;
     }
-
 
     @SuppressLint("SwitchIntDef")
     @Override
@@ -268,10 +274,12 @@ public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener 
             this.buffering = false;
 
             Uri uri = source.getLocation();
-            this.isHls = Util.inferContentType(uri) == C.CONTENT_TYPE_HLS;
-
-            // Fix: Swapped out the fixed 45s constraint. Let ExoPlayer natively map the stream's manifest limits
-            MediaItem m = MediaItem.fromUri(uri);
+            
+            MediaItem mediaItem = MediaItem.fromUri(uri);
+            MediaSource mediaSource = mediaSourceFactory.createMediaSource(mediaItem);
+            
+            this.isHls = mediaSource.getClass().getSimpleName().contains("Hls") 
+                      || Util.inferContentType(uri) == C.CONTENT_TYPE_HLS;
 
             final int uriHash = uri.hashCode();
             asyncIoExecutor.execute(() -> {
@@ -283,13 +291,11 @@ public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener 
             });
 
             if (player != null) {
-                player.setMediaItem(m);
+                player.setMediaSource(mediaSource);
                 player.prepare();
             }
         }
     }
-
-
     @Override
     public void start() {
         synchronized (engineLock) {
@@ -322,11 +328,11 @@ public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener 
             }
         }
     }
+
     @Override
     public PlayableItem getSource() {
         return source;
     }
-
     @Override
     public FutureSupplier<Long> getDuration() {
         synchronized (engineLock) {
@@ -335,6 +341,7 @@ public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener 
             return completed(dur < 0 ? 0L : dur);
         }
     }
+
     @Override
     public FutureSupplier<Long> getPosition() {
         syncSub(false);
@@ -379,11 +386,11 @@ public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener 
             syncSub(true);
         }
     }
+
     @Override
     public FutureSupplier<Float> getSpeed() {
         return completed(speed());
     }
-
     private float speed() {
         synchronized (engineLock) {
             if (player == null) return 1f;
@@ -414,7 +421,6 @@ public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener 
             }
         }
     }
-
     @Override
     public float getVideoWidth() {
         synchronized (engineLock) {
@@ -432,6 +438,7 @@ public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener 
             return f == null ? 0f : f.height;
         }
     }
+
     @Nullable
     @Override
     public AudioEffects getAudioEffects() {
@@ -439,7 +446,6 @@ public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener 
             return audioEffects;
         }
     }
-
     @Override
     public List<AudioStreamInfo> getAudioStreamInfo() {
         synchronized (engineLock) {
@@ -547,7 +553,6 @@ public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener 
         setCurrentSubtitleStream(new SubtitleStreamInfo.Generated(ps.getStringPref(SubGenAddon.LANG)));
         return super.getCurrentSubtitles();
     }
-
     @Override
     public FutureSupplier<List<SubtitleStreamInfo>> getSubtitleStreamInfo() {
         return super.getSubtitleStreamInfo().main().map(subFiles -> {
@@ -580,7 +585,6 @@ public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener 
             audioEffects = null;
         }
     }
-
     @Override
     public void mute(@NonNull Context ctx) {
         synchronized (engineLock) {
@@ -632,17 +636,15 @@ public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener 
             }
         }
     }
-
     @Override
     public void onVideoSizeChanged(@NonNull VideoSize videoSize) {
         Optional.ofNullable(listener).ifPresent(l -> l.onVideoSizeChanged(this, videoSize.width, videoSize.height));
     }
 
-
     @Override
     public void onPlayerError(@NonNull PlaybackException error) {
         synchronized (engineLock) {
-            // Fix: Intercept rolling live window dropouts and automatically recover by jumping back to live edge
+            // Intercept rolling live window dropouts and automatically recover by jumping back to live edge
             if (error.errorCode == PlaybackException.ERROR_CODE_BEHIND_LIVE_WINDOW) {
                 Log.d("Behind live window timeline frame slot. Performing live-edge recovery seek step.");
                 if (player != null) {
@@ -657,7 +659,6 @@ public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener 
             Optional.ofNullable(listener).ifPresent(l -> l.onEngineError(this, error));
         }
     }
-
     @Override
     protected SubGrid createSubStreamGrid() {
         return accessor.createSubStreamGrid();
@@ -699,6 +700,7 @@ public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener 
         public long getSubGenTimeOffset() {
             return subGenTimeOffset;
         }
+
         private void sourceChanged(@Nullable PlayableItem src) {
             if (subStream != null) subStream.clear();
             if (subTransStream != null) subTransStream.clear();
@@ -822,6 +824,7 @@ public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener 
         private void setSubGenTimeOffset(ExoPlayerEngine eng) {
             this.subGenTimeOffset = eng.subSchedulerClock();
         }
+
         private SubGrid createSubStreamGrid() {
             assertMainThread();
             if (subStream == null) subStream = new Subtitles.Stream();
@@ -832,6 +835,89 @@ public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener 
             m.put(SubGrid.Position.BOTTOM_LEFT, subStream);
             m.put(SubGrid.Position.BOTTOM_RIGHT, subTransStream);
             return new SubGrid(m);
+        }
+    }
+    // =====================================================================================
+    // AUDIO PROCESSOR WRAPPER INTERFACE LIFE-CYCLE INTERCEPTOR
+    // =====================================================================================
+    private static class PendingLoadAudioProcessor implements androidx.media3.common.audio.AudioProcessor {
+        private final Accessor accessor;
+        private androidx.media3.common.audio.AudioProcessor.AudioFormat inputAudioFormat;
+        private androidx.media3.common.audio.AudioProcessor.AudioFormat outputAudioFormat;
+        private java.nio.ByteBuffer buffer;
+        private java.nio.ByteBuffer outputBuffer;
+        private boolean inputEnded;
+
+        public PendingLoadAudioProcessor(Accessor accessor) {
+            this.accessor = accessor;
+            this.inputAudioFormat = androidx.media3.common.audio.AudioProcessor.AudioFormat.NOT_SET;
+            this.outputAudioFormat = androidx.media3.common.audio.AudioProcessor.AudioFormat.NOT_SET;
+            this.buffer = EMPTY_BUFFER;
+            this.outputBuffer = EMPTY_BUFFER;
+        }
+
+        @Override
+        public androidx.media3.common.audio.AudioProcessor.AudioFormat configure(
+                androidx.media3.common.audio.AudioProcessor.AudioFormat inputAudioFormat)
+                throws androidx.media3.common.audio.AudioProcessor.UnhandledAudioFormatException {
+            this.inputAudioFormat = inputAudioFormat;
+            // Transparently pass formats down through the pipeline
+            this.outputAudioFormat = inputAudioFormat;
+            return inputAudioFormat;
+        }
+        @Override
+        public boolean isActive() {
+            return inputAudioFormat != androidx.media3.common.audio.AudioProcessor.AudioFormat.NOT_SET;
+        }
+
+        @Override
+        public void queueInput(java.nio.ByteBuffer inputBuffer) {
+            int remaining = inputBuffer.remaining();
+            if (remaining == 0) return;
+
+            if (buffer.capacity() < remaining) {
+                buffer = java.nio.ByteBuffer.allocateDirect(remaining).order(java.nio.ByteOrder.nativeOrder());
+            } else {
+                buffer.clear();
+            }
+
+            buffer.put(inputBuffer);
+            buffer.flip();
+            outputBuffer = buffer;
+
+            // Trigger main-thread synchronization tasks asynchronously on buffer progression events
+            if (remaining > 0 && accessor != null) {
+                my.app.utils.app.App.get().run(accessor::drainBuffer);
+            }
+        }
+
+        @Override
+        public void queueEndOfStream() {
+            inputEnded = true;
+        }
+        @Override
+        public java.nio.ByteBuffer getOutput() {
+            java.nio.ByteBuffer output = outputBuffer;
+            outputBuffer = EMPTY_BUFFER;
+            return output;
+        }
+
+        @Override
+        public boolean isEnded() {
+            return inputEnded && outputBuffer == EMPTY_BUFFER;
+        }
+
+        @Override
+        public void flush() {
+            outputBuffer = EMPTY_BUFFER;
+            inputEnded = false;
+        }
+        @Override
+        public void reset() {
+            flush();
+            buffer = EMPTY_BUFFER;
+            inputAudioFormat = androidx.media3.common.audio.AudioProcessor.AudioFormat.NOT_SET;
+            outputAudioFormat = androidx.media3.common.audio.AudioProcessor.AudioFormat.NOT_SET;
         }
     }
 }
