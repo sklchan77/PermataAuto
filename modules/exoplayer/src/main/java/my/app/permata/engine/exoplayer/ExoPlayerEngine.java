@@ -128,6 +128,7 @@ public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener 
     private volatile boolean buffering;
     private volatile boolean isHls;
     private volatile Runnable drainBuffer;
+
     public ExoPlayerEngine(@NonNull Context ctx, @NonNull Listener listener) {
         super(listener);
         Context appCtx = ctx.getApplicationContext();
@@ -139,7 +140,7 @@ public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener 
 
         DefaultDataSource.Factory dsFactory = new DefaultDataSource.Factory(appCtx, httpDsFactory);
         
-        // 2. Seamless Format Shifts and Network Recovery Policies injected to MediaSource
+        // 2. Network Recovery Policies injected to MediaSource (Automatic 5x cellular/tower reconnection)
         DefaultLoadErrorHandlingPolicy customErrorPolicy = new DefaultLoadErrorHandlingPolicy() {
             @Override
             public long getRetryDelayMsFor(LoadErrorInfo loadErrorInfo) {
@@ -155,12 +156,12 @@ public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener 
             }
         };
 
+        // Fix: Removed the removed .setStreamKeys(emptyList()) modifier to align with modern Media3 specifications
         MediaSource.Factory msFactory = new DefaultMediaSourceFactory(appCtx)
                 .setDataSourceFactory(dsFactory)
-                .setStreamKeys(emptyList())
                 .setLoadErrorHandlingPolicy(customErrorPolicy);
 
-        // 3. Mid-stream resolution optimization via customized buildVideoRenderers
+        // 3. Mid-stream resolution optimization via customized buildVideoRenderers (Eliminates video flash frames)
         DefaultRenderersFactory renderersFactory = new DefaultRenderersFactory(appCtx) {
             @Override
             protected void buildVideoRenderers(
@@ -191,6 +192,8 @@ public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener 
                         .build();
             }
         };
+
+
         DefaultLoadControl loadControl = new DefaultLoadControl.Builder()
                 .setBufferDurationsMs(45_000, 75_000, 10_000, 10_000)
                 .setPrioritizeTimeOverSizeThresholds(true)
