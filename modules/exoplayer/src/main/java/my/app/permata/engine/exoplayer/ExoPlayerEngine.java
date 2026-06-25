@@ -27,11 +27,14 @@ import androidx.media3.common.VideoSize;
 import androidx.media3.common.util.HandlerWrapper;
 import androidx.media3.common.util.UnstableApi;
 import androidx.media3.common.util.Util;
+
 import androidx.media3.datasource.DataSource;
 import androidx.media3.datasource.DefaultDataSource;
 import androidx.media3.datasource.DefaultHttpDataSource;
 import androidx.media3.datasource.cronet.CronetDataSource;
 import androidx.media3.datasource.cronet.CronetUtil;
+import androidx.media3.exoplayer.DefaultLoadControl;
+import androidx.media3.exoplayer.DefaultLivePlaybackSpeedControl;
 import androidx.media3.exoplayer.DefaultRenderersFactory;
 import androidx.media3.exoplayer.ExoPlayer;
 import androidx.media3.exoplayer.audio.AudioSink;
@@ -69,15 +72,16 @@ import my.app.permata.media.pref.MediaPrefs;
 import my.app.permata.media.service.MediaSessionCallback;
 import my.app.permata.media.sub.SubGrid;
 import my.app.permata.media.sub.Subtitles;
-import my.app.permata.ui.view.VideoView;
+import my.app.ui.view.VideoView;
 import my.app.utils.app.App;
 import my.app.utils.async.FutureSupplier;
 import my.app.utils.log.Log;
 import my.app.utils.text.SharedTextBuilder;
 /**
- * Enterprise-Grade ExoPlayerEngine for Permata Auto.
+ * Enterprise-Grade ExoPlayerEngine for Permata Auto Media Player.
  * Re-engineered with explicit synchronized bounds monitors, Media3 capability matrices,
  * async thread isolation, and proactive memory leak mitigations.
+ * Optimized for continuous deep-buffered live streaming playback profiles.
  *
  * @author sklchan77 (Optimized Modern Version)
  */
@@ -144,8 +148,22 @@ public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener 
                         .build();
             }
         };
+        DefaultLoadControl loadControl = new DefaultLoadControl.Builder()
+                .setBufferDurationsMs(45_000, 75_000, 10_000, 10_000)
+                .setPrioritizeTimeOverSizeThresholds(true)
+                .build();
+
+        DefaultLivePlaybackSpeedControl liveSpeedControl = new DefaultLivePlaybackSpeedControl.Builder()
+                .setFallbackMinPlaybackSpeed(0.95f)
+                .setFallbackMaxPlaybackSpeed(1.05f)
+                .setMinPossibleLiveOffsetMs(30_000)
+                .setMaxLiveOffsetErrorMsMs(15_000)
+                .build();
+
         this.player = new ExoPlayer.Builder(appCtx, renderersFactory)
                 .setMediaSourceFactory(msFactory)
+                .setLoadControl(loadControl)
+                .setLivePlaybackSpeedControl(liveSpeedControl)
                 .build();
 
         this.player.addListener(this);
@@ -195,8 +213,14 @@ public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener 
             this.buffering = false;
 
             Uri uri = source.getLocation();
-            MediaItem m = MediaItem.fromUri(uri);
             this.isHls = Util.inferContentType(uri) == C.CONTENT_TYPE_HLS;
+
+            MediaItem m = new MediaItem.Builder()
+                    .setUri(uri)
+                    .setLiveConfiguration(new MediaItem.LiveConfiguration.Builder()
+                            .setTargetOffsetMs(45_000)
+                            .build())
+                    .build();
 
             final int uriHash = uri.hashCode();
             asyncIoExecutor.execute(() -> {
@@ -537,7 +561,6 @@ public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener 
                     Optional.ofNullable(listener).ifPresent(l -> l.onEnginePrepared(this));
 
                     var prefs = source.getPrefs();
-                    // Fix: Wrapped the 4th param in a Supplier lambda, and converted 5th param to a matching Consumer method reference
                     MediaEngine.selectMediaStream(
                             prefs::getAudioIdPref,
                             prefs::getAudioLangPref,
@@ -546,7 +569,6 @@ public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener 
                             this::setCurrentAudioStream
                     );
                 }
-
             } else if (playbackState == Player.STATE_ENDED) {
                 stopped(false);
                 asyncIoExecutor.execute(() -> {
