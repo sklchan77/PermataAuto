@@ -27,7 +27,6 @@ import androidx.media3.common.VideoSize;
 import androidx.media3.common.util.HandlerWrapper;
 import androidx.media3.common.util.UnstableApi;
 import androidx.media3.common.util.Util;
-
 import androidx.media3.datasource.DataSource;
 import androidx.media3.datasource.DefaultDataSource;
 import androidx.media3.datasource.DefaultHttpDataSource;
@@ -42,9 +41,13 @@ import androidx.media3.exoplayer.audio.DefaultAudioSink;
 import androidx.media3.exoplayer.audio.DefaultAudioTrackBufferSizeProvider;
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory;
 import androidx.media3.exoplayer.source.MediaSource;
+import androidx.media3.exoplayer.upstream.DefaultBandwidthMeter;
+import androidx.media3.exoplayer.upstream.DefaultLoadErrorHandlingPolicy;
+import androidx.media3.exoplayer.upstream.LoadErrorHandlingPolicy;
 
 import org.chromium.net.CronetEngine;
 
+import java.io.IOException;
 import java.lang.ref.WeakReference;
 import java.lang.reflect.Field;
 import java.net.CookieHandler;
@@ -77,12 +80,11 @@ import my.app.utils.app.App;
 import my.app.utils.async.FutureSupplier;
 import my.app.utils.log.Log;
 import my.app.utils.text.SharedTextBuilder;
-
 /**
  * Enterprise-Grade ExoPlayerEngine for Permata Auto Media Player.
  * Re-engineered with explicit synchronized bounds monitors, Media3 capability matrices,
  * async thread isolation, and proactive memory leak mitigations.
- * Optimized for continuous deep-buffered live streaming playback profiles.
+ * Optimized for continuous deep-buffered live streaming playback profiles with adaptive network recovery.
  *
  * @author sklchan77 (Optimized Modern Version)
  */
@@ -130,10 +132,50 @@ public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener 
         super(listener);
         Context appCtx = ctx.getApplicationContext();
 
-        DefaultDataSource.Factory dsFactory = new DefaultDataSource.Factory(appCtx, httpDsFactory);
-        MediaSource.Factory msFactory = new DefaultMediaSourceFactory(appCtx).setDataSourceFactory(dsFactory);
+        // 1. Adaptive Bitrate (ABR) Optimization via explicit Bandwidth Meter
+        DefaultBandwidthMeter bandwidthMeter = new DefaultBandwidthMeter.Builder(appCtx)
+                .setInitialBitrateEstimate(2_000_000)
+                .build();
 
+        DefaultDataSource.Factory dsFactory = new DefaultDataSource.Factory(appCtx, httpDsFactory);
+        
+        // 2. Seamless Format Shifts and Network Recovery Policies injected to MediaSource
+        DefaultLoadErrorHandlingPolicy customErrorPolicy = new DefaultLoadErrorHandlingPolicy() {
+            @Override
+            public long getRetryDelayMsFor(LoadErrorInfo loadErrorInfo) {
+                if (loadErrorInfo.exception instanceof IOException) {
+                    return Math.min(1000L * (1L << loadErrorInfo.errorCount), 8000L);
+                }
+                return C.TIME_UNSET;
+            }
+
+            @Override
+            public int getMinimumLoadableRetryCount(int dataType) {
+                return 5;
+            }
+        };
+
+        MediaSource.Factory msFactory = new DefaultMediaSourceFactory(appCtx)
+                .setDataSourceFactory(dsFactory)
+                .setStreamKeys(emptyList())
+                .setLoadErrorHandlingPolicy(customErrorPolicy);
+
+        // 3. Mid-stream resolution optimization via customized buildVideoRenderers
         DefaultRenderersFactory renderersFactory = new DefaultRenderersFactory(appCtx) {
+            @Override
+            protected void buildVideoRenderers(
+                    @NonNull Context context,
+                    int extensionRendererMode,
+                    @NonNull androidx.media3.exoplayer.mediacodec.MediaCodecSelector mediaCodecSelector,
+                    boolean enableDecoderFallback,
+                    @NonNull android.os.Handler eventHandler,
+                    @NonNull androidx.media3.exoplayer.video.VideoRendererEventListener eventListener,
+                    long allowedVideoJoiningTimeMs,
+                    @NonNull ArrayList<androidx.media3.exoplayer.Renderer> out) {
+                super.buildVideoRenderers(context, extensionRendererMode, mediaCodecSelector, 
+                        enableDecoderFallback, eventHandler, eventListener, 5000L, out);
+            }
+
             @Override
             protected AudioSink buildAudioSink(
                     @NonNull Context context,
@@ -149,7 +191,6 @@ public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener 
                         .build();
             }
         };
-
         DefaultLoadControl loadControl = new DefaultLoadControl.Builder()
                 .setBufferDurationsMs(45_000, 75_000, 10_000, 10_000)
                 .setPrioritizeTimeOverSizeThresholds(true)
@@ -164,6 +205,7 @@ public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener 
                 .setMediaSourceFactory(msFactory)
                 .setLoadControl(loadControl)
                 .setLivePlaybackSpeedControl(liveSpeedControl)
+                .setBandwidthMeter(bandwidthMeter)
                 .build();
 
         this.player.addListener(this);
