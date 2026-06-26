@@ -150,19 +150,34 @@ public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener 
 
         DefaultDataSource.Factory dsFactory = new DefaultDataSource.Factory(appCtx, httpDsFactory);
         
-        // 2. Network Recovery Policies injected to MediaSource (Automatic 5x cellular/tower reconnection)
+        // 2. Combined Smart Context-Aware Recovery + Infinite Reconnection Policy
         DefaultLoadErrorHandlingPolicy customErrorPolicy = new DefaultLoadErrorHandlingPolicy() {
             @Override
             public long getRetryDelayMsFor(LoadErrorInfo loadErrorInfo) {
-                if (loadErrorInfo.exception instanceof IOException) {
-                    return Math.min(1000L * (1L << loadErrorInfo.errorCount), 8000L);
+                java.io.IOException exception = loadErrorInfo.exception;
+                
+                // Fail-Fast on structural HTTP authentication/file failures to keep player clean
+                if (exception instanceof androidx.media3.datasource.HttpDataSource.InvalidResponseCodeException) {
+                    int responseCode = ((androidx.media3.datasource.HttpDataSource.InvalidResponseCodeException) exception).responseCode;
+                    if (responseCode == 401 || responseCode == 403 || responseCode == 404 || responseCode == 410) {
+                        return C.TIME_UNSET; // Stops this specific stream loop immediately to let app refresh tokens
+                    }
                 }
+
+                // If true cellular signal fade or timeout occurs, retry forever in the background
+                if (exception instanceof java.io.IOException) {
+                    // Injects random timing variance to stabilize parallel processing workers under network drift
+                    long jitter = (long) (Math.random() * 400) - 200; // +/- 200ms
+                    return 5000L + jitter; // Retries steadily every 5 seconds until connection returns
+                }
+                
                 return C.TIME_UNSET;
             }
 
             @Override
             public int getMinimumLoadableRetryCount(int dataType) {
-                return 5;
+                // Unlimited background retry loops for data media segments, standard 3 attempts for manifests
+                return dataType == C.DATA_TYPE_MEDIA ? Integer.MAX_VALUE : 3;
             }
         };
 
@@ -366,18 +381,20 @@ public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener 
     @SuppressLint("SwitchIntDef")
     @Override
     public void prepare(@NonNull PlayableItem source) {
+        // Isolation Protection: Stop the active player state BEFORE acquiring the structural engine lock.
+        // This instantly signals stuck network sockets to terminate, preventing UI thread ANRs.
+        if (player != null) {
+            player.stop(); 
+        }
+
         synchronized (engineLock) {
-            if (this.source == null) {
-                stopped(false);
-            } else {
-                stop();
-            }
             this.source = source;
             accessor.sourceChanged(source);
             this.preparing = true;
             this.buffering = false;
 
             Uri uri = source.getLocation();
+            this.isHls = Util.inferContentType(uri) == C.CONTENT_TYPE_HLS;
 
             final int uriHash = uri.hashCode();
             asyncIoExecutor.execute(() -> {
@@ -392,6 +409,7 @@ public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener 
             universallyResolveAndPrepare(source, uri);
         }
     }
+
     @Override
     public void start() {
         synchronized (engineLock) {
