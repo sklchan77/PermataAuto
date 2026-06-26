@@ -1060,19 +1060,25 @@ public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener 
         }
     }
 
+
     private void applyMediaSource(@NonNull PlayableItem sourceItem, @NonNull Uri uri, @androidx.annotation.Nullable String mimeType) {
-        androidx.media3.common.MediaItem.Builder mediaItemBuilder = new androidx.media3.common.MediaItem.Builder()
-                .setUri(uri);
+        // Safe Main-Thread Routing: Guarantees full immunity from Media3 thread crashes
+        mainHandler.post(() -> {
+            synchronized (engineLock) {
+                if (player == null) return;
                 
-        if (mimeType != null) {
-            mediaItemBuilder.setMimeType(mimeType);
-        }
-        
-        androidx.media3.common.MediaItem mediaItem = mediaItemBuilder.build();
-        
-        if (this.player != null) {
-            this.player.setMediaItem(mediaItem);
-            this.player.prepare(); 
-        }
+                androidx.media3.common.MediaItem.Builder mediaItemBuilder = new androidx.media3.common.MediaItem.Builder()
+                        .setUri(uri);
+                        
+                if (mimeType != null) {
+                    mediaItemBuilder.setMimeType(mimeType);
+                }
+                
+                androidx.media3.common.MediaItem mediaItem = mediaItemBuilder.build();
+                
+                this.player.setMediaItem(mediaItem);
+                this.player.prepare(); 
+            }
+        });
     }
-}
+
