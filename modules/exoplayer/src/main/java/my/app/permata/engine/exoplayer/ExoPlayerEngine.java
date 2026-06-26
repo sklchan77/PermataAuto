@@ -84,18 +84,12 @@ import my.app.utils.app.App;
 import my.app.utils.async.FutureSupplier;
 import my.app.utils.log.Log;
 import my.app.utils.text.SharedTextBuilder;
-/**
- * Enterprise-Grade ExoPlayerEngine for Permata Auto Media Player.
- * Fully integrated with all original dependencies, dual-pane translation accessors,
- * hardware effect profiles, and speech-to-text components.
- * Multi-threaded with background thread separation to protect against deadlocks and ANRs.
- */
+
 @UnstableApi
 public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener {
-
     @Override
     public int getId() {
-        return 1; // Original module registration index mapping reference
+        return 1;
     }
 
     private static final DataSource.Factory httpDsFactory;
@@ -105,11 +99,7 @@ public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener 
         String standardUserAgent = "Mozilla/5.0 (Linux; Android 10; TV) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/100.0.0.0 Mobile Safari/537.36 Permata/" + BuildConfig.VERSION_NAME;
         CronetEngine cre = null;
         try {
-            cre = CronetUtil.buildCronetEngine(
-                    PermataApplication.get(),
-                    standardUserAgent,
-                    true
-            );
+            cre = CronetUtil.buildCronetEngine(PermataApplication.get(), standardUserAgent, true);
         } catch (Exception e) {
             Log.e(e, "Cronet engine initialization failed safely falling back.");
         }
@@ -125,7 +115,6 @@ public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener 
                     .setAllowCrossProtocolRedirects(true);
         }
     }
-
     private final Accessor accessor = new Accessor(this);
     private final Timeline.Period period = new Timeline.Period();
     private final PendingLoadAudioProcessor audioProc = new PendingLoadAudioProcessor(accessor);
@@ -145,102 +134,53 @@ public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener 
     private volatile boolean hasSuccessfullyRendered;
     private volatile Runnable drainBuffer;
 
-    // Generational structural tracking token cancels older retry threads instantly
     private final AtomicLong activeStreamId = new AtomicLong(0);
     public ExoPlayerEngine(@NonNull Context ctx, @NonNull Listener listener) {
         super(listener);
         this.appCtx = ctx.getApplicationContext();
 
-        // 1. Adaptive Bitrate (ABR) Optimization via explicit Bandwidth Meter
         this.bandwidthMeter = new DefaultBandwidthMeter.Builder(appCtx)
                 .setInitialBitrateEstimate(2_000_000)
                 .build();
 
-        // Intercept protocol schemes using a clean Media3 ResolvingDataSource wrapper instead
-        androidx.media3.datasource.DataSource.Factory wrappingFactory = new androidx.media3.datasource.ResolvingDataSource.Factory(
+        DataSource.Factory wrappingFactory = new androidx.media3.datasource.ResolvingDataSource.Factory(
                 httpDsFactory,
-                new androidx.media3.datasource.ResolvingDataSource.Resolver() {
-                    @androidx.annotation.NonNull
-                    @Override
-                    public androidx.media3.datasource.DataSpec resolveDataSpec(@androidx.annotation.NonNull androidx.media3.datasource.DataSpec dataSpec) {
-                        String scheme = dataSpec.uri.getScheme();
-                        if ("p2p".equalsIgnoreCase(scheme) || "p3p".equalsIgnoreCase(scheme)) {
-                            // Safely rewrite the custom request to route through your application's local P2P engine client loopback
-                            android.net.Uri localProxyUri = android.net.Uri.parse("http://127.0.0.1:8080/stream?url=" + android.net.Uri.encode(dataSpec.uri.toString()));
-                            return dataSpec.withUri(localProxyUri);
-                        }
-                        return dataSpec;
+                dataSpec -> {
+                    String scheme = dataSpec.uri.getScheme();
+                    if ("p2p".equalsIgnoreCase(scheme) || "p3p".equalsIgnoreCase(scheme)) {
+                        Uri localProxyUri = Uri.parse("http://127.0.0.1:8080/stream?url=" + Uri.encode(dataSpec.uri.toString()));
+                        return dataSpec.withUri(localProxyUri);
                     }
+                    return dataSpec;
                 }
         );
 
         this.dsFactory = new DefaultDataSource.Factory(appCtx, wrappingFactory);
-              
-        // 2. Combined Smart Context-Aware Recovery + Infinite Reconnection Policy
         DefaultLoadErrorHandlingPolicy customErrorPolicy = new DefaultLoadErrorHandlingPolicy() {
             @Override
             public long getRetryDelayMsFor(LoadErrorInfo loadErrorInfo) {
-                java.io.IOException exception = loadErrorInfo.exception;
+                IOException exception = loadErrorInfo.exception;
 
-
-// 1. Structural Fail-Fast (Authentication / Missing resources)
-if (exception instanceof androidx.media3.datasource.HttpDataSource.InvalidResponseCodeException) {
-    int responseCode = ((androidx.media3.datasource.HttpDataSource.InvalidResponseCodeException) exception).responseCode;
-    
-    // FIX: Safely read dataType via the mediaLoadData element tracking property
-    int currentDataType = loadErrorInfo.mediaLoadData != null ? loadErrorInfo.mediaLoadData.dataType : C.DATA_TYPE_UNKNOWN;
-
-    if ((responseCode == 404 || responseCode == 410) && currentDataType == C.DATA_TYPE_MEDIA) {
-        if (hasSuccessfullyRendered) {
-            Log.w("ExoPlayerEngine", "Active media segment vanished (HTTP " + responseCode + "). Breaking internal chain for background re-probe.");
-            return C.TIME_UNSET; // Drops out to invoke onPlayerError reloader
-        } else {
-            Log.e("ExoPlayerEngine", "Dead stream link caught on initialization step (HTTP " + responseCode + "). Halting.");
-            return C.TIME_UNSET;
-        }
-    }
-    if (responseCode == 401 || responseCode == 403 || responseCode == 404 || responseCode == 410) {
-        return C.TIME_UNSET; // Halt loop immediately to trigger app token updates
-    }
-}
-
-                    if (responseCode == 401 || responseCode == 403 || responseCode == 404 || responseCode == 410) {
-                        return C.TIME_UNSET; // Halt loop immediately to trigger app token updates
-                    }
-                }
-
-        // 2. Combined Smart Context-Aware Recovery + Infinite Reconnection Policy
-        DefaultLoadErrorHandlingPolicy customErrorPolicy = new DefaultLoadErrorHandlingPolicy() {
-            @Override
-            public long getRetryDelayMsFor(LoadErrorInfo loadErrorInfo) {
-                java.io.IOException exception = loadErrorInfo.exception;
-
-                // 1. Structural Fail-Fast (Authentication / Missing resources)
                 if (exception instanceof androidx.media3.datasource.HttpDataSource.InvalidResponseCodeException) {
                     int responseCode = ((androidx.media3.datasource.HttpDataSource.InvalidResponseCodeException) exception).responseCode;
-                    
-                    // FIX: Safely read dataType via the mediaLoadData element tracking property
                     int currentDataType = loadErrorInfo.mediaLoadData != null ? loadErrorInfo.mediaLoadData.dataType : C.DATA_TYPE_UNKNOWN;
 
                     if ((responseCode == 404 || responseCode == 410) && currentDataType == C.DATA_TYPE_MEDIA) {
                         if (hasSuccessfullyRendered) {
                             Log.w("ExoPlayerEngine", "Active media segment vanished (HTTP " + responseCode + "). Breaking internal chain for background re-probe.");
-                            return C.TIME_UNSET; // Drops out to invoke onPlayerError reloader
+                            return C.TIME_UNSET;
                         } else {
                             Log.e("ExoPlayerEngine", "Dead stream link caught on initialization step (HTTP " + responseCode + "). Halting.");
                             return C.TIME_UNSET;
                         }
                     }
                     if (responseCode == 401 || responseCode == 403 || responseCode == 404 || responseCode == 410) {
-                        return C.TIME_UNSET; // Halt loop immediately to trigger app token updates
+                        return C.TIME_UNSET;
                     }
                 }
-
-                // 2. Continuous Live Optimization via Jittered Exponential Back-off
-                if (exception instanceof java.io.IOException) {
-                    // Gradually scale delay based on consecutive error counts (Cap at 10 seconds max)
+                if (exception instanceof IOException) {
                     long baseDelay = Math.min((loadErrorInfo.errorCount - 1) * 1500L + 1000L, 10000L); 
-                    long jitter = (long) (Math.random() * 400) - 200; // Inject +/- 200ms variance
+                    long jitter = (long) (Math.random() * 400) - 200; 
                     return baseDelay + jitter;
                 }
 
@@ -249,16 +189,12 @@ if (exception instanceof androidx.media3.datasource.HttpDataSource.InvalidRespon
 
             @Override
             public int getMinimumLoadableRetryCount(int dataType) {
-                // Let manifests fail fast internally so our background async worker loop can reboot them safely
                 if (dataType == C.DATA_TYPE_MANIFEST) {
                     return 3; 
                 }
-                // Retain infinite retries for chunks/segments to sustain background connectivity indefinitely on functioning streams
                 return dataType == C.DATA_TYPE_MEDIA ? Integer.MAX_VALUE : super.getMinimumLoadableRetryCount(dataType);
             }
-        }; // Added missing closing brace and semicolon for the anonymous class assignment
-
-        // Permissive extractor configurations matching VLC parser robustness (Corrected references)
+        };
         DefaultExtractorsFactory extractorsFactory = new DefaultExtractorsFactory()
                 .setTsExtractorFlags(DefaultTsPayloadReaderFactory.FLAG_DETECT_ACCESS_UNITS | DefaultTsPayloadReaderFactory.FLAG_ALLOW_NON_IDR_KEYFRAMES);
 
@@ -266,56 +202,39 @@ if (exception instanceof androidx.media3.datasource.HttpDataSource.InvalidRespon
                 .setDataSourceFactory(dsFactory)
                 .setLoadErrorHandlingPolicy(customErrorPolicy);
 
-        // 3. Mid-stream resolution optimization via customized buildVideoRenderers (Eliminates video flash frames)
-        // Optimization: Force hardware asynchronous codec processing loops to safeguard against frames dropping
         DefaultRenderersFactory renderersFactory = new DefaultRenderersFactory(appCtx) {
             @Override
             protected void buildVideoRenderers(
-                    @NonNull Context context,
-                    int extensionRendererMode,
+                    @NonNull Context context, int extensionRendererMode,
                     @NonNull androidx.media3.exoplayer.mediacodec.MediaCodecSelector mediaCodecSelector,
-                    boolean enableDecoderFallback,
-                    @NonNull android.os.Handler eventHandler,
+                    boolean enableDecoderFallback, @NonNull android.os.Handler eventHandler,
                     @NonNull androidx.media3.exoplayer.video.VideoRendererEventListener eventListener,
-                    long allowedVideoJoiningTimeMs,
-                    @NonNull ArrayList<androidx.media3.exoplayer.Renderer> out) {
+                    long allowedVideoJoiningTimeMs, @NonNull ArrayList<androidx.media3.exoplayer.Renderer> out) {
                 super.buildVideoRenderers(context, extensionRendererMode, mediaCodecSelector, 
                         enableDecoderFallback, eventHandler, eventListener, 5000L, out);
             }
-
             @Override
-            protected AudioSink buildAudioSink(
-                    @NonNull Context context,
-                    boolean enableFloatOutput,
-                    boolean enableAudioTrackPlaybackParams) {
+            protected AudioSink buildAudioSink(@NonNull Context context, boolean enableFloatOutput, boolean enableAudioTrackPlaybackParams) {
                 return new DefaultAudioSink.Builder(context)
                         .setAudioTrackBufferSizeProvider(new DefaultAudioTrackBufferSizeProvider.Builder()
                                 .setMaxPcmBufferDurationUs(5000_000)
                                 .setPcmBufferMultiplicationFactor(16)
                                 .setOffloadBufferDurationUs(120_000_000)
                                 .build())
-                        // Optimization: Enable dynamic track clock adjustments during bitrate adaptations
                         .setEnableAudioTrackPlaybackParams(true)
                         .setAudioProcessorChain(new DefaultAudioSink.DefaultAudioProcessorChain(audioProc))
                         .build();
             }
         };
-        
-        // Optimized adaptive buffer window avoiding starving on short-window live sliding streams
         DefaultLoadControl loadControl = new DefaultLoadControl.Builder()
-                .setBufferDurationsMs(
-                        3_000,  // minBufferMs: Calibrated to 3s to support shallow sliding windows safely
-                        50_000, // maxBufferMs: Allow scaling cache up to 50s if the server history permits it
-                        1_500,  // bufferForPlaybackMs: Fast initial start (Wait for 1.5s of data instead of forcing 10s)
-                        2_500   // bufferForPlaybackAfterRebufferMs: Balanced rebuffer recovery threshold
-                )
+                .setBufferDurationsMs(3000, 50000, 1500, 2500)
                 .setPrioritizeTimeOverSizeThresholds(true)
                 .build();
+
         DefaultLivePlaybackSpeedControl liveSpeedControl = new DefaultLivePlaybackSpeedControl.Builder()
                 .setFallbackMinPlaybackSpeed(0.95f)
                 .setFallbackMaxPlaybackSpeed(1.05f)
                 .build();
-
         this.player = new ExoPlayer.Builder(appCtx, renderersFactory)
                 .setMediaSourceFactory(mediaSourceFactory)
                 .setLoadControl(loadControl)
@@ -324,9 +243,7 @@ if (exception instanceof androidx.media3.datasource.HttpDataSource.InvalidRespon
                 .build();
 
         this.player.addListener(this);
-
         this.audioEffects = AudioEffects.create(appCtx, 0, player.getAudioSessionId());
-
         asyncIoExecutor.execute(() -> {
             synchronized (engineLock) {
                 if (player == null) return;
@@ -340,7 +257,7 @@ if (exception instanceof androidx.media3.datasource.HttpDataSource.InvalidRespon
                     
                     this.drainBuffer = () -> {
                         try {
-                            handler.sendEmptyMessage(2 /* MSG_DO_SOME_WORK */);
+                            handler.sendEmptyMessage(2);
                         } catch (Exception err) {
                             Log.w(err);
                         }
@@ -351,10 +268,6 @@ if (exception instanceof androidx.media3.datasource.HttpDataSource.InvalidRespon
             }
         });
     }
-    /**
-     * Universally determines the media container type by evaluating URL structures 
-     * and performing background network sniffing when extensions are completely absent.
-     */
     private void universallyResolveAndPrepare(@NonNull PlayableItem sourceItem, @NonNull Uri uri, final long generation) {
         if (generation != activeStreamId.get()) return;
 
@@ -367,31 +280,25 @@ if (exception instanceof androidx.media3.datasource.HttpDataSource.InvalidRespon
 
         Log.d("ExoPlayerEngine", "Universal Route Matrix checking protocol scheme: [" + scheme + "]");
 
-        // Matrix 1: Custom Decentralized Peer-to-Peer / IPTV Channels
         if (scheme.equals("p2p") || scheme.equals("p3p")) {
             applyMediaSource(sourceItem, uri, androidx.media3.common.MimeTypes.APPLICATION_M3U8);
             return;
         }
-
-        // Matrix 2: Local Playback Hooks (Sandbox Storage / Android Content Providers)
         if (scheme.equals("file") || scheme.equals("content")) {
             if (path.contains(".m3u8")) {
                 applyMediaSource(sourceItem, uri, androidx.media3.common.MimeTypes.APPLICATION_M3U8);
             } else if (path.contains(".mpd")) {
                 applyMediaSource(sourceItem, uri, androidx.media3.common.MimeTypes.APPLICATION_MPD);
             } else {
-                applyMediaSource(sourceItem, uri, null); // Progressive Engine fallback
+                applyMediaSource(sourceItem, uri, null);
             }
             return;
         }
 
-        // Matrix 3: Legacy Broadcast Stream Standards
         if (scheme.equals("rtsp") || scheme.equals("rtmp")) {
             applyMediaSource(sourceItem, uri, androidx.media3.common.MimeTypes.APPLICATION_RTSP);
             return;
         }
-
-        // Matrix 4: INSTANT FAST-PATH FILE SIGNATURE EVALUATION
         if (path.contains(".m3u8") || urlString.contains("format=m3u8") || urlString.contains("type=m3u8") || urlString.contains(".ts")) {
             applyMediaSource(sourceItem, uri, androidx.media3.common.MimeTypes.APPLICATION_M3U8);
             return;
@@ -404,7 +311,6 @@ if (exception instanceof androidx.media3.datasource.HttpDataSource.InvalidRespon
             applyMediaSource(sourceItem, uri, androidx.media3.common.MimeTypes.APPLICATION_SS);
             return;
         }
-        // Matrix 5: ASYNCHRONOUS NETWORK SNIFFING
         asyncIoExecutor.execute(() -> {
             if (generation != activeStreamId.get()) return;
 
@@ -428,7 +334,6 @@ if (exception instanceof androidx.media3.datasource.HttpDataSource.InvalidRespon
                     conn.setReadTimeout(2000);
                     conn.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 10; TV) AppleWebKit/537.36");
                 }
-
                 String contentTypeHeader = conn.getContentType();
                 if (contentTypeHeader != null) {
                     String[] parts = contentTypeHeader.toLowerCase().split(";");
@@ -449,8 +354,6 @@ if (exception instanceof androidx.media3.datasource.HttpDataSource.InvalidRespon
                     try { conn.disconnect(); } catch (Exception ignored) {}
                 }
             }
-
-            // Matrix 6: IPTV SIGNATURE PORT SCAVENGER NODE
             if (inferredMimeType == null) {
                 int port = uri.getPort();
                 if (urlString.contains("/live/") || urlString.contains("/stream/") || urlString.contains("playlist") || urlString.contains("get.php") 
@@ -472,8 +375,6 @@ if (exception instanceof androidx.media3.datasource.HttpDataSource.InvalidRespon
     @SuppressLint("SwitchIntDef")
     @Override
     public void prepare(@NonNull PlayableItem source) {
-        // Isolation Protection: Stop the active player state BEFORE acquiring the structural engine lock.
-        // This instantly signals stuck network sockets to terminate, preventing UI thread ANRs.
         final long currentGeneration = activeStreamId.incrementAndGet();
         
         if (player != null) {
@@ -485,7 +386,7 @@ if (exception instanceof androidx.media3.datasource.HttpDataSource.InvalidRespon
             accessor.sourceChanged(source);
             this.preparing = true;
             this.buffering = false;
-            this.hasSuccessfullyRendered = false; // Reset verification flag for this new preparation sequence
+            this.hasSuccessfullyRendered = false;
 
             Uri uri = source.getLocation();
             this.isHls = Util.inferContentType(uri) == C.CONTENT_TYPE_HLS;
@@ -500,11 +401,9 @@ if (exception instanceof androidx.media3.datasource.HttpDataSource.InvalidRespon
                 }
             });
 
-            // Route through the universal resolution module with generation guard tracking
             universallyResolveAndPrepare(source, uri, currentGeneration);
         }
     }
-
     @Override
     public void start() {
         synchronized (engineLock) {
@@ -515,6 +414,7 @@ if (exception instanceof androidx.media3.datasource.HttpDataSource.InvalidRespon
             started();
         }
     }
+
     @Override
     public void stop() {
         synchronized (engineLock) {
@@ -526,7 +426,6 @@ if (exception instanceof androidx.media3.datasource.HttpDataSource.InvalidRespon
             accessor.sourceChanged(null);
         }
     }
-
     @Override
     public void pause() {
         synchronized (engineLock) {
@@ -575,7 +474,6 @@ if (exception instanceof androidx.media3.datasource.HttpDataSource.InvalidRespon
             return Math.max(offsetPos, 0L);
         }
     }
-
     @Override
     protected long subSchedulerClock() {
         return pos();
@@ -584,6 +482,7 @@ if (exception instanceof androidx.media3.datasource.HttpDataSource.InvalidRespon
     void syncSub(boolean restart) {
         syncSub(subSchedulerClock(), speed(), restart);
     }
+
     @Override
     public void setPosition(long position) {
         synchronized (engineLock) {
@@ -594,7 +493,6 @@ if (exception instanceof androidx.media3.datasource.HttpDataSource.InvalidRespon
             syncSub(true);
         }
     }
-
     @Override
     public FutureSupplier<Float> getSpeed() {
         return completed(speed());
@@ -610,7 +508,6 @@ if (exception instanceof androidx.media3.datasource.HttpDataSource.InvalidRespon
             }
         }
     }
-
     @Override
     public void setSpeed(float speed) {
         synchronized (engineLock) {
@@ -620,6 +517,7 @@ if (exception instanceof androidx.media3.datasource.HttpDataSource.InvalidRespon
             syncSub(true);
         }
     }
+
     @Override
     public void setVideoView(@Nullable VideoView view) {
         synchronized (engineLock) {
@@ -629,7 +527,6 @@ if (exception instanceof androidx.media3.datasource.HttpDataSource.InvalidRespon
             }
         }
     }
-
     @Override
     public float getVideoWidth() {
         synchronized (engineLock) {
@@ -676,7 +573,6 @@ if (exception instanceof androidx.media3.datasource.HttpDataSource.InvalidRespon
             }
         }
     }
-
     @Nullable
     @Override
     public AudioStreamInfo getCurrentAudioStreamInfo() {
@@ -753,7 +649,6 @@ if (exception instanceof androidx.media3.datasource.HttpDataSource.InvalidRespon
         }
         return completedVoid();
     }
-
     @Override
     public FutureSupplier<SubGrid> getCurrentSubtitles() {
         var cur = super.getCurrentSubtitles();
@@ -811,7 +706,6 @@ if (exception instanceof androidx.media3.datasource.HttpDataSource.InvalidRespon
             if (player != null) player.setVolume(1f);
         }
     }
-
     @Override
     public void onPlaybackStateChanged(int playbackState) {
         synchronized (engineLock) {
@@ -826,7 +720,7 @@ if (exception instanceof androidx.media3.datasource.HttpDataSource.InvalidRespon
                 }
                 if (preparing) {
                     this.preparing = false;
-                    this.hasSuccessfullyRendered = true; // Stream validated successfully
+                    this.hasSuccessfullyRendered = true;
                     long off = source != null ? source.getOffset() : 0L;
                     if (off > 0) player.seekTo(off);
                     accessor.setSubGenTimeOffset(this);
@@ -863,16 +757,14 @@ if (exception instanceof androidx.media3.datasource.HttpDataSource.InvalidRespon
         asyncIoExecutor.execute(() -> {
             if (currentGeneration != activeStreamId.get()) return;
 
-            boolean isVanishedChunk = error.getCause() instanceof HttpDataSource.InvalidResponseCodeException;
+            boolean isVanishedChunk = error.getCause() instanceof androidx.media3.datasource.HttpDataSource.InvalidResponseCodeException;
             boolean isNetworkFailure = error.errorCode == PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED
                     || error.errorCode == PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS
                     || error.errorCode == PlaybackException.ERROR_CODE_IO_UNSPECIFIED;
 
-            // INFINITE BACKGROUND RETRY LOOP: Only activates if the channel has a proven active track record
             if (hasSuccessfullyRendered && (error.errorCode == PlaybackException.ERROR_CODE_BEHIND_LIVE_WINDOW || isVanishedChunk || isNetworkFailure)) {
                 Log.w("ExoPlayerEngine", "Active stream connection interrupted. Initiating background loopback retry [Gen ID: " + currentGeneration + "].");
                 
-                // Keep your existing loading wheel spinning smoothly on screen
                 my.app.utils.app.App.get().run(() -> {
                     synchronized (engineLock) {
                         if (currentGeneration == activeStreamId.get() && player != null) {
@@ -883,7 +775,7 @@ if (exception instanceof androidx.media3.datasource.HttpDataSource.InvalidRespon
                 });
 
                 try {
-                    Thread.sleep(2000); // Non-blocking background delay isolated from UI thread
+                    Thread.sleep(2000); 
                 } catch (InterruptedException ignored) {}
 
                 if (currentGeneration != activeStreamId.get()) return;
@@ -897,8 +789,6 @@ if (exception instanceof androidx.media3.datasource.HttpDataSource.InvalidRespon
                 }
                 return;
             }
-
-            // Unproven dead links bypass the retry engine loops completely and fail fast down to user space
             Log.e("ExoPlayerEngine", "Terminal stream breakdown exposed: " + error.getMessage());
             my.app.utils.app.App.get().run(() -> {
                 synchronized (engineLock) {
@@ -915,9 +805,6 @@ if (exception instanceof androidx.media3.datasource.HttpDataSource.InvalidRespon
     protected SubGrid createSubStreamGrid() {
         return accessor.createSubStreamGrid();
     }
-    // =====================================================================================
-    // NESTED TRANSLATION RESOLUTION ACCESSOR COMPONENT
-    // =====================================================================================
     static class Accessor {
         private final WeakReference<ExoPlayerEngine> playerEngineRef;
         private volatile long subGenTimeOffset;
@@ -1054,6 +941,7 @@ if (exception instanceof androidx.media3.datasource.HttpDataSource.InvalidRespon
                 });
             });
         }
+
         private void perItemTranslate(Translator tr, String targetLang, List<Subtitles.Text> subs) {
             for (var t : subs) {
                 if (t == null) continue;
@@ -1090,9 +978,6 @@ if (exception instanceof androidx.media3.datasource.HttpDataSource.InvalidRespon
             return new SubGrid(m);
         }
     }
-    // =====================================================================================
-    // AUDIO PROCESSOR WRAPPER INTERFACE LIFE-CYCLE INTERCEPTOR
-    // =====================================================================================
     private static class PendingLoadAudioProcessor implements androidx.media3.common.audio.AudioProcessor {
         private final Accessor accessor;
         private androidx.media3.common.audio.AudioProcessor.AudioFormat inputAudioFormat;
@@ -1142,6 +1027,7 @@ if (exception instanceof androidx.media3.datasource.HttpDataSource.InvalidRespon
                 my.app.utils.app.App.get().run(accessor::drainBuffer);
             }
         }
+
         @Override
         public void queueEndOfStream() {
             inputEnded = true;
