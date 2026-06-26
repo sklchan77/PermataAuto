@@ -165,9 +165,13 @@ public int getId() {
                 @Override
                 public androidx.media3.datasource.DataSpec resolveDataSpec(@androidx.annotation.NonNull androidx.media3.datasource.DataSpec dataSpec) {
                     String scheme = dataSpec.uri.getScheme();
-                    if ("p2p".equalsIgnoreCase(scheme) || "p3p".equalsIgnoreCase(scheme)) {
-                        // Rewrites custom protocol requests dynamically to prevent Media3 syntax errors
-                        return dataSpec.withUri(dataSpec.uri.buildUpon().scheme("http").build());
+
+if ("p2p".equalsIgnoreCase(scheme) || "p3p".equalsIgnoreCase(scheme)) {
+    // Safely rewrite the custom request to route through your application's local P2P engine client loopback
+    android.net.Uri localProxyUri = android.net.Uri.parse("http://127.0.0" + android.net.Uri.encode(dataSpec.uri.toString()));
+    return dataSpec.withUri(localProxyUri);
+}
+
                     }
                     return dataSpec;
                 }
@@ -368,8 +372,8 @@ private void universallyResolveAndPrepare(@NonNull PlayableItem sourceItem, @Non
             java.net.URL url = new java.net.URL(uri.toString());
             conn = (java.net.HttpURLConnection) url.openConnection();
             conn.setRequestMethod("HEAD");
-            conn.setConnectTimeout(2500);
-            conn.setReadTimeout(2500);
+            conn.setConnectTimeout(1200);
+            conn.setReadTimeout(1200);
             conn.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 10; TV) AppleWebKit/537.36");
 
             int responseCode = conn.getResponseCode();
@@ -377,8 +381,8 @@ private void universallyResolveAndPrepare(@NonNull PlayableItem sourceItem, @Non
                 conn.disconnect();
                 conn = (java.net.HttpURLConnection) url.openConnection();
                 conn.setRequestMethod("GET");
-                conn.setConnectTimeout(2500);
-                conn.setReadTimeout(2500);
+                conn.setConnectTimeout(1200);
+                conn.setReadTimeout(1200);
                 conn.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 10; TV) AppleWebKit/537.36");
             }
 
@@ -1089,10 +1093,12 @@ private void applyMediaSource(@NonNull PlayableItem sourceItem, @NonNull Uri uri
     
     androidx.media3.common.MediaItem mediaItem = mediaItemBuilder.build();
     
-    // Submits the finalized payload straight onto your engine's existing player pipeline
-    if (this.player != null) {
-        this.player.setMediaItem(mediaItem);
-    }
+// Submits the finalized payload straight onto your engine's existing player pipeline
+if (this.player != null) {
+    this.player.setMediaItem(mediaItem);
+    this.player.prepare(); // Fixes freeze: wakes up media drivers to begin buffering immediately
+}
+
 }
 
 private static final class CustomP2PDataSourceFactory implements DataSource.Factory {
