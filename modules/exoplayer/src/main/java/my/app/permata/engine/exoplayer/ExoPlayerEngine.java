@@ -159,23 +159,20 @@ public int getId() {
 
         // Intercept protocol schemes using a clean Media3 ResolvingDataSource wrapper instead
         androidx.media3.datasource.DataSource.Factory wrappingFactory = new androidx.media3.datasource.ResolvingDataSource.Factory(
-            httpDsFactory,
-            new androidx.media3.datasource.ResolvingDataSource.Resolver() {
-                @androidx.annotation.NonNull
-                @Override
-                public androidx.media3.datasource.DataSpec resolveDataSpec(@androidx.annotation.NonNull androidx.media3.datasource.DataSpec dataSpec) {
-                    String scheme = dataSpec.uri.getScheme();
-
-if ("p2p".equalsIgnoreCase(scheme) || "p3p".equalsIgnoreCase(scheme)) {
-    // Safely rewrite the custom request to route through your application's local P2P engine client loopback
-    android.net.Uri localProxyUri = android.net.Uri.parse("http://127.0.0" + android.net.Uri.encode(dataSpec.uri.toString()));
-    return dataSpec.withUri(localProxyUri);
-}
-
+                httpDsFactory,
+                new androidx.media3.datasource.ResolvingDataSource.Resolver() {
+                    @androidx.annotation.NonNull
+                    @Override
+                    public androidx.media3.datasource.DataSpec resolveDataSpec(@androidx.annotation.NonNull androidx.media3.datasource.DataSpec dataSpec) {
+                        String scheme = dataSpec.uri.getScheme();
+                        if ("p2p".equalsIgnoreCase(scheme) || "p3p".equalsIgnoreCase(scheme)) {
+                            // Safely rewrite the custom request to route through your application's local P2P engine client loopback
+                            android.net.Uri localProxyUri = android.net.Uri.parse("http://127.0.0" + android.net.Uri.encode(dataSpec.uri.toString()));
+                            return dataSpec.withUri(localProxyUri);
+                        }
+                        return dataSpec;
                     }
-                    return dataSpec;
                 }
-            }
         );
 
         DefaultDataSource.Factory dsFactory = new DefaultDataSource.Factory(appCtx, wrappingFactory);
