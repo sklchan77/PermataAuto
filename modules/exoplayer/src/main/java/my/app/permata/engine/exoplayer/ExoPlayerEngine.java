@@ -149,37 +149,56 @@ public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener 
                 .build();
 
         DefaultDataSource.Factory dsFactory = new DefaultDataSource.Factory(appCtx, httpDsFactory);
+
+// Register decentralized IPTV network factories
+dsFactory.setProtocolDataSourceFactory("p2p", new CustomP2PDataSourceFactory(appCtx));
+dsFactory.setProtocolDataSourceFactory("p3p", new CustomP2PDataSourceFactory(appCtx));
+
+// Inject specialized RTMP live link streaming module dynamically
+try {
+    Class<?> rtmpFactoryClass = Class.forName("androidx.media3.datasource.rtmp.RtmpDataSource$Factory");
+    DataSource.Factory rtmpFactory = (DataSource.Factory) rtmpFactoryClass.getDeclaredConstructor().newInstance();
+    dsFactory.setProtocolDataSourceFactory("rtmp", rtmpFactory);
+} catch (Exception ignored) {
+    Log.w("ExoPlayerEngine", "RTMP module dependency missing; bypassing factory assignment.");
+}
         
         // 2. Combined Smart Context-Aware Recovery + Infinite Reconnection Policy
-        DefaultLoadErrorHandlingPolicy customErrorPolicy = new DefaultLoadErrorHandlingPolicy() {
-            @Override
-            public long getRetryDelayMsFor(LoadErrorInfo loadErrorInfo) {
-                java.io.IOException exception = loadErrorInfo.exception;
-                
-                // Fail-Fast on structural HTTP authentication/file failures to keep player clean
-                if (exception instanceof androidx.media3.datasource.HttpDataSource.InvalidResponseCodeException) {
-                    int responseCode = ((androidx.media3.datasource.HttpDataSource.InvalidResponseCodeException) exception).responseCode;
-                    if (responseCode == 401 || responseCode == 403 || responseCode == 404 || responseCode == 410) {
-                        return C.TIME_UNSET; // Stops this specific stream loop immediately to let app refresh tokens
-                    }
-                }
+       DefaultLoadErrorHandlingPolicy customErrorPolicy = new DefaultLoadErrorHandlingPolicy() {
+    @Override
+    public long getRetryDelayMsFor(LoadErrorInfo loadErrorInfo) {
+        java.io.IOException exception = loadErrorInfo.exception;
 
-                // If true cellular signal fade or timeout occurs, retry forever in the background
-                if (exception instanceof java.io.IOException) {
-                    // Injects random timing variance to stabilize parallel processing workers under network drift
-                    long jitter = (long) (Math.random() * 400) - 200; // +/- 200ms
-                    return 5000L + jitter; // Retries steadily every 5 seconds until connection returns
-                }
-                
-                return C.TIME_UNSET;
+        // 1. Structural Fail-Fast (Authentication / Missing resources)
+        if (exception instanceof androidx.media3.datasource.HttpDataSource.InvalidResponseCodeException) {
+            int responseCode = ((androidx.media3.datasource.HttpDataSource.InvalidResponseCodeException) exception).responseCode;
+            if (responseCode == 401 || responseCode == 403 || responseCode == 404 || responseCode == 410) {
+                return C.TIME_UNSET; // Halt loop immediately to trigger app token updates
             }
+        }
 
-            @Override
-            public int getMinimumLoadableRetryCount(int dataType) {
-                // Unlimited background retry loops for data media segments, standard 3 attempts for manifests
-                return dataType == C.DATA_TYPE_MEDIA ? Integer.MAX_VALUE : 3;
-            }
-        };
+        // 2. Continuous Live Optimization via Jittered Exponential Back-off
+        if (exception instanceof java.io.IOException) {
+            // Gradually scale delay based on consecutive error counts (Cap at 10 seconds max)
+            long baseDelay = Math.min((loadErrorInfo.errorCount - 1) * 1500L + 1000L, 10000L); 
+            long jitter = (long) (Math.random() * 400) - 200; // Inject +/- 200ms variance
+            return baseDelay + jitter;
+        }
+
+        // 3. CRITICAL BUG FIX: Fall back to native ExoPlayer error management rules
+        return super.getRetryDelayMsFor(loadErrorInfo);
+    }
+
+    @Override
+    public int getMinimumLoadableRetryCount(int dataType) {
+        // Broaden manifest retry allowance slightly (e.g., 6 attempts) to survive transient network drift
+        if (dataType == C.DATA_TYPE_MANIFEST) {
+            return 6; 
+        }
+        // Retain infinite retries for chunks/segments to sustain background connectivity indefinitely
+        return dataType == C.DATA_TYPE_MEDIA ? Integer.MAX_VALUE : super.getMinimumLoadableRetryCount(dataType);
+    }
+};
 
         // Permissive extractor configurations matching VLC parser robustness (Corrected references)
         DefaultExtractorsFactory extractorsFactory = new DefaultExtractorsFactory()
@@ -279,104 +298,114 @@ public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener 
      * Universally determines the media container type by evaluating URL structures 
      * and performing background network sniffing when extensions are completely absent.
      */
-    private void universallyResolveAndPrepare(@NonNull PlayableItem sourceItem, @NonNull Uri uri) {
-        String urlString = uri.toString().toLowerCase();
-        String path = uri.getPath() != null ? uri.getPath().toLowerCase() : "";
 
-        // Fast Path: Standard extensions resolve instantly without any network overhead
-        if (path.contains(".m3u8") || urlString.contains("format=m3u8") || urlString.contains("type=m3u8")) {
+private void universallyResolveAndPrepare(@NonNull PlayableItem sourceItem, @NonNull Uri uri) {
+    String scheme = uri.getScheme();
+    if (scheme == null) scheme = "http";
+    scheme = scheme.toLowerCase().trim();
+
+    String urlString = uri.toString().toLowerCase();
+    String path = uri.getPath() != null ? uri.getPath().toLowerCase() : "";
+
+    Log.d("ExoPlayerEngine", "Universal Route Matrix checking protocol scheme: [" + scheme + "]");
+
+    // Matrix 1: Custom Decentralized Peer-to-Peer / IPTV Channels
+    if (scheme.equals("p2p") || scheme.equals("p3p")) {
+        applyMediaSource(sourceItem, uri, androidx.media3.common.MimeTypes.APPLICATION_M3U8);
+        return;
+    }
+
+    // Matrix 2: Local Playback Hooks (Sandbox Storage / Android Content Providers)
+    if (scheme.equals("file") || scheme.equals("content")) {
+        if (path.contains(".m3u8")) {
             applyMediaSource(sourceItem, uri, androidx.media3.common.MimeTypes.APPLICATION_M3U8);
-            return;
         } else if (path.contains(".mpd")) {
             applyMediaSource(sourceItem, uri, androidx.media3.common.MimeTypes.APPLICATION_MPD);
-            return;
-        } else if (path.contains(".ism")) {
-            applyMediaSource(sourceItem, uri, androidx.media3.common.MimeTypes.APPLICATION_SS);
-            return;
+        } else {
+            applyMediaSource(sourceItem, uri, null); // Progressive Engine fallback
         }
+        return;
+    }
 
-        // Asynchronous Network Sniff Path: Performed if the stream is an extensionless live node
-        asyncIoExecutor.execute(() -> {
-            String inferredMimeType = null;
-            java.net.HttpURLConnection conn = null;
-            try {
-                java.net.URL url = new java.net.URL(uri.toString());
+    // Matrix 3: Legacy Broadcast Stream Standards
+    if (scheme.equals("rtsp") || scheme.equals("rtmp")) {
+        applyMediaSource(sourceItem, uri, androidx.media3.common.MimeTypes.APPLICATION_RTSP);
+        return;
+    }
+
+    // Matrix 4: INSTANT FAST-PATH FILE SIGNATURE EVALUATION
+    if (path.contains(".m3u8") || urlString.contains("format=m3u8") || urlString.contains("type=m3u8") || urlString.contains(".ts")) {
+        applyMediaSource(sourceItem, uri, androidx.media3.common.MimeTypes.APPLICATION_M3U8);
+        return;
+    }
+    if (path.contains(".mpd") || urlString.contains("format=mpd")) {
+        applyMediaSource(sourceItem, uri, androidx.media3.common.MimeTypes.APPLICATION_MPD);
+        return;
+    }
+    if (path.contains(".ism") || urlString.contains("format=ism")) {
+        applyMediaSource(sourceItem, uri, androidx.media3.common.MimeTypes.APPLICATION_SS);
+        return;
+    }
+
+    // Matrix 5: ASYNCHRONOUS NETWORK SNIFFING
+    asyncIoExecutor.execute(() -> {
+        String inferredMimeType = null;
+        java.net.HttpURLConnection conn = null;
+        try {
+            java.net.URL url = new java.net.URL(uri.toString());
+            conn = (java.net.HttpURLConnection) url.openConnection();
+            conn.setRequestMethod("HEAD");
+            conn.setConnectTimeout(2500);
+            conn.setReadTimeout(2500);
+            conn.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 10; TV) AppleWebKit/537.36");
+
+            int responseCode = conn.getResponseCode();
+            if (responseCode == java.net.HttpURLConnection.HTTP_BAD_METHOD || responseCode == 405) {
+                conn.disconnect();
                 conn = (java.net.HttpURLConnection) url.openConnection();
-                conn.setRequestMethod("HEAD"); // Low-overhead request: grabs headers only
-                conn.setConnectTimeout(2500);  // Quick timeout to keep the player responsive
+                conn.setRequestMethod("GET");
+                conn.setConnectTimeout(2500);
                 conn.setReadTimeout(2500);
-                conn.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 10; TV) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/100.0.0.0 Mobile Safari/537.36");
-
-                int responseCode = conn.getResponseCode();
-                // Fall back to GET if the streaming server doesn't allow HEAD requests
-                if (responseCode == java.net.HttpURLConnection.HTTP_BAD_METHOD || responseCode == 405) {
-                    conn.disconnect();
-                    conn = (java.net.HttpURLConnection) url.openConnection();
-                    conn.setRequestMethod("GET");
-                    conn.setConnectTimeout(2500);
-                    conn.setReadTimeout(2500);
-                    conn.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 10; TV) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/100.0.0.0 Mobile Safari/537.36");
-                }
-
-                String contentTypeHeader = conn.getContentType();
-                if (contentTypeHeader != null) {
-                    String[] parts = contentTypeHeader.toLowerCase().split(";");
-                    String contentType = parts.length > 0 ? parts[0].trim() : "";
-                    
-                    if (contentType.contains("mpegurl") || contentType.contains("apple.mpegurl") || contentType.contains("mpeg.url") || contentType.contains("application/vnd.apple.mpegurl")) {
-                        inferredMimeType = androidx.media3.common.MimeTypes.APPLICATION_M3U8;
-                    } else if (contentType.contains("dash+xml")) {
-                        inferredMimeType = androidx.media3.common.MimeTypes.APPLICATION_MPD;
-                    } else if (contentType.contains("video/mp2t")) {
-                        inferredMimeType = androidx.media3.common.MimeTypes.APPLICATION_M3U8;
-                    }
-                }
-            } catch (Exception e) {
-                Log.w("Network MIME sniffing encountered an issue: " + e.getMessage() + ". Executing fallback checks.");
-            } finally {
-                if (conn != null) {
-                    try { conn.disconnect(); } catch (Exception ignored) {}
-                }
+                conn.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 10; TV) AppleWebKit/537.36");
             }
 
-            // Smart Fallback Framework: If network check fails, scan for common IPTV keywords and ports
-            if (inferredMimeType == null) {
-                int port = uri.getPort();
-                if (urlString.contains("/live/") || urlString.contains("/stream/") || urlString.contains("playlist")
-                        || port == 8000 || port == 8080 || port == 8880 || port == 3999) {
-                    inferredMimeType = androidx.media3.common.MimeTypes.APPLICATION_M3U8; // Universal IPTV default
+            String contentTypeHeader = conn.getContentType();
+            if (contentTypeHeader != null) {
+                String[] parts = contentTypeHeader.toLowerCase().split(";");
+                String contentType = parts.length > 0 ? parts[0].trim() : "";
+
+                if (contentType.contains("mpegurl") || contentType.contains("apple.mpegurl") || contentType.contains("mpeg.url") || contentType.contains("application/vnd.apple.mpegurl")) {
+                    inferredMimeType = androidx.media3.common.MimeTypes.APPLICATION_M3U8;
+                } else if (contentType.contains("dash+xml")) {
+                    inferredMimeType = androidx.media3.common.MimeTypes.APPLICATION_MPD;
+                } else if (contentType.contains("video/mp2t") || contentType.contains("video/mpeg")) {
+                    inferredMimeType = androidx.media3.common.MimeTypes.APPLICATION_M3U8;
                 }
             }
-
-            final String finalMime = inferredMimeType;
-            App.get().run(() -> applyMediaSource(sourceItem, uri, finalMime));
-        });
-    }
-    private void applyMediaSource(@NonNull PlayableItem sourceItem, @NonNull Uri uri, @Nullable String mimeType) {
-        synchronized (engineLock) {
-            if (player == null || this.source != sourceItem) return;
-
-            MediaItem.Builder mediaItemBuilder = new MediaItem.Builder().setUri(uri);
-            if (mimeType != null) {
-                mediaItemBuilder.setMimeType(mimeType);
+        } catch (Exception e) {
+            Log.w("ExoPlayerEngine", "Network sniffing encountered an issue: " + e.getMessage() + ". Launching fallback port scans.");
+        } finally {
+            if (conn != null) {
+                try { conn.disconnect(); } catch (Exception ignored) {}
             }
-
-            MediaItem mediaItem = mediaItemBuilder.build();
-            MediaSource mediaSource = mediaSourceFactory.createMediaSource(mediaItem);
-
-            this.isHls = (mimeType != null && mimeType.equals(androidx.media3.common.MimeTypes.APPLICATION_M3U8))
-                    || mediaSource.getClass().getSimpleName().contains("Hls")
-                    || Util.inferContentType(uri) == C.CONTENT_TYPE_HLS;
-
-            player.setMediaSource(mediaSource);
-            player.prepare();
         }
-    }
 
-    @Override
-    public int getId() {
-        return MediaPrefs.MEDIA_ENG_EXO;
-    }
+        // Matrix 6: IPTV SIGNATURE PORT SCAVENGER NODE
+        if (inferredMimeType == null) {
+            int port = uri.getPort();
+            if (urlString.contains("/live/") || urlString.contains("/stream/") || urlString.contains("playlist") || urlString.contains("get.php") 
+                || port == 8000 || port == 8080 || port == 8880 || port == 3999 || port == 9000) {
+                inferredMimeType = androidx.media3.common.MimeTypes.APPLICATION_M3U8;
+            }
+        }
+
+        final String finalMime = inferredMimeType;
+        my.app.utils.app.App.get().run(() -> applyMediaSource(sourceItem, uri, finalMime));
+    });
+}
+
+
+
 
     @SuppressLint("SwitchIntDef")
     @Override
@@ -1035,4 +1064,21 @@ public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener 
             outputAudioFormat = androidx.media3.common.audio.AudioProcessor.AudioFormat.NOT_SET;
         }
     }
+
+private static final class CustomP2PDataSourceFactory implements DataSource.Factory {
+    private final Context context;
+
+    public CustomP2PDataSourceFactory(Context context) {
+        this.context = context.getApplicationContext();
+    }
+
+    @Override
+    public DataSource createDataSource() {
+        return new androidx.media3.datasource.DefaultHttpDataSource.Factory()
+                .setAllowCrossProtocolRedirects(true)
+                .setUserAgent("Mozilla/5.0 (Linux; Android 10; TV) CustomIPTVP2PEngine/1.0")
+                .createDataSource();
+    }
+}
+
 }
