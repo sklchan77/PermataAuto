@@ -99,10 +99,12 @@ import my.app.utils.text.SharedTextBuilder;
 public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener {
 
 @androidx.annotation.NonNull
+
 @Override
-public String getId() {
-    return "ExoPlayerEngine";
+public int getId() {
+    return 1; // Returns the valid expected integer index for this media engine module
 }
+
 
     private static final DataSource.Factory httpDsFactory;
     private static final ExecutorService asyncIoExecutor = Executors.newSingleThreadExecutor();
@@ -1075,6 +1077,23 @@ private void universallyResolveAndPrepare(@NonNull PlayableItem sourceItem, @Non
             outputAudioFormat = androidx.media3.common.audio.AudioProcessor.AudioFormat.NOT_SET;
         }
     }
+
+private void applyMediaSource(@NonNull PlayableItem sourceItem, @NonNull Uri uri, @androidx.annotation.Nullable String mimeType) {
+    // This adapter dynamically creates the Media3 MediaItem and routes it to your active ExoPlayer context
+    androidx.media3.common.MediaItem.Builder mediaItemBuilder = new androidx.media3.common.MediaItem.Builder()
+            .setUri(uri);
+            
+    if (mimeType != null) {
+        mediaItemBuilder.setMimeType(mimeType);
+    }
+    
+    androidx.media3.common.MediaItem mediaItem = mediaItemBuilder.build();
+    
+    // Submits the finalized payload straight onto your engine's existing player pipeline
+    if (this.player != null) {
+        this.player.setMediaItem(mediaItem);
+    }
+}
 
 private static final class CustomP2PDataSourceFactory implements DataSource.Factory {
     private final Context context;
