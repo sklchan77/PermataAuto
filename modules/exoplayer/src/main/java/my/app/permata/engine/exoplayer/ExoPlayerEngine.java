@@ -182,18 +182,28 @@ public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener 
             public long getRetryDelayMsFor(LoadErrorInfo loadErrorInfo) {
                 java.io.IOException exception = loadErrorInfo.exception;
 
-                // 1. Structural Fail-Fast (Authentication / Missing resources)
-                if (exception instanceof androidx.media3.datasource.HttpDataSource.InvalidResponseCodeException) {
-                    int responseCode = ((androidx.media3.datasource.HttpDataSource.InvalidResponseCodeException) exception).responseCode;
-                    if ((responseCode == 404 || responseCode == 410) && loadErrorInfo.dataType == C.DATA_TYPE_MEDIA) {
-                        if (hasSuccessfullyRendered) {
-                            Log.w("ExoPlayerEngine", "Active media segment vanished (HTTP " + responseCode + "). Breaking internal chain for background re-probe.");
-                            return C.TIME_UNSET; // Drops out to invoke onPlayerError reloader
-                        } else {
-                            Log.e("ExoPlayerEngine", "Dead stream link caught on initialization step (HTTP " + responseCode + "). Halting.");
-                            return C.TIME_UNSET;
-                        }
-                    }
+
+// 1. Structural Fail-Fast (Authentication / Missing resources)
+if (exception instanceof androidx.media3.datasource.HttpDataSource.InvalidResponseCodeException) {
+    int responseCode = ((androidx.media3.datasource.HttpDataSource.InvalidResponseCodeException) exception).responseCode;
+    
+    // FIX: Safely read dataType via the mediaLoadData element tracking property
+    int currentDataType = loadErrorInfo.mediaLoadData != null ? loadErrorInfo.mediaLoadData.dataType : C.DATA_TYPE_UNKNOWN;
+
+    if ((responseCode == 404 || responseCode == 410) && currentDataType == C.DATA_TYPE_MEDIA) {
+        if (hasSuccessfullyRendered) {
+            Log.w("ExoPlayerEngine", "Active media segment vanished (HTTP " + responseCode + "). Breaking internal chain for background re-probe.");
+            return C.TIME_UNSET; // Drops out to invoke onPlayerError reloader
+        } else {
+            Log.e("ExoPlayerEngine", "Dead stream link caught on initialization step (HTTP " + responseCode + "). Halting.");
+            return C.TIME_UNSET;
+        }
+    }
+    if (responseCode == 401 || responseCode == 403 || responseCode == 404 || responseCode == 410) {
+        return C.TIME_UNSET; // Halt loop immediately to trigger app token updates
+    }
+}
+
                     if (responseCode == 401 || responseCode == 403 || responseCode == 404 || responseCode == 410) {
                         return C.TIME_UNSET; // Halt loop immediately to trigger app token updates
                     }
