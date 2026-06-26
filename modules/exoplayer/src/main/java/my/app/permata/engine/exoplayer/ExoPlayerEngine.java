@@ -94,8 +94,15 @@ import my.app.utils.text.SharedTextBuilder;
  *
  * @author sklchan77 (Optimized Modern Version)
  */
+
 @UnstableApi
 public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener {
+
+@androidx.annotation.NonNull
+@Override
+public String getId() {
+    return "ExoPlayerEngine";
+}
 
     private static final DataSource.Factory httpDsFactory;
     private static final ExecutorService asyncIoExecutor = Executors.newSingleThreadExecutor();
@@ -148,21 +155,25 @@ public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener 
                 .setInitialBitrateEstimate(2_000_000)
                 .build();
 
-        DefaultDataSource.Factory dsFactory = new DefaultDataSource.Factory(appCtx, httpDsFactory);
+        // Intercept protocol schemes using a clean Media3 ResolvingDataSource wrapper instead
+        androidx.media3.datasource.DataSource.Factory wrappingFactory = new androidx.media3.datasource.ResolvingDataSource.Factory(
+            httpDsFactory,
+            new androidx.media3.datasource.ResolvingDataSource.Resolver() {
+                @androidx.annotation.NonNull
+                @Override
+                public androidx.media3.datasource.DataSpec resolveDataSpec(@androidx.annotation.NonNull androidx.media3.datasource.DataSpec dataSpec) {
+                    String scheme = dataSpec.uri.getScheme();
+                    if ("p2p".equalsIgnoreCase(scheme) || "p3p".equalsIgnoreCase(scheme)) {
+                        // Rewrites custom protocol requests dynamically to prevent Media3 syntax errors
+                        return dataSpec.withUri(dataSpec.uri.buildUpon().scheme("http").build());
+                    }
+                    return dataSpec;
+                }
+            }
+        );
 
-// Register decentralized IPTV network factories
-dsFactory.setProtocolDataSourceFactory("p2p", new CustomP2PDataSourceFactory(appCtx));
-dsFactory.setProtocolDataSourceFactory("p3p", new CustomP2PDataSourceFactory(appCtx));
-
-// Inject specialized RTMP live link streaming module dynamically
-try {
-    Class<?> rtmpFactoryClass = Class.forName("androidx.media3.datasource.rtmp.RtmpDataSource$Factory");
-    DataSource.Factory rtmpFactory = (DataSource.Factory) rtmpFactoryClass.getDeclaredConstructor().newInstance();
-    dsFactory.setProtocolDataSourceFactory("rtmp", rtmpFactory);
-} catch (Exception ignored) {
-    Log.w("ExoPlayerEngine", "RTMP module dependency missing; bypassing factory assignment.");
-}
-        
+        DefaultDataSource.Factory dsFactory = new DefaultDataSource.Factory(appCtx, wrappingFactory);
+              
         // 2. Combined Smart Context-Aware Recovery + Infinite Reconnection Policy
        DefaultLoadErrorHandlingPolicy customErrorPolicy = new DefaultLoadErrorHandlingPolicy() {
     @Override
