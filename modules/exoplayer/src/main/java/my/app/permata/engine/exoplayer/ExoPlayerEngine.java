@@ -978,6 +978,7 @@ public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener 
             return new SubGrid(m);
         }
     }
+
     private static class PendingLoadAudioProcessor implements androidx.media3.common.audio.AudioProcessor {
         private final Accessor accessor;
         private androidx.media3.common.audio.AudioProcessor.AudioFormat inputAudioFormat;
@@ -1058,11 +1059,10 @@ public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener 
             inputAudioFormat = androidx.media3.common.audio.AudioProcessor.AudioFormat.NOT_SET;
             outputAudioFormat = androidx.media3.common.audio.AudioProcessor.AudioFormat.NOT_SET;
         }
-    }
+    } // End of PendingLoadAudioProcessor class
 
-
+    // This method belongs to the outer ExoPlayerEngine class, so it must live here
     private void applyMediaSource(@NonNull PlayableItem sourceItem, @NonNull Uri uri, @androidx.annotation.Nullable String mimeType) {
-        // Safe Main-Thread Routing: Guarantees full immunity from Media3 thread crashes
         mainHandler.post(() -> {
             synchronized (engineLock) {
                 if (player == null) return;
@@ -1081,5 +1081,4 @@ public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener 
             }
         });
     }
-}
-
+} // End of full ExoPlayerEngine class container
