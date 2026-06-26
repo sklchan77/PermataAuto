@@ -1062,8 +1062,10 @@ public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener 
     } // End of PendingLoadAudioProcessor class
 
     // This method belongs to the outer ExoPlayerEngine class, so it must live here
+
     private void applyMediaSource(@NonNull PlayableItem sourceItem, @NonNull Uri uri, @androidx.annotation.Nullable String mimeType) {
-        mainHandler.post(() -> {
+        // Safe Main-Thread Routing via application utility contexts
+        my.app.utils.app.App.get().run(() -> {
             synchronized (engineLock) {
                 if (player == null) return;
                 
