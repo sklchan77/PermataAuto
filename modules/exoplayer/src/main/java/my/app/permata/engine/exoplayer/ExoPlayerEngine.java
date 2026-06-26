@@ -62,6 +62,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicLong;
 
 import my.app.permata.BuildConfig;
 import my.app.permata.PermataApplication;
@@ -83,31 +84,22 @@ import my.app.utils.app.App;
 import my.app.utils.async.FutureSupplier;
 import my.app.utils.log.Log;
 import my.app.utils.text.SharedTextBuilder;
-
 /**
  * Enterprise-Grade ExoPlayerEngine for Permata Auto Media Player.
- * Re-engineered with explicit synchronized bounds monitors, Media3 capability matrices,
- * async thread isolation, and proactive memory leak mitigations.
- * Optimized for continuous deep-buffered live streaming playback profiles with adaptive network recovery.
- * Fully calibrated for compliant live-edge stream window seeking and fallback extractor parsing tolerances.
- * Verified Java 8 / 11 syntax compliant.
- *
- * @author sklchan77 (Optimized Modern Version)
+ * Fully integrated with all original dependencies, dual-pane translation accessors,
+ * hardware effect profiles, and speech-to-text components.
+ * Multi-threaded with background thread separation to protect against deadlocks and ANRs.
  */
-
 @UnstableApi
 public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener {
 
-@androidx.annotation.NonNull
-
-@Override
-public int getId() {
-    return 1; // Returns the valid expected integer index for this media engine module
-}
-
+    @Override
+    public int getId() {
+        return 1; // Original module registration index mapping reference
+    }
 
     private static final DataSource.Factory httpDsFactory;
-    private static final ExecutorService asyncIoExecutor = Executors.newSingleThreadExecutor();
+    private static final ExecutorService asyncIoExecutor = Executors.newFixedThreadPool(2);
 
     static {
         String standardUserAgent = "Mozilla/5.0 (Linux; Android 10; TV) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/100.0.0.0 Mobile Safari/537.36 Permata/" + BuildConfig.VERSION_NAME;
@@ -142,18 +134,25 @@ public int getId() {
     private AudioEffects audioEffects;
     private final Object engineLock = new Object();
     private final MediaSource.Factory mediaSourceFactory;
+    private final Context appCtx;
+    private final DefaultBandwidthMeter bandwidthMeter;
+    private final DefaultDataSource.Factory dsFactory;
     
     private volatile PlayableItem source;
     private volatile boolean preparing;
     private volatile boolean buffering;
     private volatile boolean isHls;
+    private volatile boolean hasSuccessfullyRendered;
     private volatile Runnable drainBuffer;
+
+    // Generational structural tracking token cancels older retry threads instantly
+    private final AtomicLong activeStreamId = new AtomicLong(0);
     public ExoPlayerEngine(@NonNull Context ctx, @NonNull Listener listener) {
         super(listener);
-        Context appCtx = ctx.getApplicationContext();
+        this.appCtx = ctx.getApplicationContext();
 
         // 1. Adaptive Bitrate (ABR) Optimization via explicit Bandwidth Meter
-        DefaultBandwidthMeter bandwidthMeter = new DefaultBandwidthMeter.Builder(appCtx)
+        this.bandwidthMeter = new DefaultBandwidthMeter.Builder(appCtx)
                 .setInitialBitrateEstimate(2_000_000)
                 .build();
 
@@ -175,45 +174,52 @@ public int getId() {
                 }
         );
 
-        DefaultDataSource.Factory dsFactory = new DefaultDataSource.Factory(appCtx, wrappingFactory);
+        this.dsFactory = new DefaultDataSource.Factory(appCtx, wrappingFactory);
               
         // 2. Combined Smart Context-Aware Recovery + Infinite Reconnection Policy
-       DefaultLoadErrorHandlingPolicy customErrorPolicy = new DefaultLoadErrorHandlingPolicy() {
-    @Override
-    public long getRetryDelayMsFor(LoadErrorInfo loadErrorInfo) {
-        java.io.IOException exception = loadErrorInfo.exception;
+        DefaultLoadErrorHandlingPolicy customErrorPolicy = new DefaultLoadErrorHandlingPolicy() {
+            @Override
+            public long getRetryDelayMsFor(LoadErrorInfo loadErrorInfo) {
+                java.io.IOException exception = loadErrorInfo.exception;
 
-        // 1. Structural Fail-Fast (Authentication / Missing resources)
-        if (exception instanceof androidx.media3.datasource.HttpDataSource.InvalidResponseCodeException) {
-            int responseCode = ((androidx.media3.datasource.HttpDataSource.InvalidResponseCodeException) exception).responseCode;
-            if (responseCode == 401 || responseCode == 403 || responseCode == 404 || responseCode == 410) {
-                return C.TIME_UNSET; // Halt loop immediately to trigger app token updates
+                // 1. Structural Fail-Fast (Authentication / Missing resources)
+                if (exception instanceof androidx.media3.datasource.HttpDataSource.InvalidResponseCodeException) {
+                    int responseCode = ((androidx.media3.datasource.HttpDataSource.InvalidResponseCodeException) exception).responseCode;
+                    if ((responseCode == 404 || responseCode == 410) && loadErrorInfo.dataType == C.DATA_TYPE_MEDIA) {
+                        if (hasSuccessfullyRendered) {
+                            Log.w("ExoPlayerEngine", "Active media segment vanished (HTTP " + responseCode + "). Breaking internal chain for background re-probe.");
+                            return C.TIME_UNSET; // Drops out to invoke onPlayerError reloader
+                        } else {
+                            Log.e("ExoPlayerEngine", "Dead stream link caught on initialization step (HTTP " + responseCode + "). Halting.");
+                            return C.TIME_UNSET;
+                        }
+                    }
+                    if (responseCode == 401 || responseCode == 403 || responseCode == 404 || responseCode == 410) {
+                        return C.TIME_UNSET; // Halt loop immediately to trigger app token updates
+                    }
+                }
+
+                // 2. Continuous Live Optimization via Jittered Exponential Back-off
+                if (exception instanceof java.io.IOException) {
+                    // Gradually scale delay based on consecutive error counts (Cap at 10 seconds max)
+                    long baseDelay = Math.min((loadErrorInfo.errorCount - 1) * 1500L + 1000L, 10000L); 
+                    long jitter = (long) (Math.random() * 400) - 200; // Inject +/- 200ms variance
+                    return baseDelay + jitter;
+                }
+
+                return super.getRetryDelayMsFor(loadErrorInfo);
             }
-        }
 
-        // 2. Continuous Live Optimization via Jittered Exponential Back-off
-        if (exception instanceof java.io.IOException) {
-            // Gradually scale delay based on consecutive error counts (Cap at 10 seconds max)
-            long baseDelay = Math.min((loadErrorInfo.errorCount - 1) * 1500L + 1000L, 10000L); 
-            long jitter = (long) (Math.random() * 400) - 200; // Inject +/- 200ms variance
-            return baseDelay + jitter;
-        }
-
-        // 3. CRITICAL BUG FIX: Fall back to native ExoPlayer error management rules
-        return super.getRetryDelayMsFor(loadErrorInfo);
-    }
-
-    @Override
-    public int getMinimumLoadableRetryCount(int dataType) {
-        // Broaden manifest retry allowance slightly (e.g., 6 attempts) to survive transient network drift
-        if (dataType == C.DATA_TYPE_MANIFEST) {
-            return 6; 
-        }
-        // Retain infinite retries for chunks/segments to sustain background connectivity indefinitely
-        return dataType == C.DATA_TYPE_MEDIA ? Integer.MAX_VALUE : super.getMinimumLoadableRetryCount(dataType);
-    }
-};
-
+            @Override
+            public int getMinimumLoadableRetryCount(int dataType) {
+                // Let manifests fail fast internally so our background async worker loop can reboot them safely
+                if (dataType == C.DATA_TYPE_MANIFEST) {
+                    return 3; 
+                }
+                // Retain infinite retries for chunks/segments to sustain background connectivity indefinitely on functioning streams
+                return dataType == C.DATA_TYPE_MEDIA ? Integer.MAX_VALUE : super.getMinimumLoadableRetryCount(dataType);
+            }
+        };
         // Permissive extractor configurations matching VLC parser robustness (Corrected references)
         DefaultExtractorsFactory extractorsFactory = new DefaultExtractorsFactory()
                 .setTsExtractorFlags(DefaultTsPayloadReaderFactory.FLAG_DETECT_ACCESS_UNITS | DefaultTsPayloadReaderFactory.FLAG_ALLOW_NON_IDR_KEYFRAMES);
@@ -307,125 +313,131 @@ public int getId() {
             }
         });
     }
-
     /**
      * Universally determines the media container type by evaluating URL structures 
      * and performing background network sniffing when extensions are completely absent.
      */
+    private void universallyResolveAndPrepare(@NonNull PlayableItem sourceItem, @NonNull Uri uri, final long generation) {
+        if (generation != activeStreamId.get()) return;
 
-private void universallyResolveAndPrepare(@NonNull PlayableItem sourceItem, @NonNull Uri uri) {
-    String scheme = uri.getScheme();
-    if (scheme == null) scheme = "http";
-    scheme = scheme.toLowerCase().trim();
+        String scheme = uri.getScheme();
+        if (scheme == null) scheme = "http";
+        scheme = scheme.toLowerCase().trim();
 
-    String urlString = uri.toString().toLowerCase();
-    String path = uri.getPath() != null ? uri.getPath().toLowerCase() : "";
+        String urlString = uri.toString().toLowerCase();
+        String path = uri.getPath() != null ? uri.getPath().toLowerCase() : "";
 
-    Log.d("ExoPlayerEngine", "Universal Route Matrix checking protocol scheme: [" + scheme + "]");
+        Log.d("ExoPlayerEngine", "Universal Route Matrix checking protocol scheme: [" + scheme + "]");
 
-    // Matrix 1: Custom Decentralized Peer-to-Peer / IPTV Channels
-    if (scheme.equals("p2p") || scheme.equals("p3p")) {
-        applyMediaSource(sourceItem, uri, androidx.media3.common.MimeTypes.APPLICATION_M3U8);
-        return;
-    }
-
-    // Matrix 2: Local Playback Hooks (Sandbox Storage / Android Content Providers)
-    if (scheme.equals("file") || scheme.equals("content")) {
-        if (path.contains(".m3u8")) {
+        // Matrix 1: Custom Decentralized Peer-to-Peer / IPTV Channels
+        if (scheme.equals("p2p") || scheme.equals("p3p")) {
             applyMediaSource(sourceItem, uri, androidx.media3.common.MimeTypes.APPLICATION_M3U8);
-        } else if (path.contains(".mpd")) {
-            applyMediaSource(sourceItem, uri, androidx.media3.common.MimeTypes.APPLICATION_MPD);
-        } else {
-            applyMediaSource(sourceItem, uri, null); // Progressive Engine fallback
+            return;
         }
-        return;
-    }
 
-    // Matrix 3: Legacy Broadcast Stream Standards
-    if (scheme.equals("rtsp") || scheme.equals("rtmp")) {
-        applyMediaSource(sourceItem, uri, androidx.media3.common.MimeTypes.APPLICATION_RTSP);
-        return;
-    }
+        // Matrix 2: Local Playback Hooks (Sandbox Storage / Android Content Providers)
+        if (scheme.equals("file") || scheme.equals("content")) {
+            if (path.contains(".m3u8")) {
+                applyMediaSource(sourceItem, uri, androidx.media3.common.MimeTypes.APPLICATION_M3U8);
+            } else if (path.contains(".mpd")) {
+                applyMediaSource(sourceItem, uri, androidx.media3.common.MimeTypes.APPLICATION_MPD);
+            } else {
+                applyMediaSource(sourceItem, uri, null); // Progressive Engine fallback
+            }
+            return;
+        }
 
-    // Matrix 4: INSTANT FAST-PATH FILE SIGNATURE EVALUATION
-    if (path.contains(".m3u8") || urlString.contains("format=m3u8") || urlString.contains("type=m3u8") || urlString.contains(".ts")) {
-        applyMediaSource(sourceItem, uri, androidx.media3.common.MimeTypes.APPLICATION_M3U8);
-        return;
-    }
-    if (path.contains(".mpd") || urlString.contains("format=mpd")) {
-        applyMediaSource(sourceItem, uri, androidx.media3.common.MimeTypes.APPLICATION_MPD);
-        return;
-    }
-    if (path.contains(".ism") || urlString.contains("format=ism")) {
-        applyMediaSource(sourceItem, uri, androidx.media3.common.MimeTypes.APPLICATION_SS);
-        return;
-    }
+        // Matrix 3: Legacy Broadcast Stream Standards
+        if (scheme.equals("rtsp") || scheme.equals("rtmp")) {
+            applyMediaSource(sourceItem, uri, androidx.media3.common.MimeTypes.APPLICATION_RTSP);
+            return;
+        }
 
-    // Matrix 5: ASYNCHRONOUS NETWORK SNIFFING
-    asyncIoExecutor.execute(() -> {
-        String inferredMimeType = null;
-        java.net.HttpURLConnection conn = null;
-        try {
-            java.net.URL url = new java.net.URL(uri.toString());
-            conn = (java.net.HttpURLConnection) url.openConnection();
-            conn.setRequestMethod("HEAD");
-            conn.setConnectTimeout(1200);
-            conn.setReadTimeout(1200);
-            conn.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 10; TV) AppleWebKit/537.36");
+        // Matrix 4: INSTANT FAST-PATH FILE SIGNATURE EVALUATION
+        if (path.contains(".m3u8") || urlString.contains("format=m3u8") || urlString.contains("type=m3u8") || urlString.contains(".ts")) {
+            applyMediaSource(sourceItem, uri, androidx.media3.common.MimeTypes.APPLICATION_M3U8);
+            return;
+        }
+        if (path.contains(".mpd") || urlString.contains("format=mpd")) {
+            applyMediaSource(sourceItem, uri, androidx.media3.common.MimeTypes.APPLICATION_MPD);
+            return;
+        }
+        if (path.contains(".ism") || urlString.contains("format=ism")) {
+            applyMediaSource(sourceItem, uri, androidx.media3.common.MimeTypes.APPLICATION_SS);
+            return;
+        }
+        // Matrix 5: ASYNCHRONOUS NETWORK SNIFFING
+        asyncIoExecutor.execute(() -> {
+            if (generation != activeStreamId.get()) return;
 
-            int responseCode = conn.getResponseCode();
-            if (responseCode == java.net.HttpURLConnection.HTTP_BAD_METHOD || responseCode == 405) {
-                conn.disconnect();
+            String inferredMimeType = null;
+            java.net.HttpURLConnection conn = null;
+            try {
+                java.net.URL url = new java.net.URL(uri.toString());
                 conn = (java.net.HttpURLConnection) url.openConnection();
-                conn.setRequestMethod("GET");
-                conn.setConnectTimeout(1200);
-                conn.setReadTimeout(1200);
+                conn.setRequestMethod("HEAD");
+                conn.setConnectTimeout(2000);
+                conn.setReadTimeout(2000);
                 conn.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 10; TV) AppleWebKit/537.36");
+
+                int responseCode = conn.getResponseCode();
+                if (responseCode == java.net.HttpURLConnection.HTTP_BAD_METHOD || responseCode == 405) {
+                    conn.disconnect();
+                    if (generation != activeStreamId.get()) return;
+                    conn = (java.net.HttpURLConnection) url.openConnection();
+                    conn.setRequestMethod("GET");
+                    conn.setConnectTimeout(2000);
+                    conn.setReadTimeout(2000);
+                    conn.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 10; TV) AppleWebKit/537.36");
+                }
+
+                String contentTypeHeader = conn.getContentType();
+                if (contentTypeHeader != null) {
+                    String[] parts = contentTypeHeader.toLowerCase().split(";");
+                    String contentType = parts.length > 0 ? parts[0].trim() : "";
+
+                    if (contentType.contains("mpegurl") || contentType.contains("apple.mpegurl") || contentType.contains("mpeg.url") || contentType.contains("application/vnd.apple.mpegurl")) {
+                        inferredMimeType = androidx.media3.common.MimeTypes.APPLICATION_M3U8;
+                    } else if (contentType.contains("dash+xml")) {
+                        inferredMimeType = androidx.media3.common.MimeTypes.APPLICATION_MPD;
+                    } else if (contentType.contains("video/mp2t") || contentType.contains("video/mpeg")) {
+                        inferredMimeType = androidx.media3.common.MimeTypes.APPLICATION_M3U8;
+                    }
+                }
+            } catch (Exception e) {
+                Log.w("ExoPlayerEngine", "Network sniffing encountered an issue: " + e.getMessage() + ". Launching fallback port scans.");
+            } finally {
+                if (conn != null) {
+                    try { conn.disconnect(); } catch (Exception ignored) {}
+                }
             }
 
-            String contentTypeHeader = conn.getContentType();
-            if (contentTypeHeader != null) {
-                String[] parts = contentTypeHeader.toLowerCase().split(";");
-                String contentType = parts.length > 0 ? parts[0].trim() : "";
-
-                if (contentType.contains("mpegurl") || contentType.contains("apple.mpegurl") || contentType.contains("mpeg.url") || contentType.contains("application/vnd.apple.mpegurl")) {
-                    inferredMimeType = androidx.media3.common.MimeTypes.APPLICATION_M3U8;
-                } else if (contentType.contains("dash+xml")) {
-                    inferredMimeType = androidx.media3.common.MimeTypes.APPLICATION_MPD;
-                } else if (contentType.contains("video/mp2t") || contentType.contains("video/mpeg")) {
+            // Matrix 6: IPTV SIGNATURE PORT SCAVENGER NODE
+            if (inferredMimeType == null) {
+                int port = uri.getPort();
+                if (urlString.contains("/live/") || urlString.contains("/stream/") || urlString.contains("playlist") || urlString.contains("get.php") 
+                    || port == 8000 || port == 8080 || port == 8880 || port == 3999 || port == 9000) {
                     inferredMimeType = androidx.media3.common.MimeTypes.APPLICATION_M3U8;
                 }
             }
-        } catch (Exception e) {
-            Log.w("ExoPlayerEngine", "Network sniffing encountered an issue: " + e.getMessage() + ". Launching fallback port scans.");
-        } finally {
-            if (conn != null) {
-                try { conn.disconnect(); } catch (Exception ignored) {}
-            }
-        }
 
-        // Matrix 6: IPTV SIGNATURE PORT SCAVENGER NODE
-        if (inferredMimeType == null) {
-            int port = uri.getPort();
-            if (urlString.contains("/live/") || urlString.contains("/stream/") || urlString.contains("playlist") || urlString.contains("get.php") 
-                || port == 8000 || port == 8080 || port == 8880 || port == 3999 || port == 9000) {
-                inferredMimeType = androidx.media3.common.MimeTypes.APPLICATION_M3U8;
-            }
-        }
+            if (generation != activeStreamId.get()) return;
 
-        final String finalMime = inferredMimeType;
-        my.app.utils.app.App.get().run(() -> applyMediaSource(sourceItem, uri, finalMime));
-    });
-}
-
-
-
-
+            final String finalMime = inferredMimeType;
+            my.app.utils.app.App.get().run(() -> {
+                if (generation == activeStreamId.get()) {
+                    applyMediaSource(sourceItem, uri, finalMime);
+                }
+            });
+        });
+    }
     @SuppressLint("SwitchIntDef")
     @Override
     public void prepare(@NonNull PlayableItem source) {
         // Isolation Protection: Stop the active player state BEFORE acquiring the structural engine lock.
         // This instantly signals stuck network sockets to terminate, preventing UI thread ANRs.
+        final long currentGeneration = activeStreamId.incrementAndGet();
+        
         if (player != null) {
             player.stop(); 
         }
@@ -435,12 +447,14 @@ private void universallyResolveAndPrepare(@NonNull PlayableItem sourceItem, @Non
             accessor.sourceChanged(source);
             this.preparing = true;
             this.buffering = false;
+            this.hasSuccessfullyRendered = false; // Reset verification flag for this new preparation sequence
 
             Uri uri = source.getLocation();
             this.isHls = Util.inferContentType(uri) == C.CONTENT_TYPE_HLS;
 
             final int uriHash = uri.hashCode();
             asyncIoExecutor.execute(() -> {
+                if (currentGeneration != activeStreamId.get()) return;
                 AudioEffects fx = getAudioEffects();
                 if (fx != null) {
                     String channelIdentifier = "exo_file_" + uriHash;
@@ -448,8 +462,8 @@ private void universallyResolveAndPrepare(@NonNull PlayableItem sourceItem, @Non
                 }
             });
 
-            // Route through the universal resolution module
-            universallyResolveAndPrepare(source, uri);
+            // Route through the universal resolution module with generation guard tracking
+            universallyResolveAndPrepare(source, uri, currentGeneration);
         }
     }
 
@@ -463,7 +477,6 @@ private void universallyResolveAndPrepare(@NonNull PlayableItem sourceItem, @Non
             started();
         }
     }
-
     @Override
     public void stop() {
         synchronized (engineLock) {
@@ -490,6 +503,7 @@ private void universallyResolveAndPrepare(@NonNull PlayableItem sourceItem, @Non
     public PlayableItem getSource() {
         return source;
     }
+
     @Override
     public FutureSupplier<Long> getDuration() {
         synchronized (engineLock) {
@@ -498,7 +512,6 @@ private void universallyResolveAndPrepare(@NonNull PlayableItem sourceItem, @Non
             return completed(dur < 0 ? 0L : dur);
         }
     }
-
     @Override
     public FutureSupplier<Long> getPosition() {
         syncSub(false);
@@ -524,6 +537,7 @@ private void universallyResolveAndPrepare(@NonNull PlayableItem sourceItem, @Non
             return Math.max(offsetPos, 0L);
         }
     }
+
     @Override
     protected long subSchedulerClock() {
         return pos();
@@ -532,7 +546,6 @@ private void universallyResolveAndPrepare(@NonNull PlayableItem sourceItem, @Non
     void syncSub(boolean restart) {
         syncSub(subSchedulerClock(), speed(), restart);
     }
-
     @Override
     public void setPosition(long position) {
         synchronized (engineLock) {
@@ -548,6 +561,7 @@ private void universallyResolveAndPrepare(@NonNull PlayableItem sourceItem, @Non
     public FutureSupplier<Float> getSpeed() {
         return completed(speed());
     }
+
     private float speed() {
         synchronized (engineLock) {
             if (player == null) return 1f;
@@ -568,7 +582,6 @@ private void universallyResolveAndPrepare(@NonNull PlayableItem sourceItem, @Non
             syncSub(true);
         }
     }
-
     @Override
     public void setVideoView(@Nullable VideoView view) {
         synchronized (engineLock) {
@@ -578,6 +591,7 @@ private void universallyResolveAndPrepare(@NonNull PlayableItem sourceItem, @Non
             }
         }
     }
+
     @Override
     public float getVideoWidth() {
         synchronized (engineLock) {
@@ -624,6 +638,7 @@ private void universallyResolveAndPrepare(@NonNull PlayableItem sourceItem, @Non
             }
         }
     }
+
     @Nullable
     @Override
     public AudioStreamInfo getCurrentAudioStreamInfo() {
@@ -700,6 +715,7 @@ private void universallyResolveAndPrepare(@NonNull PlayableItem sourceItem, @Non
         }
         return completedVoid();
     }
+
     @Override
     public FutureSupplier<SubGrid> getCurrentSubtitles() {
         var cur = super.getCurrentSubtitles();
@@ -726,6 +742,7 @@ private void universallyResolveAndPrepare(@NonNull PlayableItem sourceItem, @Non
             return subFiles;
         });
     }
+
     @Override
     public void close() {
         synchronized (engineLock) {
@@ -756,6 +773,7 @@ private void universallyResolveAndPrepare(@NonNull PlayableItem sourceItem, @Non
             if (player != null) player.setVolume(1f);
         }
     }
+
     @Override
     public void onPlaybackStateChanged(int playbackState) {
         synchronized (engineLock) {
@@ -770,6 +788,7 @@ private void universallyResolveAndPrepare(@NonNull PlayableItem sourceItem, @Non
                 }
                 if (preparing) {
                     this.preparing = false;
+                    this.hasSuccessfullyRendered = true; // Stream validated successfully
                     long off = source != null ? source.getOffset() : 0L;
                     if (off > 0) player.seekTo(off);
                     accessor.setSubGenTimeOffset(this);
@@ -801,27 +820,63 @@ private void universallyResolveAndPrepare(@NonNull PlayableItem sourceItem, @Non
 
     @Override
     public void onPlayerError(@NonNull PlaybackException error) {
-        synchronized (engineLock) {
-            // Intercept rolling live window dropouts and automatically recover by jumping back to live edge
-            if (error.errorCode == PlaybackException.ERROR_CODE_BEHIND_LIVE_WINDOW) {
-                Log.d("Behind live window timeline frame slot. Performing live-edge recovery seek step.");
-                if (player != null) {
-                    player.seekToDefaultPosition();
-                    player.prepare();
+        final long currentGeneration = activeStreamId.get();
+
+        asyncIoExecutor.execute(() -> {
+            if (currentGeneration != activeStreamId.get()) return;
+
+            boolean isVanishedChunk = error.getCause() instanceof HttpDataSource.InvalidResponseCodeException;
+            boolean isNetworkFailure = error.errorCode == PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED
+                    || error.errorCode == PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS
+                    || error.errorCode == PlaybackException.ERROR_CODE_IO_UNSPECIFIED;
+
+            // INFINITE BACKGROUND RETRY LOOP: Only activates if the channel has a proven active track record
+            if (hasSuccessfullyRendered && (error.errorCode == PlaybackException.ERROR_CODE_BEHIND_LIVE_WINDOW || isVanishedChunk || isNetworkFailure)) {
+                Log.w("ExoPlayerEngine", "Active stream connection interrupted. Initiating background loopback retry [Gen ID: " + currentGeneration + "].");
+                
+                // Keep your existing loading wheel spinning smoothly on screen
+                my.app.utils.app.App.get().run(() -> {
+                    synchronized (engineLock) {
+                        if (currentGeneration == activeStreamId.get() && player != null) {
+                            this.buffering = true;
+                            Optional.ofNullable(listener).ifPresent(l -> l.onEngineBuffering(this, player.getBufferedPercentage()));
+                        }
+                    }
+                });
+
+                try {
+                    Thread.sleep(2000); // Non-blocking background delay isolated from UI thread
+                } catch (InterruptedException ignored) {}
+
+                if (currentGeneration != activeStreamId.get()) return;
+
+                synchronized (engineLock) {
+                    if (currentGeneration == activeStreamId.get() && source != null) {
+                        this.preparing = true;
+                        this.buffering = false;
+                        universallyResolveAndPrepare(source, source.getLocation(), currentGeneration);
+                    }
                 }
                 return;
             }
 
-            this.preparing = false;
-            this.buffering = false;
-            Optional.ofNullable(listener).ifPresent(l -> l.onEngineError(this, error));
-        }
+            // Unproven dead links bypass the retry engine loops completely and fail fast down to user space
+            Log.e("ExoPlayerEngine", "Terminal stream breakdown exposed: " + error.getMessage());
+            my.app.utils.app.App.get().run(() -> {
+                synchronized (engineLock) {
+                    if (currentGeneration != activeStreamId.get()) return;
+                    this.preparing = false;
+                    this.buffering = false;
+                    Optional.ofNullable(listener).ifPresent(l -> l.onEngineError(this, error));
+                }
+            });
+        });
     }
+
     @Override
     protected SubGrid createSubStreamGrid() {
         return accessor.createSubStreamGrid();
     }
-
     // =====================================================================================
     // NESTED TRANSLATION RESOLUTION ACCESSOR COMPONENT
     // =====================================================================================
@@ -841,6 +896,7 @@ private void universallyResolveAndPrepare(@NonNull PlayableItem sourceItem, @Non
         private void releasePlayerEngineReference() {
             this.playerEngineRef.clear();
         }
+
         void drainBuffer() {
             assertMainThread();
             ExoPlayerEngine p = playerEngineRef.get();
@@ -858,7 +914,6 @@ private void universallyResolveAndPrepare(@NonNull PlayableItem sourceItem, @Non
         public long getSubGenTimeOffset() {
             return subGenTimeOffset;
         }
-
         private void sourceChanged(@Nullable PlayableItem src) {
             if (subStream != null) subStream.clear();
             if (subTransStream != null) subTransStream.clear();
@@ -874,6 +929,7 @@ private void universallyResolveAndPrepare(@NonNull PlayableItem sourceItem, @Non
                 translator = completedNull();
             }
         }
+
         void addSubtitles(String lang, @NonNull List<Subtitles.Text> subs) {
             if (subs.isEmpty()) return;
             App.get().run(() -> {
@@ -937,7 +993,7 @@ private void universallyResolveAndPrepare(@NonNull PlayableItem sourceItem, @Non
                 }
                 Log.d("Translation: ", r);
                 if (r == null) return;
-                String[] parts = r.split("\\|", -1);
+                String[] parts = r.split("\\\\\\|", -1);
                 int off = skipFirst ? 1 : 0;
                 if (subs.size() != parts.length - off) {
                     Log.d("Fall back to per item translation");
@@ -979,6 +1035,7 @@ private void universallyResolveAndPrepare(@NonNull PlayableItem sourceItem, @Non
                 });
             }
         }
+
         private void setSubGenTimeOffset(ExoPlayerEngine eng) {
             this.subGenTimeOffset = eng.subSchedulerClock();
         }
@@ -1019,10 +1076,10 @@ private void universallyResolveAndPrepare(@NonNull PlayableItem sourceItem, @Non
                 androidx.media3.common.audio.AudioProcessor.AudioFormat inputAudioFormat)
                 throws androidx.media3.common.audio.AudioProcessor.UnhandledAudioFormatException {
             this.inputAudioFormat = inputAudioFormat;
-            // Transparently pass formats down through the pipeline
             this.outputAudioFormat = inputAudioFormat;
             return inputAudioFormat;
         }
+
         @Override
         public boolean isActive() {
             return inputAudioFormat != androidx.media3.common.audio.AudioProcessor.AudioFormat.NOT_SET;
@@ -1043,16 +1100,15 @@ private void universallyResolveAndPrepare(@NonNull PlayableItem sourceItem, @Non
             buffer.flip();
             outputBuffer = buffer;
 
-            // Trigger main-thread synchronization tasks asynchronously on buffer progression events
             if (remaining > 0 && accessor != null) {
                 my.app.utils.app.App.get().run(accessor::drainBuffer);
             }
         }
-
         @Override
         public void queueEndOfStream() {
             inputEnded = true;
         }
+
         @Override
         public java.nio.ByteBuffer getOutput() {
             java.nio.ByteBuffer output = outputBuffer;
@@ -1070,6 +1126,7 @@ private void universallyResolveAndPrepare(@NonNull PlayableItem sourceItem, @Non
             outputBuffer = EMPTY_BUFFER;
             inputEnded = false;
         }
+
         @Override
         public void reset() {
             flush();
@@ -1079,39 +1136,19 @@ private void universallyResolveAndPrepare(@NonNull PlayableItem sourceItem, @Non
         }
     }
 
-private void applyMediaSource(@NonNull PlayableItem sourceItem, @NonNull Uri uri, @androidx.annotation.Nullable String mimeType) {
-    // This adapter dynamically creates the Media3 MediaItem and routes it to your active ExoPlayer context
-    androidx.media3.common.MediaItem.Builder mediaItemBuilder = new androidx.media3.common.MediaItem.Builder()
-            .setUri(uri);
-            
-    if (mimeType != null) {
-        mediaItemBuilder.setMimeType(mimeType);
+    private void applyMediaSource(@NonNull PlayableItem sourceItem, @NonNull Uri uri, @androidx.annotation.Nullable String mimeType) {
+        androidx.media3.common.MediaItem.Builder mediaItemBuilder = new androidx.media3.common.MediaItem.Builder()
+                .setUri(uri);
+                
+        if (mimeType != null) {
+            mediaItemBuilder.setMimeType(mimeType);
+        }
+        
+        androidx.media3.common.MediaItem mediaItem = mediaItemBuilder.build();
+        
+        if (this.player != null) {
+            this.player.setMediaItem(mediaItem);
+            this.player.prepare(); 
+        }
     }
-    
-    androidx.media3.common.MediaItem mediaItem = mediaItemBuilder.build();
-    
-// Submits the finalized payload straight onto your engine's existing player pipeline
-if (this.player != null) {
-    this.player.setMediaItem(mediaItem);
-    this.player.prepare(); // Fixes freeze: wakes up media drivers to begin buffering immediately
-}
-
-}
-
-private static final class CustomP2PDataSourceFactory implements DataSource.Factory {
-    private final Context context;
-
-    public CustomP2PDataSourceFactory(Context context) {
-        this.context = context.getApplicationContext();
-    }
-
-    @Override
-    public DataSource createDataSource() {
-        return new androidx.media3.datasource.DefaultHttpDataSource.Factory()
-                .setAllowCrossProtocolRedirects(true)
-                .setUserAgent("Mozilla/5.0 (Linux; Android 10; TV) CustomIPTVP2PEngine/1.0")
-                .createDataSource();
-    }
-}
-
 }
