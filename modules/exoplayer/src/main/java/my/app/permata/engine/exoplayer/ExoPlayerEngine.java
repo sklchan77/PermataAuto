@@ -167,7 +167,7 @@ public int getId() {
                         String scheme = dataSpec.uri.getScheme();
                         if ("p2p".equalsIgnoreCase(scheme) || "p3p".equalsIgnoreCase(scheme)) {
                             // Safely rewrite the custom request to route through your application's local P2P engine client loopback
-                            android.net.Uri localProxyUri = android.net.Uri.parse("http://127.0.0" + android.net.Uri.encode(dataSpec.uri.toString()));
+                            android.net.Uri localProxyUri = android.net.Uri.parse("http://127.0.0.1:8080/stream?url=" + android.net.Uri.encode(dataSpec.uri.toString()));
                             return dataSpec.withUri(localProxyUri);
                         }
                         return dataSpec;
