@@ -227,7 +227,7 @@ public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener 
             }
         };
         DefaultLoadControl loadControl = new DefaultLoadControl.Builder()
-                .setBufferDurationsMs(3000, 50000, 1500, 2500)
+                .setBufferDurationsMs(15000, 50000, 2500, 5000)
                 .setPrioritizeTimeOverSizeThresholds(true)
                 .build();
 
