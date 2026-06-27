@@ -188,13 +188,16 @@ public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener 
                 return super.getRetryDelayMsFor(loadErrorInfo);
             }
 
-            @Override
-            public int getMinimumLoadableRetryCount(int dataType) {
-                if (dataType == C.DATA_TYPE_MANIFEST) {
-                    return 9; 
-                }
-                return dataType == C.DATA_TYPE_MEDIA ? Integer.MAX_VALUE : super.getMinimumLoadableRetryCount(dataType);
-            }
+@Override
+public int getMinimumLoadableRetryCount(int dataType) {
+    if (dataType == C.DATA_TYPE_MANIFEST) {
+        if (hasSuccessfullyRendered) {
+            return Integer.MAX_VALUE;
+        }
+        return 3;
+    }
+    return dataType == C.DATA_TYPE_MEDIA ? Integer.MAX_VALUE : super.getMinimumLoadableRetryCount(dataType);
+}
         };
         DefaultExtractorsFactory extractorsFactory = new DefaultExtractorsFactory()
                 .setTsExtractorFlags(DefaultTsPayloadReaderFactory.FLAG_DETECT_ACCESS_UNITS | DefaultTsPayloadReaderFactory.FLAG_ALLOW_NON_IDR_KEYFRAMES);
