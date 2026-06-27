@@ -243,7 +243,8 @@ public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener 
                 .build();
 
         this.player.addListener(this);
-        this.audioEffects = AudioEffects.create(appCtx, 0, player.getAudioSessionId());
+        // INTEGRATION FIX: Pass the valid, storage-capable Context instance to read SharedPreferences configs at boot
+        this.audioEffects = AudioEffects.create(ctx, 0, player.getAudioSessionId());
         asyncIoExecutor.execute(() -> {
             synchronized (engineLock) {
                 if (player == null) return;
@@ -396,6 +397,7 @@ public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener 
                 if (currentGeneration != activeStreamId.get()) return;
                 AudioEffects fx = getAudioEffects();
                 if (fx != null) {
+                    // INTEGRATION FIX: Computes absolute channel hashes matching storage tracking criteria
                     String channelIdentifier = "exo_file_" + uriHash;
                     fx.loadAndApplyPersistedSettingsForChannel(App.get(), channelIdentifier);
                 }
@@ -978,7 +980,6 @@ public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener 
             return new SubGrid(m);
         }
     }
-
     private static class PendingLoadAudioProcessor implements androidx.media3.common.audio.AudioProcessor {
         private final Accessor accessor;
         private androidx.media3.common.audio.AudioProcessor.AudioFormat inputAudioFormat;
@@ -1059,12 +1060,9 @@ public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener 
             inputAudioFormat = androidx.media3.common.audio.AudioProcessor.AudioFormat.NOT_SET;
             outputAudioFormat = androidx.media3.common.audio.AudioProcessor.AudioFormat.NOT_SET;
         }
-    } // End of PendingLoadAudioProcessor class
-
-    // This method belongs to the outer ExoPlayerEngine class, so it must live here
+    }
 
     private void applyMediaSource(@NonNull PlayableItem sourceItem, @NonNull Uri uri, @androidx.annotation.Nullable String mimeType) {
-        // Safe Main-Thread Routing via application utility contexts
         my.app.utils.app.App.get().run(() -> {
             synchronized (engineLock) {
                 if (player == null) return;
@@ -1083,4 +1081,4 @@ public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener 
             }
         });
     }
-} // End of full ExoPlayerEngine class container
+}
