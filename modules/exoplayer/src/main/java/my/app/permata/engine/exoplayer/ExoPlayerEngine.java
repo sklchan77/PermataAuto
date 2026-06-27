@@ -200,10 +200,12 @@ public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener 
             }
         };
 
-DefaultExtractorsFactory extractorsFactory = new DefaultExtractorsFactory();
-
+        // MASTER COMPATIBILITY PATCH: Restores keyframe tracking flexibility for streamingfast feeds without breaking regular tracks
+        DefaultExtractorsFactory extractorsFactory = new DefaultExtractorsFactory()
+                .setTsExtractorFlags(DefaultTsPayloadReaderFactory.FLAG_ALLOW_NON_IDR_KEYFRAMES);
 
         this.mediaSourceFactory = new DefaultMediaSourceFactory(appCtx, extractorsFactory)
+
                 .setDataSourceFactory(dsFactory)
                 .setLoadErrorHandlingPolicy(customErrorPolicy);
         DefaultRenderersFactory renderersFactory = new DefaultRenderersFactory(appCtx) {
@@ -379,18 +381,44 @@ DefaultLivePlaybackSpeedControl liveSpeedControl = new DefaultLivePlaybackSpeedC
                 conn.setReadTimeout(2000);
                 conn.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 10; TV) AppleWebKit/537.36");
 
-                int responseCode = conn.getResponseCode();
-                if (responseCode == java.net.HttpURLConnection.HTTP_BAD_METHOD || responseCode == 405) {
-                    conn.disconnect();
-                    if (generation != activeStreamId.get()) return;
-                    conn = (java.net.HttpURLConnection) url.openConnection();
-                    conn.setRequestMethod("GET");
-                    conn.setConnectTimeout(2000);
-                    conn.setReadTimeout(2000);
-                    conn.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 10; TV) AppleWebKit/537.36");
+            int responseCode = -1;
+            try {
+                responseCode = conn.getResponseCode();
+            } catch (Exception ex) {
+                Log.w("ExoPlayerEngine: Initial HEAD probe rejected or timed out. Checking generation context...");
+            }
+
+            // ANR & THREAD LOCK SAFE GUARD: Forcibly close connection handles if generation has already changed
+            if (generation != activeStreamId.get()) {
+                try { conn.disconnect(); } catch (Exception ignored) {}
+                return;
+            }
+
+            // COMPATIBILITY AUTOMATION: Force switch to standard GET if the streaming server dropped or ignored the HEAD request
+            if (responseCode != 200) {
+                try { conn.disconnect(); } catch (Exception ignored) {}
+
+                conn = (java.net.HttpURLConnection) url.openConnection();
+                conn.setRequestMethod("GET");
+                conn.setConnectTimeout(2000);
+                conn.setReadTimeout(2000);
+                conn.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 10; TV) AppleWebKit/537.36");
+
+                // Double check generation validity after socket connection handshake
+                if (generation != activeStreamId.get()) {
+                    try { conn.disconnect(); } catch (Exception ignored) {}
+                    return;
                 }
 
-                String contentTypeHeader = conn.getContentType();
+                try {
+                    responseCode = conn.getResponseCode();
+                } catch (Exception ex) {
+                    Log.w("ExoPlayerEngine: Adaptive secondary GET probe timed out safely.");
+                }
+            }
+
+            String contentTypeHeader = conn.getContentType();
+
                 if (contentTypeHeader != null) {
                     String contentType = contentTypeHeader.toLowerCase().trim();
                     if (contentType.contains("mpegurl") || contentType.contains("apple.mpegurl") || 
