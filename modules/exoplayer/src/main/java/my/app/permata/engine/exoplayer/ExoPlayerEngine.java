@@ -243,7 +243,6 @@ public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener 
                 .build();
 
         this.player.addListener(this);
-        // INTEGRATION FIX: Pass the valid, storage-capable Context instance to read SharedPreferences configs at boot
         this.audioEffects = AudioEffects.create(ctx, 0, player.getAudioSessionId());
         asyncIoExecutor.execute(() -> {
             synchronized (engineLock) {
@@ -397,9 +396,8 @@ public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener 
                 if (currentGeneration != activeStreamId.get()) return;
                 AudioEffects fx = getAudioEffects();
                 if (fx != null) {
-                    // INTEGRATION FIX: Computes absolute channel hashes matching storage tracking criteria
                     String channelIdentifier = "exo_file_" + uriHash;
-                    fx.loadAndApplyPersistedSettingsForChannel(App.get(), channelIdentifier);
+                    fx.loadAndApplyPersistedSettingsForChannel(my.app.utils.app.App.get(), channelIdentifier);
                 }
             });
 
@@ -623,7 +621,7 @@ public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener 
                                 AudioEffects fx = getAudioEffects();
                                 if (fx != null) {
                                     String streamTrackIdentifier = "exo_file_" + currentSrc.getLocation().hashCode() + "_track_" + streamTrackId;
-                                    fx.loadAndApplyPersistedSettingsForChannel(App.get(), streamTrackIdentifier);
+                                    fx.loadAndApplyPersistedSettingsForChannel(my.app.utils.app.App.get(), streamTrackIdentifier);
                                 }
                             });
                         }
@@ -741,7 +739,7 @@ public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener 
                 stopped(false);
                 asyncIoExecutor.execute(() -> {
                     AudioEffects fx = getAudioEffects();
-                    if (fx != null) fx.resetToGlobalSettings(App.get());
+                    if (fx != null) fx.resetToGlobalSettings(my.app.utils.app.App.get());
                 });
                 Optional.ofNullable(listener).ifPresent(l -> l.onEngineEnded(this));
             }
@@ -859,7 +857,7 @@ public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener 
 
         void addSubtitles(String lang, @NonNull List<Subtitles.Text> subs) {
             if (subs.isEmpty()) return;
-            App.get().run(() -> {
+            my.app.utils.app.App.get().run(() -> {
                 if (subStream == null) subStream = new Subtitles.Stream();
                 var added = subStream.add(subs);
                 if (transLang == null) return;
@@ -936,7 +934,7 @@ public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener 
                         translated.add(new Subtitles.Text(t.getTranslation(), t.getTime(), t.getDuration()));
                     }
                 }
-                App.get().run(() -> {
+                my.app.utils.app.App.get().run(() -> {
                     if (!targetLang.equals(transLang)) return;
                     if (subTransStream == null) subTransStream = new Subtitles.Stream();
                     subTransStream.add(translated);
@@ -955,7 +953,7 @@ public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener 
                     if (r == null) return;
                     t.setTranslation(r.trim());
                     var translated = new Subtitles.Text(t.getTranslation(), t.getTime(), t.getDuration());
-                    App.get().run(() -> {
+                    my.app.utils.app.App.get().run(() -> {
                         if (!targetLang.equals(transLang)) return;
                         if (subTransStream == null) subTransStream = new Subtitles.Stream();
                         subTransStream.add(List.of(translated));
