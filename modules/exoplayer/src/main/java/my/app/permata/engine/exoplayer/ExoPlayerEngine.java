@@ -258,7 +258,6 @@ DefaultExtractorsFactory extractorsFactory = new DefaultExtractorsFactory();
 DefaultLivePlaybackSpeedControl liveSpeedControl = new DefaultLivePlaybackSpeedControl.Builder()
         .setFallbackMinPlaybackSpeed(0.85f)
         .setFallbackMaxPlaybackSpeed(1.15f)
-        .setTargetLiveOffsetOverrideMs(5000L) // Safe long-literal explicit target live offset mapping
         .build();
 
         this.player = new ExoPlayer.Builder(appCtx, renderersFactory)
