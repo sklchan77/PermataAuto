@@ -148,7 +148,7 @@ public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener 
                 httpDsFactory,
                 dataSpec -> {
                     String scheme = dataSpec.uri.getScheme();
-                    if ("p2p".equalsIgnoreCase(scheme) || "p3p".equalsIgnoreCase(scheme)) {
+                    if (scheme != null && ("p2p".equalsIgnoreCase(scheme) || "p3p".equalsIgnoreCase(scheme))) {
                         Uri localProxyUri = Uri.parse("http://127.0.0.1:8080/stream?url=" + Uri.encode(dataSpec.uri.toString()));
                         return dataSpec.withUri(localProxyUri);
                     }
@@ -188,24 +188,24 @@ public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener 
                 return super.getRetryDelayMsFor(loadErrorInfo);
             }
 
-@Override
-public int getMinimumLoadableRetryCount(int dataType) {
-    if (dataType == C.DATA_TYPE_MANIFEST) {
-        if (hasSuccessfullyRendered) {
-            return Integer.MAX_VALUE;
-        }
-        return 3;
-    }
-    return dataType == C.DATA_TYPE_MEDIA ? Integer.MAX_VALUE : super.getMinimumLoadableRetryCount(dataType);
-}
+            @Override
+            public int getMinimumLoadableRetryCount(int dataType) {
+                if (dataType == C.DATA_TYPE_MANIFEST) {
+                    if (hasSuccessfullyRendered) {
+                        return Integer.MAX_VALUE;
+                    }
+                    return 3;
+                }
+                return dataType == C.DATA_TYPE_MEDIA ? Integer.MAX_VALUE : super.getMinimumLoadableRetryCount(dataType);
+            }
         };
-        DefaultExtractorsFactory extractorsFactory = new DefaultExtractorsFactory()
-                .setTsExtractorFlags(DefaultTsPayloadReaderFactory.FLAG_DETECT_ACCESS_UNITS | DefaultTsPayloadReaderFactory.FLAG_ALLOW_NON_IDR_KEYFRAMES);
+
+DefaultExtractorsFactory extractorsFactory = new DefaultExtractorsFactory();
+
 
         this.mediaSourceFactory = new DefaultMediaSourceFactory(appCtx, extractorsFactory)
                 .setDataSourceFactory(dsFactory)
                 .setLoadErrorHandlingPolicy(customErrorPolicy);
-
         DefaultRenderersFactory renderersFactory = new DefaultRenderersFactory(appCtx) {
             @Override
             protected void buildVideoRenderers(
@@ -233,26 +233,7 @@ public int getMinimumLoadableRetryCount(int dataType) {
                 sink.setListener(new AudioSink.Listener() {
                     @Override
                     public void onAudioSessionIdChanged(int audioSessionId) {
-                        synchronized (engineLock) {
-                            if (audioEffects != null) {
-                                audioEffects.release();
-                            }
-                            audioEffects = AudioEffects.create(appCtx, 1, audioSessionId);
-                            Log.i("ExoPlayerEngine", "Audio Effects pipeline re-anchored successfully to audio session: " + audioSessionId);
-                            
-                            final PlayableItem currentSrc = source;
-                            if (currentSrc != null) {
-                                final long currentGeneration = activeStreamId.get();
-                                asyncIoExecutor.execute(() -> {
-                                    if (currentGeneration != activeStreamId.get()) return;
-                                    AudioEffects fx = getAudioEffects();
-                                    if (fx != null) {
-                                        String channelIdentifier = "exo_file_" + currentSrc.getLocation().hashCode();
-                                        fx.loadAndApplyPersistedSettingsForChannel(my.app.utils.app.App.get(), channelIdentifier);
-                                    }
-                                });
-                            }
-                        }
+                        handleAudioSessionInitialization(audioSessionId);
                     }
 
                     @Override
@@ -275,8 +256,10 @@ public int getMinimumLoadableRetryCount(int dataType) {
                 .build();
 
         DefaultLivePlaybackSpeedControl liveSpeedControl = new DefaultLivePlaybackSpeedControl.Builder()
-                .setFallbackMinPlaybackSpeed(0.95f)
-                .setFallbackMaxPlaybackSpeed(1.05f)
+                .setFallbackMinPlaybackSpeed(0.85f)
+                .setFallbackMaxPlaybackSpeed(1.15f)
+                .setMinPossibleLiveOffsetMs(500)
+                .setMaxPossibleLiveOffsetMs(10000)
                 .build();
 
         this.player = new ExoPlayer.Builder(appCtx, renderersFactory)
@@ -295,23 +278,52 @@ public int getMinimumLoadableRetryCount(int dataType) {
                     Field f = player.getClass().getDeclaredField("internalPlayer");
                     f.setAccessible(true);
                     Object internal = requireNonNull(f.get(player));
-                    Field fh = internal.getClass().getDeclaredField("handler");
-                    fh.setAccessible(true);
-                    HandlerWrapper handler = (HandlerWrapper) requireNonNull(fh.get(internal));
+                    Field fq = internal.getClass().getDeclaredField("handler");
+                    fq.setAccessible(true);
+                    HandlerWrapper handler = (HandlerWrapper) requireNonNull(fq.get(internal));
                     
                     this.drainBuffer = () -> {
                         try {
                             handler.sendEmptyMessage(2);
                         } catch (Exception err) {
-                            Log.w(err);
+                            Log.w("ExoPlayerEngine: Reflection internal pipeline handling anomaly detected.", err);
                         }
                     };
                 } catch (Exception err) {
-                    Log.w(err, "Failed establishing internal player hooks.");
+                    Log.w("ExoPlayerEngine: Reflection context failed setting up internal controller targets.", err);
                 }
             }
         });
     }
+    private void handleAudioSessionInitialization(int audioSessionId) {
+        synchronized (engineLock) {
+            if (audioSessionId == C.AUDIO_SESSION_ID_UNSET || audioSessionId == 0) return;
+            if (audioEffects != null) {
+                audioEffects.release();
+            }
+            audioEffects = AudioEffects.create(appCtx, 1, audioSessionId);
+            Log.i("ExoPlayerEngine", "Audio Effects pipeline re-anchored successfully to audio session: " + audioSessionId);
+            
+            final PlayableItem currentSrc = source;
+            if (currentSrc != null) {
+                final long currentGeneration = activeStreamId.get();
+                asyncIoExecutor.execute(() -> {
+                    if (currentGeneration != activeStreamId.get()) return;
+                    AudioEffects fx = getAudioEffects();
+                    if (fx != null) {
+                        String channelIdentifier = "exo_file_" + currentSrc.getLocation().hashCode();
+                        fx.loadAndApplyPersistedSettingsForChannel(my.app.utils.app.App.get(), channelIdentifier);
+                    }
+                });
+            }
+        }
+    }
+
+    @Override
+    public void onAudioSessionIdChanged(int audioSessionId) {
+        handleAudioSessionInitialization(audioSessionId);
+    }
+
     private void universallyResolveAndPrepare(@NonNull PlayableItem sourceItem, @NonNull Uri uri, final long generation) {
         if (generation != activeStreamId.get()) return;
 
@@ -324,36 +336,30 @@ public int getMinimumLoadableRetryCount(int dataType) {
 
         Log.d("ExoPlayerEngine", "Universal Route Matrix checking protocol scheme: [" + scheme + "]");
 
+        if (scheme.equals("p2p") || scheme.equals("p3p")) {
+            applyMediaSource(sourceItem, uri, androidx.media3.common.MimeTypes.APPLICATION_M3U8);
+            return;
+        }
+        if (scheme.equals("file") || scheme.equals("content")) {
+            if (path.contains(".m3u8")) {
+                applyMediaSource(sourceItem, uri, null);
+            } else if (path.contains(".mpd")) {
+                applyMediaSource(sourceItem, uri, androidx.media3.common.MimeTypes.APPLICATION_MPD);
+            } else {
+                applyMediaSource(sourceItem, uri, null);
+            }
+            return;
+        }
 
-// LOCATE THIS INSIDE YOUR universallyResolveAndPrepare METHOD:
+        if (scheme.equals("rtsp") || scheme.equals("rtmp")) {
+            applyMediaSource(sourceItem, uri, androidx.media3.common.MimeTypes.APPLICATION_RTSP);
+            return;
+        }
 
-if (scheme.equals("p2p") || scheme.equals("p3p")) {
-    // Keep this as M3U8 if your local P2P proxy strictly transforms chunks to clean HLS format
-    applyMediaSource(sourceItem, uri, androidx.media3.common.MimeTypes.APPLICATION_M3U8);
-    return;
-}
-if (scheme.equals("file") || scheme.equals("content")) {
-    if (path.contains(".m3u8")) {
-        // FIX: Change to null to let the multi-extractor pick the file type safely
-        applyMediaSource(sourceItem, uri, null);
-    } else if (path.contains(".mpd")) {
-        applyMediaSource(sourceItem, uri, androidx.media3.common.MimeTypes.APPLICATION_MPD);
-    } else {
-        applyMediaSource(sourceItem, uri, null);
-    }
-    return;
-}
-
-if (scheme.equals("rtsp") || scheme.equals("rtmp")) {
-    applyMediaSource(sourceItem, uri, androidx.media3.common.MimeTypes.APPLICATION_RTSP);
-    return;
-}
-
-if (path.contains(".m3u8") || urlString.contains("format=m3u8") || urlString.contains("type=m3u8") || urlString.contains(".ts")) {
-    // FIX: Change to null so that live broadcast streams use flexible adaptive sniffing
-    applyMediaSource(sourceItem, uri, null);
-    return;
-}
+        if (path.contains(".m3u8") || urlString.contains("format=m3u8") || urlString.contains("type=m3u8") || urlString.contains(".ts")) {
+            applyMediaSource(sourceItem, uri, null);
+            return;
+        }
         if (path.contains(".mpd") || urlString.contains("format=mpd")) {
             applyMediaSource(sourceItem, uri, androidx.media3.common.MimeTypes.APPLICATION_MPD);
             return;
@@ -386,36 +392,34 @@ if (path.contains(".m3u8") || urlString.contains("format=m3u8") || urlString.con
                     conn.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 10; TV) AppleWebKit/537.36");
                 }
 
-String contentTypeHeader = conn.getContentType();
-if (contentTypeHeader != null) {
-String contentType = contentTypeHeader.toLowerCase().trim();
-if (contentType.contains("mpegurl") || contentType.contains("apple.mpegurl") || 
-    contentType.contains("mpeg.url") || contentType.contains("application/vnd.apple.mpegurl") ||
-    contentType.contains("application/x-mpegurl")) {
-    // CHANGE THIS TO NULL: Tells ExoPlayer to stream HLS flexibly without forcing strict container requirements
-    inferredMimeType = null;
-} else if (contentType.contains("dash+xml") || contentType.contains("application/dash+xml")) {
-    inferredMimeType = androidx.media3.common.MimeTypes.APPLICATION_MPD;
-} else if (contentType.contains("video/mp2t") || contentType.contains("video/mpeg")) {
-    // CHANGE THIS TO NULL: Keeps raw TS broadcast streams from crashing on startup
-    inferredMimeType = null;
-}
-}
+                String contentTypeHeader = conn.getContentType();
+                if (contentTypeHeader != null) {
+                    String contentType = contentTypeHeader.toLowerCase().trim();
+                    if (contentType.contains("mpegurl") || contentType.contains("apple.mpegurl") || 
+                        contentType.contains("mpeg.url") || contentType.contains("application/vnd.apple.mpegurl") ||
+                        contentType.contains("application/x-mpegurl")) {
+                        inferredMimeType = null;
+                    } else if (contentType.contains("dash+xml") || contentType.contains("application/dash+xml")) {
+                        inferredMimeType = androidx.media3.common.MimeTypes.APPLICATION_MPD;
+                    } else if (contentType.contains("video/mp2t") || contentType.contains("video/mpeg")) {
+                        inferredMimeType = null;
+                    }
+                }
             } catch (Exception e) {
-                Log.w("ExoPlayerEngine", "Network sniffing encountered an issue: " + e.getMessage() + ". Launching fallback port scans.");
+                Log.w("ExoPlayerEngine: Network sniffer connection parsing operation failed.", e);
             } finally {
                 if (conn != null) {
                     try { conn.disconnect(); } catch (Exception ignored) {}
                 }
             }
-if (inferredMimeType == null) {
-    int port = uri.getPort();
-    if (urlString.contains("/live/") || urlString.contains("/stream/") || urlString.contains("playlist") || urlString.contains("get.php") 
-        || port == 8000 || port == 8080 || port == 8880 || port == 3999 || port == 9000) {
-        // FIX: Change from M3U8 to null so the port scanner fallback also uses flexible sniffing
-        inferredMimeType = null; 
-    }
-}
+            if (inferredMimeType == null) {
+                int port = uri.getPort();
+                if (urlString.contains("/live/") || urlString.contains("/stream/") || urlString.contains("playlist") || urlString.contains("get.php") 
+                    || port == 8000 || port == 8080 || port == 8880 || port == 3999 || port == 9000) {
+                    inferredMimeType = null; 
+                }
+            }
+
             if (generation != activeStreamId.get()) return;
 
             final String finalMime = inferredMimeType;
@@ -506,7 +510,6 @@ if (inferredMimeType == null) {
     protected FutureSupplier<Long> getSubtitlePosition() {
         return completed(pos());
     }
-
     private long pos() {
         synchronized (engineLock) {
             if (source == null || player == null) return 0L;
@@ -521,6 +524,7 @@ if (inferredMimeType == null) {
             return Math.max(offsetPos, 0L);
         }
     }
+
     @Override
     protected long subSchedulerClock() {
         return pos();
@@ -576,7 +580,6 @@ if (inferredMimeType == null) {
             }
         }
     }
-
     @Override
     public float getVideoWidth() {
         synchronized (engineLock) {
@@ -624,6 +627,7 @@ if (inferredMimeType == null) {
             }
         }
     }
+
     @Nullable
     @Override
     public AudioStreamInfo getCurrentAudioStreamInfo() {
@@ -647,7 +651,6 @@ if (inferredMimeType == null) {
             }
         }
     }
-
     @Override
     public void setCurrentAudioStream(@Nullable AudioStreamInfo info) {
         if (info == null) return;
@@ -780,6 +783,10 @@ if (inferredMimeType == null) {
                     if (off > 0) player.seekTo(off);
                     accessor.setSubGenTimeOffset(this);
                     Optional.ofNullable(listener).ifPresent(l -> l.onEnginePrepared(this));
+
+                    if (listener instanceof MediaSessionCallback) {
+                         ((MediaSessionCallback) listener).onPlaybackParametersChanged(player.getPlaybackParameters());
+                    }
 
                     var prefs = source.getPrefs();
                     MediaEngine.selectMediaStream(
@@ -1033,7 +1040,6 @@ if (inferredMimeType == null) {
             return new SubGrid(m);
         }
     }
-
     private static class PendingLoadAudioProcessor implements androidx.media3.common.audio.AudioProcessor {
         private final Accessor accessor;
         private androidx.media3.common.audio.AudioProcessor.AudioFormat inputAudioFormat;
@@ -1049,7 +1055,6 @@ if (inferredMimeType == null) {
             this.buffer = EMPTY_BUFFER;
             this.outputBuffer = EMPTY_BUFFER;
         }
-
         @Override
         public androidx.media3.common.audio.AudioProcessor.AudioFormat configure(
                 androidx.media3.common.audio.AudioProcessor.AudioFormat inputAudioFormat)
@@ -1063,6 +1068,7 @@ if (inferredMimeType == null) {
         public boolean isActive() {
             return inputAudioFormat != androidx.media3.common.audio.AudioProcessor.AudioFormat.NOT_SET;
         }
+
         @Override
         public void queueInput(java.nio.ByteBuffer inputBuffer) {
             int remaining = inputBuffer.remaining();
@@ -1078,7 +1084,7 @@ if (inferredMimeType == null) {
             buffer.flip();
             outputBuffer = buffer;
 
-            if (remaining > 0 && accessor != null) {
+            if (remaining > 0 && accessor != null && hasSuccessfullyRendered) {
                 my.app.utils.app.App.get().run(accessor::drainBuffer);
             }
         }
@@ -1114,7 +1120,6 @@ if (inferredMimeType == null) {
             outputAudioFormat = androidx.media3.common.audio.AudioProcessor.AudioFormat.NOT_SET;
         }
     }
-
     private void applyMediaSource(@NonNull PlayableItem sourceItem, @NonNull Uri uri, @androidx.annotation.Nullable String mimeType) {
         my.app.utils.app.App.get().run(() -> {
             synchronized (engineLock) {
