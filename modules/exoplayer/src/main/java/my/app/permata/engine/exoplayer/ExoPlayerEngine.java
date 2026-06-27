@@ -255,12 +255,12 @@ DefaultExtractorsFactory extractorsFactory = new DefaultExtractorsFactory();
                 .setPrioritizeTimeOverSizeThresholds(true)
                 .build();
 
-        DefaultLivePlaybackSpeedControl liveSpeedControl = new DefaultLivePlaybackSpeedControl.Builder()
-                .setFallbackMinPlaybackSpeed(0.85f)
-                .setFallbackMaxPlaybackSpeed(1.15f)
-                .setMinPossibleLiveOffsetMs(500)
-                .setMaxPossibleLiveOffsetMs(10000)
-                .build();
+DefaultLivePlaybackSpeedControl liveSpeedControl = new DefaultLivePlaybackSpeedControl.Builder()
+        .setFallbackMinPlaybackSpeed(0.85f)
+        .setFallbackMaxPlaybackSpeed(1.15f)
+        .setFallbackLiveOffsetMs(5000) // Standard fallback tracking offset window anchor
+        .build();
+
 
         this.player = new ExoPlayer.Builder(appCtx, renderersFactory)
                 .setMediaSourceFactory(mediaSourceFactory)
@@ -784,10 +784,6 @@ DefaultExtractorsFactory extractorsFactory = new DefaultExtractorsFactory();
                     accessor.setSubGenTimeOffset(this);
                     Optional.ofNullable(listener).ifPresent(l -> l.onEnginePrepared(this));
 
-                    if (listener instanceof MediaSessionCallback) {
-                         ((MediaSessionCallback) listener).onPlaybackParametersChanged(player.getPlaybackParameters());
-                    }
-
                     var prefs = source.getPrefs();
                     MediaEngine.selectMediaStream(
                             prefs::getAudioIdPref,
@@ -1084,8 +1080,9 @@ DefaultExtractorsFactory extractorsFactory = new DefaultExtractorsFactory();
             buffer.flip();
             outputBuffer = buffer;
 
-            if (remaining > 0 && accessor != null && hasSuccessfullyRendered) {
-                my.app.utils.app.App.get().run(accessor::drainBuffer);
+if (remaining > 0 && accessor != null && accessor.getSource() != null) {
+
+     my.app.utils.app.App.get().run(accessor::drainBuffer);
             }
         }
 
