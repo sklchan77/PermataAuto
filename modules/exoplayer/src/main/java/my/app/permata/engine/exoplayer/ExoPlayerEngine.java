@@ -135,6 +135,7 @@ public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener 
     private volatile Runnable drainBuffer;
 
     private final AtomicLong activeStreamId = new AtomicLong(0);
+
     public ExoPlayerEngine(@NonNull Context ctx, @NonNull Listener listener) {
         super(listener);
         this.appCtx = ctx.getApplicationContext();
@@ -190,7 +191,7 @@ public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener 
             @Override
             public int getMinimumLoadableRetryCount(int dataType) {
                 if (dataType == C.DATA_TYPE_MANIFEST) {
-                    return 3; 
+                    return 9; 
                 }
                 return dataType == C.DATA_TYPE_MEDIA ? Integer.MAX_VALUE : super.getMinimumLoadableRetryCount(dataType);
             }
@@ -213,9 +214,10 @@ public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener 
                 super.buildVideoRenderers(context, extensionRendererMode, mediaCodecSelector, 
                         enableDecoderFallback, eventHandler, eventListener, 5000L, out);
             }
+
             @Override
             protected AudioSink buildAudioSink(@NonNull Context context, boolean enableFloatOutput, boolean enableAudioTrackPlaybackParams) {
-                return new DefaultAudioSink.Builder(context)
+                DefaultAudioSink sink = new DefaultAudioSink.Builder(context)
                         .setAudioTrackBufferSizeProvider(new DefaultAudioTrackBufferSizeProvider.Builder()
                                 .setMaxPcmBufferDurationUs(5000_000)
                                 .setPcmBufferMultiplicationFactor(16)
@@ -224,8 +226,46 @@ public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener 
                         .setEnableAudioTrackPlaybackParams(true)
                         .setAudioProcessorChain(new DefaultAudioSink.DefaultAudioProcessorChain(audioProc))
                         .build();
+
+                sink.setListener(new AudioSink.Listener() {
+                    @Override
+                    public void onAudioSessionIdChanged(int audioSessionId) {
+                        synchronized (engineLock) {
+                            if (audioEffects != null) {
+                                audioEffects.release();
+                            }
+                            audioEffects = AudioEffects.create(appCtx, 1, audioSessionId);
+                            Log.i("ExoPlayerEngine", "Audio Effects pipeline re-anchored successfully to audio session: " + audioSessionId);
+                            
+                            final PlayableItem currentSrc = source;
+                            if (currentSrc != null) {
+                                final long currentGeneration = activeStreamId.get();
+                                asyncIoExecutor.execute(() -> {
+                                    if (currentGeneration != activeStreamId.get()) return;
+                                    AudioEffects fx = getAudioEffects();
+                                    if (fx != null) {
+                                        String channelIdentifier = "exo_file_" + currentSrc.getLocation().hashCode();
+                                        fx.loadAndApplyPersistedSettingsForChannel(my.app.utils.app.App.get(), channelIdentifier);
+                                    }
+                                });
+                            }
+                        }
+                    }
+
+                    @Override
+                    public void onPositionDiscontinuity() {}
+                    @Override
+                    public void onUnderrun(int bufferSize, long bufferSizeMs, long elapsedSinceLastFeedMs) {}
+                    @Override
+                    public void onSkipSilenceEnabledChanged(boolean skipSilenceEnabled) {}
+                    @Override
+                    public void onAudioSinkError(@NonNull Exception audioSinkError) {}
+                });
+
+                return sink;
             }
         };
+
         DefaultLoadControl loadControl = new DefaultLoadControl.Builder()
                 .setBufferDurationsMs(15000, 50000, 2500, 5000)
                 .setPrioritizeTimeOverSizeThresholds(true)
@@ -235,6 +275,7 @@ public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener 
                 .setFallbackMinPlaybackSpeed(0.95f)
                 .setFallbackMaxPlaybackSpeed(1.05f)
                 .build();
+
         this.player = new ExoPlayer.Builder(appCtx, renderersFactory)
                 .setMediaSourceFactory(mediaSourceFactory)
                 .setLoadControl(loadControl)
@@ -243,7 +284,7 @@ public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener 
                 .build();
 
         this.player.addListener(this);
-        this.audioEffects = AudioEffects.create(ctx, 0, player.getAudioSessionId());
+
         asyncIoExecutor.execute(() -> {
             synchronized (engineLock) {
                 if (player == null) return;
@@ -280,29 +321,36 @@ public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener 
 
         Log.d("ExoPlayerEngine", "Universal Route Matrix checking protocol scheme: [" + scheme + "]");
 
-        if (scheme.equals("p2p") || scheme.equals("p3p")) {
-            applyMediaSource(sourceItem, uri, androidx.media3.common.MimeTypes.APPLICATION_M3U8);
-            return;
-        }
-        if (scheme.equals("file") || scheme.equals("content")) {
-            if (path.contains(".m3u8")) {
-                applyMediaSource(sourceItem, uri, androidx.media3.common.MimeTypes.APPLICATION_M3U8);
-            } else if (path.contains(".mpd")) {
-                applyMediaSource(sourceItem, uri, androidx.media3.common.MimeTypes.APPLICATION_MPD);
-            } else {
-                applyMediaSource(sourceItem, uri, null);
-            }
-            return;
-        }
 
-        if (scheme.equals("rtsp") || scheme.equals("rtmp")) {
-            applyMediaSource(sourceItem, uri, androidx.media3.common.MimeTypes.APPLICATION_RTSP);
-            return;
-        }
-        if (path.contains(".m3u8") || urlString.contains("format=m3u8") || urlString.contains("type=m3u8") || urlString.contains(".ts")) {
-            applyMediaSource(sourceItem, uri, androidx.media3.common.MimeTypes.APPLICATION_M3U8);
-            return;
-        }
+// LOCATE THIS INSIDE YOUR universallyResolveAndPrepare METHOD:
+
+if (scheme.equals("p2p") || scheme.equals("p3p")) {
+    // Keep this as M3U8 if your local P2P proxy strictly transforms chunks to clean HLS format
+    applyMediaSource(sourceItem, uri, androidx.media3.common.MimeTypes.APPLICATION_M3U8);
+    return;
+}
+if (scheme.equals("file") || scheme.equals("content")) {
+    if (path.contains(".m3u8")) {
+        // FIX: Change to null to let the multi-extractor pick the file type safely
+        applyMediaSource(sourceItem, uri, null);
+    } else if (path.contains(".mpd")) {
+        applyMediaSource(sourceItem, uri, androidx.media3.common.MimeTypes.APPLICATION_MPD);
+    } else {
+        applyMediaSource(sourceItem, uri, null);
+    }
+    return;
+}
+
+if (scheme.equals("rtsp") || scheme.equals("rtmp")) {
+    applyMediaSource(sourceItem, uri, androidx.media3.common.MimeTypes.APPLICATION_RTSP);
+    return;
+}
+
+if (path.contains(".m3u8") || urlString.contains("format=m3u8") || urlString.contains("type=m3u8") || urlString.contains(".ts")) {
+    // FIX: Change to null so that live broadcast streams use flexible adaptive sniffing
+    applyMediaSource(sourceItem, uri, null);
+    return;
+}
         if (path.contains(".mpd") || urlString.contains("format=mpd")) {
             applyMediaSource(sourceItem, uri, androidx.media3.common.MimeTypes.APPLICATION_MPD);
             return;
@@ -334,19 +382,22 @@ public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener 
                     conn.setReadTimeout(2000);
                     conn.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 10; TV) AppleWebKit/537.36");
                 }
-                String contentTypeHeader = conn.getContentType();
-                if (contentTypeHeader != null) {
-                    String[] parts = contentTypeHeader.toLowerCase().split(";");
-                    String contentType = parts.length > 0 ? parts[0].trim() : "";
 
-                    if (contentType.contains("mpegurl") || contentType.contains("apple.mpegurl") || contentType.contains("mpeg.url") || contentType.contains("application/vnd.apple.mpegurl")) {
-                        inferredMimeType = androidx.media3.common.MimeTypes.APPLICATION_M3U8;
-                    } else if (contentType.contains("dash+xml")) {
-                        inferredMimeType = androidx.media3.common.MimeTypes.APPLICATION_MPD;
-                    } else if (contentType.contains("video/mp2t") || contentType.contains("video/mpeg")) {
-                        inferredMimeType = androidx.media3.common.MimeTypes.APPLICATION_M3U8;
-                    }
-                }
+String contentTypeHeader = conn.getContentType();
+if (contentTypeHeader != null) {
+String contentType = contentTypeHeader.toLowerCase().trim();
+if (contentType.contains("mpegurl") || contentType.contains("apple.mpegurl") || 
+    contentType.contains("mpeg.url") || contentType.contains("application/vnd.apple.mpegurl") ||
+    contentType.contains("application/x-mpegurl")) {
+    // CHANGE THIS TO NULL: Tells ExoPlayer to stream HLS flexibly without forcing strict container requirements
+    inferredMimeType = null;
+} else if (contentType.contains("dash+xml") || contentType.contains("application/dash+xml")) {
+    inferredMimeType = androidx.media3.common.MimeTypes.APPLICATION_MPD;
+} else if (contentType.contains("video/mp2t") || contentType.contains("video/mpeg")) {
+    // CHANGE THIS TO NULL: Keeps raw TS broadcast streams from crashing on startup
+    inferredMimeType = null;
+}
+}
             } catch (Exception e) {
                 Log.w("ExoPlayerEngine", "Network sniffing encountered an issue: " + e.getMessage() + ". Launching fallback port scans.");
             } finally {
@@ -354,14 +405,14 @@ public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener 
                     try { conn.disconnect(); } catch (Exception ignored) {}
                 }
             }
-            if (inferredMimeType == null) {
-                int port = uri.getPort();
-                if (urlString.contains("/live/") || urlString.contains("/stream/") || urlString.contains("playlist") || urlString.contains("get.php") 
-                    || port == 8000 || port == 8080 || port == 8880 || port == 3999 || port == 9000) {
-                    inferredMimeType = androidx.media3.common.MimeTypes.APPLICATION_M3U8;
-                }
-            }
-
+if (inferredMimeType == null) {
+    int port = uri.getPort();
+    if (urlString.contains("/live/") || urlString.contains("/stream/") || urlString.contains("playlist") || urlString.contains("get.php") 
+        || port == 8000 || port == 8080 || port == 8880 || port == 3999 || port == 9000) {
+        // FIX: Change from M3U8 to null so the port scanner fallback also uses flexible sniffing
+        inferredMimeType = null; 
+    }
+}
             if (generation != activeStreamId.get()) return;
 
             final String finalMime = inferredMimeType;
@@ -391,19 +442,10 @@ public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener 
             Uri uri = source.getLocation();
             this.isHls = Util.inferContentType(uri) == C.CONTENT_TYPE_HLS;
 
-            final int uriHash = uri.hashCode();
-            asyncIoExecutor.execute(() -> {
-                if (currentGeneration != activeStreamId.get()) return;
-                AudioEffects fx = getAudioEffects();
-                if (fx != null) {
-                    String channelIdentifier = "exo_file_" + uriHash;
-                    fx.loadAndApplyPersistedSettingsForChannel(my.app.utils.app.App.get(), channelIdentifier);
-                }
-            });
-
             universallyResolveAndPrepare(source, uri, currentGeneration);
         }
     }
+
     @Override
     public void start() {
         synchronized (engineLock) {
@@ -426,6 +468,7 @@ public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener 
             accessor.sourceChanged(null);
         }
     }
+
     @Override
     public void pause() {
         synchronized (engineLock) {
@@ -449,6 +492,7 @@ public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener 
             return completed(dur < 0 ? 0L : dur);
         }
     }
+
     @Override
     public FutureSupplier<Long> getPosition() {
         syncSub(false);
@@ -493,6 +537,7 @@ public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener 
             syncSub(true);
         }
     }
+
     @Override
     public FutureSupplier<Float> getSpeed() {
         return completed(speed());
@@ -508,6 +553,7 @@ public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener 
             }
         }
     }
+
     @Override
     public void setSpeed(float speed) {
         synchronized (engineLock) {
@@ -527,6 +573,7 @@ public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener 
             }
         }
     }
+
     @Override
     public float getVideoWidth() {
         synchronized (engineLock) {
@@ -552,6 +599,7 @@ public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener 
             return audioEffects;
         }
     }
+
     @Override
     public List<AudioStreamInfo> getAudioStreamInfo() {
         synchronized (engineLock) {
@@ -596,6 +644,7 @@ public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener 
             }
         }
     }
+
     @Override
     public void setCurrentAudioStream(@Nullable AudioStreamInfo info) {
         if (info == null) return;
@@ -633,6 +682,7 @@ public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener 
             }
         }
     }
+
     @NonNull
     @Override
     public FutureSupplier<Void> selectSubtitleStream() {
@@ -660,6 +710,7 @@ public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener 
         setCurrentSubtitleStream(new SubtitleStreamInfo.Generated(ps.getStringPref(SubGenAddon.LANG)));
         return super.getCurrentSubtitles();
     }
+
     @Override
     public FutureSupplier<List<SubtitleStreamInfo>> getSubtitleStreamInfo() {
         return super.getSubtitleStreamInfo().main().map(subFiles -> {
@@ -693,6 +744,7 @@ public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener 
             audioEffects = null;
         }
     }
+
     @Override
     public void mute(@NonNull Context ctx) {
         synchronized (engineLock) {
@@ -745,11 +797,11 @@ public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener 
             }
         }
     }
+
     @Override
     public void onVideoSizeChanged(@NonNull VideoSize videoSize) {
         Optional.ofNullable(listener).ifPresent(l -> l.onVideoSizeChanged(this, videoSize.width, videoSize.height));
     }
-
     @Override
     public void onPlayerError(@NonNull PlaybackException error) {
         final long currentGeneration = activeStreamId.get();
@@ -839,6 +891,7 @@ public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener 
         public long getSubGenTimeOffset() {
             return subGenTimeOffset;
         }
+
         private void sourceChanged(@Nullable PlayableItem src) {
             if (subStream != null) subStream.clear();
             if (subTransStream != null) subTransStream.clear();
@@ -854,7 +907,6 @@ public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener 
                 translator = completedNull();
             }
         }
-
         void addSubtitles(String lang, @NonNull List<Subtitles.Text> subs) {
             if (subs.isEmpty()) return;
             my.app.utils.app.App.get().run(() -> {
@@ -882,6 +934,7 @@ public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener 
                 });
             });
         }
+
         private void batchTranslate(Translator tr, String targetLang, List<Subtitles.Text> subs) {
             assertMainThread();
             boolean prependPrev = false;
@@ -941,7 +994,6 @@ public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener 
                 });
             });
         }
-
         private void perItemTranslate(Translator tr, String targetLang, List<Subtitles.Text> subs) {
             for (var t : subs) {
                 if (t == null) continue;
@@ -978,6 +1030,7 @@ public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener 
             return new SubGrid(m);
         }
     }
+
     private static class PendingLoadAudioProcessor implements androidx.media3.common.audio.AudioProcessor {
         private final Accessor accessor;
         private androidx.media3.common.audio.AudioProcessor.AudioFormat inputAudioFormat;
@@ -1007,7 +1060,6 @@ public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener 
         public boolean isActive() {
             return inputAudioFormat != androidx.media3.common.audio.AudioProcessor.AudioFormat.NOT_SET;
         }
-
         @Override
         public void queueInput(java.nio.ByteBuffer inputBuffer) {
             int remaining = inputBuffer.remaining();
