@@ -200,9 +200,10 @@ public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener 
             }
         };
 
-        // MASTER COMPATIBILITY PATCH: Restores keyframe tracking flexibility for streamingfast feeds without breaking regular tracks
+        // MASTER COMPATIBILITY PATCH: Restores access-unit track re-binding to prevent sample queue allocation crashes
         DefaultExtractorsFactory extractorsFactory = new DefaultExtractorsFactory()
-                .setTsExtractorFlags(DefaultTsPayloadReaderFactory.FLAG_ALLOW_NON_IDR_KEYFRAMES);
+                .setTsExtractorFlags(DefaultTsPayloadReaderFactory.FLAG_DETECT_ACCESS_UNITS 
+                        | DefaultTsPayloadReaderFactory.FLAG_ALLOW_NON_IDR_KEYFRAMES);
 
         this.mediaSourceFactory = new DefaultMediaSourceFactory(appCtx, extractorsFactory)
 
@@ -356,7 +357,11 @@ DefaultLivePlaybackSpeedControl liveSpeedControl = new DefaultLivePlaybackSpeedC
             return;
         }
 
-        if (path.contains(".m3u8") || urlString.contains("format=m3u8") || urlString.contains("type=m3u8") || urlString.contains(".ts")) {
+    // UNIVERSAL ROUTE MATRIX: Forces naked IPTV folder feeds straight into HLS mode if they lack progressive file extensions
+
+    boolean isNakedLiveFeed = !path.isEmpty() && !path.contains(".") && path.split("/").length >= 2;
+    if (path.contains(".m3u8") || urlString.contains("format=m3u8") || urlString.contains("type=m3u8") || urlString.contains(".ts") || isNakedLiveFeed) {
+
             applyMediaSource(sourceItem, uri, null);
             return;
         }
