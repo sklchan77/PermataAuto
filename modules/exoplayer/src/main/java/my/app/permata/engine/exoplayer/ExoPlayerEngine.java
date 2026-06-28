@@ -362,9 +362,12 @@ DefaultLivePlaybackSpeedControl liveSpeedControl = new DefaultLivePlaybackSpeedC
         }
 
     // UNIVERSAL ROUTE MATRIX: Forces naked IPTV folder feeds straight into HLS mode if they lack progressive file extensions
+    String cleanPath = path.contains("?") ? path.substring(0, path.indexOf('?')) : path;
+    String lastSegment = cleanPath.substring(cleanPath.lastIndexOf('/') + 1);
+    boolean isNakedLiveFeed = !cleanPath.isEmpty() && !lastSegment.contains(".") && cleanPath.split("/").length >= 2;
 
-    boolean isNakedLiveFeed = !path.isEmpty() && !path.contains(".") && path.split("/").length >= 2;
     if (path.contains(".m3u8") || urlString.contains("format=m3u8") || urlString.contains("type=m3u8") || urlString.contains(".ts") || isNakedLiveFeed) {
+
 
             applyMediaSource(sourceItem, uri, null);
             return;
@@ -407,7 +410,14 @@ DefaultLivePlaybackSpeedControl liveSpeedControl = new DefaultLivePlaybackSpeedC
             if (responseCode != 200) {
                 try { conn.disconnect(); } catch (Exception ignored) {}
 
+                if (generation != activeStreamId.get()) return;
+
                 conn = (java.net.HttpURLConnection) url.openConnection();
+                
+                if (generation != activeStreamId.get()) {
+                    try { conn.disconnect(); } catch (Exception ignored) {}
+                    return;
+                }
                 conn.setRequestMethod("GET");
                 conn.setConnectTimeout(2000);
                 conn.setReadTimeout(2000);
@@ -1162,9 +1172,17 @@ DefaultLivePlaybackSpeedControl liveSpeedControl = new DefaultLivePlaybackSpeedC
                     mediaItemBuilder.setMimeType(mimeType);
                 }
 
-             androidx.media3.common.MediaItem mediaItem = mediaItemBuilder.build();
-            this.player.setMediaItem(mediaItem);
-        }
-    });
-}
+                androidx.media3.common.MediaItem mediaItem = mediaItemBuilder.build();
+                
+                // Connect your custom configured factory parameters
+                androidx.media3.exoplayer.source.MediaSource mediaSource = 
+                        this.mediaSourceFactory.createMediaSource(mediaItem);
+                
+                this.player.setMediaSource(mediaSource);
+                
+                // Signal the player pipeline to start manifest parsing and buffering
+                this.player.prepare();
+            }
+        });
+    }
 }
