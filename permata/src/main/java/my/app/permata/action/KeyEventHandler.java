@@ -43,46 +43,50 @@ public class KeyEventHandler {
 		// --- START OF BROWSER SCROLL OVERRIDE ---
 		if (activity != null) {
 			var manager = activity.getSupportFragmentManager();
-			var resources = activity.getActivity() != null ? activity.getActivity().getResources() : null;
-			
-			if (manager != null && resources != null) {
-				// 1. Dynamically find the integer ID for the web browser fragment layout element
-				int fragmentId = resources.getIdentifier(
-						"web_browser_fragment", "id", "my.app.permata.addon.web");
+			if (manager != null && manager.getFragments() != null && !manager.getFragments().isEmpty()) {
+				// Use the context of any active, attached UI fragment currently managed by the screen context
+				var activeContext = manager.getFragments().get(0).getContext();
+				var resources = activeContext != null ? activeContext.getResources() : null;
 
-				// 2. Fall back to your main app namespace if modules are combined
-				if (fragmentId == 0) {
-					fragmentId = resources.getIdentifier(
-							"web_browser_fragment", "id", "my.app.permata");
-				}
+				if (resources != null) {
+					// 1. Dynamically find the integer ID for the web browser fragment layout element
+					int fragmentId = resources.getIdentifier(
+							"web_browser_fragment", "id", "my.app.permata.addon.web");
 
-				if (fragmentId != 0) {
-					var webFrag = manager.findFragmentById(fragmentId);
-					if (webFrag != null && webFrag.isVisible()) {
-						var code = event.getKeyCode();
-						if (event.getAction() == ACTION_DOWN) {
-							// 3. Dynamically find the integer ID for the WebView element
-							int webViewId = resources.getIdentifier(
-									"browserWebView", "id", "my.app.permata.addon.web");
-							if (webViewId == 0) {
-								webViewId = resources.getIdentifier(
-										"browserWebView", "id", "my.app.permata");
-							}
+					// 2. Fall back to your main app namespace if modules are combined
+					if (fragmentId == 0) {
+						fragmentId = resources.getIdentifier(
+								"web_browser_fragment", "id", "my.app.permata");
+					}
 
-							if (code == KeyEvent.KEYCODE_MEDIA_NEXT) {
-								var view = webFrag.getView();
-								var webView = (view != null && webViewId != 0) ? view.findViewById(webViewId) : null;
-								if (webView instanceof android.webkit.WebView v) {
-									v.evaluateJavascript("window.scrollBy({ top: 350, behavior: 'smooth' });", null);
+					if (fragmentId != 0) {
+						var webFrag = manager.findFragmentById(fragmentId);
+						if (webFrag != null && webFrag.isVisible()) {
+							var code = event.getKeyCode();
+							if (event.getAction() == ACTION_DOWN) {
+								// 3. Dynamically find the integer ID for the WebView element
+								int webViewId = resources.getIdentifier(
+										"browserWebView", "id", "my.app.permata.addon.web");
+								if (webViewId == 0) {
+									webViewId = resources.getIdentifier(
+											"browserWebView", "id", "my.app.permata");
 								}
-								return true; // Consume event: Stop track switching
-							} else if (code == KeyEvent.KEYCODE_MEDIA_PREVIOUS) {
-								var view = webFrag.getView();
-								var webView = (view != null && webViewId != 0) ? view.findViewById(webViewId) : null;
-								if (webView instanceof android.webkit.WebView v) {
-									v.evaluateJavascript("window.scrollBy({ top: -350, behavior: 'smooth' });", null);
+
+								if (code == KeyEvent.KEYCODE_MEDIA_NEXT) {
+									var view = webFrag.getView();
+									var webView = (view != null && webViewId != 0) ? view.findViewById(webViewId) : null;
+									if (webView instanceof android.webkit.WebView v) {
+										v.evaluateJavascript("window.scrollBy({ top: 350, behavior: 'smooth' });", null);
+									}
+									return true; // Consume event: Stop track switching
+								} else if (code == KeyEvent.KEYCODE_MEDIA_PREVIOUS) {
+									var view = webFrag.getView();
+									var webView = (view != null && webViewId != 0) ? view.findViewById(webViewId) : null;
+									if (webView instanceof android.webkit.WebView v) {
+										v.evaluateJavascript("window.scrollBy({ top: -350, behavior: 'smooth' });", null);
+									}
+									return true; // Consume event: Stop track switching
 								}
-								return true; // Consume event: Stop track switching
 							}
 						}
 					}
@@ -90,6 +94,7 @@ public class KeyEventHandler {
 			}
 		}
 		// --- END OF BROWSER SCROLL OVERRIDE ---
+
 
 
 		if (event.isCanceled()) {
