@@ -366,11 +366,18 @@ DefaultLivePlaybackSpeedControl liveSpeedControl = new DefaultLivePlaybackSpeedC
     String lastSegment = cleanPath.substring(cleanPath.lastIndexOf('/') + 1);
     boolean isNakedLiveFeed = !cleanPath.isEmpty() && !lastSegment.contains(".") && cleanPath.split("/").length >= 2;
 
+    // ENHANCED ROUTE MATRIX: Captures alternative query strings and flat port addresses
     boolean isFlatPortStream = path.equals("") || path.equals("/");
-    boolean hasLiveQueryToken = urlString.contains("m3u8") || urlString.contains("=ts") || urlString.contains("stream");
+    boolean hasLiveQueryToken = urlString.contains("m3u8") || urlString.contains("=ts") || urlString.contains("stream") || urlString.contains("output=");
 
     if (path.contains(".m3u8") || path.contains(".ts") || hasLiveQueryToken || isNakedLiveFeed || isFlatPortStream) {
-        applyMediaSource(sourceItem, uri, null);
+        
+        String inferredMimeType = null;
+        if (isFlatPortStream || urlString.contains("m3u8") || !path.contains(".")) {
+            inferredMimeType = androidx.media3.common.MimeTypes.APPLICATION_M3U8;
+        }
+
+        applyMediaSource(sourceItem, uri, inferredMimeType);
         return;
     }
 
