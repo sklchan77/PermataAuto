@@ -75,6 +75,34 @@ public class WebBrowserFragment extends MainActivityFragment
 		PermataChromeClient chromeClient = new PermataChromeClient(webView, fullScreenView);
 		webView.init(addon, webClient, chromeClient);
 		webView.loadUrl(addon.getLastUrl());
+
+	// --- START OF STEERING WHEEL SCROLL PATCH ---
+		// Enable focus tracking on the root view stack so it can handle vehicle key clicks
+		view.setFocusableInTouchMode(true);
+		view.requestFocus();
+
+		view.setOnKeyListener(new View.OnKeyListener() {
+			@Override
+			public boolean onKey(View v, int keyCode, android.view.KeyEvent event) {
+				// Only catch the action once when the physical wheel button is clicked down
+				if (event.getAction() == android.view.KeyEvent.ACTION_DOWN) {
+					switch (keyCode) {
+						case android.view.KeyEvent.KEYCODE_MEDIA_NEXT:
+							// Steering Next -> Smooth scroll webpage down by 350 pixels
+							webView.evaluateJavascript("window.scrollBy({ top: 350, behavior: 'smooth' });", null);
+							return true; // Return true to block track skipping on YouTube/TV playlists
+
+						case android.view.KeyEvent.KEYCODE_MEDIA_PREVIOUS:
+							// Steering Previous -> Smooth scroll webpage up by 350 pixels
+							webView.evaluateJavascript("window.scrollBy({ top: -350, behavior: 'smooth' });", null);
+							return true; // Return true to block track skipping on YouTube/TV playlists
+					}
+				}
+				return false; // Let all other buttons pass through naturally
+			}
+		});
+		// --- END OF STEERING WHEEL SCROLL PATCH ---
+
 		MainActivityDelegate.getActivityDelegate(ctx).onSuccess(this::registerListeners);
 	}
 
