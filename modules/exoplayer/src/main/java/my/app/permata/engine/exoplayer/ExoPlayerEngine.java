@@ -537,7 +537,6 @@ DefaultLivePlaybackSpeedControl liveSpeedControl = new DefaultLivePlaybackSpeedC
 
     @Override
     public FutureSupplier<Long> getPosition() {
-        syncSub(false);
         return completed(pos());
     }
 
@@ -1115,9 +1114,8 @@ DefaultLivePlaybackSpeedControl liveSpeedControl = new DefaultLivePlaybackSpeedC
             buffer.flip();
             outputBuffer = buffer;
 
-if (remaining > 0 && accessor != null && accessor.getSource() != null) {
-
-     my.app.utils.app.App.get().run(accessor::drainBuffer);
+            if (remaining >= 1024 && accessor != null && accessor.getSource() != null) {
+                 my.app.utils.app.App.get().run(accessor::drainBuffer);
             }
         }
 
@@ -1163,12 +1161,10 @@ if (remaining > 0 && accessor != null && accessor.getSource() != null) {
                 if (mimeType != null) {
                     mediaItemBuilder.setMimeType(mimeType);
                 }
-                
-                androidx.media3.common.MediaItem mediaItem = mediaItemBuilder.build();
-                
-                this.player.setMediaItem(mediaItem);
-                this.player.prepare(); 
-            }
-        });
-    }
+
+             androidx.media3.common.MediaItem mediaItem = mediaItemBuilder.build();
+            this.player.setMediaItem(mediaItem);
+        }
+    });
+}
 }
