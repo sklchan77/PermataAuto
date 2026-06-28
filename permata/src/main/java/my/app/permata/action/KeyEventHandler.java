@@ -39,6 +39,37 @@ public class KeyEventHandler {
 																				IntObjectFunction<KeyEvent, Boolean> defaultHandler) {
 		Log.i((activity == null) ? "Media: " : "Activity: ", event);
 
+
+		// --- START OF BROWSER SCROLL OVERRIDE ---
+		if (activity != null) {
+			var manager = activity.getSupportFragmentManager();
+			if (manager != null) {
+				var webFrag = manager.findFragmentById(my.app.permata.R.id.web_browser_fragment);
+				if (webFrag != null && webFrag.isVisible()) {
+					var code = event.getKeyCode();
+					if (event.getAction() == ACTION_DOWN) {
+						if (code == KeyEvent.KEYCODE_MEDIA_NEXT) {
+							var view = webFrag.getView();
+							var webView = view != null ? view.findViewById(my.app.permata.R.id.browserWebView) : null;
+							if (webView instanceof android.webkit.WebView v) {
+								v.evaluateJavascript("window.scrollBy({ top: 350, behavior: 'smooth' });", null);
+							}
+							return true; // Stop event from switching songs
+						} else if (code == KeyEvent.KEYCODE_MEDIA_PREVIOUS) {
+							var view = webFrag.getView();
+							var webView = view != null ? view.findViewById(my.app.permata.R.id.browserWebView) : null;
+							if (webView instanceof android.webkit.WebView v) {
+								v.evaluateJavascript("window.scrollBy({ top: -350, behavior: 'smooth' });", null);
+							}
+							return true; // Stop event from switching songs
+						}
+					}
+				}
+			}
+		}
+		// --- END OF BROWSER SCROLL OVERRIDE ---
+
+
 		if (event.isCanceled()) {
 			worker = null;
 			return defaultHandler.apply(event.getKeyCode(), event);
