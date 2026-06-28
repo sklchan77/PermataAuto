@@ -43,15 +43,17 @@ public class KeyEventHandler {
 		// --- START OF BROWSER SCROLL OVERRIDE ---
 		if (activity != null) {
 			var manager = activity.getSupportFragmentManager();
-			if (manager != null) {
+			var resources = activity.getActivity() != null ? activity.getActivity().getResources() : null;
+			
+			if (manager != null && resources != null) {
 				// 1. Dynamically find the integer ID for the web browser fragment layout element
-				int fragmentId = activity.getResources().getIdentifier(
+				int fragmentId = resources.getIdentifier(
 						"web_browser_fragment", "id", "my.app.permata.addon.web");
 
-				// 2. Fall back to your main namespace if modules share a namespace resource mapping
+				// 2. Fall back to your main app namespace if modules are combined
 				if (fragmentId == 0) {
-					fragmentId = activity.getResources().getIdentifier(
-							"web_browser_fragment", "id", activity.getPackageName());
+					fragmentId = resources.getIdentifier(
+							"web_browser_fragment", "id", "my.app.permata");
 				}
 
 				if (fragmentId != 0) {
@@ -60,11 +62,11 @@ public class KeyEventHandler {
 						var code = event.getKeyCode();
 						if (event.getAction() == ACTION_DOWN) {
 							// 3. Dynamically find the integer ID for the WebView element
-							int webViewId = activity.getResources().getIdentifier(
+							int webViewId = resources.getIdentifier(
 									"browserWebView", "id", "my.app.permata.addon.web");
 							if (webViewId == 0) {
-								webViewId = activity.getResources().getIdentifier(
-										"browserWebView", "id", activity.getPackageName());
+								webViewId = resources.getIdentifier(
+										"browserWebView", "id", "my.app.permata");
 							}
 
 							if (code == KeyEvent.KEYCODE_MEDIA_NEXT) {
