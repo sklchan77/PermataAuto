@@ -62,18 +62,18 @@ public class PermataWebClient extends WebViewClientCompat {
 			String url = request.getUrl().toString();
 			String scheme = request.getUrl().getScheme();
 
-			// 🟢 PASS: Allow background media streaming assets to pass natively
+			// 🟢 PASS: Allow background media streaming chunk formats to render fluidly
 			if (url.startsWith("blob:") || url.startsWith("data:") || url.startsWith("about:")) {
 				return false;
 			}
 
-			// 🔴 BLOCK: Drop ALL non-web schemes to prevent ERR_UNKNOWN_URL_SCHEME freezes
+			// 🔴 ADAPTIVE BLOCK: Block all external app deep-links to prevent ERR_UNKNOWN_URL_SCHEME freezes
 			if (scheme != null && !scheme.equalsIgnoreCase("http") && !scheme.equalsIgnoreCase("https")) {
 				Log.w("PermataWebClient: Suppressed app auto-redirect intent link: " + url);
-				return true; // Consume the event to stop the car browser from crashing
+				return true; // Consume the redirect to keep the Chromium context alive and scrolling
 			}
 			
-			// 📺 INTENT HANDOVER: Keep your native embedded YouTube feature fully active
+			// 📺 INTENT HANDOVER: Keep your native integrated YouTube tracking layout fully active
 			if (isYoutubeUri(request.getUrl())) {
 				try {
 					MainActivityDelegate a =
