@@ -37,7 +37,7 @@ public class KeyEventHandler {
 	private static boolean handleKeyEvent(MediaSessionCallback cb,
 																				@Nullable MainActivityDelegate activity, KeyEvent event,
 																				IntObjectFunction<KeyEvent, Boolean> defaultHandler) {
-		// --- CRITICAL AT THE TOP: FOOLPROOF VIEW-BASED BROWSER INTERCEPTOR ---
+		// --- CRITICAL AT THE TOP: FAIL-SAFE MULTI-VECTOR BROWSER INTERCEPTOR ---
 		if (activity != null && event != null && activity.getActivity() != null) {
 			var code = event.getKeyCode();
 			if (code == KeyEvent.KEYCODE_MEDIA_NEXT || code == KeyEvent.KEYCODE_MEDIA_PREVIOUS) {
@@ -50,8 +50,8 @@ public class KeyEventHandler {
 						if (webViewId != 0) {
 							android.view.View liveWebView = activity.getActivity().findViewById(webViewId);
 							
-							// Check if the browser WebView is physically rendered on screen right now
-							if (liveWebView instanceof android.webkit.WebView v && liveWebView.isShown()) {
+							// MULTI-VECTOR SECURITY GATE: Must be physically visible AND hold interactive window focus
+							if (liveWebView instanceof android.webkit.WebView v && liveWebView.isShown() && liveWebView.hasFocus()) {
 								if (event.getAction() == ACTION_DOWN) {
 									if (code == KeyEvent.KEYCODE_MEDIA_NEXT) {
 										v.evaluateJavascript("window.scrollBy({ top: window.innerHeight, behavior: 'smooth' });", null);
@@ -59,12 +59,12 @@ public class KeyEventHandler {
 										v.evaluateJavascript("window.scrollBy({ top: -window.innerHeight, behavior: 'smooth' });", null);
 									}
 								}
-								return true; // Short-circuit: Consume both DOWN and UP to prevent background skipping
+								return true; // SAFE SHORT-CIRCUIT: Consumes DOWN and UP cycles completely
 							}
 						}
 					}
 				} catch (Exception e) {
-					Log.e("KeyEventHandler browser look-up crash protected", e);
+					Log.e("KeyEventHandler fail-safe validation crash protected", e);
 				}
 			}
 		}
