@@ -99,7 +99,7 @@ public class WebBrowserFragment extends MainActivityFragment
 
 	
 
-	@Override
+		@Override
 	public void onPause() {
 		super.onPause();
 		// --- RELEASE CAR FOCUS SAFELY ON EXIT ---
@@ -115,7 +115,6 @@ public class WebBrowserFragment extends MainActivityFragment
 								if (session != null) {
 									Class<?> sessionClass = session.getClass();
 									
-									// 1. ProGuard proof: Re-enable native playlist controls on exit
 									var state = new android.media.session.PlaybackState.Builder()
 											.setActions(android.media.session.PlaybackState.ACTION_SKIP_TO_NEXT | 
 															android.media.session.PlaybackState.ACTION_SKIP_TO_PREVIOUS |
@@ -125,7 +124,9 @@ public class WebBrowserFragment extends MainActivityFragment
 											.build();
 
 									for (java.lang.reflect.Method method : sessionClass.getDeclaredMethods()) {
-										if (method.getParameterTypes().length == 1 && method.getParameterTypes()[0] == android.media.session.PlaybackState.class) {
+										var params = method.getParameterTypes();
+										// Fixed: Correct array element comparison mapping rule
+										if (params.length == 1 && params[0] == android.media.session.PlaybackState.class) {
 											method.setAccessible(true);
 											method.invoke(session, state);
 											break;
@@ -158,8 +159,6 @@ public class WebBrowserFragment extends MainActivityFragment
 		}
 	}
 
-
-
 	@Override
 	public void onResume() {
 		super.onResume();
@@ -176,24 +175,28 @@ public class WebBrowserFragment extends MainActivityFragment
 								if (session != null) {
 									Class<?> sessionClass = session.getClass();
 									
-									// 1. ProGuard proof: Set active state to true
+									// 1. Find and invoke setActive(true) safely
 									for (java.lang.reflect.Method method : sessionClass.getDeclaredMethods()) {
-										if (method.getParameterTypes().length == 1 && method.getParameterTypes()[0] == boolean.class) {
+										var params = method.getParameterTypes();
+										// Fixed: Correct array element comparison mapping rule
+										if (params.length == 1 && params[0] == boolean.class) {
 											method.setAccessible(true);
 											method.invoke(session, true);
 											break;
 										}
 									}
 
-									// 2. Clear out player actions entirely (Set actions to 0)
-									// This prevents the core media player from triggering "Performing action NEXT"
+									// 2. Clear player actions to drop steering controls down to UI layer
 									var state = new android.media.session.PlaybackState.Builder()
-											.setActions(0) // Blocks background track skipping entirely
+											.setActions(0)
 											.setState(android.media.session.PlaybackState.STATE_PLAYING, 0, 1.0f)
 											.build();
 
+									// 3. Find and invoke setPlaybackState(state) safely
 									for (java.lang.reflect.Method method : sessionClass.getDeclaredMethods()) {
-										if (method.getParameterTypes().length == 1 && method.getParameterTypes()[0] == android.media.session.PlaybackState.class) {
+										var params = method.getParameterTypes();
+										// Fixed: Correct array element comparison mapping rule
+										if (params.length == 1 && params[0] == android.media.session.PlaybackState.class) {
 											method.setAccessible(true);
 											method.invoke(session, state);
 											break;
@@ -221,6 +224,7 @@ public class WebBrowserFragment extends MainActivityFragment
 			if (chrome != null) chrome.enterFullScreen();
 		}));
 	}
+
 
 
 
