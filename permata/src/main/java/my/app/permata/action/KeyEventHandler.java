@@ -37,46 +37,34 @@ public class KeyEventHandler {
 	private static boolean handleKeyEvent(MediaSessionCallback cb,
 																				@Nullable MainActivityDelegate activity, KeyEvent event,
 																				IntObjectFunction<KeyEvent, Boolean> defaultHandler) {
-		// --- CRITICAL AT THE TOP: INTERCEPT WEB BROWSER IMMEDIATELY ---
-		if (activity != null && event != null) {
-			var manager = activity.getSupportFragmentManager();
-			if (manager != null && manager.getFragments() != null && !manager.getFragments().isEmpty()) {
-				var activeContext = manager.getFragments().get(0).getContext();
-				var resources = activeContext != null ? activeContext.getResources() : null;
+		// --- CRITICAL AT THE TOP: FOOLPROOF VIEW-BASED BROWSER INTERCEPTOR ---
+		if (activity != null && event != null && activity.getActivity() != null) {
+			var code = event.getKeyCode();
+			if (code == KeyEvent.KEYCODE_MEDIA_NEXT || code == KeyEvent.KEYCODE_MEDIA_PREVIOUS) {
+				try {
+					var resources = activity.getActivity().getResources();
+					if (resources != null) {
+						int webViewId = resources.getIdentifier("browserWebView", "id", "my.app.permata.addon.web");
+						if (webViewId == 0) webViewId = resources.getIdentifier("browserWebView", "id", "my.app.permata");
 
-				if (resources != null) {
-					int fragmentId = resources.getIdentifier("web_browser_fragment", "id", "my.app.permata.addon.web");
-					if (fragmentId == 0) fragmentId = resources.getIdentifier("web_browser_fragment", "id", "my.app.permata");
-
-					if (fragmentId != 0) {
-						var webFrag = manager.findFragmentById(fragmentId);
-						if (webFrag != null && webFrag.isVisible()) {
-							var code = event.getKeyCode();
+						if (webViewId != 0) {
+							android.view.View liveWebView = activity.getActivity().findViewById(webViewId);
 							
-							// Traps both NEXT and PREVIOUS layout triggers to avoid event leaking
-							if (code == KeyEvent.KEYCODE_MEDIA_NEXT || code == KeyEvent.KEYCODE_MEDIA_PREVIOUS) {
-								
-								// UI JavaScript scroll execution executes strictly on Key Down actions
+							// Check if the browser WebView is physically rendered on screen right now
+							if (liveWebView instanceof android.webkit.WebView v && liveWebView.isShown()) {
 								if (event.getAction() == ACTION_DOWN) {
-									int webViewId = resources.getIdentifier("browserWebView", "id", "my.app.permata.addon.web");
-									if (webViewId == 0) webViewId = resources.getIdentifier("browserWebView", "id", "my.app.permata");
-
-									var view = webFrag.getView();
-									var webView = (view != null && webViewId != 0) ? view.findViewById(webViewId) : null;
-									if (webView instanceof android.webkit.WebView v) {
-										if (code == KeyEvent.KEYCODE_MEDIA_NEXT) {
-											v.evaluateJavascript("window.scrollBy({ top: window.innerHeight, behavior: 'smooth' });", null);
-										} else {
-											v.evaluateJavascript("window.scrollBy({ top: -window.innerHeight, behavior: 'smooth' });", null);
-										}
+									if (code == KeyEvent.KEYCODE_MEDIA_NEXT) {
+										v.evaluateJavascript("window.scrollBy({ top: window.innerHeight, behavior: 'smooth' });", null);
+									} else {
+										v.evaluateJavascript("window.scrollBy({ top: -window.innerHeight, behavior: 'smooth' });", null);
 									}
 								}
-								
-								// Short-circuits the event loop for BOTH Action Down and Action Up
-								return true; 
+								return true; // Short-circuit: Consume both DOWN and UP to prevent background skipping
 							}
 						}
 					}
+				} catch (Exception e) {
+					Log.e("KeyEventHandler browser look-up crash protected", e);
 				}
 			}
 		}
@@ -95,16 +83,16 @@ public class KeyEventHandler {
 			return false;
 		}
 
-		var code = event.getKeyCode();
-		var k = Key.get(code);
-		if (k == null) return defaultHandler.apply(code, event);
+		var targetCode = event.getKeyCode();
+		var k = Key.get(targetCode);
+		if (k == null) return defaultHandler.apply(targetCode, event);
 
 		if (!k.isMedia() && (activity != null) && (activity.getCurrentFocus() instanceof EditText)) {
-			return defaultHandler.apply(code, event);
+			return defaultHandler.apply(targetCode, event);
 		}
 
 		var dblClickAction = k.getDblClickAction();
-		if (dblClickAction == null) return defaultHandler.apply(code, event);
+		if (dblClickAction == null) return defaultHandler.apply(targetCode, event);
 
 		var action = event.getAction();
 		if (action == ACTION_MULTIPLE) {
@@ -112,12 +100,12 @@ public class KeyEventHandler {
 			performAction(dblClickAction, cb, activity, uptimeMillis());
 			return true;
 		}
-		if (action != ACTION_DOWN) return defaultHandler.apply(code, event);
+		if (action != ACTION_DOWN) return defaultHandler.apply(targetCode, event);
 
 		var clickAction = k.getClickAction();
-		if (clickAction == null) return defaultHandler.apply(code, event);
+		if (clickAction == null) return defaultHandler.apply(targetCode, event);
 		var longClickAction = k.getLongClickAction();
-		if (longClickAction == null) return defaultHandler.apply(code, event);
+		if (longClickAction == null) return defaultHandler.apply(targetCode, event);
 
 		if (((clickAction == dblClickAction) && (clickAction == longClickAction)) ||
 				((dblClickAction == Action.NONE) && (longClickAction == Action.NONE))) {
@@ -147,7 +135,6 @@ public class KeyEventHandler {
 		private final long time;
 		private long longClickTime;
 		private boolean up;
-
 
 		Worker(MediaSessionCallback cb, @Nullable MainActivityDelegate activity, Key key,
 					 Action clickAction, Action dblClickAction, Action longClickAction) {
