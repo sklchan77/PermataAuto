@@ -97,6 +97,8 @@ public class WebBrowserFragment extends MainActivityFragment
 	}
 
 
+	
+
 	@Override
 	public void onPause() {
 		super.onPause();
@@ -106,17 +108,26 @@ public class WebBrowserFragment extends MainActivityFragment
 				var cb = delegate.getMediaSessionCallback();
 				if (cb != null) {
 					try {
-						// Scan fields looking for the MediaSession instance
 						for (java.lang.reflect.Field field : cb.getClass().getDeclaredFields()) {
 							if (field.getType().getName().contains("media.session.MediaSession")) {
 								field.setAccessible(true);
 								Object session = field.get(cb);
 								if (session != null) {
-									// ProGuard proof: Scan all methods for one accepting a boolean parameter
-									for (java.lang.reflect.Method method : session.getClass().getDeclaredMethods()) {
-										if (method.getParameterTypes().length == 1 && method.getParameterTypes()[0] == boolean.class) {
+									Class<?> sessionClass = session.getClass();
+									
+									// 1. ProGuard proof: Re-enable native playlist controls on exit
+									var state = new android.media.session.PlaybackState.Builder()
+											.setActions(android.media.session.PlaybackState.ACTION_SKIP_TO_NEXT | 
+															android.media.session.PlaybackState.ACTION_SKIP_TO_PREVIOUS |
+															android.media.session.PlaybackState.ACTION_PLAY |
+															android.media.session.PlaybackState.ACTION_PAUSE)
+											.setState(android.media.session.PlaybackState.STATE_PAUSED, 0, 0.0f)
+											.build();
+
+									for (java.lang.reflect.Method method : sessionClass.getDeclaredMethods()) {
+										if (method.getParameterTypes().length == 1 && method.getParameterTypes()[0] == android.media.session.PlaybackState.class) {
 											method.setAccessible(true);
-											method.invoke(session, false); // Equivalently invokes setActive(false)
+											method.invoke(session, state);
 											break;
 										}
 									}
@@ -132,7 +143,6 @@ public class WebBrowserFragment extends MainActivityFragment
 		} catch (Exception e) {
 			// Fail-safe wrapper
 		}
-		// --------------------------------------------
 
 		if (!BuildConfig.AUTO) return;
 		PermataWebView v = getWebView();
@@ -150,17 +160,15 @@ public class WebBrowserFragment extends MainActivityFragment
 
 
 
-
 	@Override
 	public void onResume() {
 		super.onResume();
-		// --- FORCE CAR CONTROLS TO DISPATCH TO APP BROWSER ---
+		// --- BLOCK MEDIA PLAYER TRACK CLICKS ---
 		try {
 			MainActivityDelegate.getActivityDelegate(getContext()).onSuccess(delegate -> {
 				var cb = delegate.getMediaSessionCallback();
 				if (cb != null) {
 					try {
-						// Scan fields looking for the MediaSession instance
 						for (java.lang.reflect.Field field : cb.getClass().getDeclaredFields()) {
 							if (field.getType().getName().contains("media.session.MediaSession")) {
 								field.setAccessible(true);
@@ -168,7 +176,7 @@ public class WebBrowserFragment extends MainActivityFragment
 								if (session != null) {
 									Class<?> sessionClass = session.getClass();
 									
-									// 1. ProGuard proof: Find and invoke setActive(true) using parameter signature matching
+									// 1. ProGuard proof: Set active state to true
 									for (java.lang.reflect.Method method : sessionClass.getDeclaredMethods()) {
 										if (method.getParameterTypes().length == 1 && method.getParameterTypes()[0] == boolean.class) {
 											method.setAccessible(true);
@@ -177,15 +185,13 @@ public class WebBrowserFragment extends MainActivityFragment
 										}
 									}
 
-									// 2. Build standard native framework PlaybackState object
+									// 2. Clear out player actions entirely (Set actions to 0)
+									// This prevents the core media player from triggering "Performing action NEXT"
 									var state = new android.media.session.PlaybackState.Builder()
-											.setActions(android.media.session.PlaybackState.ACTION_SKIP_TO_NEXT | 
-															android.media.session.PlaybackState.ACTION_SKIP_TO_PREVIOUS |
-															android.media.session.PlaybackState.ACTION_PLAY)
+											.setActions(0) // Blocks background track skipping entirely
 											.setState(android.media.session.PlaybackState.STATE_PLAYING, 0, 1.0f)
 											.build();
 
-									// 3. ProGuard proof: Find and invoke setPlaybackState(state) using signature matching
 									for (java.lang.reflect.Method method : sessionClass.getDeclaredMethods()) {
 										if (method.getParameterTypes().length == 1 && method.getParameterTypes()[0] == android.media.session.PlaybackState.class) {
 											method.setAccessible(true);
@@ -205,7 +211,6 @@ public class WebBrowserFragment extends MainActivityFragment
 		} catch (Exception e) {
 			// Fail-safe wrapper
 		}
-		// ------------------------------------------
 
 		if (!BuildConfig.AUTO || !fullScreenOnResume) return;
 		PermataWebView v = getWebView();
