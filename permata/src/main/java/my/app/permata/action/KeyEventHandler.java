@@ -37,29 +37,41 @@ public class KeyEventHandler {
 	private static boolean handleKeyEvent(MediaSessionCallback cb,
 																				@Nullable MainActivityDelegate activity, KeyEvent event,
 																				IntObjectFunction<KeyEvent, Boolean> defaultHandler) {
-		// --- CRITICAL AT THE TOP: FAIL-SAFE MULTI-VECTOR BROWSER INTERCEPTOR ---
-		if (activity != null && event != null && activity.getActivity() != null) {
+		// --- CRITICAL AT THE TOP: FAIL-SAFE FRAGMENT-BASED VIEW INTERCEPTOR ---
+		if (activity != null && event != null) {
 			var code = event.getKeyCode();
 			if (code == KeyEvent.KEYCODE_MEDIA_NEXT || code == KeyEvent.KEYCODE_MEDIA_PREVIOUS) {
 				try {
-					var resources = activity.getActivity().getResources();
-					if (resources != null) {
-						int webViewId = resources.getIdentifier("browserWebView", "id", "my.app.permata.addon.web");
-						if (webViewId == 0) webViewId = resources.getIdentifier("browserWebView", "id", "my.app.permata");
+					var manager = activity.getSupportFragmentManager();
+					if (manager != null && manager.getFragments() != null && !manager.getFragments().isEmpty()) {
+						var activeContext = manager.getFragments().get(0).getContext();
+						var resources = activeContext != null ? activeContext.getResources() : null;
 
-						if (webViewId != 0) {
-							android.view.View liveWebView = activity.getActivity().findViewById(webViewId);
-							
-							// MULTI-VECTOR SECURITY GATE: Must be physically visible AND hold interactive window focus
-							if (liveWebView instanceof android.webkit.WebView v && liveWebView.isShown() && liveWebView.hasFocus()) {
-								if (event.getAction() == ACTION_DOWN) {
-									if (code == KeyEvent.KEYCODE_MEDIA_NEXT) {
-										v.evaluateJavascript("window.scrollBy({ top: window.innerHeight, behavior: 'smooth' });", null);
-									} else {
-										v.evaluateJavascript("window.scrollBy({ top: -window.innerHeight, behavior: 'smooth' });", null);
+						if (resources != null) {
+							int fragmentId = resources.getIdentifier("web_browser_fragment", "id", "my.app.permata.addon.web");
+							if (fragmentId == 0) fragmentId = resources.getIdentifier("web_browser_fragment", "id", "my.app.permata");
+
+							if (fragmentId != 0) {
+								var webFrag = manager.findFragmentById(fragmentId);
+								if (webFrag != null && webFrag.isVisible()) {
+									int webViewId = resources.getIdentifier("browserWebView", "id", "my.app.permata.addon.web");
+									if (webViewId == 0) webViewId = resources.getIdentifier("browserWebView", "id", "my.app.permata");
+
+									var view = webFrag.getView();
+									var liveWebView = (view != null && webViewId != 0) ? view.findViewById(webViewId) : null;
+									
+									// MULTI-VECTOR PLATFORM GATE: Must be rendered and holding focus
+									if (liveWebView instanceof android.webkit.WebView v && liveWebView.isShown() && liveWebView.hasFocus()) {
+										if (event.getAction() == ACTION_DOWN) {
+											if (code == KeyEvent.KEYCODE_MEDIA_NEXT) {
+												v.evaluateJavascript("window.scrollBy({ top: window.innerHeight, behavior: 'smooth' });", null);
+											} else {
+												v.evaluateJavascript("window.scrollBy({ top: -window.innerHeight, behavior: 'smooth' });", null);
+											}
+										}
+										return true; // SAFE SHORT-CIRCUIT: Consumes DOWN and UP cycles completely
 									}
 								}
-								return true; // SAFE SHORT-CIRCUIT: Consumes DOWN and UP cycles completely
 							}
 						}
 					}
