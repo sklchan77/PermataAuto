@@ -75,7 +75,7 @@ public class WebBrowserFragment extends MainActivityFragment
 		PermataChromeClient chromeClient = new PermataChromeClient(webView, fullScreenView);
 		webView.init(addon, webClient, chromeClient);
 		webView.loadUrl(addon.getLastUrl());
-	MainActivityDelegate.getActivityDelegate(ctx).onSuccess(this::registerListeners);
+		MainActivityDelegate.getActivityDelegate(ctx).onSuccess(this::registerListeners);
 	}
 
 	@Override
@@ -99,6 +99,19 @@ public class WebBrowserFragment extends MainActivityFragment
 	@Override
 	public void onPause() {
 		super.onPause();
+		// --- RELEASE FAKE PLAYBACK FOCUS ON EXIT ---
+		try {
+			MainActivityDelegate.getActivityDelegate(getContext()).onSuccess(delegate -> {
+				var cb = delegate.getMediaSessionCallback();
+				if (cb != null && cb.getMediaSession() != null) {
+					cb.getMediaSession().setActive(false);
+				}
+			});
+		} catch (Exception e) {
+			// Fail-safe protection hook
+		}
+		// --------------------------------------------
+
 		if (!BuildConfig.AUTO) return;
 		PermataWebView v = getWebView();
 		if (v == null) return;
@@ -116,6 +129,26 @@ public class WebBrowserFragment extends MainActivityFragment
 	@Override
 	public void onResume() {
 		super.onResume();
+		// --- FORCE CAR ROUTING FOCUS TO BROWSER ---
+		try {
+			MainActivityDelegate.getActivityDelegate(getContext()).onSuccess(delegate -> {
+				var cb = delegate.getMediaSessionCallback();
+				if (cb != null && cb.getMediaSession() != null) {
+					cb.getMediaSession().setActive(true);
+
+					var state = new android.media.session.PlaybackState.Builder()
+							.setActions(android.media.session.PlaybackState.ACTION_SKIP_TO_NEXT | 
+											android.media.session.PlaybackState.ACTION_SKIP_TO_PREVIOUS)
+							.setState(android.media.session.PlaybackState.STATE_PLAYING, 0, 1.0f)
+							.build();
+					cb.getMediaSession().setPlaybackState(state);
+				}
+			});
+		} catch (Exception e) {
+			my.app.utils.log.Log.e("BrowserFocus", "Failed to force car media session focus", e);
+		}
+		// ------------------------------------------
+
 		if (!BuildConfig.AUTO || !fullScreenOnResume) return;
 		PermataWebView v = getWebView();
 		if (v == null) return;
