@@ -99,33 +99,27 @@ public class WebBrowserFragment extends MainActivityFragment
 		@Override
 	public void onPause() {
 		super.onPause();
-		// --- RELEASE FAKE PLAYBACK FOCUS ON EXIT ---
+		// --- RELEASE CAR FOCUS SAFELY ON EXIT ---
 		try {
 			MainActivityDelegate.getActivityDelegate(getContext()).onSuccess(delegate -> {
 				var cb = delegate.getMediaSessionCallback();
 				if (cb != null) {
-					try {
-						// Universally search all fields in your callback class to locate the MediaSession instance
-						for (java.lang.reflect.Field field : cb.getClass().getDeclaredFields()) {
-							if (field.getType().getName().equals("android.media.session.MediaSession") || 
-									field.getType().getName().equals("android.support.v4.media.session.MediaSessionCompat")) {
-								field.setAccessible(true);
-								Object session = field.get(cb);
-								if (session != null) {
-									// Safely call setActive(false) via reflection
-									java.lang.reflect.Method setActiveMethod = session.getClass().getMethod("setActive", boolean.class);
-									setActiveMethod.invoke(session, false);
-									break;
-								}
-							}
-						}
-					} catch (Exception reflectiveEx) {
-						Log.e(reflectiveEx, "Reflection failed inside onPause");
+					// Use Android's standard framework media controller pipeline to safely deactivate
+					android.media.session.MediaSession.Token token = delegate.getActivity() != null ? 
+							delegate.getActivity().getMediaController().getSessionToken() : null;
+					
+					if (token != null) {
+						android.media.session.MediaController controller = new android.media.session.MediaController(getContext(), token);
+						// Tell the car we are paused so it releases the hardware canvas buttons
+						var state = new android.media.session.PlaybackState.Builder()
+								.setState(android.media.session.PlaybackState.STATE_PAUSED, 0, 0.0f)
+								.build();
+						controller.getTransportControls().setPlaybackState(state);
 					}
 				}
 			});
 		} catch (Exception e) {
-			// Fail-safe protection hook
+			Log.e(e, "Safe onPause media focus release failed");
 		}
 		// --------------------------------------------
 
@@ -143,63 +137,49 @@ public class WebBrowserFragment extends MainActivityFragment
 		}
 	}
 
+
 	@Override
 	public void onResume() {
 		super.onResume();
-		// --- FORCE CAR ROUTING FOCUS TO BROWSER ---
+		// --- FORCE CAR CONTROLS TO DISPATCH TO APP BROWSER ---
 		try {
 			MainActivityDelegate.getActivityDelegate(getContext()).onSuccess(delegate -> {
 				var cb = delegate.getMediaSessionCallback();
-				if (cb != null) {
-					try {
-						// Universally search all fields in your callback class to locate the MediaSession instance
-						for (java.lang.reflect.Field field : cb.getClass().getDeclaredFields()) {
-							if (field.getType().getName().equals("android.media.session.MediaSession") || 
-									field.getType().getName().equals("android.support.v4.media.session.MediaSessionCompat")) {
-								field.setAccessible(true);
-								Object session = field.get(cb);
-								if (session != null) {
-									Class<?> sessionClass = session.getClass();
-									
-									// 1. Force the active media session to spin up online
-									java.lang.reflect.Method setActiveMethod = sessionClass.getMethod("setActive", boolean.class);
-									setActiveMethod.invoke(session, true);
-
-									// 2. Build a native framework PlaybackState object
-									var state = new android.media.session.PlaybackState.Builder()
-											.setActions(android.media.session.PlaybackState.ACTION_SKIP_TO_NEXT | 
-															android.media.session.PlaybackState.ACTION_SKIP_TO_PREVIOUS)
-											.setState(android.media.session.PlaybackState.STATE_PLAYING, 0, 1.0f)
-											.build();
-
-									// 3. Apply the state to the session object
-									java.lang.reflect.Method setPlaybackStateMethod = sessionClass.getMethod("setPlaybackState", android.media.session.PlaybackState.class);
-									setPlaybackStateMethod.invoke(session, state);
-									break;
-								}
-							}
-						}
-					} catch (Exception reflectiveEx) {
-						Log.e(reflectiveEx, "Reflection failed inside onResume");
+				if (cb != null && delegate.getActivity() != null) {
+					// Bypasses obfuscation by leveraging the system's public MediaController token
+					android.media.session.MediaSession.Token token = delegate.getActivity().getMediaController().getSessionToken();
+					
+					if (token != null) {
+						android.media.session.MediaController controller = new android.media.session.MediaController(getContext(), token);
+						
+						// Declare standard media routing rules directly to the system transport layer
+						var state = new android.media.session.PlaybackState.Builder()
+								.setActions(android.media.session.PlaybackState.ACTION_SKIP_TO_NEXT | 
+												android.media.session.PlaybackState.ACTION_SKIP_TO_PREVIOUS |
+												android.media.session.PlaybackState.ACTION_PLAY)
+								.setState(android.media.session.PlaybackState.STATE_PLAYING, 0, 1.0f)
+								.build();
+						
+						// Fire state update to force car system focus tracking down to Permata
+						controller.getTransportControls().setPlaybackState(state);
 					}
 				}
 			});
 		} catch (Exception e) {
-			my.app.utils.log.Log.e("BrowserFocus", "Failed to force car media session focus", e);
+			Log.e(e, "Safe onResume media focus lock failed");
 		}
 		// ------------------------------------------
 
 		if (!BuildConfig.AUTO || !fullScreenOnResume) return;
 		PermataWebView v = getWebView();
 		if (v == null) return;
-		// Calling here onResume makes the video to not get freezed
-		// when you switch to another app and go back to Permata
 		v.onResume();
 		MainActivityDelegate.getActivityDelegate(getContext()).onSuccess(a -> a.post(() -> {
 			PermataChromeClient chrome = v.getWebChromeClient();
 			if (chrome != null) chrome.enterFullScreen();
 		}));
 	}
+
 
 
 
