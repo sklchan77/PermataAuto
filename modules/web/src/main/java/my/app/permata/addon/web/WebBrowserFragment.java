@@ -96,15 +96,32 @@ public class WebBrowserFragment extends MainActivityFragment
 		}
 	}
 
-	@Override
+		@Override
 	public void onPause() {
 		super.onPause();
 		// --- RELEASE FAKE PLAYBACK FOCUS ON EXIT ---
 		try {
 			MainActivityDelegate.getActivityDelegate(getContext()).onSuccess(delegate -> {
 				var cb = delegate.getMediaSessionCallback();
-				if (cb != null && cb.getMediaSession() != null) {
-					cb.getMediaSession().setActive(false);
+				if (cb != null) {
+					try {
+						// Universally search all fields in your callback class to locate the MediaSession instance
+						for (java.lang.reflect.Field field : cb.getClass().getDeclaredFields()) {
+							if (field.getType().getName().equals("android.media.session.MediaSession") || 
+									field.getType().getName().equals("android.support.v4.media.session.MediaSessionCompat")) {
+								field.setAccessible(true);
+								Object session = field.get(cb);
+								if (session != null) {
+									// Safely call setActive(false) via reflection
+									java.lang.reflect.Method setActiveMethod = session.getClass().getMethod("setActive", boolean.class);
+									setActiveMethod.invoke(session, false);
+									break;
+								}
+							}
+						}
+					} catch (Exception reflectiveEx) {
+						Log.e(reflectiveEx, "Reflection failed inside onPause");
+					}
 				}
 			});
 		} catch (Exception e) {
@@ -133,15 +150,38 @@ public class WebBrowserFragment extends MainActivityFragment
 		try {
 			MainActivityDelegate.getActivityDelegate(getContext()).onSuccess(delegate -> {
 				var cb = delegate.getMediaSessionCallback();
-				if (cb != null && cb.getMediaSession() != null) {
-					cb.getMediaSession().setActive(true);
+				if (cb != null) {
+					try {
+						// Universally search all fields in your callback class to locate the MediaSession instance
+						for (java.lang.reflect.Field field : cb.getClass().getDeclaredFields()) {
+							if (field.getType().getName().equals("android.media.session.MediaSession") || 
+									field.getType().getName().equals("android.support.v4.media.session.MediaSessionCompat")) {
+								field.setAccessible(true);
+								Object session = field.get(cb);
+								if (session != null) {
+									Class<?> sessionClass = session.getClass();
+									
+									// 1. Force the active media session to spin up online
+									java.lang.reflect.Method setActiveMethod = sessionClass.getMethod("setActive", boolean.class);
+									setActiveMethod.invoke(session, true);
 
-					var state = new android.media.session.PlaybackState.Builder()
-							.setActions(android.media.session.PlaybackState.ACTION_SKIP_TO_NEXT | 
-											android.media.session.PlaybackState.ACTION_SKIP_TO_PREVIOUS)
-							.setState(android.media.session.PlaybackState.STATE_PLAYING, 0, 1.0f)
-							.build();
-					cb.getMediaSession().setPlaybackState(state);
+									// 2. Build a native framework PlaybackState object
+									var state = new android.media.session.PlaybackState.Builder()
+											.setActions(android.media.session.PlaybackState.ACTION_SKIP_TO_NEXT | 
+															android.media.session.PlaybackState.ACTION_SKIP_TO_PREVIOUS)
+											.setState(android.media.session.PlaybackState.STATE_PLAYING, 0, 1.0f)
+											.build();
+
+									// 3. Apply the state to the session object
+									java.lang.reflect.Method setPlaybackStateMethod = sessionClass.getMethod("setPlaybackState", android.media.session.PlaybackState.class);
+									setPlaybackStateMethod.invoke(session, state);
+									break;
+								}
+							}
+						}
+					} catch (Exception reflectiveEx) {
+						Log.e(reflectiveEx, "Reflection failed inside onResume");
+					}
 				}
 			});
 		} catch (Exception e) {
@@ -160,6 +200,8 @@ public class WebBrowserFragment extends MainActivityFragment
 			if (chrome != null) chrome.enterFullScreen();
 		}));
 	}
+
+
 
 	protected void registerListeners(MainActivityDelegate a) {
 		a.addBroadcastListener(this, MainActivityListener.ACTIVITY_DESTROY);
