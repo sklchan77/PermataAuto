@@ -4,8 +4,8 @@ import static my.app.utils.ui.activity.ActivityListener.FRAGMENT_CONTENT_CHANGED
 
 import android.graphics.Bitmap;
 import android.net.Uri;
-import android.webkit.WebResourceRequest;
 import android.webkit.WebView;
+import android.webkit.WebResourceRequest;
 
 import androidx.annotation.NonNull;
 import androidx.webkit.WebResourceErrorCompat;
@@ -67,7 +67,7 @@ public class PermataWebClient extends WebViewClientCompat {
 					url.startsWith("pinduoduo://") ||
 					url.startsWith("douyin://")) {
 				Log.w("PermataWebClient: Suppressed external app auto-redirect intent link: " + url);
-				return true; // Halt the redirect to keep the web view context alive and scrolling
+				return true; // Halts intent redirection crashes
 			}
 		}
 		// ---------------------------------------------------
