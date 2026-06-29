@@ -37,54 +37,64 @@ public class KeyEventHandler {
 	private static boolean handleKeyEvent(MediaSessionCallback cb,
 																				@Nullable MainActivityDelegate activity, KeyEvent event,
 																				IntObjectFunction<KeyEvent, Boolean> defaultHandler) {
+
+	private static boolean handleKeyEvent(MediaSessionCallback cb,
+																				@Nullable MainActivityDelegate activity, KeyEvent event,
+																				IntObjectFunction<KeyEvent, Boolean> defaultHandler) {
+
+
+
+
+		// --- CRITICAL AT THE TOP: INTERCEPT WEB BROWSER IMMEDIATELY ---
+		if (activity != null && event != null) {
+			var manager = activity.getSupportFragmentManager();
+			if (manager != null && manager.getFragments() != null && !manager.getFragments().isEmpty()) {
+				var activeContext = manager.getFragments().get(0).getContext();
+				var resources = activeContext != null ? activeContext.getResources() : null;
+
+				if (resources != null) {
+					int fragmentId = resources.getIdentifier("web_browser_fragment", "id", "my.app.permata.addon.web");
+					if (fragmentId == 0) fragmentId = resources.getIdentifier("web_browser_fragment", "id", "my.app.permata");
+
+					if (fragmentId != 0) {
+						var webFrag = manager.findFragmentById(fragmentId);
+						if (webFrag != null && webFrag.isVisible()) {
+							var code = event.getKeyCode();
+							if (event.getAction() == ACTION_DOWN) {
+								int webViewId = resources.getIdentifier("browserWebView", "id", "my.app.permata.addon.web");
+								if (webViewId == 0) webViewId = resources.getIdentifier("browserWebView", "id", "my.app.permata");
+
+								if (code == KeyEvent.KEYCODE_MEDIA_NEXT) {
+									var view = webFrag.getView();
+									var webView = (view != null && webViewId != 0) ? view.findViewById(webViewId) : null;
+									if (webView instanceof android.webkit.WebView v) {
+										// Rigid screen height snap scroll for web TikTok/Douyin feeds
+										v.evaluateJavascript("window.scrollBy({ top: window.innerHeight, behavior: 'smooth' });", null);
+									}
+									return true; // STOP APP FROM CHANGING CHANNELS / MEDIA
+								} else if (code == KeyEvent.KEYCODE_MEDIA_PREVIOUS) {
+									var view = webFrag.getView();
+									var webView = (view != null && webViewId != 0) ? view.findViewById(webViewId) : null;
+									if (webView instanceof android.webkit.WebView v) {
+										// Rigid screen height snap scroll for web TikTok/Douyin feeds
+										v.evaluateJavascript("window.scrollBy({ top: -window.innerHeight, behavior: 'smooth' });", null);
+									}
+									return true; // STOP APP FROM CHANGING CHANNELS / MEDIA
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+		// --- END OF BROWSER INTERCEPTOR ---
+
+		// Original logger execution block falls below our safeguard rule
+	
+
+
+
 		Log.i((activity == null) ? "Media: " : "Activity: ", event);
-
-
-// --- START OF BROWSER SNAP SCROLL OVERRIDE ---
-if (activity != null) {
-    var manager = activity.getSupportFragmentManager();
-    if (manager != null && manager.getFragments() != null && !manager.getFragments().isEmpty()) {
-        var activeContext = manager.getFragments().get(0).getContext();
-        var resources = activeContext != null ? activeContext.getResources() : null;
-
-        if (resources != null) {
-            int fragmentId = resources.getIdentifier("web_browser_fragment", "id", "my.app.permata.addon.web");
-            if (fragmentId == 0) fragmentId = resources.getIdentifier("web_browser_fragment", "id", "my.app.permata");
-
-            if (fragmentId != 0) {
-                var webFrag = manager.findFragmentById(fragmentId);
-                if (webFrag != null && webFrag.isVisible()) {
-                    var code = event.getKeyCode();
-                    if (event.getAction() == ACTION_DOWN) {
-                        int webViewId = resources.getIdentifier("browserWebView", "id", "my.app.permata.addon.web");
-                        if (webViewId == 0) webViewId = resources.getIdentifier("browserWebView", "id", "my.app.permata");
-
-                        if (code == KeyEvent.KEYCODE_MEDIA_NEXT) {
-                            var view = webFrag.getView();
-                            var webView = (view != null && webViewId != 0) ? view.findViewById(webViewId) : null;
-                            if (webView instanceof android.webkit.WebView v) {
-                                // Jump down exactly one full viewport height for next TikTok video
-                                v.evaluateJavascript("window.scrollBy({ top: window.innerHeight, behavior: 'smooth' });", null);
-                            }
-                            return true;
-                        } else if (code == KeyEvent.KEYCODE_MEDIA_PREVIOUS) {
-                            var view = webFrag.getView();
-                            var webView = (view != null && webViewId != 0) ? view.findViewById(webViewId) : null;
-                            if (webView instanceof android.webkit.WebView v) {
-                                // Jump up exactly one full viewport height for previous TikTok video
-                                v.evaluateJavascript("window.scrollBy({ top: -window.innerHeight, behavior: 'smooth' });", null);
-                            }
-                            return true;
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-// --- END OF BROWSER SNAP SCROLL OVERRIDE ---
-
-
 
 		if (event.isCanceled()) {
 			worker = null;
