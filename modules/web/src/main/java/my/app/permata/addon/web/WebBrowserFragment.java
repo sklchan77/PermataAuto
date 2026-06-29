@@ -96,7 +96,8 @@ public class WebBrowserFragment extends MainActivityFragment
 		}
 	}
 
-		@Override
+
+	@Override
 	public void onPause() {
 		super.onPause();
 		// --- RELEASE CAR FOCUS SAFELY ON EXIT ---
@@ -104,22 +105,32 @@ public class WebBrowserFragment extends MainActivityFragment
 			MainActivityDelegate.getActivityDelegate(getContext()).onSuccess(delegate -> {
 				var cb = delegate.getMediaSessionCallback();
 				if (cb != null) {
-					// Use Android's standard framework media controller pipeline to safely deactivate
-					android.media.session.MediaSession.Token token = delegate.getActivity() != null ? 
-							delegate.getActivity().getMediaController().getSessionToken() : null;
-					
-					if (token != null) {
-						android.media.session.MediaController controller = new android.media.session.MediaController(getContext(), token);
-						// Tell the car we are paused so it releases the hardware canvas buttons
-						var state = new android.media.session.PlaybackState.Builder()
-								.setState(android.media.session.PlaybackState.STATE_PAUSED, 0, 0.0f)
-								.build();
-						controller.getTransportControls().setPlaybackState(state);
+					try {
+						// Scan fields looking for the MediaSession instance
+						for (java.lang.reflect.Field field : cb.getClass().getDeclaredFields()) {
+							if (field.getType().getName().contains("media.session.MediaSession")) {
+								field.setAccessible(true);
+								Object session = field.get(cb);
+								if (session != null) {
+									// ProGuard proof: Scan all methods for one accepting a boolean parameter
+									for (java.lang.reflect.Method method : session.getClass().getDeclaredMethods()) {
+										if (method.getParameterTypes().length == 1 && method.getParameterTypes()[0] == boolean.class) {
+											method.setAccessible(true);
+											method.invoke(session, false); // Equivalently invokes setActive(false)
+											break;
+										}
+									}
+									break;
+								}
+							}
+						}
+					} catch (Exception e) {
+						Log.e(e, "Obfuscation-proof focus release failure");
 					}
 				}
 			});
 		} catch (Exception e) {
-			Log.e(e, "Safe onPause media focus release failed");
+			// Fail-safe wrapper
 		}
 		// --------------------------------------------
 
@@ -138,6 +149,8 @@ public class WebBrowserFragment extends MainActivityFragment
 	}
 
 
+
+
 	@Override
 	public void onResume() {
 		super.onResume();
@@ -145,28 +158,52 @@ public class WebBrowserFragment extends MainActivityFragment
 		try {
 			MainActivityDelegate.getActivityDelegate(getContext()).onSuccess(delegate -> {
 				var cb = delegate.getMediaSessionCallback();
-				if (cb != null && delegate.getActivity() != null) {
-					// Bypasses obfuscation by leveraging the system's public MediaController token
-					android.media.session.MediaSession.Token token = delegate.getActivity().getMediaController().getSessionToken();
-					
-					if (token != null) {
-						android.media.session.MediaController controller = new android.media.session.MediaController(getContext(), token);
-						
-						// Declare standard media routing rules directly to the system transport layer
-						var state = new android.media.session.PlaybackState.Builder()
-								.setActions(android.media.session.PlaybackState.ACTION_SKIP_TO_NEXT | 
-												android.media.session.PlaybackState.ACTION_SKIP_TO_PREVIOUS |
-												android.media.session.PlaybackState.ACTION_PLAY)
-								.setState(android.media.session.PlaybackState.STATE_PLAYING, 0, 1.0f)
-								.build();
-						
-						// Fire state update to force car system focus tracking down to Permata
-						controller.getTransportControls().setPlaybackState(state);
+				if (cb != null) {
+					try {
+						// Scan fields looking for the MediaSession instance
+						for (java.lang.reflect.Field field : cb.getClass().getDeclaredFields()) {
+							if (field.getType().getName().contains("media.session.MediaSession")) {
+								field.setAccessible(true);
+								Object session = field.get(cb);
+								if (session != null) {
+									Class<?> sessionClass = session.getClass();
+									
+									// 1. ProGuard proof: Find and invoke setActive(true) using parameter signature matching
+									for (java.lang.reflect.Method method : sessionClass.getDeclaredMethods()) {
+										if (method.getParameterTypes().length == 1 && method.getParameterTypes()[0] == boolean.class) {
+											method.setAccessible(true);
+											method.invoke(session, true);
+											break;
+										}
+									}
+
+									// 2. Build standard native framework PlaybackState object
+									var state = new android.media.session.PlaybackState.Builder()
+											.setActions(android.media.session.PlaybackState.ACTION_SKIP_TO_NEXT | 
+															android.media.session.PlaybackState.ACTION_SKIP_TO_PREVIOUS |
+															android.media.session.PlaybackState.ACTION_PLAY)
+											.setState(android.media.session.PlaybackState.STATE_PLAYING, 0, 1.0f)
+											.build();
+
+									// 3. ProGuard proof: Find and invoke setPlaybackState(state) using signature matching
+									for (java.lang.reflect.Method method : sessionClass.getDeclaredMethods()) {
+										if (method.getParameterTypes().length == 1 && method.getParameterTypes()[0] == android.media.session.PlaybackState.class) {
+											method.setAccessible(true);
+											method.invoke(session, state);
+											break;
+										}
+									}
+									break;
+								}
+							}
+						}
+					} catch (Exception e) {
+						Log.e(e, "Obfuscation-proof focus lock failure");
 					}
 				}
 			});
 		} catch (Exception e) {
-			Log.e(e, "Safe onResume media focus lock failed");
+			// Fail-safe wrapper
 		}
 		// ------------------------------------------
 
@@ -179,6 +216,7 @@ public class WebBrowserFragment extends MainActivityFragment
 			if (chrome != null) chrome.enterFullScreen();
 		}));
 	}
+
 
 
 
