@@ -52,27 +52,28 @@ public class KeyEventHandler {
 						var webFrag = manager.findFragmentById(fragmentId);
 						if (webFrag != null && webFrag.isVisible()) {
 							var code = event.getKeyCode();
-							if (event.getAction() == ACTION_DOWN) {
-								int webViewId = resources.getIdentifier("browserWebView", "id", "my.app.permata.addon.web");
-								if (webViewId == 0) webViewId = resources.getIdentifier("browserWebView", "id", "my.app.permata");
+							
+							// Traps both NEXT and PREVIOUS layout triggers to avoid event leaking
+							if (code == KeyEvent.KEYCODE_MEDIA_NEXT || code == KeyEvent.KEYCODE_MEDIA_PREVIOUS) {
+								
+								// UI JavaScript scroll execution executes strictly on Key Down actions
+								if (event.getAction() == ACTION_DOWN) {
+									int webViewId = resources.getIdentifier("browserWebView", "id", "my.app.permata.addon.web");
+									if (webViewId == 0) webViewId = resources.getIdentifier("browserWebView", "id", "my.app.permata");
 
-								if (code == KeyEvent.KEYCODE_MEDIA_NEXT) {
 									var view = webFrag.getView();
 									var webView = (view != null && webViewId != 0) ? view.findViewById(webViewId) : null;
 									if (webView instanceof android.webkit.WebView v) {
-										// Rigid screen height snap scroll for web TikTok/Douyin feeds
-										v.evaluateJavascript("window.scrollBy({ top: window.innerHeight, behavior: 'smooth' });", null);
+										if (code == KeyEvent.KEYCODE_MEDIA_NEXT) {
+											v.evaluateJavascript("window.scrollBy({ top: window.innerHeight, behavior: 'smooth' });", null);
+										} else {
+											v.evaluateJavascript("window.scrollBy({ top: -window.innerHeight, behavior: 'smooth' });", null);
+										}
 									}
-									return true; // STOP APP FROM CHANGING CHANNELS / MEDIA
-								} else if (code == KeyEvent.KEYCODE_MEDIA_PREVIOUS) {
-									var view = webFrag.getView();
-									var webView = (view != null && webViewId != 0) ? view.findViewById(webViewId) : null;
-									if (webView instanceof android.webkit.WebView v) {
-										// Rigid screen height snap scroll for web TikTok/Douyin feeds
-										v.evaluateJavascript("window.scrollBy({ top: -window.innerHeight, behavior: 'smooth' });", null);
-									}
-									return true; // STOP APP FROM CHANGING CHANNELS / MEDIA
 								}
+								
+								// Short-circuits the event loop for BOTH Action Down and Action Up
+								return true; 
 							}
 						}
 					}
