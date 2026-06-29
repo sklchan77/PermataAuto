@@ -40,60 +40,49 @@ public class KeyEventHandler {
 		Log.i((activity == null) ? "Media: " : "Activity: ", event);
 
 
-		// --- START OF BROWSER SCROLL OVERRIDE ---
-		if (activity != null) {
-			var manager = activity.getSupportFragmentManager();
-			if (manager != null && manager.getFragments() != null && !manager.getFragments().isEmpty()) {
-				// Use the context of any active, attached UI fragment currently managed by the screen context
-				var activeContext = manager.getFragments().get(0).getContext();
-				var resources = activeContext != null ? activeContext.getResources() : null;
+// --- START OF BROWSER SNAP SCROLL OVERRIDE ---
+if (activity != null) {
+    var manager = activity.getSupportFragmentManager();
+    if (manager != null && manager.getFragments() != null && !manager.getFragments().isEmpty()) {
+        var activeContext = manager.getFragments().get(0).getContext();
+        var resources = activeContext != null ? activeContext.getResources() : null;
 
-				if (resources != null) {
-					// 1. Dynamically find the integer ID for the web browser fragment layout element
-					int fragmentId = resources.getIdentifier(
-							"web_browser_fragment", "id", "my.app.permata.addon.web");
+        if (resources != null) {
+            int fragmentId = resources.getIdentifier("web_browser_fragment", "id", "my.app.permata.addon.web");
+            if (fragmentId == 0) fragmentId = resources.getIdentifier("web_browser_fragment", "id", "my.app.permata");
 
-					// 2. Fall back to your main app namespace if modules are combined
-					if (fragmentId == 0) {
-						fragmentId = resources.getIdentifier(
-								"web_browser_fragment", "id", "my.app.permata");
-					}
+            if (fragmentId != 0) {
+                var webFrag = manager.findFragmentById(fragmentId);
+                if (webFrag != null && webFrag.isVisible()) {
+                    var code = event.getKeyCode();
+                    if (event.getAction() == ACTION_DOWN) {
+                        int webViewId = resources.getIdentifier("browserWebView", "id", "my.app.permata.addon.web");
+                        if (webViewId == 0) webViewId = resources.getIdentifier("browserWebView", "id", "my.app.permata");
 
-					if (fragmentId != 0) {
-						var webFrag = manager.findFragmentById(fragmentId);
-						if (webFrag != null && webFrag.isVisible()) {
-							var code = event.getKeyCode();
-							if (event.getAction() == ACTION_DOWN) {
-								// 3. Dynamically find the integer ID for the WebView element
-								int webViewId = resources.getIdentifier(
-										"browserWebView", "id", "my.app.permata.addon.web");
-								if (webViewId == 0) {
-									webViewId = resources.getIdentifier(
-											"browserWebView", "id", "my.app.permata");
-								}
-
-								if (code == KeyEvent.KEYCODE_MEDIA_NEXT) {
-									var view = webFrag.getView();
-									var webView = (view != null && webViewId != 0) ? view.findViewById(webViewId) : null;
-									if (webView instanceof android.webkit.WebView v) {
-										v.evaluateJavascript("window.scrollBy({ top: 350, behavior: 'smooth' });", null);
-									}
-									return true; // Consume event: Stop track switching
-								} else if (code == KeyEvent.KEYCODE_MEDIA_PREVIOUS) {
-									var view = webFrag.getView();
-									var webView = (view != null && webViewId != 0) ? view.findViewById(webViewId) : null;
-									if (webView instanceof android.webkit.WebView v) {
-										v.evaluateJavascript("window.scrollBy({ top: -350, behavior: 'smooth' });", null);
-									}
-									return true; // Consume event: Stop track switching
-								}
-							}
-						}
-					}
-				}
-			}
-		}
-		// --- END OF BROWSER SCROLL OVERRIDE ---
+                        if (code == KeyEvent.KEYCODE_MEDIA_NEXT) {
+                            var view = webFrag.getView();
+                            var webView = (view != null && webViewId != 0) ? view.findViewById(webViewId) : null;
+                            if (webView instanceof android.webkit.WebView v) {
+                                // Jump down exactly one full viewport height for next TikTok video
+                                v.evaluateJavascript("window.scrollBy({ top: window.innerHeight, behavior: 'smooth' });", null);
+                            }
+                            return true;
+                        } else if (code == KeyEvent.KEYCODE_MEDIA_PREVIOUS) {
+                            var view = webFrag.getView();
+                            var webView = (view != null && webViewId != 0) ? view.findViewById(webViewId) : null;
+                            if (webView instanceof android.webkit.WebView v) {
+                                // Jump up exactly one full viewport height for previous TikTok video
+                                v.evaluateJavascript("window.scrollBy({ top: -window.innerHeight, behavior: 'smooth' });", null);
+                            }
+                            return true;
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+// --- END OF BROWSER SNAP SCROLL OVERRIDE ---
 
 
 
