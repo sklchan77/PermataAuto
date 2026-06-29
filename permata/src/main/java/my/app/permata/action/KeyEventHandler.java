@@ -37,14 +37,6 @@ public class KeyEventHandler {
 	private static boolean handleKeyEvent(MediaSessionCallback cb,
 																				@Nullable MainActivityDelegate activity, KeyEvent event,
 																				IntObjectFunction<KeyEvent, Boolean> defaultHandler) {
-
-	private static boolean handleKeyEvent(MediaSessionCallback cb,
-																				@Nullable MainActivityDelegate activity, KeyEvent event,
-																				IntObjectFunction<KeyEvent, Boolean> defaultHandler) {
-
-
-
-
 		// --- CRITICAL AT THE TOP: INTERCEPT WEB BROWSER IMMEDIATELY ---
 		if (activity != null && event != null) {
 			var manager = activity.getSupportFragmentManager();
@@ -88,11 +80,6 @@ public class KeyEventHandler {
 			}
 		}
 		// --- END OF BROWSER INTERCEPTOR ---
-
-		// Original logger execution block falls below our safeguard rule
-	
-
-
 
 		Log.i((activity == null) ? "Media: " : "Activity: ", event);
 
@@ -148,7 +135,6 @@ public class KeyEventHandler {
 		Log.i("Performing action ", action);
 		action.getHandler().handle(cb, activity, timestamp);
 	}
-
 	private static final class Worker implements Runnable {
 		private final MediaSessionCallback cb;
 		@Nullable
