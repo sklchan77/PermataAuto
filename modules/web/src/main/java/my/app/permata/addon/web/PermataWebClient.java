@@ -60,17 +60,20 @@ public class PermataWebClient extends WebViewClientCompat {
 																					@NonNull WebResourceRequest request) {
 		if (request != null && request.getUrl() != null) {
 			String url = request.getUrl().toString();
-			// Stop all custom app intents to prevent the WebView engine from crashing
-			if (url.startsWith("snssdk1233://") || 
-					url.startsWith("intent://") || 
-					url.startsWith("market://") || 
-					url.startsWith("pinduoduo://") ||
-					url.startsWith("douyin://") ||
-					url.startsWith("aweme://")) {
-				Log.w("PermataWebClient: Suppressed external app auto-redirect intent link: " + url);
-				return true; 
+			String scheme = request.getUrl().getScheme();
+
+			// 🟢 PASS: Allow background media streaming assets to pass natively
+			if (url.startsWith("blob:") || url.startsWith("data:") || url.startsWith("about:")) {
+				return false;
+			}
+
+			// 🔴 BLOCK: Drop ALL non-web schemes to prevent ERR_UNKNOWN_URL_SCHEME freezes
+			if (scheme != null && !scheme.equalsIgnoreCase("http") && !scheme.equalsIgnoreCase("https")) {
+				Log.w("PermataWebClient: Suppressed app auto-redirect intent link: " + url);
+				return true; // Consume the event to stop the car browser from crashing
 			}
 			
+			// 📺 INTENT HANDOVER: Keep your native embedded YouTube feature fully active
 			if (isYoutubeUri(request.getUrl())) {
 				try {
 					MainActivityDelegate a =
