@@ -58,34 +58,33 @@ public class PermataWebClient extends WebViewClientCompat {
 	@Override
 	public boolean shouldOverrideUrlLoading(@NonNull WebView view,
 																					@NonNull WebResourceRequest request) {
-		// --- PRODUCTION TIKTOK/DOUYIN REDIRECT SAFEGUARD ---
-		if (request.getUrl() != null) {
+		if (request != null && request.getUrl() != null) {
 			String url = request.getUrl().toString();
+			// Stop all custom app intents to prevent the WebView engine from crashing
 			if (url.startsWith("snssdk1233://") || 
 					url.startsWith("intent://") || 
 					url.startsWith("market://") || 
 					url.startsWith("pinduoduo://") ||
-					url.startsWith("douyin://")) {
+					url.startsWith("douyin://") ||
+					url.startsWith("aweme://")) {
 				Log.w("PermataWebClient: Suppressed external app auto-redirect intent link: " + url);
-				return true; // Halts intent redirection crashes
+				return true; 
+			}
+			
+			if (isYoutubeUri(request.getUrl())) {
+				try {
+					MainActivityDelegate a =
+							MainActivityDelegate.getActivityDelegate(view.getContext()).peek();
+					if (a == null) return false;
+					if (!(a.showFragment(my.app.permata.R.id.youtube_fragment) instanceof YoutubeFragment f))
+						return false;
+					f.loadUrl(url);
+					return true;
+				} catch (IllegalArgumentException ex) {
+					Log.d(ex);
+				}
 			}
 		}
-		// ---------------------------------------------------
-
-		if (isYoutubeUri(request.getUrl())) {
-			try {
-				MainActivityDelegate a =
-						MainActivityDelegate.getActivityDelegate(view.getContext()).peek();
-				if (a == null) return false;
-				if (!(a.showFragment(my.app.permata.R.id.youtube_fragment) instanceof YoutubeFragment f))
-					return false;
-				f.loadUrl(request.getUrl().toString());
-				return true;
-			} catch (IllegalArgumentException ex) {
-				Log.d(ex);
-			}
-		}
-
 		return false;
 	}
 
@@ -103,7 +102,6 @@ public class PermataWebClient extends WebViewClientCompat {
 		} else {
 			Log.e("Web error received");
 		}
-
 		super.onReceivedError(view, request, error);
 	}
 }
