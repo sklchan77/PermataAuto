@@ -58,6 +58,20 @@ public class PermataWebClient extends WebViewClientCompat {
 	@Override
 	public boolean shouldOverrideUrlLoading(@NonNull WebView view,
 																					@NonNull WebResourceRequest request) {
+		// --- PRODUCTION TIKTOK/DOUYIN REDIRECT SAFEGUARD ---
+		if (request.getUrl() != null) {
+			String url = request.getUrl().toString();
+			if (url.startsWith("snssdk1233://") || 
+					url.startsWith("intent://") || 
+					url.startsWith("market://") || 
+					url.startsWith("pinduoduo://") ||
+					url.startsWith("douyin://")) {
+				Log.w("PermataWebClient: Suppressed external app auto-redirect intent link: " + url);
+				return true; // Halt the redirect to keep the web view context alive and scrolling
+			}
+		}
+		// ---------------------------------------------------
+
 		if (isYoutubeUri(request.getUrl())) {
 			try {
 				MainActivityDelegate a =
@@ -77,7 +91,7 @@ public class PermataWebClient extends WebViewClientCompat {
 
 	public static boolean isYoutubeUri(Uri uri) {
 		String host = uri.getHost();
-		return ((host != null) && ((host.endsWith("youtube.com") && !host.endsWith("tv.youtube.com")) ||
+		return ((host != null) && ((host.endsWith("youtube.com") && !host.endsWith("://youtube.com")) ||
 				host.equals("youtu.be")));
 	}
 
