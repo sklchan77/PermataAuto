@@ -90,6 +90,8 @@ public class KeyEventHandler {
 
 
 
+
+
 	private static void performAction(Action action, MediaSessionCallback cb,
 												@Nullable MainActivityDelegate activity, long timestamp) {
 		worker = null;
@@ -145,7 +147,7 @@ public class KeyEventHandler {
 
 										final boolean isDown = (action == Action.NEXT);
 										
-										// The Omni-Versatile Roadblock-Proof Automation Core Script
+										// The Omni-Versatile Roadblock-Proof Automation Core Script (String concatenation fixed)
 										final String jsScript = "(function() {" +
 												"  try {" +
 												"    var isDown = " + isDown + ";" +
@@ -231,7 +233,8 @@ public class KeyEventHandler {
 												"  } catch (globalErr) {" +
 												"    // TIER 6: Last Resort Structural Fallback" +
 												"    var fallbackHeight = window.innerHeight || 500;" +
-												"    window.scrollBy(0, " + (isDown ? fallbackHeight : "-fallbackHeight") + ");" +
+												"    var finalScroll = isDown ? fallbackHeight : -fallbackHeight;" +
+												"    window.scrollBy(0, finalScroll);" +
 												"  }" +
 												"})();";
 												
