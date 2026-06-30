@@ -37,51 +37,6 @@ public class KeyEventHandler {
 	private static boolean handleKeyEvent(MediaSessionCallback cb,
 																				@Nullable MainActivityDelegate activity, KeyEvent event,
 																				IntObjectFunction<KeyEvent, Boolean> defaultHandler) {
-		// --- CRITICAL AT THE TOP: FAIL-SAFE FRAGMENT-BASED VIEW INTERCEPTOR ---
-		if (activity != null && event != null) {
-			var code = event.getKeyCode();
-			if (code == KeyEvent.KEYCODE_MEDIA_NEXT || code == KeyEvent.KEYCODE_MEDIA_PREVIOUS) {
-				try {
-					var manager = activity.getSupportFragmentManager();
-					if (manager != null && manager.getFragments() != null && !manager.getFragments().isEmpty()) {
-						var activeContext = manager.getFragments().get(0).getContext();
-						var resources = activeContext != null ? activeContext.getResources() : null;
-
-						if (resources != null) {
-							int fragmentId = resources.getIdentifier("web_browser_fragment", "id", "my.app.permata.addon.web");
-							if (fragmentId == 0) fragmentId = resources.getIdentifier("web_browser_fragment", "id", "my.app.permata");
-
-							if (fragmentId != 0) {
-								var webFrag = manager.findFragmentById(fragmentId);
-								if (webFrag != null && webFrag.isVisible()) {
-									int webViewId = resources.getIdentifier("browserWebView", "id", "my.app.permata.addon.web");
-									if (webViewId == 0) webViewId = resources.getIdentifier("browserWebView", "id", "my.app.permata");
-
-									var view = webFrag.getView();
-									var liveWebView = (view != null && webViewId != 0) ? view.findViewById(webViewId) : null;
-									
-									// MULTI-VECTOR PLATFORM GATE: Must be rendered and holding focus
-									if (liveWebView instanceof android.webkit.WebView v && liveWebView.isShown() && liveWebView.hasFocus()) {
-										if (event.getAction() == ACTION_DOWN) {
-											if (code == KeyEvent.KEYCODE_MEDIA_NEXT) {
-												v.evaluateJavascript("window.scrollBy({ top: window.innerHeight, behavior: 'smooth' });", null);
-											} else {
-												v.evaluateJavascript("window.scrollBy({ top: -window.innerHeight, behavior: 'smooth' });", null);
-											}
-										}
-										return true; // SAFE SHORT-CIRCUIT: Consumes DOWN and UP cycles completely
-									}
-								}
-							}
-						}
-					}
-				} catch (Exception e) {
-					Log.e("KeyEventHandler fail-safe validation crash protected", e);
-				}
-			}
-		}
-		// --- END OF BROWSER INTERCEPTOR ---
-
 		Log.i((activity == null) ? "Media: " : "Activity: ", event);
 
 		if (event.isCanceled()) {
@@ -95,16 +50,16 @@ public class KeyEventHandler {
 			return false;
 		}
 
-		var targetCode = event.getKeyCode();
-		var k = Key.get(targetCode);
-		if (k == null) return defaultHandler.apply(targetCode, event);
+		var code = event.getKeyCode();
+		var k = Key.get(code);
+		if (k == null) return defaultHandler.apply(code, event);
 
 		if (!k.isMedia() && (activity != null) && (activity.getCurrentFocus() instanceof EditText)) {
-			return defaultHandler.apply(targetCode, event);
+			return defaultHandler.apply(code, event);
 		}
 
 		var dblClickAction = k.getDblClickAction();
-		if (dblClickAction == null) return defaultHandler.apply(targetCode, event);
+		if (dblClickAction == null) return defaultHandler.apply(code, event);
 
 		var action = event.getAction();
 		if (action == ACTION_MULTIPLE) {
@@ -112,12 +67,12 @@ public class KeyEventHandler {
 			performAction(dblClickAction, cb, activity, uptimeMillis());
 			return true;
 		}
-		if (action != ACTION_DOWN) return defaultHandler.apply(targetCode, event);
+		if (action != ACTION_DOWN) return defaultHandler.apply(code, event);
 
 		var clickAction = k.getClickAction();
-		if (clickAction == null) return defaultHandler.apply(targetCode, event);
+		if (clickAction == null) return defaultHandler.apply(code, event);
 		var longClickAction = k.getLongClickAction();
-		if (longClickAction == null) return defaultHandler.apply(targetCode, event);
+		if (longClickAction == null) return defaultHandler.apply(code, event);
 
 		if (((clickAction == dblClickAction) && (clickAction == longClickAction)) ||
 				((dblClickAction == Action.NONE) && (longClickAction == Action.NONE))) {
@@ -136,6 +91,7 @@ public class KeyEventHandler {
 		Log.i("Performing action ", action);
 		action.getHandler().handle(cb, activity, timestamp);
 	}
+
 	private static final class Worker implements Runnable {
 		private final MediaSessionCallback cb;
 		@Nullable
@@ -147,6 +103,7 @@ public class KeyEventHandler {
 		private final long time;
 		private long longClickTime;
 		private boolean up;
+
 
 		Worker(MediaSessionCallback cb, @Nullable MainActivityDelegate activity, Key key,
 					 Action clickAction, Action dblClickAction, Action longClickAction) {
