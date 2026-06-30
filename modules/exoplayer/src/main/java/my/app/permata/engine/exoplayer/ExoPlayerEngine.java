@@ -233,7 +233,7 @@ public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener 
                                 .setPcmBufferMultiplicationFactor(16)
                                 .setOffloadBufferDurationUs(120_000_000)
                                 .build())
-                        .setEnableAudioTrackPlaybackParams(true)
+                        .setEnableAudioTrackPlaybackParams(false)
                         .setAudioProcessorChain(new DefaultAudioSink.DefaultAudioProcessorChain(audioProc))
                         .build();
 
