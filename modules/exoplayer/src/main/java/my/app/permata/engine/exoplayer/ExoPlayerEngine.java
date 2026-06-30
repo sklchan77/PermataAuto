@@ -806,7 +806,7 @@ public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener 
         return audioDelayMs.get();
     }
 
-    @Override
+@Override
 public void setAudioDelay(int milliseconds) {
     synchronized (engineLock) {
         int currentDelay = audioDelayMs.get();
@@ -816,23 +816,27 @@ public void setAudioDelay(int milliseconds) {
 
         int deltaMs = milliseconds - currentDelay;
         if (player != null && source != null) {
-            // Determine byte stream sizing thresholds dynamically
             long bytesPerMs = audioProc.getEstimatedBytesPerMs();
             if (deltaMs > 0) {
                 this.pendingDelayBytes += deltaMs * bytesPerMs;
                 this.pendingAdvanceBytes = 0; 
+                
+                // Only flush instantly for DELAYS.
+                // This clears the buffer so silence injection is heard immediately.
+                long currentPosition = player.getCurrentPosition();
+                player.seekTo(currentPosition); 
             } else {
                 this.pendingAdvanceBytes += Math.abs(deltaMs) * bytesPerMs;
                 this.pendingDelayBytes = 0; 
+                
+                // DO NOT call seekTo() here. 
+                // Letting queueInput silently drop the incoming bytes without a 
+                // hard pipeline flush allows the audio track to cleanly skip forward.
             }
-
-            // SURGICAL INSTANT-REFLECT ADDITION:
-            // Forces ExoPlayer to immediately discard downstream buffers and read from our processor
-            long currentPosition = player.getCurrentPosition();
-            player.seekTo(currentPosition); 
         }
     }
 }
+
 
     @Override
     public void close() {
