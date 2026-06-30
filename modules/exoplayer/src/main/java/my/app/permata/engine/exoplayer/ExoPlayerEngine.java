@@ -63,6 +63,7 @@ import java.util.Optional;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import my.app.permata.BuildConfig;
 import my.app.permata.PermataApplication;
@@ -139,6 +140,11 @@ public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener 
     private volatile Runnable drainBuffer;
 
     private final AtomicLong activeStreamId = new AtomicLong(0);
+    
+    // Lipsync Core Correction Controls
+    private final AtomicInteger audioDelayMs = new AtomicInteger(0);
+    private long pendingDelayBytes = 0;
+    private long pendingAdvanceBytes = 0;
 
     public ExoPlayerEngine(@NonNull Context ctx, @NonNull Listener listener) {
         super(listener);
@@ -204,13 +210,11 @@ public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener 
             }
         };
 
-        // MASTER COMPATIBILITY PATCH: Restores access-unit track re-binding to prevent sample queue allocation crashes
         DefaultExtractorsFactory extractorsFactory = new DefaultExtractorsFactory()
                 .setTsExtractorFlags(DefaultTsPayloadReaderFactory.FLAG_DETECT_ACCESS_UNITS 
                         | DefaultTsPayloadReaderFactory.FLAG_ALLOW_NON_IDR_KEYFRAMES);
 
         this.mediaSourceFactory = new DefaultMediaSourceFactory(appCtx, extractorsFactory)
-
                 .setDataSourceFactory(dsFactory)
                 .setLoadErrorHandlingPolicy(customErrorPolicy);
         DefaultRenderersFactory renderersFactory = new DefaultRenderersFactory(appCtx) {
@@ -233,7 +237,7 @@ public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener 
                                 .setPcmBufferMultiplicationFactor(16)
                                 .setOffloadBufferDurationUs(120_000_000)
                                 .build())
-                        .setEnableAudioTrackPlaybackParams(false)
+                        .setEnableAudioTrackPlaybackParams(true)
                         .setAudioProcessorChain(new DefaultAudioSink.DefaultAudioProcessorChain(audioProc))
                         .build();
 
@@ -262,10 +266,10 @@ public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener 
                 .setPrioritizeTimeOverSizeThresholds(true)
                 .build();
 
-DefaultLivePlaybackSpeedControl liveSpeedControl = new DefaultLivePlaybackSpeedControl.Builder()
-        .setFallbackMinPlaybackSpeed(0.85f)
-        .setFallbackMaxPlaybackSpeed(1.15f)
-        .build();
+        DefaultLivePlaybackSpeedControl liveSpeedControl = new DefaultLivePlaybackSpeedControl.Builder()
+                .setFallbackMinPlaybackSpeed(0.85f)
+                .setFallbackMaxPlaybackSpeed(1.15f)
+                .build();
 
         this.player = new ExoPlayer.Builder(appCtx, renderersFactory)
                 .setMediaSourceFactory(mediaSourceFactory)
@@ -300,6 +304,7 @@ DefaultLivePlaybackSpeedControl liveSpeedControl = new DefaultLivePlaybackSpeedC
             }
         });
     }
+
     private void handleAudioSessionInitialization(int audioSessionId) {
         synchronized (engineLock) {
             if (audioSessionId == C.AUDIO_SESSION_ID_UNSET || audioSessionId == 0) return;
@@ -361,12 +366,10 @@ DefaultLivePlaybackSpeedControl liveSpeedControl = new DefaultLivePlaybackSpeedC
             return;
         }
 
-    // UNIVERSAL ROUTE MATRIX: Forces naked IPTV folder feeds straight into HLS mode if they lack progressive file extensions
     String cleanPath = path.contains("?") ? path.substring(0, path.indexOf('?')) : path;
     String lastSegment = cleanPath.substring(cleanPath.lastIndexOf('/') + 1);
     boolean isNakedLiveFeed = !cleanPath.isEmpty() && !lastSegment.contains(".") && cleanPath.split("/").length >= 2;
 
-    // ENHANCED ROUTE MATRIX: Captures alternative query strings and flat port addresses
     boolean isFlatPortStream = path.equals("") || path.equals("/");
     boolean hasLiveQueryToken = urlString.contains("m3u8") || urlString.contains("=ts") || urlString.contains("stream") || urlString.contains("output=");
 
@@ -409,13 +412,11 @@ DefaultLivePlaybackSpeedControl liveSpeedControl = new DefaultLivePlaybackSpeedC
                 Log.w("ExoPlayerEngine: Initial HEAD probe rejected or timed out. Checking generation context...");
             }
 
-            // ANR & THREAD LOCK SAFE GUARD: Forcibly close connection handles if generation has already changed
             if (generation != activeStreamId.get()) {
                 try { conn.disconnect(); } catch (Exception ignored) {}
                 return;
             }
 
-            // COMPATIBILITY AUTOMATION: Force switch to standard GET if the streaming server dropped or ignored the HEAD request
             if (responseCode != 200) {
                 try { conn.disconnect(); } catch (Exception ignored) {}
 
@@ -432,7 +433,6 @@ DefaultLivePlaybackSpeedControl liveSpeedControl = new DefaultLivePlaybackSpeedC
                 conn.setReadTimeout(2000);
                 conn.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 10; TV) AppleWebKit/537.36");
 
-                // Double check generation validity after socket connection handshake
                 if (generation != activeStreamId.get()) {
                     try { conn.disconnect(); } catch (Exception ignored) {}
                     return;
@@ -484,6 +484,7 @@ DefaultLivePlaybackSpeedControl liveSpeedControl = new DefaultLivePlaybackSpeedC
             });
         });
     }
+
     @SuppressLint("SwitchIntDef")
     @Override
     public void prepare(@NonNull PlayableItem source) {
@@ -499,6 +500,10 @@ DefaultLivePlaybackSpeedControl liveSpeedControl = new DefaultLivePlaybackSpeedC
             this.preparing = true;
             this.buffering = false;
             this.hasSuccessfullyRendered = false;
+            
+            // Clear runtime audio offset counters on a new stream preparation
+            this.pendingDelayBytes = 0;
+            this.pendingAdvanceBytes = 0;
 
             Uri uri = source.getLocation();
             this.isHls = Util.inferContentType(uri) == C.CONTENT_TYPE_HLS;
@@ -563,6 +568,7 @@ DefaultLivePlaybackSpeedControl liveSpeedControl = new DefaultLivePlaybackSpeedC
     protected FutureSupplier<Long> getSubtitlePosition() {
         return completed(pos());
     }
+
     private long pos() {
         synchronized (engineLock) {
             if (source == null || player == null) return 0L;
@@ -633,6 +639,7 @@ DefaultLivePlaybackSpeedControl liveSpeedControl = new DefaultLivePlaybackSpeedC
             }
         }
     }
+
     @Override
     public float getVideoWidth() {
         synchronized (engineLock) {
@@ -704,6 +711,7 @@ DefaultLivePlaybackSpeedControl liveSpeedControl = new DefaultLivePlaybackSpeedC
             }
         }
     }
+
     @Override
     public void setCurrentAudioStream(@Nullable AudioStreamInfo info) {
         if (info == null) return;
@@ -758,6 +766,7 @@ DefaultLivePlaybackSpeedControl liveSpeedControl = new DefaultLivePlaybackSpeedC
         }
         return completedVoid();
     }
+
     @Override
     public FutureSupplier<SubGrid> getCurrentSubtitles() {
         var cur = super.getCurrentSubtitles();
@@ -784,6 +793,40 @@ DefaultLivePlaybackSpeedControl liveSpeedControl = new DefaultLivePlaybackSpeedC
             }
             return subFiles;
         });
+    }
+
+    // --- INTERFACE AUDIO DELAY CONTRACT OVERRIDES ---
+    @Override
+    public boolean isAudioDelaySupported() {
+        return true;
+    }
+
+    @Override
+    public int getAudioDelay() {
+        return audioDelayMs.get();
+    }
+
+    @Override
+    public void setAudioDelay(int milliseconds) {
+        synchronized (engineLock) {
+            int currentDelay = audioDelayMs.get();
+            if (currentDelay == milliseconds) return;
+
+            audioDelayMs.set(milliseconds);
+
+            int deltaMs = milliseconds - currentDelay;
+            if (player != null && source != null) {
+                // Determine byte stream sizing thresholds dynamically
+                long bytesPerMs = audioProc.getEstimatedBytesPerMs();
+                if (deltaMs > 0) {
+                    this.pendingDelayBytes += deltaMs * bytesPerMs;
+                    this.pendingAdvanceBytes = 0; // Clear contradicting advance parameters
+                } else {
+                    this.pendingAdvanceBytes += Math.abs(deltaMs) * bytesPerMs;
+                    this.pendingDelayBytes = 0; // Clear contradicting delay parameters
+                }
+            }
+        }
     }
 
     @Override
@@ -817,6 +860,7 @@ DefaultLivePlaybackSpeedControl liveSpeedControl = new DefaultLivePlaybackSpeedC
             if (player != null) player.setVolume(1f);
         }
     }
+
     @Override
     public void onPlaybackStateChanged(int playbackState) {
         synchronized (engineLock) {
@@ -861,6 +905,7 @@ DefaultLivePlaybackSpeedControl liveSpeedControl = new DefaultLivePlaybackSpeedC
     public void onVideoSizeChanged(@NonNull VideoSize videoSize) {
         Optional.ofNullable(listener).ifPresent(l -> l.onVideoSizeChanged(this, videoSize.width, videoSize.height));
     }
+
     @Override
     public void onPlayerError(@NonNull PlaybackException error) {
         final long currentGeneration = activeStreamId.get();
@@ -916,6 +961,7 @@ DefaultLivePlaybackSpeedControl liveSpeedControl = new DefaultLivePlaybackSpeedC
     protected SubGrid createSubStreamGrid() {
         return accessor.createSubStreamGrid();
     }
+
     static class Accessor {
         private final WeakReference<ExoPlayerEngine> playerEngineRef;
         private volatile long subGenTimeOffset;
@@ -966,6 +1012,7 @@ DefaultLivePlaybackSpeedControl liveSpeedControl = new DefaultLivePlaybackSpeedC
                 translator = completedNull();
             }
         }
+
         void addSubtitles(String lang, @NonNull List<Subtitles.Text> subs) {
             if (subs.isEmpty()) return;
             my.app.utils.app.App.get().run(() -> {
@@ -1053,6 +1100,7 @@ DefaultLivePlaybackSpeedControl liveSpeedControl = new DefaultLivePlaybackSpeedC
                 });
             });
         }
+
         private void perItemTranslate(Translator tr, String targetLang, List<Subtitles.Text> subs) {
             for (var t : subs) {
                 if (t == null) continue;
@@ -1089,13 +1137,15 @@ DefaultLivePlaybackSpeedControl liveSpeedControl = new DefaultLivePlaybackSpeedC
             return new SubGrid(m);
         }
     }
-    private static class PendingLoadAudioProcessor implements androidx.media3.common.audio.AudioProcessor {
+
+    private class PendingLoadAudioProcessor implements androidx.media3.common.audio.AudioProcessor {
         private final Accessor accessor;
         private androidx.media3.common.audio.AudioProcessor.AudioFormat inputAudioFormat;
         private androidx.media3.common.audio.AudioProcessor.AudioFormat outputAudioFormat;
         private java.nio.ByteBuffer buffer;
         private java.nio.ByteBuffer outputBuffer;
         private boolean inputEnded;
+        private long bytesPerMs = 192; // Default baseline calculation tracker (48000Hz * 2 channels * 2 bytes PCM) / 1000
 
         public PendingLoadAudioProcessor(Accessor accessor) {
             this.accessor = accessor;
@@ -1104,12 +1154,29 @@ DefaultLivePlaybackSpeedControl liveSpeedControl = new DefaultLivePlaybackSpeedC
             this.buffer = EMPTY_BUFFER;
             this.outputBuffer = EMPTY_BUFFER;
         }
+
+        public long getEstimatedBytesPerMs() {
+            return bytesPerMs;
+        }
+
         @Override
         public androidx.media3.common.audio.AudioProcessor.AudioFormat configure(
                 androidx.media3.common.audio.AudioProcessor.AudioFormat inputAudioFormat)
                 throws androidx.media3.common.audio.AudioProcessor.UnhandledAudioFormatException {
             this.inputAudioFormat = inputAudioFormat;
             this.outputAudioFormat = inputAudioFormat;
+            
+            if (inputAudioFormat != androidx.media3.common.audio.AudioProcessor.AudioFormat.NOT_SET) {
+                int bytesPerFrame = Util.getPcmFrameSize(inputAudioFormat.encoding, inputAudioFormat.channelCount);
+                long computedBytesPerMs = (inputAudioFormat.sampleRate * bytesPerFrame) / 1000;
+                synchronized (engineLock) {
+                    if (this.bytesPerMs > 0 && computedBytesPerMs != this.bytesPerMs) {
+                        pendingDelayBytes = (pendingDelayBytes / this.bytesPerMs) * computedBytesPerMs;
+                        pendingAdvanceBytes = (pendingAdvanceBytes / this.bytesPerMs) * computedBytesPerMs;
+                    }
+                    this.bytesPerMs = computedBytesPerMs > 0 ? computedBytesPerMs : 192;
+                }
+            }
             return inputAudioFormat;
         }
 
@@ -1123,6 +1190,39 @@ DefaultLivePlaybackSpeedControl liveSpeedControl = new DefaultLivePlaybackSpeedC
             int remaining = inputBuffer.remaining();
             if (remaining == 0) return;
 
+            synchronized (engineLock) {
+                // Scenario A: ADVANCE AUDIO - Discard raw input bytes to bring audio track forward
+                if (pendingAdvanceBytes > 0) {
+                    int bytesToDiscard = (int) Math.min(remaining, pendingAdvanceBytes);
+                    inputBuffer.position(inputBuffer.position() + bytesToDiscard);
+                    pendingAdvanceBytes -= bytesToDiscard;
+                    remaining = inputBuffer.remaining();
+                    if (remaining == 0) return;
+                }
+
+                // Scenario B: DELAY AUDIO - Fabricate silences incrementally to hold audio track back
+                if (pendingDelayBytes > 0) {
+                    int bytesToInject = (int) Math.min(4096, pendingDelayBytes);
+                    if (buffer.capacity() < bytesToInject) {
+                        buffer = java.nio.ByteBuffer.allocateDirect(bytesToInject).order(java.nio.ByteOrder.nativeOrder());
+                    } else {
+                        buffer.clear();
+                    }
+
+                    // Feed raw silent zeroes into PCM layout
+                    for (int i = 0; i < bytesToInject; i++) {
+                        buffer.put((byte) 0);
+                    }
+                    buffer.flip();
+                    outputBuffer = buffer;
+                    pendingDelayBytes -= bytesToInject;
+
+                    // Do not drain the main buffer track yet; wait for the next render loop tick
+                    return;
+                }
+            }
+
+            // Normal processing fallback loop
             if (buffer.capacity() < remaining) {
                 buffer = java.nio.ByteBuffer.allocateDirect(remaining).order(java.nio.ByteOrder.nativeOrder());
             } else {
@@ -1169,6 +1269,7 @@ DefaultLivePlaybackSpeedControl liveSpeedControl = new DefaultLivePlaybackSpeedC
             outputAudioFormat = androidx.media3.common.audio.AudioProcessor.AudioFormat.NOT_SET;
         }
     }
+
     private void applyMediaSource(@NonNull PlayableItem sourceItem, @NonNull Uri uri, @androidx.annotation.Nullable String mimeType) {
         my.app.utils.app.App.get().run(() -> {
             synchronized (engineLock) {
@@ -1183,13 +1284,10 @@ DefaultLivePlaybackSpeedControl liveSpeedControl = new DefaultLivePlaybackSpeedC
 
                 androidx.media3.common.MediaItem mediaItem = mediaItemBuilder.build();
                 
-                // Connect your custom configured factory parameters
                 androidx.media3.exoplayer.source.MediaSource mediaSource = 
                         this.mediaSourceFactory.createMediaSource(mediaItem);
                 
                 this.player.setMediaSource(mediaSource);
-                
-                // Signal the player pipeline to start manifest parsing and buffering
                 this.player.prepare();
             }
         });
