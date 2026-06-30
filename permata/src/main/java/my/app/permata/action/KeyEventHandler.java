@@ -86,11 +86,58 @@ public class KeyEventHandler {
 	}
 
 	private static void performAction(Action action, MediaSessionCallback cb,
-																		@Nullable MainActivityDelegate activity, long timestamp) {
+												@Nullable MainActivityDelegate activity, long timestamp) {
 		worker = null;
 		Log.i("Performing action ", action);
+
+		// Surgical context-aware check to route steering wheel events to the web browser
+		if (activity != null && (action == Action.NEXT || action == Action.PREV)) {
+			final android.content.Context ctx = activity.getContext();
+			if (ctx instanceof androidx.fragment.app.FragmentActivity) {
+				final androidx.fragment.app.FragmentManager fragmentManager = 
+						((androidx.fragment.app.FragmentActivity) ctx).getSupportFragmentManager();
+				final java.util.List<androidx.fragment.app.Fragment> fragments = fragmentManager.getFragments();
+				
+				if (fragments != null) {
+					// Safe inspection loop across active layout layers
+					for (androidx.fragment.app.Fragment f : fragments) {
+						if (f instanceof my.app.permata.addon.web.WebBrowserFragment && f.isVisible()) {
+							final my.app.permata.addon.web.WebBrowserFragment browser = 
+									(my.app.permata.addon.web.WebBrowserFragment) f;
+							final my.app.permata.addon.web.PermataWebView webView = browser.getWebView();
+							
+							if (webView != null) {
+								final boolean isDown = (action == Action.NEXT);
+								
+								// Modern W3C KeyboardEvent payload optimized for TikTok and DouYin
+								final String jsScript = "(function() {" +
+										"  var key = " + (isDown ? "'ArrowDown'" : "'ArrowUp'") + ";" +
+										"  var keyCode = " + (isDown ? "40" : "38") + ";" +
+										"  var e = new KeyboardEvent('keydown', {" +
+										"    key: key, code: key, keyCode: keyCode, which: keyCode, bubbles: true, cancelable: true" +
+										"  });" +
+										"  (document.activeElement || document.body).dispatchEvent(e);" +
+										"})();";
+										
+								// Enforce thread safety by posting directly to the UI Message Queue
+								webView.post(new Runnable() {
+									@Override
+									public void run() {
+										webView.evaluateJavascript(jsScript, null);
+									}
+								});
+								return; // Interception successful. Consume event and bypass default music skipping.
+							}
+						}
+					}
+				}
+			}
+		}
+
+		// 100% Untouched Fallback: Guarantees existing background audio/system commands remain intact
 		action.getHandler().handle(cb, activity, timestamp);
 	}
+
 
 	private static final class Worker implements Runnable {
 		private final MediaSessionCallback cb;
