@@ -807,27 +807,32 @@ public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener 
     }
 
     @Override
-    public void setAudioDelay(int milliseconds) {
-        synchronized (engineLock) {
-            int currentDelay = audioDelayMs.get();
-            if (currentDelay == milliseconds) return;
+public void setAudioDelay(int milliseconds) {
+    synchronized (engineLock) {
+        int currentDelay = audioDelayMs.get();
+        if (currentDelay == milliseconds) return;
 
-            audioDelayMs.set(milliseconds);
+        audioDelayMs.set(milliseconds);
 
-            int deltaMs = milliseconds - currentDelay;
-            if (player != null && source != null) {
-                // Determine byte stream sizing thresholds dynamically
-                long bytesPerMs = audioProc.getEstimatedBytesPerMs();
-                if (deltaMs > 0) {
-                    this.pendingDelayBytes += deltaMs * bytesPerMs;
-                    this.pendingAdvanceBytes = 0; // Clear contradicting advance parameters
-                } else {
-                    this.pendingAdvanceBytes += Math.abs(deltaMs) * bytesPerMs;
-                    this.pendingDelayBytes = 0; // Clear contradicting delay parameters
-                }
+        int deltaMs = milliseconds - currentDelay;
+        if (player != null && source != null) {
+            // Determine byte stream sizing thresholds dynamically
+            long bytesPerMs = audioProc.getEstimatedBytesPerMs();
+            if (deltaMs > 0) {
+                this.pendingDelayBytes += deltaMs * bytesPerMs;
+                this.pendingAdvanceBytes = 0; 
+            } else {
+                this.pendingAdvanceBytes += Math.abs(deltaMs) * bytesPerMs;
+                this.pendingDelayBytes = 0; 
             }
+
+            // SURGICAL INSTANT-REFLECT ADDITION:
+            // Forces ExoPlayer to immediately discard downstream buffers and read from our processor
+            long currentPosition = player.getCurrentPosition();
+            player.seekTo(currentPosition); 
         }
     }
+}
 
     @Override
     public void close() {
