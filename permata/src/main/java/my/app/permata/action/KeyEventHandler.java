@@ -10,6 +10,7 @@ import android.widget.EditText;
 
 import androidx.annotation.Nullable;
 
+import my.app.permata.auto.EventDispatcher;
 import my.app.permata.media.service.MediaSessionCallback;
 import my.app.permata.ui.activity.MainActivityDelegate;
 import my.app.utils.function.IntObjectFunction;
@@ -65,14 +66,14 @@ public class KeyEventHandler {
 				if (targetActivity != null) {
 					final androidx.fragment.app.FragmentManager fragmentManager = targetActivity.getSupportFragmentManager();
 					
+					// High-Performance ID Lookup (Kept safe via ProGuard rules)
 					final int targetBrowserId = targetActivity.getResources().getIdentifier(
 							"browserWebView", "id", targetActivity.getPackageName());
 
-					// Dynamic extraction across parent stacks, custom segments, and deep nested components
 					final android.webkit.WebView targetWebView = scanFragmentsForWebView(fragmentManager.getFragments(), targetBrowserId);
 
 					if (targetWebView != null) {
-						// Guard verification evaluating current URL tracking to preserve native YouTube features
+						// Ultra-robust dual validation: URL token matching + Obfuscation-safe class extraction
 						final String currentUrl = targetWebView.getUrl();
 						final String className = targetWebView.getClass().getName().toLowerCase();
 						
@@ -82,10 +83,20 @@ public class KeyEventHandler {
 						if (!isYoutube) {
 							final boolean isDown = (checkCode == KeyEvent.KEYCODE_MEDIA_NEXT || checkCode == KeyEvent.KEYCODE_NAVIGATE_NEXT);
 							
-							// Multi-tiered execution handling touch interactions, layout snaps, and dynamic lazy loading
+							// DYNAMIC RESOLUTION ACQUISITION: Capture absolute IHU spatial metrics in real-time
+							final int viewWidth = targetWebView.getWidth();
+							final int viewHeight = targetWebView.getHeight();
+							final int[] screenLocation = new int[2];
+							targetWebView.getLocationOnScreen(screenLocation);
+							final int absoluteX = screenLocation[0];
+							final int absoluteY = screenLocation[1];
+
+							// Inject raw hardware resolution matrices straight into the 5-tier JS scroll runner
 							final String jsScript = "(function() {" +
 									"  try {" +
 									"    var isDown = " + isDown + ";" +
+									"    var ihuWidth = " + viewWidth + ";" +
+									"    var ihuHeight = " + viewHeight + ";" +
 									"    var targetBtn = null;" +
 									"    if (isDown) {" +
 									"      targetBtn = document.querySelector('[data-e2e=\"arrow-down\"]') || " +
@@ -111,14 +122,14 @@ public class KeyEventHandler {
 									"      var style = window.getComputedStyle(el);" +
 									"      if ((style.overflowY === 'auto' || style.overflowY === 'scroll' || style.scrollSnapType !== 'none') && el.scrollHeight > el.clientHeight) {" +
 									"        var rect = el.getBoundingClientRect();" +
-									"        if (rect.width > window.innerWidth * 0.3 && rect.height > window.innerHeight * 0.3) {" +
+									"        if (rect.width > ihuWidth * 0.3 && rect.height > ihuHeight * 0.3) {" +
 									"          scrollTarget = el;" +
 									"          break;" +
 									"        }" +
 									"      }" +
 									"    }" +
 									"    if (!scrollTarget) scrollTarget = document.querySelector('main') || document.body;" +
-									"    var viewHeight = (scrollTarget === document.body) ? window.innerHeight : scrollTarget.clientHeight;" +
+									"    var viewHeight = (scrollTarget === document.body) ? ihuHeight : scrollTarget.clientHeight;" +
 									"    var amount = isDown ? (viewHeight * 0.90) : -(viewHeight * 0.90);" +
 									"    var activeNode = document.activeElement || scrollTarget || document.body;" +
 									"    try {" +
@@ -135,7 +146,7 @@ public class KeyEventHandler {
 									"    var kEvt = new KeyboardEvent('keydown', { key: keyStr, code: keyStr, keyCode: keyCode, window: window, bubbles: true, cancelable: true });" +
 									"    activeNode.dispatchEvent(kEvt);" +
 									"  } catch (err) {" +
-									"    var fall = isDown ? window.innerHeight : -window.innerHeight;" +
+									"    var fall = isDown ? ihuHeight : -ihuHeight;" +
 									"    window.scrollBy(0, fall);" +
 									"  }" +
 									"})();";
@@ -145,7 +156,35 @@ public class KeyEventHandler {
 								public void run() {
 									try {
 										targetWebView.requestFocus();
+										// Step 1: Execute resolution-aware 5-tier JS injection rules
 										targetWebView.evaluateJavascript(jsScript, null);
+
+										// Step 2: Fire Touchscreen Swipe Simulation aligned with IHU resolution dimensions
+										float centerX = absoluteX + (viewWidth / 2.0f);
+										float startY = absoluteY + (viewHeight * (isDown ? 0.82f : 0.18f));
+										float endY = absoluteY + (viewHeight * (isDown ? 0.18f : 0.82f));
+
+										long downTime = uptimeMillis();
+										// Broadcast physical touch contact anchor point
+										EventDispatcher.get().motionEvent(downTime, downTime, android.view.MotionEvent.ACTION_DOWN, centerX, startY);
+
+										// Generate a 10-step cubic velocity translation layout curve
+										int totalSteps = 10;
+										long gestureDuration = 220; // Natural, snappy 220ms interaction signature
+										
+										for (int i = 1; i <= totalSteps; i++) {
+											float alpha = (float) i / totalSteps;
+											// Cubic ease-in-out calculation matching human swipe acceleration mechanics
+											float easeAlpha = (alpha < 0.5f) ? (4.0f * alpha * alpha * alpha) : (1.0f - (float) Math.pow(-2.0f * alpha + 2.0f, 3.0f) / 2.0f);
+											float interpolatedY = startY + (endY - startY) * easeAlpha;
+											long frameTime = downTime + (long) (gestureDuration * alpha);
+											
+											EventDispatcher.get().motionEvent(downTime, frameTime, android.view.MotionEvent.ACTION_MOVE, centerX, interpolatedY);
+										}
+
+										// Terminate touch interaction and trigger destination structural page snapping
+										EventDispatcher.get().motionEvent(downTime, downTime + gestureDuration + 10, android.view.MotionEvent.ACTION_UP, centerX, endY);
+
 									} catch (Exception ex) {
 										Log.e("Error executing advanced robust web scroll payload", ex);
 									}
@@ -200,54 +239,24 @@ public class KeyEventHandler {
 	}
 
 	/**
-	 * Iterates dynamically over nested active child fragments to fetch web targets safely.
+	 * Instant-lookup fragment scanner targeting explicit resource identifier bindings
 	 */
 	private static @Nullable android.webkit.WebView scanFragmentsForWebView(@Nullable java.util.List<androidx.fragment.app.Fragment> fragments, int targetBrowserId) {
-		if (fragments == null) return null;
+		if (fragments == null || targetBrowserId == 0) return null;
 		
 		for (androidx.fragment.app.Fragment f : fragments) {
 			if (f != null && f.isAdded() && f.isVisible()) {
 				android.view.View root = f.getView();
 				if (root != null) {
-					android.webkit.WebView matchedView = null;
-					
-					if (targetBrowserId != 0) {
-						android.view.View found = root.findViewById(targetBrowserId);
-						if (found instanceof android.webkit.WebView) {
-							matchedView = (android.webkit.WebView) found;
-						}
-					}
-					
-					if (matchedView == null) {
-						matchedView = findWebViewInHierarchy(root);
-					}
-					
-					if (matchedView != null) {
-						return matchedView;
+					android.view.View found = root.findViewById(targetBrowserId);
+					if (found instanceof android.webkit.WebView) {
+						return (android.webkit.WebView) found;
 					}
 				}
-				
 				try {
 					android.webkit.WebView nestedView = scanFragmentsForWebView(f.getChildFragmentManager().getFragments(), targetBrowserId);
 					if (nestedView != null) return nestedView;
 				} catch (Exception ignored) {}
-			}
-		}
-		return null;
-	}
-
-	/**
-	 * Recursively traces the view hierarchy tree to capture web nodes without relying on layout IDs.
-	 */
-	private static @Nullable android.webkit.WebView findWebViewInHierarchy(android.view.View view) {
-		if (view instanceof android.webkit.WebView) {
-			return (android.webkit.WebView) view;
-		}
-		if (view instanceof android.view.ViewGroup) {
-			android.view.ViewGroup group = (android.view.ViewGroup) view;
-			for (int i = 0; i < group.getChildCount(); i++) {
-				android.webkit.WebView deepFound = findWebViewInHierarchy(group.getChildAt(i));
-				if (deepFound != null) return deepFound;
 			}
 		}
 		return null;
