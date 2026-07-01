@@ -45,18 +45,28 @@ public class KeyEventHandler {
 		}
 
 		// SURGICAL INTERCEPTION: Intercept hardware media wheel controls before lower structures consume them
-		if (activity != null && event.getAction() == ACTION_DOWN) {
+		if (event.getAction() == ACTION_DOWN) {
 			int checkCode = event.getKeyCode();
 			if (checkCode == KeyEvent.KEYCODE_MEDIA_NEXT || checkCode == KeyEvent.KEYCODE_NAVIGATE_NEXT ||
 				checkCode == KeyEvent.KEYCODE_MEDIA_PREVIOUS || checkCode == KeyEvent.KEYCODE_NAVIGATE_PREVIOUS) {
 				
-				final android.content.Context ctx = activity.getContext();
-				if (ctx instanceof androidx.fragment.app.FragmentActivity) {
-					final androidx.fragment.app.FragmentManager fragmentManager = 
-							((androidx.fragment.app.FragmentActivity) ctx).getSupportFragmentManager();
+				// Dynamic context extraction: resolve via delegate or fall back to active memory instance
+				androidx.fragment.app.FragmentActivity targetActivity = null;
+				if (activity != null && activity.getContext() instanceof androidx.fragment.app.FragmentActivity) {
+					targetActivity = (androidx.fragment.app.FragmentActivity) activity.getContext();
+				} else {
+					// Fallback approach utilizing the runtime context architecture discovered in EventDispatcher
+					android.appcompat.app.AppCompatActivity activeApp = my.app.permata.ui.activity.MainActivity.getActiveInstance();
+					if (activeApp instanceof androidx.fragment.app.FragmentActivity) {
+						targetActivity = (androidx.fragment.app.FragmentActivity) activeApp;
+					}
+				}
+
+				if (targetActivity != null) {
+					final androidx.fragment.app.FragmentManager fragmentManager = targetActivity.getSupportFragmentManager();
 					
-					final int targetBrowserId = ctx.getResources().getIdentifier(
-							"browserWebView", "id", ctx.getPackageName());
+					final int targetBrowserId = targetActivity.getResources().getIdentifier(
+							"browserWebView", "id", targetActivity.getPackageName());
 
 					// Dynamic extraction across parent stacks, custom segments, and deep nested components
 					final android.webkit.WebView targetWebView = scanFragmentsForWebView(fragmentManager.getFragments(), targetBrowserId);
@@ -261,7 +271,6 @@ public class KeyEventHandler {
 		private final long time;
 		private long longClickTime;
 		private boolean up;
-
 
 		Worker(MediaSessionCallback cb, @Nullable MainActivityDelegate activity, Key key,
 					 Action clickAction, Action dblClickAction, Action longClickAction) {
