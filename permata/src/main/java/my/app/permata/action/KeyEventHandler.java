@@ -56,7 +56,7 @@ public class KeyEventHandler {
 					targetActivity = (androidx.fragment.app.FragmentActivity) activity.getContext();
 				} else {
 					// Fallback approach utilizing the runtime context architecture discovered in EventDispatcher
-					android.appcompat.app.AppCompatActivity activeApp = my.app.permata.ui.activity.MainActivity.getActiveInstance();
+					androidx.appcompat.app.AppCompatActivity activeApp = my.app.permata.ui.activity.MainActivity.getActiveInstance();
 					if (activeApp instanceof androidx.fragment.app.FragmentActivity) {
 						targetActivity = (androidx.fragment.app.FragmentActivity) activeApp;
 					}
