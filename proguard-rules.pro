@@ -23,3 +23,19 @@
 -keep class androidx.media3.exoplayer.ExoPlayerImplInternal {
     androidx.media3.common.util.HandlerWrapper handler;
 }
+
+# SUB-SYSTEM: STEERING WHEEL MEDIA SCROLL INTERCEPTION ENGINE
+# 1. Prevent optimization stripping on core background event handlers
+-keep class my.app.permata.action.KeyEventHandler {
+    public static boolean handleKeyEvent(...);
+    private static *** scanFragmentsForWebView(...);
+}
+
+# 2. Preserve runtime UI instance bridge accessor mapping
+-keep class my.app.permata.ui.activity.MainActivity {
+    public static *** getActiveInstance();
+}
+
+# 3. Prevent structural obfuscation of all custom WebView components globally
+# This guarantees targetWebView.getClass().getName() evaluates accurately for YouTube security guards
+-keep class * extends android.webkit.WebView
