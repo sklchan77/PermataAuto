@@ -10,7 +10,6 @@ import android.widget.EditText;
 
 import androidx.annotation.Nullable;
 
-import my.app.permata.auto.EventDispatcher;
 import my.app.permata.media.service.MediaSessionCallback;
 import my.app.permata.ui.activity.MainActivityDelegate;
 import my.app.utils.function.IntObjectFunction;
@@ -24,6 +23,37 @@ public class KeyEventHandler {
 	private static final int LONG_CLICK_INTERVAL = 1000;
 
 	private static Worker worker;
+
+	// Reflection Cache Bridge to safely bypass package-private access restrictions cleanly
+	private static Object cachedDispatcherInstance;
+	private static java.lang.reflect.Method cachedMotionEventMethod;
+	private static boolean reflectionInitialized = false;
+
+	private static synchronized void invokeMotionEvent(long downTime, long eventTime, int action, float x, float y) {
+		if (!reflectionInitialized) {
+			try {
+				Class<?> clazz = Class.forName("my.app.permata.auto.EventDispatcher");
+				java.lang.reflect.Method getMethod = clazz.getDeclaredMethod("get");
+				getMethod.setAccessible(true);
+				cachedDispatcherInstance = getMethod.invoke(null);
+
+				cachedMotionEventMethod = clazz.getDeclaredMethod("motionEvent", long.class, long.class, int.class, float.class, float.class);
+				cachedMotionEventMethod.setAccessible(true);
+				reflectionInitialized = true;
+			} catch (Exception e) {
+				Log.e("Failed to bind to package-private EventDispatcher", e);
+				reflectionInitialized = true; // Prevents spamming lookups if initialization fails
+			}
+		}
+
+		if (cachedMotionEventMethod != null && cachedDispatcherInstance != null) {
+			try {
+				cachedMotionEventMethod.invoke(cachedDispatcherInstance, downTime, eventTime, action, x, y);
+			} catch (Exception e) {
+				Log.e("Failed to execute remote motionEvent injection sequence", e);
+			}
+		}
+	}
 
 	public static boolean handleKeyEvent(MediaSessionCallback cb, KeyEvent event,
 																			 IntObjectFunction<KeyEvent, Boolean> defaultHandler) {
@@ -165,8 +195,8 @@ public class KeyEventHandler {
 										float endY = absoluteY + (viewHeight * (isDown ? 0.18f : 0.82f));
 
 										long downTime = uptimeMillis();
-										// Broadcast physical touch contact anchor point
-										EventDispatcher.get().motionEvent(downTime, downTime, android.view.MotionEvent.ACTION_DOWN, centerX, startY);
+										// Broadcast physical touch contact anchor point via reflection bridge
+										invokeMotionEvent(downTime, downTime, android.view.MotionEvent.ACTION_DOWN, centerX, startY);
 
 										// Generate a 10-step cubic velocity translation layout curve
 										int totalSteps = 10;
@@ -179,11 +209,11 @@ public class KeyEventHandler {
 											float interpolatedY = startY + (endY - startY) * easeAlpha;
 											long frameTime = downTime + (long) (gestureDuration * alpha);
 											
-											EventDispatcher.get().motionEvent(downTime, frameTime, android.view.MotionEvent.ACTION_MOVE, centerX, interpolatedY);
+											invokeMotionEvent(downTime, frameTime, android.view.MotionEvent.ACTION_MOVE, centerX, interpolatedY);
 										}
 
 										// Terminate touch interaction and trigger destination structural page snapping
-										EventDispatcher.get().motionEvent(downTime, downTime + gestureDuration + 10, android.view.MotionEvent.ACTION_UP, centerX, endY);
+										invokeMotionEvent(downTime, downTime + gestureDuration + 10, android.view.MotionEvent.ACTION_UP, centerX, endY);
 
 									} catch (Exception ex) {
 										Log.e("Error executing advanced robust web scroll payload", ex);
