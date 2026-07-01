@@ -44,7 +44,7 @@ public class KeyEventHandler {
 			return defaultHandler.apply(event.getKeyCode(), event);
 		}
 
-		// SURGICAL INTERCEPTION: Catch the key event here before Worker or MediaSession processes it.
+		// SURGICAL INTERCEPTION: Intercept hardware media wheel controls before lower structures consume them
 		if (activity != null && event.getAction() == ACTION_DOWN) {
 			int checkCode = event.getKeyCode();
 			if (checkCode == KeyEvent.KEYCODE_MEDIA_NEXT || checkCode == KeyEvent.KEYCODE_NAVIGATE_NEXT ||
@@ -54,136 +54,94 @@ public class KeyEventHandler {
 				if (ctx instanceof androidx.fragment.app.FragmentActivity) {
 					final androidx.fragment.app.FragmentManager fragmentManager = 
 							((androidx.fragment.app.FragmentActivity) ctx).getSupportFragmentManager();
-					final java.util.List<androidx.fragment.app.Fragment> fragments = fragmentManager.getFragments();
 					
-					if (fragments != null) {
-						for (androidx.fragment.app.Fragment f : fragments) {
-							if (f != null && f.isAdded() && f.isVisible()) {
-								final String checkName = f.getClass().getName();
-								if (checkName.contains(".yt.") || checkName.contains("Youtube")) {
-									continue; 
-								}
+					final int targetBrowserId = ctx.getResources().getIdentifier(
+							"browserWebView", "id", ctx.getPackageName());
 
-								try {
-									java.lang.reflect.Method getWebViewMethod = null;
-									for (java.lang.reflect.Method m : f.getClass().getMethods()) {
-										if (m.getParameterTypes().length == 0 && 
-												android.webkit.WebView.class.isAssignableFrom(m.getReturnType())) {
-											getWebViewMethod = m;
-											break;
-										}
+					// Dynamic extraction across parent stacks, custom segments, and deep nested components
+					final android.webkit.WebView targetWebView = scanFragmentsForWebView(fragmentManager.getFragments(), targetBrowserId);
+
+					if (targetWebView != null) {
+						// Guard verification evaluating current URL tracking to preserve native YouTube features
+						final String currentUrl = targetWebView.getUrl();
+						final String className = targetWebView.getClass().getName().toLowerCase();
+						
+						boolean isYoutube = (currentUrl != null && (currentUrl.contains("youtube.com") || currentUrl.contains("youtu.be")))
+								|| className.contains("youtube");
+
+						if (!isYoutube) {
+							final boolean isDown = (checkCode == KeyEvent.KEYCODE_MEDIA_NEXT || checkCode == KeyEvent.KEYCODE_NAVIGATE_NEXT);
+							
+							// Multi-tiered execution handling touch interactions, layout snaps, and dynamic lazy loading
+							final String jsScript = "(function() {" +
+									"  try {" +
+									"    var isDown = " + isDown + ";" +
+									"    var targetBtn = null;" +
+									"    if (isDown) {" +
+									"      targetBtn = document.querySelector('[data-e2e=\"arrow-down\"]') || " +
+									"                  document.querySelector('.xgplayer-playswitch-next') || " +
+									"                  document.querySelector('.slide-down-btn') || " +
+									"                  document.querySelector('[aria-label=\"Next video\"]') || " +
+									"                  document.querySelector('[aria-label=\"Next\"]');" +
+									"    } else {" +
+									"      targetBtn = document.querySelector('[data-e2e=\"arrow-up\"]') || " +
+									"                  document.querySelector('.xgplayer-playswitch-prev') || " +
+									"                  document.querySelector('.slide-up-btn') || " +
+									"                  document.querySelector('[aria-label=\"Previous video\"]') || " +
+									"                  document.querySelector('[aria-label=\"Go back\"]');" +
+									"    }" +
+									"    if (targetBtn) {" +
+									"      targetBtn.click();" +
+									"      return;" +
+									"    }" +
+									"    var scrollTarget = null;" +
+									"    var elements = document.querySelectorAll('*');" +
+									"    for (var i = 0; i < elements.length; i++) {" +
+									"      var el = elements[i];" +
+									"      var style = window.getComputedStyle(el);" +
+									"      if ((style.overflowY === 'auto' || style.overflowY === 'scroll' || style.scrollSnapType !== 'none') && el.scrollHeight > el.clientHeight) {" +
+									"        var rect = el.getBoundingClientRect();" +
+									"        if (rect.width > window.innerWidth * 0.3 && rect.height > window.innerHeight * 0.3) {" +
+									"          scrollTarget = el;" +
+									"          break;" +
+									"        }" +
+									"      }" +
+									"    }" +
+									"    if (!scrollTarget) scrollTarget = document.querySelector('main') || document.body;" +
+									"    var viewHeight = (scrollTarget === document.body) ? window.innerHeight : scrollTarget.clientHeight;" +
+									"    var amount = isDown ? (viewHeight * 0.90) : -(viewHeight * 0.90);" +
+									"    var activeNode = document.activeElement || scrollTarget || document.body;" +
+									"    try {" +
+									"      var wheelEvt = new WheelEvent('wheel', { deltaY: amount, bubbles: true, cancelable: true });" +
+									"      activeNode.dispatchEvent(wheelEvt);" +
+									"    } catch(wErr) {}" +
+									"    if (scrollTarget && scrollTarget.scrollBy) {" +
+									"      scrollTarget.scrollBy({ top: amount, behavior: 'smooth' });" +
+									"    } else {" +
+									"      window.scrollBy({ top: amount, behavior: 'smooth' });" +
+									"    }" +
+									"    var keyStr = isDown ? 'ArrowDown' : 'ArrowUp';" +
+									"    var keyCode = isDown ? 40 : 38;" +
+									"    var kEvt = new KeyboardEvent('keydown', { key: keyStr, code: keyStr, keyCode: keyCode, window: window, bubbles: true, cancelable: true });" +
+									"    activeNode.dispatchEvent(kEvt);" +
+									"  } catch (err) {" +
+									"    var fall = isDown ? window.innerHeight : -window.innerHeight;" +
+									"    window.scrollBy(0, fall);" +
+									"  }" +
+									"})();";
+
+							targetWebView.post(new Runnable() {
+								@Override
+								public void run() {
+									try {
+										targetWebView.requestFocus();
+										targetWebView.evaluateJavascript(jsScript, null);
+									} catch (Exception ex) {
+										Log.e("Error executing advanced robust web scroll payload", ex);
 									}
-
-									if (getWebViewMethod != null) {
-										final Object webViewInstance = getWebViewMethod.invoke(f);
-										if (webViewInstance instanceof android.view.View) {
-											final android.view.View castedView = (android.view.View) webViewInstance;
-											final int viewId = castedView.getId();
-											final int targetBrowserId = ctx.getResources().getIdentifier(
-													"browserWebView", "id", ctx.getPackageName());
-											
-											if (viewId == targetBrowserId && targetBrowserId != 0) {
-												final boolean isDown = (checkCode == KeyEvent.KEYCODE_MEDIA_NEXT || checkCode == KeyEvent.KEYCODE_NAVIGATE_NEXT);
-												
-												final String jsScript = "(function() {" +
-														"  try {" +
-														"    var isDown = " + isDown + ";" +
-														"    var targetBtn = null;" +
-														"    var targetEl = document.querySelector('main') || " +
-														"                   document.querySelector('article') || " +
-														"                   document.querySelector('[role=\"main\"]') || " +
-														"                   document.body;" +
-														"    if (isDown) {" +
-														"      targetBtn = document.querySelector('[data-e2e=\"arrow-down\"]') || " +
-														"                  document.querySelector('.xgplayer-playswitch-next') || " +
-														"                  document.querySelector('.slide-down-btn') || " +
-														"                  document.querySelector('.nav-btn-down') || " +
-														"                  document.querySelector('[aria-label=\"Next video\"]') || " +
-														"                  document.querySelector('[aria-label=\"Next\"]');" +
-														"    } else {" +
-														"      targetBtn = document.querySelector('[data-e2e=\"arrow-up\"]') || " +
-														"                  document.querySelector('.xgplayer-playswitch-prev') || " +
-														"                  document.querySelector('.slide-up-btn') || " +
-														"                  document.querySelector('.nav-btn-up') || " +
-														"                  document.querySelector('[aria-label=\"Previous video\"]') || " +
-														"                  document.querySelector('[aria-label=\"Go back\"]');" +
-														"    }" +
-														"    if (targetBtn) {" +
-														"      targetBtn.click();" +
-														"      return;" +
-														"    }" +
-														"    var key = isDown ? 'ArrowDown' : 'ArrowUp';" +
-														"    var keyCode = isDown ? 40 : 38;" +
-														"    var activeNode = document.activeElement || targetEl || document.body;" +
-														"    try {" +
-														"      var kEvt = new KeyboardEvent('keydown', { key: key, code: key, keyCode: keyCode, which: keyCode, bubbles: true, cancelable: true });" +
-														"      activeNode.dispatchEvent(kEvt);" +
-														"    } catch(kErr) {" +
-														"      if (document.createEvent) {" +
-														"        var oldKeyEvt = document.createEvent('KeyboardEvent');" +
-														"        (oldKeyEvt.initKeyboardEvent || oldKeyEvt.initKeyEvent)('keydown', true, true, window, key, 0, '', false, '');" +
-														"        activeNode.dispatchEvent(oldKeyEvt);" +
-														"      }" +
-														"    }" +
-														"    if (targetEl) {" +
-														"      var rect = targetEl.getBoundingClientRect();" +
-														"      var startX = rect.left + (rect.width / 2);" +
-														"      var startY = rect.top + (rect.height / 2);" +
-														"      var travelDistance = rect.height * 0.80;" +
-														"      var endY = isDown ? (startY - travelDistance) : (startY + travelDistance);" +
-														"      var dispatchTouch = function(type, x, y) {" +
-														"        try {" +
-														"          var touchObj = new Touch({ identifier: Date.now(), target: targetEl, clientX: x, clientY: y, screenX: x, screenY: y, pageX: x, pageY: y });" +
-														"          var touchEvent = new TouchEvent(type, { bubbles: true, cancelable: true, touches: [touchObj], targetTouches: [touchObj], changedTouches: [touchObj] });" +
-														"          targetEl.dispatchEvent(touchEvent);" +
-														"        } catch(tObjErr) {" +
-														"          if (document.createEvent) {" +
-														"            var oldTouchEvt = document.createEvent('TouchEvent');" +
-														"            oldTouchEvt.initTouchEvent(type, true, true);" +
-														"            targetEl.dispatchEvent(oldTouchEvt);" +
-														"          }" +
-														"        }" +
-														"      };" +
-														"      dispatchTouch('touchstart', startX, startY);" +
-														"      dispatchTouch('touchmove', startX, (startY + endY) / 2);" +
-														"      dispatchTouch('touchmove', startX, endY);" +
-														"      dispatchTouch('touchend', startX, endY);" +
-														"    }" +
-														"    var pageHeight = window.innerHeight || document.documentElement.clientHeight || 600;" +
-														"    var scrollAmount = isDown ? (pageHeight * 0.95) : -(pageHeight * 0.95);" +
-														"    try {" +
-														"      var wheelEvt = new WheelEvent('wheel', { deltaY: scrollAmount, bubbles: true, cancelable: true });" +
-														"      activeNode.dispatchEvent(wheelEvt);" +
-														"    } catch(wErr) {}" +
-														"    window.scrollBy({ top: scrollAmount, behavior: 'smooth' });" +
-														"  } catch (globalErr) {" +
-														"    var fallbackHeight = window.innerHeight || 500;" +
-														"    var finalScroll = isDown ? fallbackHeight : -fallbackHeight;" +
-														"    window.scrollBy(0, finalScroll);" +
-														"  }" +
-														"})();";
-
-												final java.lang.reflect.Method evaluateJsMethod = android.webkit.WebView.class.getMethod(
-														"evaluateJavascript", String.class, android.webkit.ValueCallback.class);
-												
-												castedView.post(new Runnable() {
-													@Override
-													public void run() {
-														try {
-															evaluateJsMethod.invoke(castedView, jsScript, null);
-														} catch (Exception ex) {
-															Log.e("Error executing isolated JS web scroll payload", ex);
-														}
-													}
-												});
-												return true; // Swallowed completely at raw entry point!
-											}
-										}
-									}
-								} catch (Exception e) {
-									Log.e("Error during absolute isolated browser scroll reflection routing", e);
 								}
-							}
+							});
+							return true; // Key event cleanly consumed
 						}
 					}
 				}
@@ -229,6 +187,60 @@ public class KeyEventHandler {
 
 		worker = new Worker(cb, activity, k, clickAction, dblClickAction, longClickAction);
 		return true;
+	}
+
+	/**
+	 * Iterates dynamically over nested active child fragments to fetch web targets safely.
+	 */
+	private static @Nullable android.webkit.WebView scanFragmentsForWebView(@Nullable java.util.List<androidx.fragment.app.Fragment> fragments, int targetBrowserId) {
+		if (fragments == null) return null;
+		
+		for (androidx.fragment.app.Fragment f : fragments) {
+			if (f != null && f.isAdded() && f.isVisible()) {
+				android.view.View root = f.getView();
+				if (root != null) {
+					android.webkit.WebView matchedView = null;
+					
+					if (targetBrowserId != 0) {
+						android.view.View found = root.findViewById(targetBrowserId);
+						if (found instanceof android.webkit.WebView) {
+							matchedView = (android.webkit.WebView) found;
+						}
+					}
+					
+					if (matchedView == null) {
+						matchedView = findWebViewInHierarchy(root);
+					}
+					
+					if (matchedView != null) {
+						return matchedView;
+					}
+				}
+				
+				try {
+					android.webkit.WebView nestedView = scanFragmentsForWebView(f.getChildFragmentManager().getFragments(), targetBrowserId);
+					if (nestedView != null) return nestedView;
+				} catch (Exception ignored) {}
+			}
+		}
+		return null;
+	}
+
+	/**
+	 * Recursively traces the view hierarchy tree to capture web nodes without relying on layout IDs.
+	 */
+	private static @Nullable android.webkit.WebView findWebViewInHierarchy(android.view.View view) {
+		if (view instanceof android.webkit.WebView) {
+			return (android.webkit.WebView) view;
+		}
+		if (view instanceof android.view.ViewGroup) {
+			android.view.ViewGroup group = (android.view.ViewGroup) view;
+			for (int i = 0; i < group.getChildCount(); i++) {
+				android.webkit.WebView deepFound = findWebViewInHierarchy(group.getChildAt(i));
+				if (deepFound != null) return deepFound;
+			}
+		}
+		return null;
 	}
 
 	private static void performAction(Action action, MediaSessionCallback cb,
