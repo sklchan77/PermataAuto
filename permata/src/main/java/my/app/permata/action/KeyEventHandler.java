@@ -182,7 +182,6 @@ public class KeyEventHandler {
 									"  }" +
 									"})();";
 
-							// FIX: Explicitly alias target reference to clean constant block scope boundary
 							final android.webkit.WebView finalWebView = targetWebView;
 							targetWebView.post(new Runnable() {
 								@Override
@@ -364,7 +363,7 @@ public class KeyEventHandler {
 			if (worker != this) return;
 			if (up) {
 				Log.i(key, " key click");
-				handle(clickAction);
+				handleAction(clickAction);
 				return;
 			}
 
@@ -378,7 +377,7 @@ public class KeyEventHandler {
 			} else {
 				longClickTime = time;
 				Log.i(key, " key long click");
-				handle(longClickAction);
+				handleAction(longClickAction);
 				worker = this;
 				sched(LONG_CLICK_INTERVAL);
 			}
@@ -392,7 +391,7 @@ public class KeyEventHandler {
 					if (!up) {
 						if ((longClickAction == clickAction) || (longClickAction == Action.NONE)) {
 							Log.i(key, " key click");
-							handle(clickAction);
+							handleAction(clickAction);
 						}
 					}
 					return true;
@@ -403,10 +402,10 @@ public class KeyEventHandler {
 					if (holdTime <= DBL_CLICK_INTERVAL) {
 						if (up) {
 							Log.i(key, " key double click");
-							handle(dblClickAction);
+							handleAction(dblClickAction);
 						} else if (dblClickAction == clickAction) {
 							Log.i(key, " key click");
-							handle(clickAction);
+							handleAction(clickAction);
 						} else {
 							up = true;
 						}
@@ -416,7 +415,7 @@ public class KeyEventHandler {
 						worker = null;
 						if (longClickTime == time) {
 							Log.i(key, " key click");
-							handle(clickAction);
+							handleAction(clickAction);
 						}
 					}
 
@@ -424,11 +423,15 @@ public class KeyEventHandler {
 				}
 				case ACTION_MULTIPLE -> {
 					Log.i(key, " key double click");
-					handle(dblClickAction);
+					handleAction(dblClickAction);
 					return true;
 				}
 			}
 			return false;
+		}
+
+		private void handleAction(Action action) {
+			performAction(action, cb, activity, time);
 		}
 
 		private void sched(long delay) {
