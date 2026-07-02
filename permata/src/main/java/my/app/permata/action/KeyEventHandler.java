@@ -100,6 +100,7 @@ public class KeyEventHandler {
 					final int targetBrowserId = targetActivity.getResources().getIdentifier(
 							"browserWebView", "id", targetActivity.getPackageName());
 
+					// Dynamic extraction across parent stacks, custom modules, and deep nested components
 					final android.webkit.WebView targetWebView = scanFragmentsForWebView(fragmentManager.getFragments(), targetBrowserId);
 
 					if (targetWebView != null) {
@@ -269,24 +270,57 @@ public class KeyEventHandler {
 	}
 
 	/**
-	 * Instant-lookup fragment scanner targeting explicit resource identifier bindings
+	 * Robust fragment scanner running dual lookup logic: explicit resource mapping 
+	 * with an automatic type-safe tree scan fallback to handle ProGuard/R8 resource shrinking safely.
 	 */
 	private static @Nullable android.webkit.WebView scanFragmentsForWebView(@Nullable java.util.List<androidx.fragment.app.Fragment> fragments, int targetBrowserId) {
-		if (fragments == null || targetBrowserId == 0) return null;
+		if (fragments == null) return null;
 		
 		for (androidx.fragment.app.Fragment f : fragments) {
 			if (f != null && f.isAdded() && f.isVisible()) {
 				android.view.View root = f.getView();
 				if (root != null) {
-					android.view.View found = root.findViewById(targetBrowserId);
-					if (found instanceof android.webkit.WebView) {
-						return (android.webkit.WebView) found;
+					android.webkit.WebView matchedView = null;
+					
+					// Attempt 1: Core layout resource tracking
+					if (targetBrowserId != 0) {
+						android.view.View found = root.findViewById(targetBrowserId);
+						if (found instanceof android.webkit.WebView) {
+							matchedView = (android.webkit.WebView) found;
+						}
+					}
+					
+					// Attempt 2: ProGuard-immune type-safe layout tree scan backup
+					if (matchedView == null) {
+						matchedView = findWebViewInHierarchy(root);
+					}
+					
+					if (matchedView != null) {
+						return matchedView;
 					}
 				}
+				// Attempt 3: Trace recursively into child tab/panel manager implementations
 				try {
 					android.webkit.WebView nestedView = scanFragmentsForWebView(f.getChildFragmentManager().getFragments(), targetBrowserId);
 					if (nestedView != null) return nestedView;
 				} catch (Exception ignored) {}
+			}
+		}
+		return null;
+	}
+
+	/**
+	 * Recursively traverses dynamic ViewGroups to extract rendering WebViews completely independent of resource IDs.
+	 */
+	private static @Nullable android.webkit.WebView findWebViewInHierarchy(android.view.View view) {
+		if (view instanceof android.webkit.WebView) {
+			return (android.webkit.WebView) view;
+		}
+		if (view instanceof android.view.ViewGroup) {
+			android.view.ViewGroup group = (android.view.ViewGroup) view;
+			for (int i = 0; i < group.getChildCount(); i++) {
+				android.webkit.WebView deepFound = findWebViewInHierarchy(group.getChildAt(i));
+				if (deepFound != null) return deepFound;
 			}
 		}
 		return null;
