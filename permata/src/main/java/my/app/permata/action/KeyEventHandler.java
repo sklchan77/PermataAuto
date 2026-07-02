@@ -18,7 +18,6 @@ import my.app.utils.log.Log;
 /**
  * High-Performance Media Event Controller optimized for physical automotive control rings.
  * Fully compatible with package-private access rules and aggressive ProGuard configurations.
- * @author sklchan77
  */
 public class KeyEventHandler {
 	private static final int DBL_CLICK_INTERVAL = 500;
@@ -49,7 +48,7 @@ public class KeyEventHandler {
 					} catch (Exception e) {
 						Log.e("Failed to bind to package-private EventDispatcher", e);
 					} finally {
-						reflectionInitialized = true; // Safe fallback guard to prevent repeating lookups on failure
+						reflectionInitialized = true; 
 					}
 				}
 			}
@@ -84,7 +83,6 @@ public class KeyEventHandler {
 			return defaultHandler.apply(event.getKeyCode(), event);
 		}
 
-		// SURGICAL INTERCEPTION: Catch hardware wheel controls before structural views discard them
 		if (event.getAction() == ACTION_DOWN) {
 			int checkCode = event.getKeyCode();
 			if (checkCode == KeyEvent.KEYCODE_MEDIA_NEXT || checkCode == KeyEvent.KEYCODE_NAVIGATE_NEXT ||
@@ -103,15 +101,13 @@ public class KeyEventHandler {
 				if (targetActivity != null) {
 					android.webkit.WebView targetWebView = null;
 
-					// Optimization: Try recycling the cached view reference to maintain zero latency
 					if (cachedWebViewRef != null) {
 						targetWebView = cachedWebViewRef.get();
 						if (targetWebView != null && (!targetWebView.isAttachedToWindow() || !targetWebView.isShown())) {
-							targetWebView = null; // Clear if the cached component was detached or hidden
+							targetWebView = null; 
 						}
 					}
 
-					// Cache miss: Execute your friend's robust 3-Tier Scan Strategy
 					if (targetWebView == null) {
 						final androidx.fragment.app.FragmentManager fragmentManager = targetActivity.getSupportFragmentManager();
 						final int targetBrowserId = targetActivity.getResources().getIdentifier(
@@ -140,7 +136,7 @@ public class KeyEventHandler {
 							final int absoluteX = screenLocation[0];
 							final int absoluteY = screenLocation[1];
 
-							// Real-time Contextual JS Scrolling Engine
+							// Cleanly Escaped WebKit DOM JS Event Router
 							final String jsScript = "(function() {" +
 									"  try {" +
 									"    var isDown = " + isDown + ";" +
@@ -162,7 +158,7 @@ public class KeyEventHandler {
 									"    }" +
 									"    if (targetBtn) {" +
 									"      targetBtn.click();" +
-									"      return;" +
+									"      return 'btn_click';" + 
 									"    }" +
 									"    var scrollTarget = null;" +
 									"    var elements = document.querySelectorAll('*');" +
@@ -194,13 +190,14 @@ public class KeyEventHandler {
 									"    var keyCode = isDown ? 40 : 38;" +
 									"    var kEvt = new KeyboardEvent('keydown', { key: keyStr, code: keyStr, keyCode: keyCode, window: window, bubbles: true, cancelable: true });" +
 									"    activeNode.dispatchEvent(kEvt);" +
+									"    return 'js_scroll';" +
 									"  } catch (err) {" +
 									"    var fall = isDown ? ihuHeight : -ihuHeight;" +
 									"    window.scrollBy(0, fall);" +
+									"    return 'fallback_scroll';" +
 									"  }" +
 									"})();";
 
-							// FIX: Create an explicitly final reference pointer to comply with Java's inner-class scopes
 							final android.webkit.WebView finalWebView = targetWebView;
 
 							targetWebView.post(new Runnable() {
@@ -208,28 +205,23 @@ public class KeyEventHandler {
 								public void run() {
 									try {
 										finalWebView.requestFocus();
-										finalWebView.evaluateJavascript(jsScript, null);
-
-										float centerX = absoluteX + (viewWidth / 2.0f);
-										float startY = absoluteY + (viewHeight * (isDown ? 0.82f : 0.18f));
-										float endY = absoluteY + (viewHeight * (isDown ? 0.18f : 0.82f));
-
-										long downTime = uptimeMillis();
-										invokeMotionEvent(downTime, downTime, android.view.MotionEvent.ACTION_DOWN, centerX, startY);
-
-										int totalSteps = 10;
-										long gestureDuration = 220; 
 										
-										for (int i = 1; i <= totalSteps; i++) {
-											float alpha = (float) i / totalSteps;
-											float easeAlpha = (alpha < 0.5f) ? (4.0f * alpha * alpha * alpha) : (1.0f - (float) Math.pow(-2.0f * alpha + 2.0f, 3.0f) / 2.0f);
-											float interpolatedY = startY + (endY - startY) * easeAlpha;
-											long frameTime = downTime + (long) (gestureDuration * alpha);
-											
-											invokeMotionEvent(downTime, frameTime, android.view.MotionEvent.ACTION_MOVE, centerX, interpolatedY);
-										}
+										// Process JS Engine evaluation with string isolation feedback rules
+										finalWebView.evaluateJavascript(jsScript, new android.webkit.ValueCallback<String>() {
+											@Override
+											public void onReceiveValue(String value) {
+												String token = (value != null) ? value.replace("\"", "") : "";
+												
+												// If explicit DOM navigation button is handled, stop here to avoid dual input collision
+												if ("btn_click".equals(token)) {
+													Log.i("KeyEventHandler", "Navigation executed via direct DOM element click.");
+													return;
+												}
 
-										invokeMotionEvent(downTime, downTime + gestureDuration + 10, android.view.MotionEvent.ACTION_UP, centerX, endY);
+												// Otherwise, trigger the physically paced swipe gesture sequence
+												executePacedSwipeGesture(viewWidth, viewHeight, absoluteX, absoluteY, isDown);
+											}
+										});
 
 									} catch (Exception ex) {
 										Log.e("Error executing advanced robust web scroll payload", ex);
@@ -284,6 +276,53 @@ public class KeyEventHandler {
 		return true;
 	}
 
+	/**
+	 * Dispatches continuous incremental MotionEvents across real clock frame intervals via Handler tasks.
+	 */
+	private static void executePacedSwipeGesture(final int viewWidth, final int viewHeight, 
+																							 final int absoluteX, final int absoluteY, final boolean isDown) {
+		final float centerX = absoluteX + (viewWidth / 2.0f);
+		final float startY = absoluteY + (viewHeight * (isDown ? 0.82f : 0.18f));
+		final float endY = absoluteY + (viewHeight * (isDown ? 0.18f : 0.82f));
+
+		final long downTime = uptimeMillis();
+		
+		// 1. Dispatch structural touch start down anchor
+		invokeMotionEvent(downTime, downTime, android.view.MotionEvent.ACTION_DOWN, centerX, startY);
+
+		final int totalSteps = 12;
+		final long gestureDuration = 240; 
+		final long stepDelay = gestureDuration / totalSteps; // Delay coordinates by ~20ms frames
+
+		final android.os.Handler mainHandler = new android.os.Handler(android.os.Looper.getMainLooper());
+		
+		for (int i = 1; i <= totalSteps; i++) {
+			final int step = i;
+			mainHandler.postDelayed(new Runnable() {
+				@Override
+				public void run() {
+					float alpha = (float) step / totalSteps;
+					
+					// Smooth cubic ease curve metrics to mimic physical finger dragging acceleration patterns
+					float easeAlpha = (alpha < 0.5f) 
+							? (4.0f * alpha * alpha * alpha) 
+							: (1.0f - (float) Math.pow(-2.0f * alpha + 2.0f, 3.0f) / 2.0f);
+					
+					float interpolatedY = startY + (endY - startY) * easeAlpha;
+					long frameTime = downTime + (step * stepDelay);
+					
+					// 2. Stream incremental moves separated by true wall-clock time
+					invokeMotionEvent(downTime, frameTime, android.view.MotionEvent.ACTION_MOVE, centerX, interpolatedY);
+					
+					// 3. Complete gesture event and release pointer layout contact to engage scrolling inertia
+					if (step == totalSteps) {
+						invokeMotionEvent(downTime, frameTime + stepDelay, android.view.MotionEvent.ACTION_UP, centerX, endY);
+					}
+				}
+			}, step * stepDelay); 
+		}
+	}
+
 	private static @Nullable android.webkit.WebView scanFragmentsForWebView(@Nullable java.util.List<androidx.fragment.app.Fragment> fragments, int targetBrowserId) {
 		if (fragments == null) return null;
 		
@@ -317,11 +356,9 @@ public class KeyEventHandler {
 		return null;
 	}
 
-	// Optimization: Size metrics filter applied to avoid hijacked selections on web tracking structures
 	private static @Nullable android.webkit.WebView findWebViewInHierarchy(android.view.View view) {
 		if (view instanceof android.webkit.WebView) {
 			android.webkit.WebView webView = (android.webkit.WebView) view;
-			// Ignore zero-dimension script containers, invisible trackers, or hidden side banners
 			if (webView.isShown() && (webView.getWidth() == 0 || webView.getWidth() > 100)) {
 				return webView;
 			}
