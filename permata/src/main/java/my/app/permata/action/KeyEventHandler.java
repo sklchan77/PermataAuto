@@ -16,9 +16,7 @@ import my.app.utils.function.IntObjectFunction;
 import my.app.utils.log.Log;
 
 /**
- * High-Performance Media Event Controller optimized for physical automotive control rings.
- * Fully compatible with package-private access rules and aggressive ProGuard configurations.
- * * @author sklchan77
+ * @author sklchan77
  */
 public class KeyEventHandler {
 	private static final int DBL_CLICK_INTERVAL = 500;
@@ -26,32 +24,25 @@ public class KeyEventHandler {
 
 	private static Worker worker;
 
-	// Optimization: Thread-Safe Double-Checked Reflection Fields
+	// Reflection Cache Bridge to safely bypass package-private access restrictions cleanly
 	private static Object cachedDispatcherInstance;
 	private static java.lang.reflect.Method cachedMotionEventMethod;
-	private static volatile boolean reflectionInitialized = false;
+	private static boolean reflectionInitialized = false;
 
-	// Optimization: Lightweight WeakReference UI-Cache to protect Main Thread cycles
-	private static java.lang.ref.WeakReference<android.webkit.WebView> cachedWebViewRef;
-
-	private static void invokeMotionEvent(long downTime, long eventTime, int action, float x, float y) {
+	private static synchronized void invokeMotionEvent(long downTime, long eventTime, int action, float x, float y) {
 		if (!reflectionInitialized) {
-			synchronized (KeyEventHandler.class) {
-				if (!reflectionInitialized) {
-					try {
-						Class<?> clazz = Class.forName("my.app.permata.auto.EventDispatcher");
-						java.lang.reflect.Method getMethod = clazz.getDeclaredMethod("get");
-						getMethod.setAccessible(true);
-						cachedDispatcherInstance = getMethod.invoke(null);
+			try {
+				Class<?> clazz = Class.forName("my.app.permata.auto.EventDispatcher");
+				java.lang.reflect.Method getMethod = clazz.getDeclaredMethod("get");
+				getMethod.setAccessible(true);
+				cachedDispatcherInstance = getMethod.invoke(null);
 
-						cachedMotionEventMethod = clazz.getDeclaredMethod("motionEvent", long.class, long.class, int.class, float.class, float.class);
-						cachedMotionEventMethod.setAccessible(true);
-					} catch (Exception e) {
-						Log.e("Failed to bind to package-private EventDispatcher", e);
-					} finally {
-						reflectionInitialized = true; // Safe fallback guard to prevent repeating lookups on failure
-					}
-				}
+				cachedMotionEventMethod = clazz.getDeclaredMethod("motionEvent", long.class, long.class, int.class, float.class, float.class);
+				cachedMotionEventMethod.setAccessible(true);
+				reflectionInitialized = true;
+			} catch (Exception e) {
+				Log.e("Failed to bind to package-private EventDispatcher", e);
+				reflectionInitialized = true; // Prevents spamming lookups if initialization fails
 			}
 		}
 
@@ -84,16 +75,18 @@ public class KeyEventHandler {
 			return defaultHandler.apply(event.getKeyCode(), event);
 		}
 
-		// SURGICAL INTERCEPTION: Catch hardware wheel controls before structural views discard them
+		// SURGICAL INTERCEPTION: Intercept hardware media wheel controls before lower structures consume them
 		if (event.getAction() == ACTION_DOWN) {
 			int checkCode = event.getKeyCode();
 			if (checkCode == KeyEvent.KEYCODE_MEDIA_NEXT || checkCode == KeyEvent.KEYCODE_NAVIGATE_NEXT ||
 				checkCode == KeyEvent.KEYCODE_MEDIA_PREVIOUS || checkCode == KeyEvent.KEYCODE_NAVIGATE_PREVIOUS) {
 				
+				// Dynamic context extraction: resolve via delegate or fall back to active memory instance
 				androidx.fragment.app.FragmentActivity targetActivity = null;
 				if (activity != null && activity.getContext() instanceof androidx.fragment.app.FragmentActivity) {
 					targetActivity = (androidx.fragment.app.FragmentActivity) activity.getContext();
 				} else {
+					// Fallback approach utilizing the runtime context architecture discovered in EventDispatcher
 					androidx.appcompat.app.AppCompatActivity activeApp = my.app.permata.ui.activity.MainActivity.getActiveInstance();
 					if (activeApp instanceof androidx.fragment.app.FragmentActivity) {
 						targetActivity = (androidx.fragment.app.FragmentActivity) activeApp;
@@ -101,29 +94,17 @@ public class KeyEventHandler {
 				}
 
 				if (targetActivity != null) {
-					android.webkit.WebView targetWebView = null;
+					final androidx.fragment.app.FragmentManager fragmentManager = targetActivity.getSupportFragmentManager();
+					
+					// High-Performance ID Lookup (Kept safe via ProGuard rules)
+					final int targetBrowserId = targetActivity.getResources().getIdentifier(
+							"browserWebView", "id", targetActivity.getPackageName());
 
-					// Optimization: Try recycling the cached view reference to maintain zero latency
-					if (cachedWebViewRef != null) {
-						targetWebView = cachedWebViewRef.get();
-						if (targetWebView != null && (!targetWebView.isAttachedToWindow() || !targetWebView.isShown())) {
-							targetWebView = null; // Clear if the cached component was detached or hidden
-						}
-					}
-
-					// Cache miss: Execute your friend's robust 3-Tier Scan Strategy
-					if (targetWebView == null) {
-						final androidx.fragment.app.FragmentManager fragmentManager = targetActivity.getSupportFragmentManager();
-						final int targetBrowserId = targetActivity.getResources().getIdentifier(
-								"browserWebView", "id", targetActivity.getPackageName());
-
-						targetWebView = scanFragmentsForWebView(fragmentManager.getFragments(), targetBrowserId);
-						if (targetWebView != null) {
-							cachedWebViewRef = new java.lang.ref.WeakReference<>(targetWebView);
-						}
-					}
+					// Dynamic extraction across parent stacks, custom modules, and deep nested components
+					final android.webkit.WebView targetWebView = scanFragmentsForWebView(fragmentManager.getFragments(), targetBrowserId);
 
 					if (targetWebView != null) {
+						// Ultra-robust dual validation: URL token matching + Obfuscation-safe class extraction
 						final String currentUrl = targetWebView.getUrl();
 						final String className = targetWebView.getClass().getName().toLowerCase();
 						
@@ -133,6 +114,7 @@ public class KeyEventHandler {
 						if (!isYoutube) {
 							final boolean isDown = (checkCode == KeyEvent.KEYCODE_MEDIA_NEXT || checkCode == KeyEvent.KEYCODE_NAVIGATE_NEXT);
 							
+							// DYNAMIC RESOLUTION ACQUISITION: Capture absolute IHU spatial metrics in real-time
 							final int viewWidth = targetWebView.getWidth();
 							final int viewHeight = targetWebView.getHeight();
 							final int[] screenLocation = new int[2];
@@ -140,7 +122,7 @@ public class KeyEventHandler {
 							final int absoluteX = screenLocation[0];
 							final int absoluteY = screenLocation[1];
 
-							// Real-time Contextual JS Scrolling Engine
+							// Inject raw hardware resolution matrices straight into the 5-tier JS scroll runner
 							final String jsScript = "(function() {" +
 									"  try {" +
 									"    var isDown = " + isDown + ";" +
@@ -155,7 +137,7 @@ public class KeyEventHandler {
 									"                  document.querySelector('[aria-label=\"Next\"]');" +
 									"    } else {" +
 									"      targetBtn = document.querySelector('[data-e2e=\"arrow-up\"]') || " +
-									"                  document.querySelector('.xgplayer-playswitch-prev']') || " +
+									"                  document.querySelector('.xgplayer-playswitch-prev') || " +
 									"                  document.querySelector('.slide-up-btn') || " +
 									"                  document.querySelector('[aria-label=\"Previous video\"]') || " +
 									"                  document.querySelector('[aria-label=\"Go back\"]');" +
@@ -200,25 +182,32 @@ public class KeyEventHandler {
 									"  }" +
 									"})();";
 
+							// FIX: Explicitly alias target reference to clean constant block scope boundary
+							final android.webkit.WebView finalWebView = targetWebView;
 							targetWebView.post(new Runnable() {
 								@Override
 								public void run() {
 									try {
-										targetWebView.requestFocus();
-										targetWebView.evaluateJavascript(jsScript, null);
+										finalWebView.requestFocus();
+										// Step 1: Execute resolution-aware 5-tier JS injection rules
+										finalWebView.evaluateJavascript(jsScript, null);
 
+										// Step 2: Fire Touchscreen Swipe Simulation aligned with IHU resolution dimensions
 										float centerX = absoluteX + (viewWidth / 2.0f);
 										float startY = absoluteY + (viewHeight * (isDown ? 0.82f : 0.18f));
 										float endY = absoluteY + (viewHeight * (isDown ? 0.18f : 0.82f));
 
 										long downTime = uptimeMillis();
+										// Broadcast physical touch contact anchor point via reflection bridge
 										invokeMotionEvent(downTime, downTime, android.view.MotionEvent.ACTION_DOWN, centerX, startY);
 
+										// Generate a 10-step cubic velocity translation layout curve
 										int totalSteps = 10;
-										long gestureDuration = 220; 
+										long gestureDuration = 220; // Natural, snappy 220ms interaction signature
 										
 										for (int i = 1; i <= totalSteps; i++) {
 											float alpha = (float) i / totalSteps;
+											// Cubic ease-in-out calculation matching human swipe acceleration mechanics
 											float easeAlpha = (alpha < 0.5f) ? (4.0f * alpha * alpha * alpha) : (1.0f - (float) Math.pow(-2.0f * alpha + 2.0f, 3.0f) / 2.0f);
 											float interpolatedY = startY + (endY - startY) * easeAlpha;
 											long frameTime = downTime + (long) (gestureDuration * alpha);
@@ -226,6 +215,7 @@ public class KeyEventHandler {
 											invokeMotionEvent(downTime, frameTime, android.view.MotionEvent.ACTION_MOVE, centerX, interpolatedY);
 										}
 
+										// Terminate touch interaction and trigger destination structural page snapping
 										invokeMotionEvent(downTime, downTime + gestureDuration + 10, android.view.MotionEvent.ACTION_UP, centerX, endY);
 
 									} catch (Exception ex) {
@@ -233,7 +223,7 @@ public class KeyEventHandler {
 									}
 								}
 							});
-							return true; 
+							return true; // Key event cleanly consumed
 						}
 					}
 				}
@@ -281,6 +271,10 @@ public class KeyEventHandler {
 		return true;
 	}
 
+	/**
+	 * Robust fragment scanner running dual lookup logic: explicit resource mapping 
+	 * with an automatic type-safe tree scan fallback to handle ProGuard/R8 resource shrinking safely.
+	 */
 	private static @Nullable android.webkit.WebView scanFragmentsForWebView(@Nullable java.util.List<androidx.fragment.app.Fragment> fragments, int targetBrowserId) {
 		if (fragments == null) return null;
 		
@@ -290,6 +284,7 @@ public class KeyEventHandler {
 				if (root != null) {
 					android.webkit.WebView matchedView = null;
 					
+					// Attempt 1: Core layout resource tracking
 					if (targetBrowserId != 0) {
 						android.view.View found = root.findViewById(targetBrowserId);
 						if (found instanceof android.webkit.WebView) {
@@ -297,6 +292,7 @@ public class KeyEventHandler {
 						}
 					}
 					
+					// Attempt 2: ProGuard-immune type-safe layout tree scan backup
 					if (matchedView == null) {
 						matchedView = findWebViewInHierarchy(root);
 					}
@@ -305,6 +301,7 @@ public class KeyEventHandler {
 						return matchedView;
 					}
 				}
+				// Attempt 3: Trace recursively into child tab/panel manager implementations
 				try {
 					android.webkit.WebView nestedView = scanFragmentsForWebView(f.getChildFragmentManager().getFragments(), targetBrowserId);
 					if (nestedView != null) return nestedView;
@@ -314,14 +311,12 @@ public class KeyEventHandler {
 		return null;
 	}
 
-	// Optimization: Size metrics filter applied to avoid hijacked selections on web tracking structures
+	/**
+	 * Recursively traverses dynamic ViewGroups to extract rendering WebViews completely independent of resource IDs.
+	 */
 	private static @Nullable android.webkit.WebView findWebViewInHierarchy(android.view.View view) {
 		if (view instanceof android.webkit.WebView) {
-			android.webkit.WebView webView = (android.webkit.WebView) view;
-			// Ignore zero-dimension script containers, invisible trackers, or hidden side banners
-			if (webView.isShown() && (webView.getWidth() == 0 || webView.getWidth() > 100)) {
-				return webView;
-			}
+			return (android.webkit.WebView) view;
 		}
 		if (view instanceof android.view.ViewGroup) {
 			android.view.ViewGroup group = (android.view.ViewGroup) view;
@@ -378,7 +373,7 @@ public class KeyEventHandler {
 
 			if (diff < LONG_CLICK_INTERVAL) {
 				sched(LONG_CLICK_INTERVAL - diff);
-			} else if (diff > 15000) { 
+			} else if (diff > 15000) { // Key UP not received?
 				worker = null;
 			} else {
 				longClickTime = time;
@@ -434,10 +429,6 @@ public class KeyEventHandler {
 				}
 			}
 			return false;
-		}
-
-		private void handle(Action action) {
-			performAction(action, cb, activity, time);
 		}
 
 		private void sched(long delay) {
