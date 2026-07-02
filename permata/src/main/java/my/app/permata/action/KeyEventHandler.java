@@ -18,7 +18,7 @@ import my.app.utils.log.Log;
 /**
  * High-Performance Media Event Controller optimized for physical automotive control rings.
  * Fully compatible with package-private access rules and aggressive ProGuard configurations.
- * * @author sklchan77
+ * @author sklchan77
  */
 public class KeyEventHandler {
 	private static final int DBL_CLICK_INTERVAL = 500;
@@ -155,7 +155,7 @@ public class KeyEventHandler {
 									"                  document.querySelector('[aria-label=\"Next\"]');" +
 									"    } else {" +
 									"      targetBtn = document.querySelector('[data-e2e=\"arrow-up\"]') || " +
-									"                  document.querySelector('.xgplayer-playswitch-prev']') || " +
+									"                  document.querySelector('.xgplayer-playswitch-prev') || " +
 									"                  document.querySelector('.slide-up-btn') || " +
 									"                  document.querySelector('[aria-label=\"Previous video\"]') || " +
 									"                  document.querySelector('[aria-label=\"Go back\"]');" +
@@ -200,12 +200,15 @@ public class KeyEventHandler {
 									"  }" +
 									"})();";
 
+							// FIX: Create an explicitly final reference pointer to comply with Java's inner-class scopes
+							final android.webkit.WebView finalWebView = targetWebView;
+
 							targetWebView.post(new Runnable() {
 								@Override
 								public void run() {
 									try {
-										targetWebView.requestFocus();
-										targetWebView.evaluateJavascript(jsScript, null);
+										finalWebView.requestFocus();
+										finalWebView.evaluateJavascript(jsScript, null);
 
 										float centerX = absoluteX + (viewWidth / 2.0f);
 										float startY = absoluteY + (viewHeight * (isDown ? 0.82f : 0.18f));
