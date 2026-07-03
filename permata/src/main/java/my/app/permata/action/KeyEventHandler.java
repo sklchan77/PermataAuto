@@ -88,17 +88,26 @@ public class KeyEventHandler {
 			if (checkCode == KeyEvent.KEYCODE_MEDIA_NEXT || checkCode == KeyEvent.KEYCODE_NAVIGATE_NEXT ||
 				checkCode == KeyEvent.KEYCODE_MEDIA_PREVIOUS || checkCode == KeyEvent.KEYCODE_NAVIGATE_PREVIOUS) {
 				
-				androidx.fragment.app.FragmentActivity targetActivity = null;
-				if (activity != null && activity.getContext() instanceof androidx.fragment.app.FragmentActivity) {
-					targetActivity = (androidx.fragment.app.FragmentActivity) activity.getContext();
-				} else {
-					androidx.appcompat.app.AppCompatActivity activeApp = my.app.permata.ui.activity.MainActivity.getActiveInstance();
-					if (activeApp instanceof androidx.fragment.app.FragmentActivity) {
-						targetActivity = (androidx.fragment.app.FragmentActivity) activeApp;
-					}
+				// Layer A: Dynamically resolve active context delegate for both phone and Car IHU environments
+				MainActivityDelegate targetDelegate = activity;
+				if (targetDelegate == null) {
+					try {
+						var contextMapper = my.app.utils.ui.activity.ActivityDelegate.getContextToDelegate();
+						if (contextMapper != null) {
+							targetDelegate = (MainActivityDelegate) contextMapper.apply(cb.getMediaLib().getContext());
+						}
+					} catch (Exception ignored) {}
 				}
 
-				if (targetActivity != null) {
+				// Layer B: Cast safely to general base Activity to support both MainActivity and MainCarActivity
+				android.app.Activity currentActivity = null;
+				if (targetDelegate != null && targetDelegate.getContext() instanceof android.app.Activity) {
+					currentActivity = (android.app.Activity) targetDelegate.getContext();
+				} else {
+					currentActivity = my.app.permata.ui.activity.MainActivity.getActiveInstance();
+				}
+
+				if (currentActivity != null) {
 					android.webkit.WebView targetWebView = null;
 
 					if (cachedWebViewRef != null) {
@@ -109,11 +118,52 @@ public class KeyEventHandler {
 					}
 
 					if (targetWebView == null) {
-						final androidx.fragment.app.FragmentManager fragmentManager = targetActivity.getSupportFragmentManager();
-						final int targetBrowserId = targetActivity.getResources().getIdentifier(
-								"browserWebView", "id", targetActivity.getPackageName());
+						final int targetBrowserId = currentActivity.getResources().getIdentifier(
+								"browserWebView", "id", currentActivity.getPackageName());
 
-						targetWebView = scanFragmentsForWebView(fragmentManager.getFragments(), targetBrowserId);
+						// Strategy 1: Search via active Fragment layout boundaries managed by the delegate
+						if (targetDelegate != null) {
+							try {
+								var activeFrag = targetDelegate.getActiveFragment();
+								if (activeFrag != null && activeFrag.getView() != null) {
+									android.view.View fragRoot = activeFrag.getView();
+									android.view.View found = fragRoot.findViewById(targetBrowserId);
+									if (found instanceof android.webkit.WebView) {
+										targetWebView = (android.webkit.WebView) found;
+									}
+									if (targetWebView == null) {
+										targetWebView = findWebViewInHierarchy(fragRoot);
+									}
+								}
+							} catch (Exception ignored) {}
+						}
+
+						// Strategy 2: Absolute Window Decor View hierarchy fallback scan
+						if (targetWebView == null) {
+							try {
+								android.view.Window win = currentActivity.getWindow();
+								if (win != null && win.getDecorView() != null) {
+									android.view.View decor = win.getDecorView();
+									android.view.View found = decor.findViewById(targetBrowserId);
+									if (found instanceof android.webkit.WebView) {
+										targetWebView = (android.webkit.WebView) found;
+									}
+									if (targetWebView == null) {
+										targetWebView = findWebViewInHierarchy(decor);
+									}
+								}
+							} catch (Exception ignored) {}
+						}
+
+						// Strategy 3: Backwards compatible FragmentManager scanning for standard phone layouts
+						if (targetWebView == null && currentActivity instanceof androidx.fragment.app.FragmentActivity) {
+							try {
+								final androidx.fragment.app.FragmentManager fm = 
+										((androidx.fragment.app.FragmentActivity) currentActivity).getSupportFragmentManager();
+								targetWebView = scanFragmentsForWebView(fm.getFragments(), targetBrowserId);
+							} catch (Exception ignored) {}
+						}
+
 						if (targetWebView != null) {
 							cachedWebViewRef = new java.lang.ref.WeakReference<>(targetWebView);
 						}
@@ -136,10 +186,12 @@ public class KeyEventHandler {
 							final int absoluteX = screenLocation[0];
 							final int absoluteY = screenLocation[1];
 
-							// Streamlined DOM Verification Payload focusing on direct interaction interception
+							// Intelligent JavaScript Interface for handling desktop view vs strict mobile view constraints
 							final String jsScript = "(function() {" +
 									"  try {" +
 									"    var isDown = " + isDown + ";" +
+									"    var ihuWidth = " + viewWidth + ";" +
+									"    var ihuHeight = " + viewHeight + ";" +
 									"    var targetBtn = null;" +
 									"    if (isDown) {" +
 									"      targetBtn = document.querySelector('[data-e2e=\"arrow-down\"]') || " +
@@ -158,9 +210,45 @@ public class KeyEventHandler {
 									"      targetBtn.click();" +
 									"      return 'btn_click';" + 
 									"    }" +
-									"    return 'trigger_swipe';" +
+									"    var url = window.location.href.toLowerCase();" +
+									"    if (url.indexOf('tiktok.com') > -1 || url.indexOf('douyin.com') > -1 || url.indexOf('instagram.com') > -1) {" +
+									"      return 'swipe_needed';" + // Bypasses scroll-snap container lockouts entirely
+									"    }" +
+									"    var scrollTarget = null;" +
+									"    var elements = document.querySelectorAll('*');" +
+									"    for (var i = 0; i < elements.length; i++) {" +
+									"      var el = elements[i];" +
+									"      var style = window.getComputedStyle(el);" +
+									"      if ((style.overflowY === 'auto' || style.overflowY === 'scroll' || style.scrollSnapType !== 'none') && el.scrollHeight > el.clientHeight) {" +
+									"        var rect = el.getBoundingClientRect();" +
+									"        if (rect.width > ihuWidth * 0.3 && rect.height > ihuHeight * 0.3) {" +
+									"          scrollTarget = el;" +
+									"          break;" +
+									"        }" +
+									"      }" +
+									"    }" +
+									"    if (!scrollTarget) scrollTarget = document.querySelector('main') || document.body;" +
+									"    var viewHeight = (scrollTarget === document.body) ? ihuHeight : scrollTarget.clientHeight;" +
+									"    var amount = isDown ? (viewHeight * 0.90) : -(viewHeight * 0.90);" +
+									"    var activeNode = document.activeElement || scrollTarget || document.body;" +
+									"    try {" +
+									"      var wheelEvt = new WheelEvent('wheel', { deltaY: amount, bubbles: true, cancelable: true });" +
+									"      activeNode.dispatchEvent(wheelEvt);" +
+									"    } catch(wErr) {}" +
+									"    if (scrollTarget && scrollTarget.scrollBy) {" +
+									"      scrollTarget.scrollBy({ top: amount, behavior: 'smooth' });" +
+									"    } else {" +
+									"      window.scrollBy({ top: amount, behavior: 'smooth' });" +
+									"    }" +
+									"    var keyStr = isDown ? 'ArrowDown' : 'ArrowUp';" +
+									"    var keyCode = isDown ? 40 : 38;" +
+									"    var kEvt = new KeyboardEvent('keydown', { key: keyStr, code: keyStr, keyCode: keyCode, window: window, bubbles: true, cancelable: true });" +
+									"    activeNode.dispatchEvent(kEvt);" +
+									"    return 'js_scroll';" +
 									"  } catch (err) {" +
-									"    return 'trigger_swipe';" +
+									"    var fall = isDown ? ihuHeight : -ihuHeight;" +
+									"    window.scrollBy(0, fall);" +
+									"    return 'fallback_scroll';" +
 									"  }" +
 									"})();";
 
@@ -184,7 +272,7 @@ public class KeyEventHandler {
 													return;
 												}
 
-												// Cleanly execute the hardware paced swipe gesture sequence
+												// Otherwise, trigger the physically paced swipe gesture sequence
 												executePacedSwipeGesture(viewWidth, viewHeight, absoluteX, absoluteY, isDown);
 											}
 										});
