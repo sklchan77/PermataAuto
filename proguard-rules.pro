@@ -16,6 +16,8 @@
 -keepnames class my.app.** { *; }
 -keep class my.app.permata.** { *; }
 
+
+
 # CRITICAL FIX: Explicitly lock the exact fields queried by ExoPlayerEngine's reflection engine hooks
 -keep class androidx.media3.exoplayer.ExoPlayerImpl {
     androidx.media3.exoplayer.ExoPlayerImplInternal internalPlayer;
@@ -23,6 +25,10 @@
 -keep class androidx.media3.exoplayer.ExoPlayerImplInternal {
     androidx.media3.common.util.HandlerWrapper handler;
 }
+
+
+
+# === New entries for the KeyEventHandler.java for web page scrolling ===
 
 # SUB-SYSTEM: STEERING WHEEL MEDIA SCROLL INTERCEPTION ENGINE
 # 1. Prevent optimization stripping on core background event handlers
@@ -39,3 +45,22 @@
 # 3. Prevent structural obfuscation of all custom WebView components globally
 # This guarantees targetWebView.getClass().getName() evaluates accurately for YouTube security guards
 -keep class * extends android.webkit.WebView
+
+
+
+# === New entries for the MediaSessionCallBack.java for web page scrolling ===
+
+# Prevent ProGuard from altering the browser reflection entrypoints
+-keep class my.app.permata.ui.activity.MainActivity {
+    public static my.app.permata.ui.activity.MainActivity getActiveInstance();
+}
+
+-keep class my.app.permata.ui.activity.MainActivityDelegate {
+    public static my.app.permata.ui.activity.MainActivityDelegate get(android.content.Context);
+    public *** getActiveMainActivityFragment();
+    public *** getActiveFragment();
+}
+
+-keep class my.app.permata.addon.web.WebBrowserFragment {
+    public android.webkit.WebView getWebView();
+}
