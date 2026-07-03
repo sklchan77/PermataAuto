@@ -277,7 +277,7 @@ public class MediaSessionCallback extends MediaSessionCompat.Callback
 	@Override
 	public Collection<ListenerRef<Listener>> getBroadcastEventListeners() { return listeners; }
 
-	public void addVideoView(VideoView view, int priority) {
+public void addVideoView(VideoView view, int priority) {
 		if (this.videoView == null) {
 			videoView = new PriorityQueue<>(2);
 		} else {
@@ -442,7 +442,6 @@ public class MediaSessionCallback extends MediaSessionCompat.Callback
 	public void onSkipToNext() {
 		if (handleBrowserMediaNavigation(true)) return;
 		
-		// Fallback safely to original sequential track progression code
 		PlayableItem current = getCurrentItem();
 		if (current != null) {
 			current.getNextPlayable().onSuccess(next -> {
@@ -455,7 +454,6 @@ public class MediaSessionCallback extends MediaSessionCompat.Callback
 	public void onSkipToPrevious() {
 		if (handleBrowserMediaNavigation(false)) return;
 		
-		// Fallback safely to original sequential track regression code
 		PlayableItem current = getCurrentItem();
 		if (current != null) {
 			current.getPreviousPlayable().onSuccess(prev -> {
@@ -562,7 +560,56 @@ public class MediaSessionCallback extends MediaSessionCompat.Callback
 		if (eng != null) eng.seekTo(pos);
 	}
 
-	@Override
+	public boolean isPlaying() {
+		return currentState != null && currentState.getState() == PlaybackStateCompat.STATE_PLAYING;
+	}
+
+	@Nullable
+	public MediaSessionCallbackAssistant getAssistant() {
+		return (assistants == null || assistants.isEmpty()) ? null : assistants.peek().obj;
+	}
+
+	public void addAssistant(MediaSessionCallbackAssistant assistant, int priority) {
+		if (this.assistants == null) {
+			assistants = new PriorityQueue<>(2);
+		} else {
+			for (Prioritized<MediaSessionCallbackAssistant> a : assistants) {
+				if (a.obj == assistant) return;
+			}
+		}
+		assistants.add(new Prioritized<>(assistant, priority));
+	}
+
+	public void removeAssistant(MediaSessionCallbackAssistant assistant) {
+		if (removeFromQueue(assistants, assistant)) {
+			if (assistants.isEmpty()) {
+				assistants = null;
+			}
+		}
+	}
+
+	public void rewindFastForward(boolean fastForward, int seconds) {
+		MediaEngine eng = getEngine();
+		if (eng != null) {
+			long currentPos = eng.getPosition();
+			long delta = seconds * 1000L;
+			long newPos = fastForward ? (currentPos + delta) : Math.max(0, currentPos - delta);
+			eng.seekTo(newPos);
+		}
+	}
+
+	public void favoriteAddRemove(boolean add) {
+		PlayableItem current = getCurrentItem();
+		if (current != null && lib.getFavorites() != null) {
+			if (add) {
+				lib.getFavorites().add(current);
+			} else {
+				lib.getFavorites().remove(current);
+			}
+		}
+	}
+
+@Override
 	public void onEngineError(MediaEngine engine, Throwable ex) {
 		Log.w(ex, "Engine encountered playback exception.");
 	}
@@ -615,6 +662,11 @@ public class MediaSessionCallback extends MediaSessionCompat.Callback
 		}
 	}
 
+	public interface Listener {
+		void onPlaybackStateChanged(MediaSessionCallback cb, PlaybackStateCompat state);
+		void onSubtitleStreamChanged(MediaSessionCallback cb, @Nullable SubtitleStreamInfo info);
+	}
+
 	private final class PlaybackTimer implements Runnable {
 		final long time;
 		PlaybackTimer(long time) { this.time = time; }
@@ -624,10 +676,26 @@ public class MediaSessionCallback extends MediaSessionCompat.Callback
 	private static final class Prioritized<T> implements Comparable<Prioritized<T>> {
 		final T obj;
 		final int priority;
-		Prioritized(T obj, int priority) { this.obj = obj; this.priority = priority; }
-		@Override public int compareTo(Prioritized<T> o) { return Integer.compare(priority, o.priority); }
+
+		Prioritized(T obj, int priority) { 
+			this.obj = obj; 
+			this.priority = priority; 
+		}
+
+		@Override
+		public int compareTo(Prioritized<T> o) {
+			return Integer.compare(priority, o.priority);
+		}
+
 		@SuppressWarnings("EqualsWhichDoesntCheckParameterClass")
-		@Override public boolean equals(Object obj) { return this.obj == ((Prioritized<?>) obj).obj; }
-		@Override public int hashCode() { return obj.hashCode(); }
+		@Override
+		public boolean equals(Object obj) {
+			return this.obj == ((Prioritized<?>) obj).obj;
+		}
+
+		@Override
+		public int hashCode() {
+			return obj.hashCode();
+		}
 	}
 }
