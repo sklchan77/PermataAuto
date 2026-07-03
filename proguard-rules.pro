@@ -70,3 +70,6 @@
 -keep class my.app.utils.ui.activity.ActivityDelegate {
     public static *** getContextToDelegate();
 }
+
+-keep class my.app.permata.auto.EventDispatcher { *; }
+
