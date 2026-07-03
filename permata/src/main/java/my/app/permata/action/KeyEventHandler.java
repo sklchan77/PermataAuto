@@ -17,8 +17,7 @@ import my.app.utils.log.Log;
 
 /**
  * High-Performance Media Event Controller optimized for physical automotive control rings.
- * Fully hardened against event leakage, double-scrolling anomalies, and aggressive R8 setups.
- * Explicitly mapped to isolate and target Car IHU virtual displays over phone screens.
+ * Fully compatible with package-private access rules and aggressive ProGuard configurations.
  */
 public class KeyEventHandler {
 	private static final int DBL_CLICK_INTERVAL = 500;
@@ -84,77 +83,50 @@ public class KeyEventHandler {
 			return defaultHandler.apply(event.getKeyCode(), event);
 		}
 
-		final int checkCode = event.getKeyCode();
-		final boolean isNavigationKey = checkCode == KeyEvent.KEYCODE_MEDIA_NEXT || checkCode == KeyEvent.KEYCODE_NAVIGATE_NEXT ||
-				checkCode == KeyEvent.KEYCODE_MEDIA_PREVIOUS || checkCode == KeyEvent.KEYCODE_NAVIGATE_PREVIOUS;
-
-		if (isNavigationKey) {
-			// Find running layout activity context cleanly mapped to the Car IHU surface
-			androidx.fragment.app.FragmentActivity targetActivity = null;
-			if (activity != null && activity.getContext() instanceof androidx.fragment.app.FragmentActivity) {
-				targetActivity = (androidx.fragment.app.FragmentActivity) activity.getContext();
-			} else {
-				// Target the dedicated projection windows running on the vehicle's virtual display screen
-				try {
-					Class<?> carActivityClass = Class.forName("my.app.permata.auto.ProjectionActivity"); 
-					java.lang.reflect.Method getCarInstance = carActivityClass.getMethod("getActiveInstance");
-					Object carApp = getCarInstance.invoke(null);
-					if (carApp instanceof androidx.fragment.app.FragmentActivity) {
-						targetActivity = (androidx.fragment.app.FragmentActivity) carApp;
-					}
-				} catch (Exception e) {
-					try {
-						Class<?> mainCarClass = Class.forName("my.app.permata.auto.MainCarActivity");
-						java.lang.reflect.Method getMainCar = mainCarClass.getMethod("getActiveInstance");
-						Object mainCarApp = getMainCar.invoke(null);
-						if (mainCarApp instanceof androidx.fragment.app.FragmentActivity) {
-							targetActivity = (androidx.fragment.app.FragmentActivity) mainCarApp;
-						}
-					} catch (Exception ex) {
-						// Final structural fallback to phone context window if vehicle projection nodes are dark
-						androidx.appcompat.app.AppCompatActivity activeApp = my.app.permata.ui.activity.MainActivity.getActiveInstance();
-						if (activeApp instanceof androidx.fragment.app.FragmentActivity) {
-							targetActivity = (androidx.fragment.app.FragmentActivity) activeApp;
-						}
-					}
-				}
-			}
-
-			if (targetActivity != null) {
-				android.webkit.WebView targetWebView = null;
-
-				if (cachedWebViewRef != null) {
-					targetWebView = cachedWebViewRef.get();
-					if (targetWebView != null && (!targetWebView.isAttachedToWindow() || !targetWebView.isShown())) {
-						targetWebView = null; 
+		if (event.getAction() == ACTION_DOWN) {
+			int checkCode = event.getKeyCode();
+			if (checkCode == KeyEvent.KEYCODE_MEDIA_NEXT || checkCode == KeyEvent.KEYCODE_NAVIGATE_NEXT ||
+				checkCode == KeyEvent.KEYCODE_MEDIA_PREVIOUS || checkCode == KeyEvent.KEYCODE_NAVIGATE_PREVIOUS) {
+				
+				androidx.fragment.app.FragmentActivity targetActivity = null;
+				if (activity != null && activity.getContext() instanceof androidx.fragment.app.FragmentActivity) {
+					targetActivity = (androidx.fragment.app.FragmentActivity) activity.getContext();
+				} else {
+					androidx.appcompat.app.AppCompatActivity activeApp = my.app.permata.ui.activity.MainActivity.getActiveInstance();
+					if (activeApp instanceof androidx.fragment.app.FragmentActivity) {
+						targetActivity = (androidx.fragment.app.FragmentActivity) activeApp;
 					}
 				}
 
-				if (targetWebView == null) {
-					final androidx.fragment.app.FragmentManager fragmentManager = targetActivity.getSupportFragmentManager();
-					final int targetBrowserId = targetActivity.getResources().getIdentifier(
-							"browserWebView", "id", targetActivity.getPackageName());
+				if (targetActivity != null) {
+					android.webkit.WebView targetWebView = null;
 
-					targetWebView = scanFragmentsForWebView(fragmentManager.getFragments(), targetBrowserId);
+					if (cachedWebViewRef != null) {
+						targetWebView = cachedWebViewRef.get();
+						if (targetWebView != null && (!targetWebView.isAttachedToWindow() || !targetWebView.isShown())) {
+							targetWebView = null; 
+						}
+					}
+
+					if (targetWebView == null) {
+						final androidx.fragment.app.FragmentManager fragmentManager = targetActivity.getSupportFragmentManager();
+						final int targetBrowserId = targetActivity.getResources().getIdentifier(
+								"browserWebView", "id", targetActivity.getPackageName());
+
+						targetWebView = scanFragmentsForWebView(fragmentManager.getFragments(), targetBrowserId);
+						if (targetWebView != null) {
+							cachedWebViewRef = new java.lang.ref.WeakReference<>(targetWebView);
+						}
+					}
+
 					if (targetWebView != null) {
-						cachedWebViewRef = new java.lang.ref.WeakReference<>(targetWebView);
-					}
-				}
+						final String currentUrl = targetWebView.getUrl();
+						final String className = targetWebView.getClass().getName().toLowerCase();
+						
+						boolean isYoutube = (currentUrl != null && (currentUrl.contains("youtube.com") || currentUrl.contains("youtu.be")))
+								|| className.contains("youtube");
 
-				if (targetWebView != null) {
-					final String currentUrl = targetWebView.getUrl();
-					final String className = targetWebView.getClass().getName().toLowerCase();
-					
-					boolean isYoutube = (currentUrl != null && (currentUrl.contains("youtube.com") || currentUrl.contains("youtu.be")))
-							|| className.contains("youtube");
-
-					if (!isYoutube) {
-						// Absorb the corresponding ACTION_UP event to prevent background media skip execution leaks
-						if (event.getAction() == ACTION_UP) {
-							return true;
-						}
-
-						if (event.getAction() == ACTION_DOWN) {
+						if (!isYoutube) {
 							final boolean isDown = (checkCode == KeyEvent.KEYCODE_MEDIA_NEXT || checkCode == KeyEvent.KEYCODE_NAVIGATE_NEXT);
 							
 							final int viewWidth = targetWebView.getWidth();
@@ -164,14 +136,10 @@ public class KeyEventHandler {
 							final int absoluteX = screenLocation[0];
 							final int absoluteY = screenLocation[1];
 
-							// Hardened WebKit DOM Native Action Router
+							// Streamlined DOM Verification Payload focusing on direct interaction interception
 							final String jsScript = "(function() {" +
 									"  try {" +
 									"    var isDown = " + isDown + ";" +
-									"    var ihuWidth = " + viewWidth + ";" +
-									"    var ihuHeight = " + viewHeight + ";" +
-									"    var url = window.location.href.toLowerCase();" +
-									"    var isShortForm = url.includes('tiktok.com') || url.includes('douyin.com') || url.includes('instagram.com');" +
 									"    var targetBtn = null;" +
 									"    if (isDown) {" +
 									"      targetBtn = document.querySelector('[data-e2e=\"arrow-down\"]') || " +
@@ -190,33 +158,9 @@ public class KeyEventHandler {
 									"      targetBtn.click();" +
 									"      return 'btn_click';" + 
 									"    }" +
-									"    if (isShortForm) {" +
-									"      return 'swipe_required';" +
-									"    }" +
-									"    var scrollTarget = null;" +
-									"    var elements = document.querySelectorAll('*');" +
-									"    for (var i = 0; i < elements.length; i++) {" +
-									"      var el = elements[i];" +
-									"      var style = window.getComputedStyle(el);" +
-									"      if ((style.overflowY === 'auto' || style.overflowY === 'scroll' || style.scrollSnapType !== 'none') && el.scrollHeight > el.clientHeight) {" +
-									"        var rect = el.getBoundingClientRect();" +
-									"        if (rect.width > ihuWidth * 0.3 && rect.height > ihuHeight * 0.3) {" +
-									"          scrollTarget = el;" +
-									"          break;" +
-									"        }" +
-									"      }" +
-									"    }" +
-									"    if (!scrollTarget) scrollTarget = document.querySelector('main') || document.body;" +
-									"    var viewHeight = (scrollTarget === document.body) ? ihuHeight : scrollTarget.clientHeight;" +
-									"    var amount = isDown ? (viewHeight * 0.85) : -(viewHeight * 0.85);" +
-									"    if (scrollTarget && typeof scrollTarget.scrollBy === 'function') {" +
-									"      scrollTarget.scrollBy({ top: amount, behavior: 'smooth' });" +
-									"    } else {" +
-									"      window.scrollBy({ top: amount, behavior: 'smooth' });" +
-									"    }" +
-									"    return 'js_scroll';" +
+									"    return 'trigger_swipe';" +
 									"  } catch (err) {" +
-									"    return 'swipe_required';" +
+									"    return 'trigger_swipe';" +
 									"  }" +
 									"})();";
 
@@ -227,21 +171,24 @@ public class KeyEventHandler {
 								public void run() {
 									try {
 										finalWebView.requestFocus();
+										
+										// Process JS Engine evaluation with string isolation feedback rules
 										finalWebView.evaluateJavascript(jsScript, new android.webkit.ValueCallback<String>() {
 											@Override
 											public void onReceiveValue(String value) {
 												String token = (value != null) ? value.replace("\"", "") : "";
 												
-												// Terminate interaction safely if programmatic hooks handled the layout movement
-												if ("btn_click".equals(token) || "js_scroll".equals(token)) {
-													Log.i("KeyEventHandler", "Navigation finalized internally via JavaScript. Token: " + token);
+												// If explicit DOM navigation button is handled, stop here to avoid dual input collision
+												if ("btn_click".equals(token)) {
+													Log.i("KeyEventHandler", "Navigation executed via direct DOM element click.");
 													return;
 												}
 
-												// Execute touch gesture pipeline only when explicit viewport swipe manipulation is required
+												// Cleanly execute the hardware paced swipe gesture sequence
 												executePacedSwipeGesture(viewWidth, viewHeight, absoluteX, absoluteY, isDown);
 											}
 										});
+
 									} catch (Exception ex) {
 										Log.e("Error executing advanced robust web scroll payload", ex);
 									}
@@ -300,20 +247,18 @@ public class KeyEventHandler {
 	 */
 	private static void executePacedSwipeGesture(final int viewWidth, final int viewHeight, 
 																							 final int absoluteX, final int absoluteY, final boolean isDown) {
-		if (viewWidth <= 0 || viewHeight <= 0) return;
-
 		final float centerX = absoluteX + (viewWidth / 2.0f);
 		final float startY = absoluteY + (viewHeight * (isDown ? 0.82f : 0.18f));
 		final float endY = absoluteY + (viewHeight * (isDown ? 0.18f : 0.82f));
 
 		final long downTime = uptimeMillis();
 		
-		// 1. Dispatch structural touch down anchor
+		// 1. Dispatch structural touch start down anchor
 		invokeMotionEvent(downTime, downTime, android.view.MotionEvent.ACTION_DOWN, centerX, startY);
 
 		final int totalSteps = 12;
 		final long gestureDuration = 240; 
-		final long stepDelay = gestureDuration / totalSteps; 
+		final long stepDelay = gestureDuration / totalSteps; // Delay coordinates by ~20ms frames
 
 		final android.os.Handler mainHandler = new android.os.Handler(android.os.Looper.getMainLooper());
 		
@@ -332,7 +277,7 @@ public class KeyEventHandler {
 					float interpolatedY = startY + (endY - startY) * easeAlpha;
 					long frameTime = downTime + (step * stepDelay);
 					
-					// 2. Stream incremental coordinate tracking movements
+					// 2. Stream incremental moves separated by true wall-clock time
 					invokeMotionEvent(downTime, frameTime, android.view.MotionEvent.ACTION_MOVE, centerX, interpolatedY);
 					
 					// 3. Complete gesture event and release pointer layout contact to engage scrolling inertia
