@@ -18,6 +18,7 @@ import my.app.utils.log.Log;
 /**
  * High-Performance Media Event Controller optimized for physical automotive control rings.
  * Fully hardened against event leakage, double-scrolling anomalies, and aggressive R8 setups.
+ * Explicitly mapped to isolate and target Car IHU virtual displays over phone screens.
  */
 public class KeyEventHandler {
 	private static final int DBL_CLICK_INTERVAL = 500;
@@ -88,14 +89,34 @@ public class KeyEventHandler {
 				checkCode == KeyEvent.KEYCODE_MEDIA_PREVIOUS || checkCode == KeyEvent.KEYCODE_NAVIGATE_PREVIOUS;
 
 		if (isNavigationKey) {
-			// Find running layout activity context
+			// Find running layout activity context cleanly mapped to the Car IHU surface
 			androidx.fragment.app.FragmentActivity targetActivity = null;
 			if (activity != null && activity.getContext() instanceof androidx.fragment.app.FragmentActivity) {
 				targetActivity = (androidx.fragment.app.FragmentActivity) activity.getContext();
 			} else {
-				androidx.appcompat.app.AppCompatActivity activeApp = my.app.permata.ui.activity.MainActivity.getActiveInstance();
-				if (activeApp instanceof androidx.fragment.app.FragmentActivity) {
-					targetActivity = (androidx.fragment.app.FragmentActivity) activeApp;
+				// Target the dedicated projection windows running on the vehicle's virtual display screen
+				try {
+					Class<?> carActivityClass = Class.forName("my.app.permata.auto.ProjectionActivity"); 
+					java.lang.reflect.Method getCarInstance = carActivityClass.getMethod("getActiveInstance");
+					Object carApp = getCarInstance.invoke(null);
+					if (carApp instanceof androidx.fragment.app.FragmentActivity) {
+						targetActivity = (androidx.fragment.app.FragmentActivity) carApp;
+					}
+				} catch (Exception e) {
+					try {
+						Class<?> mainCarClass = Class.forName("my.app.permata.auto.MainCarActivity");
+						java.lang.reflect.Method getMainCar = mainCarClass.getMethod("getActiveInstance");
+						Object mainCarApp = getMainCar.invoke(null);
+						if (mainCarApp instanceof androidx.fragment.app.FragmentActivity) {
+							targetActivity = (androidx.fragment.app.FragmentActivity) mainCarApp;
+						}
+					} catch (Exception ex) {
+						// Final structural fallback to phone context window if vehicle projection nodes are dark
+						androidx.appcompat.app.AppCompatActivity activeApp = my.app.permata.ui.activity.MainActivity.getActiveInstance();
+						if (activeApp instanceof androidx.fragment.app.FragmentActivity) {
+							targetActivity = (androidx.fragment.app.FragmentActivity) activeApp;
+						}
+					}
 				}
 			}
 
@@ -170,7 +191,7 @@ public class KeyEventHandler {
 									"      return 'btn_click';" + 
 									"    }" +
 									"    if (isShortForm) {" +
-									"      return 'swipe_required';" + // Short-form layouts must use the high-fidelity touch simulation engine
+									"      return 'swipe_required';" +
 									"    }" +
 									"    var scrollTarget = null;" +
 									"    var elements = document.querySelectorAll('*');" +
@@ -193,7 +214,7 @@ public class KeyEventHandler {
 									"    } else {" +
 									"      window.scrollBy({ top: amount, behavior: 'smooth' });" +
 									"    }" +
-									"    return 'js_scroll';" + // Non short-form content successfully navigated via layout APIs
+									"    return 'js_scroll';" +
 									"  } catch (err) {" +
 									"    return 'swipe_required';" +
 									"  }" +
@@ -279,7 +300,6 @@ public class KeyEventHandler {
 	 */
 	private static void executePacedSwipeGesture(final int viewWidth, final int viewHeight, 
 																							 final int absoluteX, final int absoluteY, final boolean isDown) {
-		// Production Guard: Prevent out-of-bounds calculations during fragment instantiation frames
 		if (viewWidth <= 0 || viewHeight <= 0) return;
 
 		final float centerX = absoluteX + (viewWidth / 2.0f);
