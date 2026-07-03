@@ -17,8 +17,8 @@ import my.app.utils.function.IntObjectFunction;
 import my.app.utils.log.Log;
 
 /**
- * High-Performance Media Event Controller optimized for physical automotive control rings.
- * Fully compatible with package-private access rules, multi-display environments, and aggressive ProGuard configurations.
+ * High-Performance Media Event Controller optimized for physical automotive controls.
+ * Fully compatible with Wireless Android Auto projections, custom WebViews, and ProGuard.
  */
 public class KeyEventHandler {
 	private static final int DBL_CLICK_INTERVAL = 500;
@@ -39,17 +39,15 @@ public class KeyEventHandler {
 			synchronized (KeyEventHandler.class) {
 				if (!reflectionInitialized) {
 					try {
-						// Fully verified alignment with package-private abstract class my.app.permata.auto.EventDispatcher
 						Class<?> clazz = Class.forName("my.app.permata.auto.EventDispatcher");
 						java.lang.reflect.Method getMethod = clazz.getDeclaredMethod("get");
 						getMethod.setAccessible(true);
 						cachedDispatcherInstance = getMethod.invoke(null);
 
-						// Matches public abstract boolean motionEvent(long, long, int, float, float) exactly
 						cachedMotionEventMethod = clazz.getDeclaredMethod("motionEvent", long.class, long.class, int.class, float.class, float.class);
 						cachedMotionEventMethod.setAccessible(true);
 					} catch (Exception e) {
-						Log.e("Failed to bind to package-private EventDispatcher", e);
+						Log.e("Failed to bind to EventDispatcher", e);
 					} finally {
 						reflectionInitialized = true; 
 					}
@@ -61,7 +59,7 @@ public class KeyEventHandler {
 			try {
 				cachedMotionEventMethod.invoke(cachedDispatcherInstance, downTime, eventTime, action, x, y);
 			} catch (Exception e) {
-				Log.e("Failed to execute remote motionEvent injection sequence", e);
+				Log.e("Failed to execute remote motionEvent injection", e);
 			}
 		}
 	}
@@ -101,10 +99,10 @@ public class KeyEventHandler {
 					}
 				}
 
-				// 2. Multi-Display/Projected Context Safe Hierarchy Scan
+				// 2. Wireless Android Auto Projected Context Safe Hierarchy Scan
 				if (targetWebView == null && activity != null) {
 					try {
-						// Universally works for both MainActivity and projected MainCarActivity view stacks
+						// Universally safely queries active layouts inside MainCarActivity on the IHU display
 						my.app.utils.ui.fragment.ActivityFragment activeFrag = activity.getActiveFragment();
 						if (activeFrag != null && activeFrag.getView() != null) {
 							targetWebView = findWebViewInHierarchy(activeFrag.getView());
@@ -122,7 +120,7 @@ public class KeyEventHandler {
 					}
 				}
 
-				// 3. Desktop Standalone fallback
+				// 3. Handheld mobile screen standalone fallback
 				if (targetWebView == null) {
 					try {
 						androidx.appcompat.app.AppCompatActivity activeApp = my.app.permata.ui.activity.MainActivity.getActiveInstance();
@@ -135,7 +133,7 @@ public class KeyEventHandler {
 					} catch (Exception ignored) {}
 				}
 
-				// Cache resolved element tree for thread optimization
+				// If found a valid WebView, process automotive navigation mapping
 				if (targetWebView != null) {
 					cachedWebViewRef = new java.lang.ref.WeakReference<>(targetWebView);
 					
@@ -145,13 +143,14 @@ public class KeyEventHandler {
 					boolean isYoutube = (currentUrl != null && (currentUrl.contains("youtube.com") || currentUrl.contains("youtu.be")))
 							|| className.contains("youtube");
 
+					// Process non-YouTube browser lists/pages (e.g. TikTok, general scrolling webs)
 					if (!isYoutube) {
 						final boolean isDown = (checkCode == KeyEvent.KEYCODE_MEDIA_NEXT || checkCode == KeyEvent.KEYCODE_NAVIGATE_NEXT);
 						
 						final int viewWidth = targetWebView.getWidth();
 						final int viewHeight = targetWebView.getHeight();
 
-						// Cleanly Escaped WebKit DOM JS Event Router
+						// Layout-agnostic smart DOM router script
 						final String jsScript = "(function() {" +
 								"  try {" +
 								"    var isDown = " + isDown + ";" +
@@ -220,22 +219,21 @@ public class KeyEventHandler {
 							public void run() {
 								try {
 									finalWebView.requestFocus();
-									
 									finalWebView.evaluateJavascript(jsScript, new android.webkit.ValueCallback<String>() {
 										@Override
 										public void onReceiveValue(String value) {
 											String token = (value != null) ? value.replace("\"", "") : "";
 											if ("btn_click".equals(token)) {
-												Log.i("KeyEventHandler", "Navigation executed via direct DOM element click.");
+												Log.i("KeyEventHandler", "Steering navigation executed via direct element click.");
 												return;
 											}
-											// Execute multi-display safe, localized input stream injection sequence
+											// Localized multi-display safe simulated physical swipe fallback
 											executePacedSwipeGesture(finalWebView, viewWidth, viewHeight, isDown);
 										}
 									});
 
 								} catch (Exception ex) {
-									Log.e("Error executing advanced robust web scroll payload", ex);
+									Log.e("Error scrolling web viewport via steering control", ex);
 								}
 							}
 						});
@@ -264,7 +262,6 @@ public class KeyEventHandler {
 
 		var action = event.getAction();
 		if (action == ACTION_MULTIPLE) {
-			Log.i(k, " key double click");
 			performAction(dblClickAction, cb, activity, uptimeMillis());
 			return true;
 		}
@@ -277,7 +274,6 @@ public class KeyEventHandler {
 
 		if (((clickAction == dblClickAction) && (clickAction == longClickAction)) ||
 				((dblClickAction == Action.NONE) && (longClickAction == Action.NONE))) {
-			Log.i(k, " key click");
 			performAction(clickAction, cb, activity, uptimeMillis());
 			return true;
 		}
@@ -287,8 +283,8 @@ public class KeyEventHandler {
 	}
 
 	/**
-	 * Dispatches incremental virtual MotionEvents directly to the WebView container.
-	 * This bypasses global window coordinates and shell access, guaranteeing 100% operation over Wireless Android Auto.
+	 * Dispatches virtual MotionEvents directly to the WebView surface bounds.
+	 * Bypasses global root windows to work smoothly inside Android Auto projection spaces.
 	 */
 	private static void executePacedSwipeGesture(final android.webkit.WebView webView, final int viewWidth, final int viewHeight, final boolean isDown) {
 		final float centerX = viewWidth / 2.0f;
@@ -297,7 +293,6 @@ public class KeyEventHandler {
 
 		final long downTime = uptimeMillis();
 		
-		// 1. Generate localized touch anchor bound directly to target display layer context
 		android.view.MotionEvent downEvent = android.view.MotionEvent.obtain(downTime, downTime, android.view.MotionEvent.ACTION_DOWN, centerX, startY, 0);
 		webView.dispatchTouchEvent(downEvent);
 		downEvent.recycle();
@@ -323,12 +318,10 @@ public class KeyEventHandler {
 					float interpolatedY = startY + (endY - startY) * easeAlpha;
 					long frameTime = downTime + (step * stepDelay);
 					
-					// 2. Stream precise coordinate tracking movements
 					android.view.MotionEvent moveEvent = android.view.MotionEvent.obtain(downTime, frameTime, android.view.MotionEvent.ACTION_MOVE, centerX, interpolatedY, 0);
 					webView.dispatchTouchEvent(moveEvent);
 					moveEvent.recycle();
 					
-					// 3. Complete structural touch gesture release to engage inertia metrics
 					if (step == totalSteps) {
 						android.view.MotionEvent upEvent = android.view.MotionEvent.obtain(downTime, frameTime + stepDelay, android.view.MotionEvent.ACTION_UP, centerX, endY, 0);
 						webView.dispatchTouchEvent(upEvent);
@@ -391,7 +384,6 @@ public class KeyEventHandler {
 		public void run() {
 			if (worker != this) return;
 			if (up) {
-				Log.i(key, " key click");
 				handle(clickAction);
 				return;
 			}
@@ -405,7 +397,6 @@ public class KeyEventHandler {
 				worker = null;
 			} else {
 				longClickTime = time;
-				Log.i(key, " key long click");
 				handle(longClickAction);
 				worker = this;
 				sched(LONG_CLICK_INTERVAL);
@@ -419,7 +410,6 @@ public class KeyEventHandler {
 				case ACTION_DOWN -> {
 					if (!up) {
 						if ((longClickAction == clickAction) || (longClickAction == Action.NONE)) {
-							Log.i(key, " key click");
 							handle(clickAction);
 						}
 					}
@@ -430,10 +420,8 @@ public class KeyEventHandler {
 
 					if (holdTime <= DBL_CLICK_INTERVAL) {
 						if (up) {
-							Log.i(key, " key double click");
 							handle(dblClickAction);
 						} else if (dblClickAction == clickAction) {
-							Log.i(key, " key click");
 							handle(clickAction);
 						} else {
 							up = true;
@@ -443,7 +431,6 @@ public class KeyEventHandler {
 					} else {
 						worker = null;
 						if (longClickTime == time) {
-							Log.i(key, " key click");
 							handle(clickAction);
 						}
 					}
@@ -451,7 +438,6 @@ public class KeyEventHandler {
 					return true;
 				}
 				case ACTION_MULTIPLE -> {
-					Log.i(key, " key double click");
 					handle(dblClickAction);
 					return true;
 				}
