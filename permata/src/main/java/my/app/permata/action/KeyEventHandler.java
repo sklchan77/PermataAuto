@@ -17,8 +17,8 @@ import my.app.utils.function.IntObjectFunction;
 import my.app.utils.log.Log;
 
 /**
- * High-Performance Media Event Controller optimized for physical automotive controls.
- * Fully compatible with Wireless Android Auto projections, custom WebViews, and ProGuard.
+ * High-Performance Automotive Input Engine optimized for IHU Display Layers.
+ * Zero reflection-lock footprints to eliminate any possibility of ANR or deadlocks.
  */
 public class KeyEventHandler {
 	private static final int DBL_CLICK_INTERVAL = 500;
@@ -26,43 +26,8 @@ public class KeyEventHandler {
 
 	private static Worker worker;
 
-	// Optimization: Thread-Safe Double-Checked Reflection Fields
-	private static Object cachedDispatcherInstance;
-	private static java.lang.reflect.Method cachedMotionEventMethod;
-	private static volatile boolean reflectionInitialized = false;
-
 	// Optimization: Lightweight WeakReference UI-Cache to protect Main Thread cycles
 	private static java.lang.ref.WeakReference<android.webkit.WebView> cachedWebViewRef;
-
-	private static void invokeMotionEvent(long downTime, long eventTime, int action, float x, float y) {
-		if (!reflectionInitialized) {
-			synchronized (KeyEventHandler.class) {
-				if (!reflectionInitialized) {
-					try {
-						Class<?> clazz = Class.forName("my.app.permata.auto.EventDispatcher");
-						java.lang.reflect.Method getMethod = clazz.getDeclaredMethod("get");
-						getMethod.setAccessible(true);
-						cachedDispatcherInstance = getMethod.invoke(null);
-
-						cachedMotionEventMethod = clazz.getDeclaredMethod("motionEvent", long.class, long.class, int.class, float.class, float.class);
-						cachedMotionEventMethod.setAccessible(true);
-					} catch (Exception e) {
-						Log.e("Failed to bind to EventDispatcher", e);
-					} finally {
-						reflectionInitialized = true; 
-					}
-				}
-			}
-		}
-
-		if (cachedMotionEventMethod != null && cachedDispatcherInstance != null) {
-			try {
-				cachedMotionEventMethod.invoke(cachedDispatcherInstance, downTime, eventTime, action, x, y);
-			} catch (Exception e) {
-				Log.e("Failed to execute remote motionEvent injection", e);
-			}
-		}
-	}
 
 	public static boolean handleKeyEvent(MediaSessionCallback cb, KeyEvent event,
 																			 IntObjectFunction<KeyEvent, Boolean> defaultHandler) {
@@ -91,7 +56,7 @@ public class KeyEventHandler {
 				
 				android.webkit.WebView targetWebView = null;
 
-				// 1. Check WeakReference Cache eligibility
+				// 1. Check WeakReference Cache availability
 				if (cachedWebViewRef != null) {
 					targetWebView = cachedWebViewRef.get();
 					if (targetWebView != null && (!targetWebView.isAttachedToWindow() || !targetWebView.isShown())) {
@@ -99,17 +64,19 @@ public class KeyEventHandler {
 					}
 				}
 
-				// 2. Wireless Android Auto Projected Context Safe Hierarchy Scan
+				// 2. Wireless Android Auto Projected Safe Hierarchy Scan
 				if (targetWebView == null && activity != null) {
 					try {
-						// Universally safely queries active layouts inside MainCarActivity on the IHU display
-						my.app.utils.ui.fragment.ActivityFragment activeFrag = activity.getActiveFragment();
-						if (activeFrag != null && activeFrag.getView() != null) {
-							targetWebView = findWebViewInHierarchy(activeFrag.getView());
+						// Universally query active layouts safely inside MainCarActivity on the IHU display
+						Object activeFragObj = activity.getActiveFragment();
+						if (activeFragObj instanceof my.app.utils.ui.fragment.ActivityFragment activeFrag) {
+							if (activeFrag.getView() != null) {
+								targetWebView = findWebViewInHierarchy(activeFrag.getView());
+							}
 						}
 					} catch (Exception ignored) {}
 
-					// Window content backup tree scan if fragment reflection is delayed
+					// Window content tree backup scan if fragment matching is delayed
 					if (targetWebView == null && activity.getContext() instanceof android.app.Activity) {
 						try {
 							android.view.View rootContent = ((android.app.Activity) activity.getContext()).findViewById(android.R.id.content);
@@ -120,7 +87,7 @@ public class KeyEventHandler {
 					}
 				}
 
-				// 3. Handheld mobile screen standalone fallback
+				// 3. Handheld physical mobile screen standalone fallback
 				if (targetWebView == null) {
 					try {
 						androidx.appcompat.app.AppCompatActivity activeApp = my.app.permata.ui.activity.MainActivity.getActiveInstance();
@@ -133,7 +100,7 @@ public class KeyEventHandler {
 					} catch (Exception ignored) {}
 				}
 
-				// If found a valid WebView, process automotive navigation mapping
+				// If found a valid WebView, process automotive navigation routing mapping
 				if (targetWebView != null) {
 					cachedWebViewRef = new java.lang.ref.WeakReference<>(targetWebView);
 					
@@ -143,14 +110,13 @@ public class KeyEventHandler {
 					boolean isYoutube = (currentUrl != null && (currentUrl.contains("youtube.com") || currentUrl.contains("youtu.be")))
 							|| className.contains("youtube");
 
-					// Process non-YouTube browser lists/pages (e.g. TikTok, general scrolling webs)
+					// Handle non-YouTube browser lists/pages (e.g. TikTok, general scrolling webs)
 					if (!isYoutube) {
 						final boolean isDown = (checkCode == KeyEvent.KEYCODE_MEDIA_NEXT || checkCode == KeyEvent.KEYCODE_NAVIGATE_NEXT);
 						
 						final int viewWidth = targetWebView.getWidth();
 						final int viewHeight = targetWebView.getHeight();
 
-						// Layout-agnostic smart DOM router script
 						final String jsScript = "(function() {" +
 								"  try {" +
 								"    var isDown = " + isDown + ";" +
@@ -218,16 +184,16 @@ public class KeyEventHandler {
 							@Override
 							public void run() {
 								try {
+									if (!finalWebView.isAttachedToWindow()) return;
 									finalWebView.requestFocus();
 									finalWebView.evaluateJavascript(jsScript, new android.webkit.ValueCallback<String>() {
 										@Override
 										public void onReceiveValue(String value) {
 											String token = (value != null) ? value.replace("\"", "") : "";
-											if ("btn_click".equals(token)) {
-												Log.i("KeyEventHandler", "Steering navigation executed via direct element click.");
+											if ("btn_click".equals(token) || "js_scroll".equals(token)) {
 												return;
 											}
-											// Localized multi-display safe simulated physical swipe fallback
+											// Localized virtual display touch engine fallback
 											executePacedSwipeGesture(finalWebView, viewWidth, viewHeight, isDown);
 										}
 									});
@@ -283,19 +249,23 @@ public class KeyEventHandler {
 	}
 
 	/**
-	 * Dispatches virtual MotionEvents directly to the WebView surface bounds.
-	 * Bypasses global root windows to work smoothly inside Android Auto projection spaces.
+	 * Dispatches simulated MotionEvents directly onto the targeted WebView view model layout bounds.
+	 * Decoupled from window managers to prevent bleeding interactions outside the active virtual car display.
 	 */
 	private static void executePacedSwipeGesture(final android.webkit.WebView webView, final int viewWidth, final int viewHeight, final boolean isDown) {
+		if (webView == null || !webView.isAttachedToWindow() || viewWidth <= 0 || viewHeight <= 0) return;
+
 		final float centerX = viewWidth / 2.0f;
 		final float startY = viewHeight * (isDown ? 0.82f : 0.18f);
 		final float endY = viewHeight * (isDown ? 0.18f : 0.82f);
 
 		final long downTime = uptimeMillis();
 		
-		android.view.MotionEvent downEvent = android.view.MotionEvent.obtain(downTime, downTime, android.view.MotionEvent.ACTION_DOWN, centerX, startY, 0);
-		webView.dispatchTouchEvent(downEvent);
-		downEvent.recycle();
+		try {
+			android.view.MotionEvent downEvent = android.view.MotionEvent.obtain(downTime, downTime, android.view.MotionEvent.ACTION_DOWN, centerX, startY, 0);
+			webView.dispatchTouchEvent(downEvent);
+			downEvent.recycle();
+		} catch (Exception ignored) {}
 
 		final int totalSteps = 12;
 		final long gestureDuration = 240; 
@@ -308,7 +278,7 @@ public class KeyEventHandler {
 			mainHandler.postDelayed(new Runnable() {
 				@Override
 				public void run() {
-					if (!webView.isAttachedToWindow()) return;
+					if (webView == null || !webView.isAttachedToWindow()) return;
 					
 					float alpha = (float) step / totalSteps;
 					float easeAlpha = (alpha < 0.5f) 
@@ -318,21 +288,24 @@ public class KeyEventHandler {
 					float interpolatedY = startY + (endY - startY) * easeAlpha;
 					long frameTime = downTime + (step * stepDelay);
 					
-					android.view.MotionEvent moveEvent = android.view.MotionEvent.obtain(downTime, frameTime, android.view.MotionEvent.ACTION_MOVE, centerX, interpolatedY, 0);
-					webView.dispatchTouchEvent(moveEvent);
-					moveEvent.recycle();
-					
-					if (step == totalSteps) {
-						android.view.MotionEvent upEvent = android.view.MotionEvent.obtain(downTime, frameTime + stepDelay, android.view.MotionEvent.ACTION_UP, centerX, endY, 0);
-						webView.dispatchTouchEvent(upEvent);
-						upEvent.recycle();
-					}
+					try {
+						android.view.MotionEvent moveEvent = android.view.MotionEvent.obtain(downTime, frameTime, android.view.MotionEvent.ACTION_MOVE, centerX, interpolatedY, 0);
+						webView.dispatchTouchEvent(moveEvent);
+						moveEvent.recycle();
+						
+						if (step == totalSteps) {
+							android.view.MotionEvent upEvent = android.view.MotionEvent.obtain(downTime, frameTime + stepDelay, android.view.MotionEvent.ACTION_UP, centerX, endY, 0);
+							webView.dispatchTouchEvent(upEvent);
+							upEvent.recycle();
+						}
+					} catch (Exception ignored) {}
 				}
 			}, step * stepDelay); 
 		}
 	}
 
 	private static @Nullable android.webkit.WebView findWebViewInHierarchy(android.view.View view) {
+		if (view == null) return null;
 		if (view instanceof android.webkit.WebView) {
 			android.webkit.WebView webView = (android.webkit.WebView) view;
 			if (webView.isShown() && (webView.getWidth() == 0 || webView.getWidth() > 100)) {
@@ -451,7 +424,9 @@ public class KeyEventHandler {
 
 		private void sched(long delay) {
 			var handler = (activity == null) ? cb.getHandler() : activity.getHandler();
-			handler.postDelayed(this, delay);
+			if (handler != null) {
+				handler.postDelayed(this, delay);
+			}
 		}
 	}
 }
