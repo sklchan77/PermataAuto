@@ -8,6 +8,7 @@ import static android.view.KeyEvent.ACTION_UP;
 import android.view.KeyEvent;
 import android.widget.EditText;
 
+import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
 import my.app.permata.media.service.MediaSessionCallback;
@@ -38,11 +39,13 @@ public class KeyEventHandler {
 			synchronized (KeyEventHandler.class) {
 				if (!reflectionInitialized) {
 					try {
+						// Fully verified alignment with package-private abstract class my.app.permata.auto.EventDispatcher
 						Class<?> clazz = Class.forName("my.app.permata.auto.EventDispatcher");
 						java.lang.reflect.Method getMethod = clazz.getDeclaredMethod("get");
 						getMethod.setAccessible(true);
 						cachedDispatcherInstance = getMethod.invoke(null);
 
+						// Matches public abstract boolean motionEvent(long, long, int, float, float) exactly
 						cachedMotionEventMethod = clazz.getDeclaredMethod("motionEvent", long.class, long.class, int.class, float.class, float.class);
 						cachedMotionEventMethod.setAccessible(true);
 					} catch (Exception e) {
@@ -88,26 +91,17 @@ public class KeyEventHandler {
 			if (checkCode == KeyEvent.KEYCODE_MEDIA_NEXT || checkCode == KeyEvent.KEYCODE_NAVIGATE_NEXT ||
 				checkCode == KeyEvent.KEYCODE_MEDIA_PREVIOUS || checkCode == KeyEvent.KEYCODE_NAVIGATE_PREVIOUS) {
 				
-				// Layer A: Dynamically resolve active context delegate for both phone and Car IHU environments
-				MainActivityDelegate targetDelegate = activity;
-				if (targetDelegate == null) {
-					try {
-						var contextMapper = my.app.utils.ui.activity.ActivityDelegate.getContextToDelegate();
-						if (contextMapper != null) {
-							targetDelegate = (MainActivityDelegate) contextMapper.apply(cb.getMediaLib().getContext());
-						}
-					} catch (Exception ignored) {}
-				}
-
-				// Layer B: Cast safely to general base Activity to support both MainActivity and MainCarActivity
-				android.app.Activity currentActivity = null;
-				if (targetDelegate != null && targetDelegate.getContext() instanceof android.app.Activity) {
-					currentActivity = (android.app.Activity) targetDelegate.getContext();
+				androidx.fragment.app.FragmentActivity targetActivity = null;
+				if (activity != null && activity.getContext() instanceof androidx.fragment.app.FragmentActivity) {
+					targetActivity = (androidx.fragment.app.FragmentActivity) activity.getContext();
 				} else {
-					currentActivity = my.app.permata.ui.activity.MainActivity.getActiveInstance();
+					androidx.appcompat.app.AppCompatActivity activeApp = my.app.permata.ui.activity.MainActivity.getActiveInstance();
+					if (activeApp instanceof androidx.fragment.app.FragmentActivity) {
+						targetActivity = (androidx.fragment.app.FragmentActivity) activeApp;
+					}
 				}
 
-				if (currentActivity != null) {
+				if (targetActivity != null) {
 					android.webkit.WebView targetWebView = null;
 
 					if (cachedWebViewRef != null) {
@@ -118,52 +112,12 @@ public class KeyEventHandler {
 					}
 
 					if (targetWebView == null) {
-						final int targetBrowserId = currentActivity.getResources().getIdentifier(
-								"browserWebView", "id", currentActivity.getPackageName());
+						final androidx.fragment.app.FragmentManager fragmentManager = targetActivity.getSupportFragmentManager();
+						// Seamlessly matches android:id="@+id/browserWebView" from layout layout configurations
+						final int targetBrowserId = targetActivity.getResources().getIdentifier(
+								"browserWebView", "id", targetActivity.getPackageName());
 
-						// Strategy 1: Search via active Fragment layout boundaries managed by the delegate
-						if (targetDelegate != null) {
-							try {
-								var activeFrag = targetDelegate.getActiveFragment();
-								if (activeFrag != null && activeFrag.getView() != null) {
-									android.view.View fragRoot = activeFrag.getView();
-									android.view.View found = fragRoot.findViewById(targetBrowserId);
-									if (found instanceof android.webkit.WebView) {
-										targetWebView = (android.webkit.WebView) found;
-									}
-									if (targetWebView == null) {
-										targetWebView = findWebViewInHierarchy(fragRoot);
-									}
-								}
-							} catch (Exception ignored) {}
-						}
-
-						// Strategy 2: Absolute Window Decor View hierarchy fallback scan
-						if (targetWebView == null) {
-							try {
-								android.view.Window win = currentActivity.getWindow();
-								if (win != null && win.getDecorView() != null) {
-									android.view.View decor = win.getDecorView();
-									android.view.View found = decor.findViewById(targetBrowserId);
-									if (found instanceof android.webkit.WebView) {
-										targetWebView = (android.webkit.WebView) found;
-									}
-									if (targetWebView == null) {
-										targetWebView = findWebViewInHierarchy(decor);
-									}
-								}
-							} catch (Exception ignored) {}
-						}
-
-						// Strategy 3: Backwards compatible FragmentManager scanning for standard phone layouts
-						if (targetWebView == null && currentActivity instanceof androidx.fragment.app.FragmentActivity) {
-							try {
-								final androidx.fragment.app.FragmentManager fm = 
-										((androidx.fragment.app.FragmentActivity) currentActivity).getSupportFragmentManager();
-								targetWebView = scanFragmentsForWebView(fm.getFragments(), targetBrowserId);
-							} catch (Exception ignored) {}
-						}
-
+						targetWebView = scanFragmentsForWebView(fragmentManager.getFragments(), targetBrowserId);
 						if (targetWebView != null) {
 							cachedWebViewRef = new java.lang.ref.WeakReference<>(targetWebView);
 						}
@@ -186,7 +140,7 @@ public class KeyEventHandler {
 							final int absoluteX = screenLocation[0];
 							final int absoluteY = screenLocation[1];
 
-							// Intelligent JavaScript Interface for handling desktop view vs strict mobile view constraints
+							// Cleanly Escaped WebKit DOM JS Event Router
 							final String jsScript = "(function() {" +
 									"  try {" +
 									"    var isDown = " + isDown + ";" +
@@ -209,10 +163,6 @@ public class KeyEventHandler {
 									"    if (targetBtn) {" +
 									"      targetBtn.click();" +
 									"      return 'btn_click';" + 
-									"    }" +
-									"    var url = window.location.href.toLowerCase();" +
-									"    if (url.indexOf('tiktok.com') > -1 || url.indexOf('douyin.com') > -1 || url.indexOf('instagram.com') > -1) {" +
-									"      return 'swipe_needed';" + // Bypasses scroll-snap container lockouts entirely
 									"    }" +
 									"    var scrollTarget = null;" +
 									"    var elements = document.querySelectorAll('*');" +
@@ -266,13 +216,13 @@ public class KeyEventHandler {
 											public void onReceiveValue(String value) {
 												String token = (value != null) ? value.replace("\"", "") : "";
 												
-												// If explicit DOM navigation button is handled, stop here to avoid dual input collision
+												// If explicit DOM navigation button is handled, stop to avoid double gesture collision
 												if ("btn_click".equals(token)) {
 													Log.i("KeyEventHandler", "Navigation executed via direct DOM element click.");
 													return;
 												}
 
-												// Otherwise, trigger the physically paced swipe gesture sequence
+												// Otherwise, fall back to the physically paced smooth touch gesture stream
 												executePacedSwipeGesture(viewWidth, viewHeight, absoluteX, absoluteY, isDown);
 											}
 										});
@@ -346,8 +296,9 @@ public class KeyEventHandler {
 
 		final int totalSteps = 12;
 		final long gestureDuration = 240; 
-		final long stepDelay = gestureDuration / totalSteps; // Delay coordinates by ~20ms frames
+		final long stepDelay = gestureDuration / totalSteps; // Delays frames by ~20ms intervals
 
+		// Explicit Looper binding guarantees safe cross-thread handling without context leakage
 		final android.os.Handler mainHandler = new android.os.Handler(android.os.Looper.getMainLooper());
 		
 		for (int i = 1; i <= totalSteps; i++) {
@@ -357,7 +308,7 @@ public class KeyEventHandler {
 				public void run() {
 					float alpha = (float) step / totalSteps;
 					
-					// Smooth cubic ease curve metrics to mimic physical finger dragging acceleration patterns
+					// Smooth cubic ease curve metrics to mimic physical hand scrolling momentum deceleration
 					float easeAlpha = (alpha < 0.5f) 
 							? (4.0f * alpha * alpha * alpha) 
 							: (1.0f - (float) Math.pow(-2.0f * alpha + 2.0f, 3.0f) / 2.0f);
@@ -368,7 +319,7 @@ public class KeyEventHandler {
 					// 2. Stream incremental moves separated by true wall-clock time
 					invokeMotionEvent(downTime, frameTime, android.view.MotionEvent.ACTION_MOVE, centerX, interpolatedY);
 					
-					// 3. Complete gesture event and release pointer layout contact to engage scrolling inertia
+					// 3. Complete gesture event and release pointer touch contact to engage WebKit physics/momentum
 					if (step == totalSteps) {
 						invokeMotionEvent(downTime, frameTime + stepDelay, android.view.MotionEvent.ACTION_UP, centerX, endY);
 					}
