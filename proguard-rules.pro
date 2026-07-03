@@ -64,3 +64,9 @@
 -keep class my.app.permata.addon.web.WebBrowserFragment {
     public android.webkit.WebView getWebView();
 }
+
+
+# Prevent ProGuard optimization from stripping background context-to-delegate mapping rules
+-keep class my.app.utils.ui.activity.ActivityDelegate {
+    public static *** getContextToDelegate();
+}
