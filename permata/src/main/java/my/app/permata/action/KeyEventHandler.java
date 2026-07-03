@@ -47,7 +47,7 @@ public class KeyEventHandler {
 						cachedMotionEventMethod.setAccessible(true);
 					} catch (Exception e) {
 						Log.e("Failed to bind to package-private EventDispatcher", e);
-					} final {
+					} finally {
 						reflectionInitialized = true; 
 					}
 				}
@@ -128,7 +128,7 @@ public class KeyEventHandler {
 							|| className.contains("youtube");
 
 					if (!isYoutube) {
-						// FIX: Absorb the corresponding ACTION_UP event to prevent background media skip execution leaks
+						// Absorb the corresponding ACTION_UP event to prevent background media skip execution leaks
 						if (event.getAction() == ACTION_UP) {
 							return true;
 						}
@@ -211,7 +211,7 @@ public class KeyEventHandler {
 											public void onReceiveValue(String value) {
 												String token = (value != null) ? value.replace("\"", "") : "";
 												
-												// FIX: Terminate interaction safely if programmatic hooks handled the layout movement
+												// Terminate interaction safely if programmatic hooks handled the layout movement
 												if ("btn_click".equals(token) || "js_scroll".equals(token)) {
 													Log.i("KeyEventHandler", "Navigation finalized internally via JavaScript. Token: " + token);
 													return;
