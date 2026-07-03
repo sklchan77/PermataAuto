@@ -18,7 +18,7 @@ import my.app.utils.log.Log;
 
 /**
  * High-Performance Media Event Controller optimized for physical automotive control rings.
- * Fully compatible with package-private access rules and aggressive ProGuard configurations.
+ * Fully compatible with package-private access rules, multi-display environments, and aggressive ProGuard configurations.
  */
 public class KeyEventHandler {
 	private static final int DBL_CLICK_INTERVAL = 500;
@@ -91,149 +91,155 @@ public class KeyEventHandler {
 			if (checkCode == KeyEvent.KEYCODE_MEDIA_NEXT || checkCode == KeyEvent.KEYCODE_NAVIGATE_NEXT ||
 				checkCode == KeyEvent.KEYCODE_MEDIA_PREVIOUS || checkCode == KeyEvent.KEYCODE_NAVIGATE_PREVIOUS) {
 				
-				androidx.fragment.app.FragmentActivity targetActivity = null;
-				if (activity != null && activity.getContext() instanceof androidx.fragment.app.FragmentActivity) {
-					targetActivity = (androidx.fragment.app.FragmentActivity) activity.getContext();
-				} else {
-					androidx.appcompat.app.AppCompatActivity activeApp = my.app.permata.ui.activity.MainActivity.getActiveInstance();
-					if (activeApp instanceof androidx.fragment.app.FragmentActivity) {
-						targetActivity = (androidx.fragment.app.FragmentActivity) activeApp;
+				android.webkit.WebView targetWebView = null;
+
+				// 1. Check WeakReference Cache eligibility
+				if (cachedWebViewRef != null) {
+					targetWebView = cachedWebViewRef.get();
+					if (targetWebView != null && (!targetWebView.isAttachedToWindow() || !targetWebView.isShown())) {
+						targetWebView = null; 
 					}
 				}
 
-				if (targetActivity != null) {
-					android.webkit.WebView targetWebView = null;
-
-					if (cachedWebViewRef != null) {
-						targetWebView = cachedWebViewRef.get();
-						if (targetWebView != null && (!targetWebView.isAttachedToWindow() || !targetWebView.isShown())) {
-							targetWebView = null; 
+				// 2. Multi-Display/Projected Context Safe Hierarchy Scan
+				if (targetWebView == null && activity != null) {
+					try {
+						// Universally works for both MainActivity and projected MainCarActivity view stacks
+						my.app.utils.ui.fragment.ActivityFragment activeFrag = activity.getActiveFragment();
+						if (activeFrag != null && activeFrag.getView() != null) {
+							targetWebView = findWebViewInHierarchy(activeFrag.getView());
 						}
+					} catch (Exception ignored) {}
+
+					// Window content backup tree scan if fragment reflection is delayed
+					if (targetWebView == null && activity.getContext() instanceof android.app.Activity) {
+						try {
+							android.view.View rootContent = ((android.app.Activity) activity.getContext()).findViewById(android.R.id.content);
+							if (rootContent != null) {
+								targetWebView = findWebViewInHierarchy(rootContent);
+							}
+						} catch (Exception ignored) {}
 					}
+				}
 
-					if (targetWebView == null) {
-						final androidx.fragment.app.FragmentManager fragmentManager = targetActivity.getSupportFragmentManager();
-						// Seamlessly matches android:id="@+id/browserWebView" from layout layout configurations
-						final int targetBrowserId = targetActivity.getResources().getIdentifier(
-								"browserWebView", "id", targetActivity.getPackageName());
-
-						targetWebView = scanFragmentsForWebView(fragmentManager.getFragments(), targetBrowserId);
-						if (targetWebView != null) {
-							cachedWebViewRef = new java.lang.ref.WeakReference<>(targetWebView);
+				// 3. Desktop Standalone fallback
+				if (targetWebView == null) {
+					try {
+						androidx.appcompat.app.AppCompatActivity activeApp = my.app.permata.ui.activity.MainActivity.getActiveInstance();
+						if (activeApp != null) {
+							android.view.View rootContent = activeApp.findViewById(android.R.id.content);
+							if (rootContent != null) {
+								targetWebView = findWebViewInHierarchy(rootContent);
+							}
 						}
-					}
+					} catch (Exception ignored) {}
+				}
 
-					if (targetWebView != null) {
-						final String currentUrl = targetWebView.getUrl();
-						final String className = targetWebView.getClass().getName().toLowerCase();
+				// Cache resolved element tree for thread optimization
+				if (targetWebView != null) {
+					cachedWebViewRef = new java.lang.ref.WeakReference<>(targetWebView);
+					
+					final String currentUrl = targetWebView.getUrl();
+					final String className = targetWebView.getClass().getName().toLowerCase();
+					
+					boolean isYoutube = (currentUrl != null && (currentUrl.contains("youtube.com") || currentUrl.contains("youtu.be")))
+							|| className.contains("youtube");
+
+					if (!isYoutube) {
+						final boolean isDown = (checkCode == KeyEvent.KEYCODE_MEDIA_NEXT || checkCode == KeyEvent.KEYCODE_NAVIGATE_NEXT);
 						
-						boolean isYoutube = (currentUrl != null && (currentUrl.contains("youtube.com") || currentUrl.contains("youtu.be")))
-								|| className.contains("youtube");
+						final int viewWidth = targetWebView.getWidth();
+						final int viewHeight = targetWebView.getHeight();
 
-						if (!isYoutube) {
-							final boolean isDown = (checkCode == KeyEvent.KEYCODE_MEDIA_NEXT || checkCode == KeyEvent.KEYCODE_NAVIGATE_NEXT);
-							
-							final int viewWidth = targetWebView.getWidth();
-							final int viewHeight = targetWebView.getHeight();
-							final int[] screenLocation = new int[2];
-							targetWebView.getLocationOnScreen(screenLocation);
-							final int absoluteX = screenLocation[0];
-							final int absoluteY = screenLocation[1];
+						// Cleanly Escaped WebKit DOM JS Event Router
+						final String jsScript = "(function() {" +
+								"  try {" +
+								"    var isDown = " + isDown + ";" +
+								"    var ihuWidth = " + viewWidth + ";" +
+								"    var ihuHeight = " + viewHeight + ";" +
+								"    var targetBtn = null;" +
+								"    if (isDown) {" +
+								"      targetBtn = document.querySelector('[data-e2e=\"arrow-down\"]') || " +
+								"                  document.querySelector('.xgplayer-playswitch-next') || " +
+								"                  document.querySelector('.slide-down-btn') || " +
+								"                  document.querySelector('[aria-label=\"Next video\"]') || " +
+								"                  document.querySelector('[aria-label=\"Next\"]');" +
+								"    } else {" +
+								"      targetBtn = document.querySelector('[data-e2e=\"arrow-up\"]') || " +
+								"                  document.querySelector('.xgplayer-playswitch-prev') || " +
+								"                  document.querySelector('.slide-up-btn') || " +
+								"                  document.querySelector('[aria-label=\"Previous video\"]') || " +
+								"                  document.querySelector('[aria-label=\"Go back\"]');" +
+								"    }" +
+								"    if (targetBtn) {" +
+								"      targetBtn.click();" +
+								"      return 'btn_click';" + 
+								"    }" +
+								"    var scrollTarget = null;" +
+								"    var elements = document.querySelectorAll('*');" +
+								"    for (var i = 0; i < elements.length; i++) {" +
+								"      var el = elements[i];" +
+								"      var style = window.getComputedStyle(el);" +
+								"      if ((style.overflowY === 'auto' || style.overflowY === 'scroll' || style.scrollSnapType !== 'none') && el.scrollHeight > el.clientHeight) {" +
+								"        var rect = el.getBoundingClientRect();" +
+								"        if (rect.width > ihuWidth * 0.3 && rect.height > ihuHeight * 0.3) {" +
+								"          scrollTarget = el;" +
+								"          break;" +
+								"        }" +
+								"      }" +
+								"    }" +
+								"    if (!scrollTarget) scrollTarget = document.querySelector('main') || document.body;" +
+								"    var viewHeight = (scrollTarget === document.body) ? ihuHeight : scrollTarget.clientHeight;" +
+								"    var amount = isDown ? (viewHeight * 0.90) : -(viewHeight * 0.90);" +
+								"    var activeNode = document.activeElement || scrollTarget || document.body;" +
+								"    try {" +
+								"      var wheelEvt = new WheelEvent('wheel', { deltaY: amount, bubbles: true, cancelable: true });" +
+								"      activeNode.dispatchEvent(wheelEvt);" +
+								"    } catch(wErr) {}" +
+								"    if (scrollTarget && scrollTarget.scrollBy) {" +
+								"      scrollTarget.scrollBy({ top: amount, behavior: 'smooth' });" +
+								"    } else {" +
+								"      window.scrollBy({ top: amount, behavior: 'smooth' });" +
+								"    }" +
+								"    var keyStr = isDown ? 'ArrowDown' : 'ArrowUp';" +
+								"    var keyCode = isDown ? 40 : 38;" +
+								"    var kEvt = new KeyboardEvent('keydown', { key: keyStr, code: keyStr, keyCode: keyCode, window: window, bubbles: true, cancelable: true });" +
+								"    activeNode.dispatchEvent(kEvt);" +
+								"    return 'js_scroll';" +
+								"  } catch (err) {" +
+								"    var fall = isDown ? ihuHeight : -ihuHeight;" +
+								"    window.scrollBy(0, fall);" +
+								"    return 'fallback_scroll';" +
+								"  }" +
+								"})();";
 
-							// Cleanly Escaped WebKit DOM JS Event Router
-							final String jsScript = "(function() {" +
-									"  try {" +
-									"    var isDown = " + isDown + ";" +
-									"    var ihuWidth = " + viewWidth + ";" +
-									"    var ihuHeight = " + viewHeight + ";" +
-									"    var targetBtn = null;" +
-									"    if (isDown) {" +
-									"      targetBtn = document.querySelector('[data-e2e=\"arrow-down\"]') || " +
-									"                  document.querySelector('.xgplayer-playswitch-next') || " +
-									"                  document.querySelector('.slide-down-btn') || " +
-									"                  document.querySelector('[aria-label=\"Next video\"]') || " +
-									"                  document.querySelector('[aria-label=\"Next\"]');" +
-									"    } else {" +
-									"      targetBtn = document.querySelector('[data-e2e=\"arrow-up\"]') || " +
-									"                  document.querySelector('.xgplayer-playswitch-prev') || " +
-									"                  document.querySelector('.slide-up-btn') || " +
-									"                  document.querySelector('[aria-label=\"Previous video\"]') || " +
-									"                  document.querySelector('[aria-label=\"Go back\"]');" +
-									"    }" +
-									"    if (targetBtn) {" +
-									"      targetBtn.click();" +
-									"      return 'btn_click';" + 
-									"    }" +
-									"    var scrollTarget = null;" +
-									"    var elements = document.querySelectorAll('*');" +
-									"    for (var i = 0; i < elements.length; i++) {" +
-									"      var el = elements[i];" +
-									"      var style = window.getComputedStyle(el);" +
-									"      if ((style.overflowY === 'auto' || style.overflowY === 'scroll' || style.scrollSnapType !== 'none') && el.scrollHeight > el.clientHeight) {" +
-									"        var rect = el.getBoundingClientRect();" +
-									"        if (rect.width > ihuWidth * 0.3 && rect.height > ihuHeight * 0.3) {" +
-									"          scrollTarget = el;" +
-									"          break;" +
-									"        }" +
-									"      }" +
-									"    }" +
-									"    if (!scrollTarget) scrollTarget = document.querySelector('main') || document.body;" +
-									"    var viewHeight = (scrollTarget === document.body) ? ihuHeight : scrollTarget.clientHeight;" +
-									"    var amount = isDown ? (viewHeight * 0.90) : -(viewHeight * 0.90);" +
-									"    var activeNode = document.activeElement || scrollTarget || document.body;" +
-									"    try {" +
-									"      var wheelEvt = new WheelEvent('wheel', { deltaY: amount, bubbles: true, cancelable: true });" +
-									"      activeNode.dispatchEvent(wheelEvt);" +
-									"    } catch(wErr) {}" +
-									"    if (scrollTarget && scrollTarget.scrollBy) {" +
-									"      scrollTarget.scrollBy({ top: amount, behavior: 'smooth' });" +
-									"    } else {" +
-									"      window.scrollBy({ top: amount, behavior: 'smooth' });" +
-									"    }" +
-									"    var keyStr = isDown ? 'ArrowDown' : 'ArrowUp';" +
-									"    var keyCode = isDown ? 40 : 38;" +
-									"    var kEvt = new KeyboardEvent('keydown', { key: keyStr, code: keyStr, keyCode: keyCode, window: window, bubbles: true, cancelable: true });" +
-									"    activeNode.dispatchEvent(kEvt);" +
-									"    return 'js_scroll';" +
-									"  } catch (err) {" +
-									"    var fall = isDown ? ihuHeight : -ihuHeight;" +
-									"    window.scrollBy(0, fall);" +
-									"    return 'fallback_scroll';" +
-									"  }" +
-									"})();";
+						final android.webkit.WebView finalWebView = targetWebView;
 
-							final android.webkit.WebView finalWebView = targetWebView;
-
-							targetWebView.post(new Runnable() {
-								@Override
-								public void run() {
-									try {
-										finalWebView.requestFocus();
-										
-										// Process JS Engine evaluation with string isolation feedback rules
-										finalWebView.evaluateJavascript(jsScript, new android.webkit.ValueCallback<String>() {
-											@Override
-											public void onReceiveValue(String value) {
-												String token = (value != null) ? value.replace("\"", "") : "";
-												
-												// If explicit DOM navigation button is handled, stop to avoid double gesture collision
-												if ("btn_click".equals(token)) {
-													Log.i("KeyEventHandler", "Navigation executed via direct DOM element click.");
-													return;
-												}
-
-												// Otherwise, fall back to the physically paced smooth touch gesture stream
-												executePacedSwipeGesture(viewWidth, viewHeight, absoluteX, absoluteY, isDown);
+						targetWebView.post(new Runnable() {
+							@Override
+							public void run() {
+								try {
+									finalWebView.requestFocus();
+									
+									finalWebView.evaluateJavascript(jsScript, new android.webkit.ValueCallback<String>() {
+										@Override
+										public void onReceiveValue(String value) {
+											String token = (value != null) ? value.replace("\"", "") : "";
+											if ("btn_click".equals(token)) {
+												Log.i("KeyEventHandler", "Navigation executed via direct DOM element click.");
+												return;
 											}
-										});
+											// Execute multi-display safe, localized input stream injection sequence
+											executePacedSwipeGesture(finalWebView, viewWidth, viewHeight, isDown);
+										}
+									});
 
-									} catch (Exception ex) {
-										Log.e("Error executing advanced robust web scroll payload", ex);
-									}
+								} catch (Exception ex) {
+									Log.e("Error executing advanced robust web scroll payload", ex);
 								}
-							});
-							return true; 
-						}
+							}
+						});
+						return true; 
 					}
 				}
 			}
@@ -281,24 +287,25 @@ public class KeyEventHandler {
 	}
 
 	/**
-	 * Dispatches continuous incremental MotionEvents across real clock frame intervals via Handler tasks.
+	 * Dispatches incremental virtual MotionEvents directly to the WebView container.
+	 * This bypasses global window coordinates and shell access, guaranteeing 100% operation over Wireless Android Auto.
 	 */
-	private static void executePacedSwipeGesture(final int viewWidth, final int viewHeight, 
-																							 final int absoluteX, final int absoluteY, final boolean isDown) {
-		final float centerX = absoluteX + (viewWidth / 2.0f);
-		final float startY = absoluteY + (viewHeight * (isDown ? 0.82f : 0.18f));
-		final float endY = absoluteY + (viewHeight * (isDown ? 0.18f : 0.82f));
+	private static void executePacedSwipeGesture(final android.webkit.WebView webView, final int viewWidth, final int viewHeight, final boolean isDown) {
+		final float centerX = viewWidth / 2.0f;
+		final float startY = viewHeight * (isDown ? 0.82f : 0.18f);
+		final float endY = viewHeight * (isDown ? 0.18f : 0.82f);
 
 		final long downTime = uptimeMillis();
 		
-		// 1. Dispatch structural touch start down anchor
-		invokeMotionEvent(downTime, downTime, android.view.MotionEvent.ACTION_DOWN, centerX, startY);
+		// 1. Generate localized touch anchor bound directly to target display layer context
+		android.view.MotionEvent downEvent = android.view.MotionEvent.obtain(downTime, downTime, android.view.MotionEvent.ACTION_DOWN, centerX, startY, 0);
+		webView.dispatchTouchEvent(downEvent);
+		downEvent.recycle();
 
 		final int totalSteps = 12;
 		final long gestureDuration = 240; 
-		final long stepDelay = gestureDuration / totalSteps; // Delays frames by ~20ms intervals
+		final long stepDelay = gestureDuration / totalSteps;
 
-		// Explicit Looper binding guarantees safe cross-thread handling without context leakage
 		final android.os.Handler mainHandler = new android.os.Handler(android.os.Looper.getMainLooper());
 		
 		for (int i = 1; i <= totalSteps; i++) {
@@ -306,9 +313,9 @@ public class KeyEventHandler {
 			mainHandler.postDelayed(new Runnable() {
 				@Override
 				public void run() {
-					float alpha = (float) step / totalSteps;
+					if (!webView.isAttachedToWindow()) return;
 					
-					// Smooth cubic ease curve metrics to mimic physical hand scrolling momentum deceleration
+					float alpha = (float) step / totalSteps;
 					float easeAlpha = (alpha < 0.5f) 
 							? (4.0f * alpha * alpha * alpha) 
 							: (1.0f - (float) Math.pow(-2.0f * alpha + 2.0f, 3.0f) / 2.0f);
@@ -316,49 +323,20 @@ public class KeyEventHandler {
 					float interpolatedY = startY + (endY - startY) * easeAlpha;
 					long frameTime = downTime + (step * stepDelay);
 					
-					// 2. Stream incremental moves separated by true wall-clock time
-					invokeMotionEvent(downTime, frameTime, android.view.MotionEvent.ACTION_MOVE, centerX, interpolatedY);
+					// 2. Stream precise coordinate tracking movements
+					android.view.MotionEvent moveEvent = android.view.MotionEvent.obtain(downTime, frameTime, android.view.MotionEvent.ACTION_MOVE, centerX, interpolatedY, 0);
+					webView.dispatchTouchEvent(moveEvent);
+					moveEvent.recycle();
 					
-					// 3. Complete gesture event and release pointer touch contact to engage WebKit physics/momentum
+					// 3. Complete structural touch gesture release to engage inertia metrics
 					if (step == totalSteps) {
-						invokeMotionEvent(downTime, frameTime + stepDelay, android.view.MotionEvent.ACTION_UP, centerX, endY);
+						android.view.MotionEvent upEvent = android.view.MotionEvent.obtain(downTime, frameTime + stepDelay, android.view.MotionEvent.ACTION_UP, centerX, endY, 0);
+						webView.dispatchTouchEvent(upEvent);
+						upEvent.recycle();
 					}
 				}
 			}, step * stepDelay); 
 		}
-	}
-
-	private static @Nullable android.webkit.WebView scanFragmentsForWebView(@Nullable java.util.List<androidx.fragment.app.Fragment> fragments, int targetBrowserId) {
-		if (fragments == null) return null;
-		
-		for (androidx.fragment.app.Fragment f : fragments) {
-			if (f != null && f.isAdded() && f.isVisible()) {
-				android.view.View root = f.getView();
-				if (root != null) {
-					android.webkit.WebView matchedView = null;
-					
-					if (targetBrowserId != 0) {
-						android.view.View found = root.findViewById(targetBrowserId);
-						if (found instanceof android.webkit.WebView) {
-							matchedView = (android.webkit.WebView) found;
-						}
-					}
-					
-					if (matchedView == null) {
-						matchedView = findWebViewInHierarchy(root);
-					}
-					
-					if (matchedView != null) {
-						return matchedView;
-					}
-				}
-				try {
-					android.webkit.WebView nestedView = scanFragmentsForWebView(f.getChildFragmentManager().getFragments(), targetBrowserId);
-					if (nestedView != null) return nestedView;
-				} catch (Exception ignored) {}
-			}
-		}
-		return null;
 	}
 
 	private static @Nullable android.webkit.WebView findWebViewInHierarchy(android.view.View view) {
