@@ -621,12 +621,8 @@ public class MediaSessionCallback extends MediaSessionCompat.Callback
 		});
 	}
 
-
 	@Override
 	public void onSkipToPrevious() {
-                if (handleBrowserMediaNavigation(false)) {
-                return; // Event consumed by browser view hierarchy
-        }
 		playerTask.cancel();
 		playerTask = skipTo(false, false);
 	}
@@ -638,9 +634,6 @@ public class MediaSessionCallback extends MediaSessionCompat.Callback
 
 	@Override
 	public void onSkipToNext() {
-                if (handleBrowserMediaNavigation(true)) {
-                return; // Event consumed by browser view hierarchy
-        }  
 		playerTask.cancel();
 		playerTask = skipTo(true, false);
 	}
@@ -1626,57 +1619,4 @@ public class MediaSessionCallback extends MediaSessionCompat.Callback
 			if (playbackTimer == this) onStop();
 		}
 	}
-
-
-private boolean handleBrowserMediaNavigation(final boolean isNext) {
-    try {
-        // 1. Locate current running UI thread context
-        Class<?> activityCtx = Class.forName("my.app.permata.ui.activity.MainActivity");
-        java.lang.reflect.Method getActive = activityCtx.getMethod("getActiveInstance");
-        Object activeActivity = getActive.invoke(null);
-        if (!(activeActivity instanceof androidx.fragment.app.FragmentActivity activity)) return false;
-
-        // 2. Fetch Permata Auto's core UI routing delegate
-        Class<?> delegateCtx = Class.forName("my.app.permata.ui.activity.MainActivityDelegate");
-        java.lang.reflect.Method getDelegate = delegateCtx.getMethod("get", android.content.Context.class);
-        Object delegate = getDelegate.invoke(null, activity);
-        if (delegate == null) return false;
-
-        // 3. Ensure window interaction occurs ONLY when browser tab has visibility focus on IHU
-        java.lang.reflect.Method getActiveFragment = delegateCtx.getMethod("getActiveFragment");
-        Object activeFragment = getActiveFragment.invoke(delegate);
-
-        if (activeFragment != null && activeFragment.getClass().getName().endsWith("WebBrowserFragment")) {
-            final Object fragment = activeFragment; 
-            
-            activity.runOnUiThread(() -> {
-                try {
-                    // Introspect for the WebBrowser's WebView instance
-                    android.webkit.WebView webView = null;
-                    for (java.lang.reflect.Field field : fragment.getClass().getDeclaredFields()) {
-                        if (android.webkit.WebView.class.isAssignableFrom(field.getType())) {
-                            field.setAccessible(true);
-                            webView = (android.webkit.WebView) field.get(fragment);
-                            break;
-                        }
-                    }
-
-                    if (webView != null) {
-                        // Advanced Multi-Tiered Dynamic Resolution Execution Engine
-	String jsPayload = String.format(java.util.Locale.US, 							"(function() {" + 							" var isNext = %b;" + 							" var url = window.location.href;" + 							"" + 							" /* VIEWPORT COMPUTATION ENGINE */" + 							" var ihuViewHeight = window.innerHeight || document.documentElement.clientHeight || document.body.clientHeight;" + 							" var scrollPercentage = 0.80;" + 							" var dynamicScrollDistance = ihuViewHeight * scrollPercentage * (isNext ? 1 : -1);" + 							"" + 							" /* AUTO-FULLSCREEN FORCE ENGINE */" + 							" function forceFullscreen(element) {" + 							" if (!element) return;" + 							" try {" + 							" if (!document.fullscreenElement && !document.webkitFullscreenElement) {" + 							" if (element.requestFullscreen) {" + 							" element.requestFullscreen();" + 							" } else if (element.webkitRequestFullscreen) {" + 							" element.webkitRequestFullscreen();" + 							" }" + 							" }" + 							" } catch (e) { console.log('Fullscreen request blocked:', e); }" + 							" }" + 							"" + 							" /* STRATEGY 1: Short-form Feed Container Traversal (TikTok / Douyin / Reels / Shorts) */" + 							" var isShortFormPlatform = url.includes('tiktok.com') || url.includes('douyin.com') || url.includes('instagram.com') || url.includes('/shorts/');" + 							" if (isShortFormPlatform) {" + 							" var vid = document.querySelector('video');" + 							" if (vid) {" + 							" forceFullscreen(vid);" + 							" var p = vid.parentElement;" + 							" while (p && p !== document.body) {" + 							" var s = window.getComputedStyle(p);" + 							" if (s.overflowY === 'auto' || s.overflowY === 'scroll' || p.scrollHeight > p.clientHeight) {" + 							" var containerHeight = p.clientHeight || ihuViewHeight;" + 							" p.scrollBy({ top: containerHeight * scrollPercentage * (isNext ? 1 : -1), behavior: 'smooth' });" + 							" return;" + 							" }" + 							" p = p.parentElement;" + 							" }" + 							" }" + 							" }" + 							"" + 							" /* STRATEGY 2: Media Native Element Clicking (YouTube) */" + 							" if (url.includes('youtube.com') || url.includes('youtu.be')) {" + 							" var ytFullBtn = document.querySelector('.ytp-fullscreen-button');" + 							" if (ytFullBtn && !document.querySelector('.html5-video-player.ytp-big-mode')) {" + 							" ytFullBtn.click();" + 							" return;" + 							" }" + 							" var ytBtn = isNext ? document.querySelector('.ytp-next-button') : document.querySelector('.ytp-prev-button');" + 							" if (ytBtn && ytBtn.offsetParent !== null) {" + 							" ytBtn.click();" + 							" return;" + 							" }" + 							" }" + 							"" + 							" /* STRATEGY 3: Custom Embedded Web Video Elements (Auto-Fullscreen Trigger) */" + 							" var embeddedVideo = document.querySelector('video');" + 							" if (embeddedVideo && isShortFormPlatform === false && !url.includes('youtube.com')) {" + 							" forceFullscreen(embeddedVideo);" + 							" }" + 							"" + 							" /* STRATEGY 4: Inline Track Progressive Timeline Jumps (Your Own Media Player) */" + 							" var media = document.querySelector('video, audio');" + 							" if (media && (!media.paused || media.currentTime > 0)) {" + 							" var jumpStep = 10;" + 							" if (isNext) {" + 							" media.currentTime = Math.min(media.duration || (media.currentTime + jumpStep), media.currentTime + jumpStep);" + 							" } else {" + 							" media.currentTime = Math.max(0, media.currentTime - jumpStep);" + 							" }" + 							" return;" + 							" }" + 							"" + 							" /* STRATEGY 5: Universal Plain Webpage Scrolling Fallback */" + 							" window.scrollBy({ top: dynamicScrollDistance, behavior: 'smooth' });" + 							"})();", isNext); 
-
-                        webView.evaluateJavascript(jsPayload, null);
-                    }
-                } catch (Exception ex) {
-                    my.app.utils.log.Log.d(ex);
-                }
-            });
-            return true;
-        }
-    } catch (Exception err) {
-        // Fallback safely to standard device hardware key defaults
-    }
-    return false;
-}
-
 }
