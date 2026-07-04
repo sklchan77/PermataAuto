@@ -274,11 +274,51 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 		return d.onKeyUp(keyCode, keyEvent, super::onKeyDown);
 	}
 
+	private boolean performFragmentScroll(boolean up, MainActivityDelegate d) {
+		if (d == null) return false;
+		ActivityFragment f = d.getActiveFragment();
+		if (f == null) return false;
+		View root = f.getView();
+		if (root instanceof ViewGroup vg) return performViewScroll(up, vg);
+		return false;
+	}
+
+	private boolean performViewScroll(boolean up, View v) {
+		if (v instanceof RecyclerView rv) {
+			LinearLayoutManager lm = (LinearLayoutManager) rv.getLayoutManager();
+			if (lm == null) return false;
+			int pos = lm.findFirstVisibleItemPosition();
+			if (up) {
+				if (pos > 0) lm.scrollToPositionWithOffset(pos - 1, 0);
+			} else {
+				if (pos < lm.getItemCount() - 1) lm.scrollToPositionWithOffset(pos + 1, 0);
+			}
+			return true;
+		} else if (v instanceof WebView wv) {
+			if (up) wv.pageUp(false);
+			else wv.pageDown(false);
+			return true;
+		} else if (v instanceof ViewGroup vg) {
+			for (int i = 0, n = vg.getChildCount(); i < n; i++) {
+				if (performViewScroll(up, vg.getChildAt(i))) return true;
+			}
+		}
+		return false;
+	}
+
 	@Override
 	public boolean onKeyDown(int keyCode, KeyEvent keyEvent) {
 		Log.i(keyEvent);
 		MainActivityDelegate d = delegate.peek();
 		if (d == null) return super.onKeyDown(keyCode, keyEvent);
+
+		// Global Intercept: Handle physical steering wheel keys or media knobs for web/list surfaces
+		if (keyCode == KeyEvent.KEYCODE_PAGE_DOWN || keyCode == KeyEvent.KEYCODE_MEDIA_NEXT) {
+			if (performFragmentScroll(false, d)) return true;
+		} else if (keyCode == KeyEvent.KEYCODE_PAGE_UP || keyCode == KeyEvent.KEYCODE_MEDIA_PREVIOUS) {
+			if (performFragmentScroll(true, d)) return true;
+		}
+
 		if (!d.getPrefs().useDpadCursor(d)) return d.onKeyDown(keyCode, keyEvent, super::onKeyDown);
 
 		float x = 0;
