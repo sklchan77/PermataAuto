@@ -295,15 +295,83 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 			}
 			return true;
 		} else if (v instanceof WebView wv) {
-			if (up) wv.pageUp(false);
-			else wv.pageDown(false);
-			return true;
+			// Integrated Multi-Layered Fail-Safe Web Scrolling Engine
+			return smartScrollWebView(wv, up);
 		} else if (v instanceof ViewGroup vg) {
 			for (int i = 0, n = vg.getChildCount(); i < n; i++) {
 				if (performViewScroll(up, vg.getChildAt(i))) return true;
 			}
 		}
 		return false;
+	}
+
+	// Universal Robust Web Scrolling Engine Helper
+	private static boolean smartScrollWebView(WebView wv, boolean up) {
+		if (wv == null) return false;
+
+		// LAYER 1: Deep JavaScript Inspection Engine (Fixes CSS Trap & Modern SPAs)
+		if (wv.getSettings().getJavaScriptEnabled()) {
+			String jsScript = "(function(isUp) {" +
+					"  function findScrollableContainer(up) {" +
+					"    var doc = document.documentElement, body = document.body;" +
+					"    if (up) {" +
+					"      if (doc.scrollTop > 5 || body.scrollTop > 5 || window.pageYOffset > 5) return window;" +
+					"    } else {" +
+					"      var total = Math.max(doc.scrollHeight, body.scrollHeight);" +
+					"      var current = window.pageYOffset || doc.scrollTop || body.scrollTop;" +
+					"      if (total - current > window.innerHeight + 5) return window;" +
+					"    }" +
+					"    var nodes = document.querySelectorAll('*'), bestNode = null, maxArea = 0;" +
+					"    for (var i = 0; i < nodes.length; i++) {" +
+					"      var el = nodes[i], s = window.getComputedStyle(el);" +
+					"      var overflow = s.overflowY || s.overflow;" +
+					"      if (overflow === 'auto' || overflow === 'scroll' || el.scrollHeight > el.clientHeight) {" +
+					"        var canScroll = up ? el.scrollTop > 5 : (el.scrollHeight - el.scrollTop > el.clientHeight + 5);" +
+					"        if (canScroll) {" +
+					"          var r = el.getBoundingClientRect();" +
+					"          var area = r.width * r.height;" +
+					"          if (area > maxArea && r.width > 40 && r.height > 40) { maxArea = area; bestNode = el; }" +
+					"        }" +
+					"      }" +
+					"    }" +
+					"    return bestNode || window;" +
+					"  }" +
+					"  var target = findScrollableContainer(isUp);" +
+					"  var step = window.innerHeight * 0.75;" +
+					"  if (isUp) step = -step;" +
+					"  try {" +
+					"    target.scrollBy({ top: step, behavior: 'smooth' });" +
+					"  } catch(e) {" +
+					"    if (target === window) window.scrollBy(0, step);" +
+					"    else target.scrollTop += step;" +
+					"  }" +
+					"})(" + up + ");";
+			
+			wv.evaluateJavascript(jsScript, null);
+		}
+
+		// LAYER 2: Native Android SDK Platform Command (Fallback)
+		boolean systemScrolled = up ? wv.pageUp(false) : wv.pageDown(false);
+
+		// LAYER 3: Virtual Hardware Key Dispatch Tunneling (Fallback)
+		if (!systemScrolled) {
+			int key = up ? KeyEvent.KEYCODE_PAGE_UP : KeyEvent.KEYCODE_PAGE_DOWN;
+			wv.dispatchKeyEvent(new KeyEvent(KeyEvent.ACTION_DOWN, key));
+			wv.dispatchKeyEvent(new KeyEvent(KeyEvent.ACTION_UP, key));
+		}
+
+		// LAYER 4: Synthetic Kinetic Touch Drag Gesture (Absolute Fail-Safe)
+		long downTime = android.os.SystemClock.uptimeMillis();
+		float midX = wv.getWidth() / 2f;
+		float yStart = wv.getHeight() * (up ? 0.25f : 0.75f);
+		float yEnd = wv.getHeight() * (up ? 0.75f : 0.25f);
+
+		wv.dispatchTouchEvent(MotionEvent.obtain(downTime, downTime, MotionEvent.ACTION_DOWN, midX, yStart, 0));
+		wv.dispatchTouchEvent(MotionEvent.obtain(downTime, downTime + 100, MotionEvent.ACTION_MOVE, midX, (yStart + yEnd) / 2f, 0));
+		wv.dispatchTouchEvent(MotionEvent.obtain(downTime, downTime + 250, MotionEvent.ACTION_MOVE, midX, yEnd, 0));
+		wv.dispatchTouchEvent(MotionEvent.obtain(downTime, downTime + 270, MotionEvent.ACTION_UP, midX, yEnd, 0));
+
+		return true; 
 	}
 
 	@Override
@@ -605,9 +673,8 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 				}
 				return true;
 			} else if (v instanceof WebView wv) {
-				if (up) wv.pageUp(false);
-				else wv.pageDown(false);
-				return true;
+				// Linked Cursor Navigation logic to the integrated Universal Engine as well
+				return MainCarActivity.smartScrollWebView(wv, up);
 			} else if (v instanceof ViewGroup vg) {
 				for (int i = 0, n = vg.getChildCount(); i < n; i++) {
 					if (scroll(up, vg.getChildAt(i))) return true;
