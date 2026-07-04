@@ -64,6 +64,10 @@ import my.app.utils.ui.menu.OverlayMenu;
  * @author sklchan77
  */
 public class MainCarActivity extends CarActivity implements PermataActivity {
+
+	// APPROACH 2: Safe runtime ID generation completely isolated from external view tag collisions
+	private static final int SMART_SCROLL_TIMESTAMP_ID = View.generateViewId();
+
 	static PermataMediaServiceConnection service;
 	@SuppressWarnings("unchecked")
 	@NonNull
@@ -305,74 +309,128 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 		return false;
 	}
 
-	// Universal Robust Web Scrolling Engine Helper
+
+
+	// THE PRODUCTION-READY SPAM ENGINE: Powered by Main-Thread Decoupling & Numerical Tokens
 	private static boolean smartScrollWebView(WebView wv, boolean up) {
 		if (wv == null) return false;
 
-		// LAYER 1: Deep JavaScript Inspection Engine (Fixes CSS Trap & Modern SPAs)
+		// --- SPAM DETECTOR GATE (Using Approach 2 Inline Dynamic ID) ---
+		long now = android.os.SystemClock.uptimeMillis();
+		Object lastClickTag = wv.getTag(SMART_SCROLL_TIMESTAMP_ID);
+		long lastClickTime = (lastClickTag instanceof Long) ? (Long) lastClickTag : 0;
+		wv.setTag(SMART_SCROLL_TIMESTAMP_ID, now); 
+		
+		boolean isSpamming = (now - lastClickTime < 250);
+
 		if (wv.getSettings().getJavaScriptEnabled()) {
-			String jsScript = "(function(isUp) {" +
-					"  function findScrollableContainer(up) {" +
+			// Optimized JS payload returning exact integers (1 / 0) to avoid JSON string quote variations
+			String jsScript = "(function(isUp, isSpam) {" +
+					"  var currentTime = Date.now();" +
+					"  var target = window.__smartScrollTarget;" +
+					"  " +
+					"  /* DOM CACHE GATE: Reuses target element for 3s to save CPU overhead on spam streams */" +
+					"  if (!target || !document.contains(target) || (currentTime - (window.__lastScrollScan || 0) > 3000)) {" +
 					"    var doc = document.documentElement, body = document.body;" +
-					"    if (up) {" +
-					"      if (doc.scrollTop > 5 || body.scrollTop > 5 || window.pageYOffset > 5) return window;" +
+					"    if (isUp) {" +
+					"      if (doc.scrollTop > 5 || body.scrollTop > 5 || window.pageYOffset > 5) target = window;" +
 					"    } else {" +
-					"      var total = Math.max(doc.scrollHeight, body.scrollHeight);" +
+					"      var total = Math.max(doc.scrollHeight, body.scrollHeight, doc.offsetHeight, body.offsetHeight);" +
 					"      var current = window.pageYOffset || doc.scrollTop || body.scrollTop;" +
-					"      if (total - current > window.innerHeight + 5) return window;" +
+					"      if (total - current > window.innerHeight + 5) target = window;" +
 					"    }" +
-					"    var nodes = document.querySelectorAll('*'), bestNode = null, maxArea = 0;" +
-					"    for (var i = 0; i < nodes.length; i++) {" +
-					"      var el = nodes[i], s = window.getComputedStyle(el);" +
-					"      var overflow = s.overflowY || s.overflow;" +
-					"      if (overflow === 'auto' || overflow === 'scroll' || el.scrollHeight > el.clientHeight) {" +
-					"        var canScroll = up ? el.scrollTop > 5 : (el.scrollHeight - el.scrollTop > el.clientHeight + 5);" +
-					"        if (canScroll) {" +
-					"          var r = el.getBoundingClientRect();" +
-					"          var area = r.width * r.height;" +
-					"          if (area > maxArea && r.width > 40 && r.height > 40) { maxArea = area; bestNode = el; }" +
+					"    if (!target || target === window) {" +
+					"      var nodes = document.querySelectorAll('*'), bestNode = null, maxArea = 0;" +
+					"      for (var i = 0; i < nodes.length; i++) {" +
+					"        var el = nodes[i], s = window.getComputedStyle(el);" +
+					"        var overflow = s.overflowY || s.overflow || '';" +
+					"        if (overflow.indexOf('auto') !== -1 || overflow.indexOf('scroll') !== -1 || overflow.indexOf('overlay') !== -1 || el.scrollHeight > el.clientHeight) {" +
+					"          var canScroll = isUp ? el.scrollTop > 5 : (el.scrollHeight - el.scrollTop > el.clientHeight + 5);" +
+					"          if (canScroll) {" +
+					"            var r = el.getBoundingClientRect();" +
+					"            var area = r.width * r.height;" +
+					"            if (area > maxArea && r.width > 40 && r.height > 40) { maxArea = area; bestNode = el; }" +
+					"          }" +
 					"        }" +
 					"      }" +
+					"      target = bestNode || window;" +
 					"    }" +
-					"    return bestNode || window;" +
+					"    window.__smartScrollTarget = target;" +
+					"    window.__lastScrollScan = currentTime;" +
 					"  }" +
-					"  var target = findScrollableContainer(isUp);" +
+					"  " +
+					"  if (!target) return 0;" +
 					"  var step = window.innerHeight * 0.75;" +
 					"  if (isUp) step = -step;" +
+					"  " +
+					"  /* SMOOTH SMOOTHING BYPASS: Drops down to instant frame rendering if user clicks aggressively */" +
+					"  var behavior = isSpam ? 'auto' : 'smooth';" +
 					"  try {" +
-					"    target.scrollBy({ top: step, behavior: 'smooth' });" +
+					"    target.scrollBy({ top: step, behavior: behavior });" +
 					"  } catch(e) {" +
 					"    if (target === window) window.scrollBy(0, step);" +
 					"    else target.scrollTop += step;" +
 					"  }" +
-					"})(" + up + ");";
-			
-			wv.evaluateJavascript(jsScript, null);
-		}
+					"  try {" +
+					"    var wheelEvt = new WheelEvent('wheel', { deltaY: step, bubbles: true });" +
+					"    (target === window ? document.body : target).dispatchEvent(wheelEvt);" +
+					"  } catch(err) {}" +
+					"  return 1;" +
+					"})(" + up + ", " + isSpamming + ");";
 
-		// LAYER 2: Native Android SDK Platform Command (Fallback)
+			wv.evaluateJavascript(jsScript, result -> {
+				// FIX: Safely route the token evaluation and UI updates back onto the Main Thread loop
+				if (result == null || "0".equals(result)) {
+					wv.post(() -> executeNativeScrollFallback(wv, up, isSpamming));
+				}
+			});
+			return true; 
+		} else {
+			return executeNativeScrollFallback(wv, up, isSpamming);
+		}
+	}
+
+	// ISOLATED NATIVE PIPELINE WITH GESTURE COLLISION ARRAYS
+	private static boolean executeNativeScrollFallback(WebView wv, boolean up, boolean isSpamming) {
+		// Layer 2 Fallback: Native API frame translations
 		boolean systemScrolled = up ? wv.pageUp(false) : wv.pageDown(false);
+		if (systemScrolled) return true;
 
-		// LAYER 3: Virtual Hardware Key Dispatch Tunneling (Fallback)
-		if (!systemScrolled) {
-			int key = up ? KeyEvent.KEYCODE_PAGE_UP : KeyEvent.KEYCODE_PAGE_DOWN;
-			wv.dispatchKeyEvent(new KeyEvent(KeyEvent.ACTION_DOWN, key));
-			wv.dispatchKeyEvent(new KeyEvent(KeyEvent.ACTION_UP, key));
-		}
+		// Layer 3 Fallback: Hardware Event Tunneling
+		int key = up ? KeyEvent.KEYCODE_PAGE_UP : KeyEvent.KEYCODE_PAGE_DOWN;
+		wv.dispatchKeyEvent(new KeyEvent(KeyEvent.ACTION_DOWN, key));
+		wv.dispatchKeyEvent(new KeyEvent(KeyEvent.ACTION_UP, key));
 
-		// LAYER 4: Synthetic Kinetic Touch Drag Gesture (Absolute Fail-Safe)
+		// Layer 4 Fallback Protection: Skip heavy layout drag coordinates if user is spam-clicking
+		if (isSpamming) return true;
+
+		int touchSlop = android.view.ViewConfiguration.get(wv.getContext()).getScaledTouchSlop();
 		long downTime = android.os.SystemClock.uptimeMillis();
 		float midX = wv.getWidth() / 2f;
-		float yStart = wv.getHeight() * (up ? 0.25f : 0.75f);
-		float yEnd = wv.getHeight() * (up ? 0.75f : 0.25f);
+		
+		float dragDistance = Math.max(wv.getHeight() * 0.5f, touchSlop * 4f);
+		float centerY = wv.getHeight() / 2f;
+		
+		float yStart = up ? (centerY - dragDistance / 2f) : (centerY + dragDistance / 2f);
+		float yEnd = up ? (centerY + dragDistance / 2f) : (centerY - dragDistance / 2f);
 
 		wv.dispatchTouchEvent(MotionEvent.obtain(downTime, downTime, MotionEvent.ACTION_DOWN, midX, yStart, 0));
-		wv.dispatchTouchEvent(MotionEvent.obtain(downTime, downTime + 100, MotionEvent.ACTION_MOVE, midX, (yStart + yEnd) / 2f, 0));
-		wv.dispatchTouchEvent(MotionEvent.obtain(downTime, downTime + 250, MotionEvent.ACTION_MOVE, midX, yEnd, 0));
-		wv.dispatchTouchEvent(MotionEvent.obtain(downTime, downTime + 270, MotionEvent.ACTION_UP, midX, yEnd, 0));
+		
+		int steps = 5;
+		for (int i = 1; i <= steps; i++) {
+			float alpha = (float) i / steps;
+			float currentY = yStart + alpha * (yEnd - yStart);
+			long moveTime = downTime + (i * 25);
+			wv.dispatchTouchEvent(MotionEvent.obtain(downTime, moveTime, MotionEvent.ACTION_MOVE, midX, currentY, 0));
+		}
+		
+		long upTime = downTime + (steps * 25) + 20;
+		wv.dispatchTouchEvent(MotionEvent.obtain(downTime, upTime, MotionEvent.ACTION_UP, midX, yEnd, 0));
 
-		return true; 
+		return true;
 	}
+
+
 
 	@Override
 	public boolean onKeyDown(int keyCode, KeyEvent keyEvent) {
