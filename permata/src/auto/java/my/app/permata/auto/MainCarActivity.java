@@ -22,7 +22,9 @@ import android.graphics.PorterDuff;
 import android.graphics.drawable.ColorDrawable;
 import android.graphics.drawable.Drawable;
 import android.graphics.drawable.StateListDrawable;
-import android.media.AudioManager; // Added for hardware audio focus management
+import android.media.AudioAttributes;
+import android.media.AudioFocusRequest;
+import android.media.AudioManager;
 import android.os.Bundle;
 import android.os.OperationCanceledException;
 import android.os.SystemClock;
@@ -79,6 +81,27 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 	private CarEditText editText;
 	private TextWatcher textWatcher;
 
+	// --- PRODUCTION STATE-AWARE AUDIO FOCUS CONFIGURATION ---
+	private Object nativeFocusRequest; // Type-erased reference holding AudioFocusRequest for API 26+
+	private boolean hasActivityFocus = false;
+
+	private final AudioManager.OnAudioFocusChangeListener focusChangeListener = focusChange -> {
+		switch (focusChange) {
+			case AudioManager.AUDIOFOCUS_LOSS -> {
+				Log.w("MainCarActivity", "Permanent audio focus loss. Suspending foreground web playback surfaces.");
+				hasActivityFocus = false;
+				// UI context can optionally trigger Javascript event hooks here to pause active WebView play states
+			}
+			case AudioManager.AUDIOFOCUS_LOSS_TRANSIENT, AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK -> {
+				Log.i("MainCarActivity", "Transient context loss (e.g., car navigation voice chime event).");
+			}
+			case AudioManager.AUDIOFOCUS_GAIN -> {
+				Log.i("MainCarActivity", "Audio focus successfully returned to active UI layout.");
+				hasActivityFocus = true;
+			}
+		}
+	};
+
 	/**
 	 * Bridge method invoked by background KeyEventHandler to securely route background 
 	 * MediaSession steering wheel keys directly into the foreground WebView scroll pipeline.
@@ -99,6 +122,67 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 		return false;
 	}
 
+	/**
+	 * Production safe, explicit on-demand focus capture mechanism.
+	 * Call this method dynamically only when a WebView or media player surface inside the Activity layout 
+	 * changes state to actively buffer or stream video audio pipelines.
+	 * * @param focusDurationHint Commonly AudioManager.AUDIOFOCUS_GAIN
+	 */
+	public boolean acquirePlaybackFocus(int focusDurationHint) {
+		try {
+			AudioManager audioManager = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
+			if (audioManager == null) return false;
+
+			if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+				AudioFocusRequest.Builder builder = new AudioFocusRequest.Builder(focusDurationHint)
+						.setAudioAttributes(new AudioAttributes.Builder()
+								.setUsage(AudioAttributes.USAGE_MEDIA)
+								.setContentType(AudioAttributes.CONTENT_TYPE_MOVIE) // Dictates vehicle system optimization parameters for streaming video contents
+								.build())
+						.setAcceptsDelayedFocusGain(true) // Required parameter fallback ensuring smooth interaction when system chimes take long transit processing lanes
+						.setOnAudioFocusChangeListener(focusChangeListener, new android.os.Handler(android.os.Looper.getMainLooper()));
+
+				AudioFocusRequest request = builder.build();
+				nativeFocusRequest = request;
+				int result = audioManager.requestAudioFocus(request);
+				hasActivityFocus = (result == AudioManager.AUDIOFOCUS_REQUEST_GRANTED);
+			} else {
+				int result = audioManager.requestAudioFocus(focusChangeListener, AudioManager.STREAM_MUSIC, focusDurationHint);
+				hasActivityFocus = (result == AudioManager.AUDIOFOCUS_REQUEST_GRANTED);
+			}
+
+			if (hasActivityFocus) {
+				Log.i("MainCarActivity", "On-demand Audio Focus successfully verified and locked down.");
+			}
+			return hasActivityFocus;
+		} catch (Exception e) {
+			Log.e("MainCarActivity", "Failed safe hardware audio capture negotiation routine", e);
+			return false;
+		}
+	}
+
+	/**
+	 * Explicit cleanup routine removing dead handlers from internal SystemServer tracking maps.
+	 */
+	private void releasePlaybackFocus() {
+		try {
+			AudioManager audioManager = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
+			if (audioManager != null) {
+				if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+					if (nativeFocusRequest instanceof AudioFocusRequest request) {
+						audioManager.abandonAudioFocusRequest(request);
+						nativeFocusRequest = null;
+					}
+				} else {
+					audioManager.abandonAudioFocus(focusChangeListener);
+				}
+			}
+			hasActivityFocus = false;
+		} catch (Exception e) {
+			Log.e("MainCarActivity", "Failed clean release extraction execution loop against System AudioService", e);
+		}
+	}
+
 	@NonNull
 	@Override
 	public FutureSupplier<MainActivityDelegate> getActivityDelegate() {
@@ -112,7 +196,7 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 
 	@Override
 	public void onCreate(Bundle savedInstanceState) {
-		activeInstance = this; // Initialize live runtime reference
+		activeInstance = this; // Establish tracking reference path for background callbacks
 		MainActivityDelegate.setTheme(this, true);
 		super.onCreate(savedInstanceState);
 		initCarActivity(this);
@@ -141,26 +225,7 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 		ActivityDelegate.setContextToDelegate(ctx -> d);
 		delegate = completed(d);
 		d.onActivityCreate(state);
-
-		// FORCE SYSTEM AUDIO FOCUS TAKEOVER ON STARTUP FOR WEB SURFACES
-		try {
-			AudioManager audioManager = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
-			if (audioManager != null) {
-				int result = audioManager.requestAudioFocus(
-						focusChange -> { /* Optional: Handle focus loss/gain events here */ },
-						AudioManager.STREAM_MUSIC,
-						AudioManager.AUDIOFOCUS_GAIN
-				);
-				
-				if (result == AudioManager.AUDIOFOCUS_REQUEST_GRANTED) {
-					Log.i("MainCarActivity", "Successfully grabbed Audio Focus from car radio for web views.");
-				}
-			}
-		} catch (Exception e) {
-			Log.e("MainCarActivity", "Failed to force audio focus takeover", e);
-		}
-
-		return d;
+		return d; // Global destructive onCreate startup focus demands dropped entirely to prevent player collision crashes
 	}
 
 	@Override
@@ -172,7 +237,10 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 	@Override
 	@SuppressWarnings("unchecked")
 	public void onDestroy() {
-		if (activeInstance == this) activeInstance = null; // Clear allocation references to prevent leaks
+		if (activeInstance == this) activeInstance = null; // Clear static references immediately to avoid leak paths
+		
+		releasePlaybackFocus(); // Clean hardware registry maps preventing dead vehicle hardware volume lock conditions
+
 		super.onDestroy();
 		getActivityDelegate().onSuccess(MainActivityDelegate::onActivityDestroy)
 				.thenRun(() -> ActivityDelegate.setContextToDelegate(null));
@@ -343,7 +411,6 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 			}
 			return true;
 		} else if (v instanceof WebView wv) {
-			// Integrated Multi-Layered Fail-Safe Web Scrolling Engine
 			return smartScrollWebView(wv, up);
 		} else if (v instanceof ViewGroup vg) {
 			for (int i = 0, n = vg.getChildCount(); i < n; i++) {
@@ -353,11 +420,9 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 		return false;
 	}
 
-	// THE PRODUCTION-READY SPAM ENGINE: Powered by Main-Thread Decoupling & Numerical Tokens
 	private static boolean smartScrollWebView(WebView wv, boolean up) {
 		if (wv == null) return false;
 
-		// --- SPAM DETECTOR GATE (Using Approach 2 Inline Dynamic ID) ---
 		long now = android.os.SystemClock.uptimeMillis();
 		Object lastClickTag = wv.getTag(SMART_SCROLL_TIMESTAMP_ID);
 		long lastClickTime = (lastClickTag instanceof Long) ? (Long) lastClickTag : 0;
@@ -366,12 +431,10 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 		boolean isSpamming = (now - lastClickTime < 250);
 
 		if (wv.getSettings().getJavaScriptEnabled()) {
-			// Optimized JS payload returning exact integers (1 / 0) to avoid JSON string quote variations
 			String jsScript = "(function(isUp, isSpam) {" +
 					"  var currentTime = Date.now();" +
 					"  var target = window.__smartScrollTarget;" +
 					"  " +
-					"  /* DOM CACHE GATE: Reuses target element for 3s to save CPU overhead on spam streams */" +
 					"  if (!target || !document.contains(target) || (currentTime - (window.__lastScrollScan || 0) > 3000)) {" +
 					"    var doc = document.documentElement, body = document.body;" +
 					"    if (isUp) {" +
@@ -405,7 +468,6 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 					"  var step = window.innerHeight * 0.75;" +
 					"  if (isUp) step = -step;" +
 					"  " +
-					"  /* SMOOTH SMOOTHING BYPASS: Drops down to instant frame rendering if user clicks aggressively */" +
 					"  var behavior = isSpam ? 'auto' : 'smooth';" +
 					"  try {" +
 					"    target.scrollBy({ top: step, behavior: behavior });" +
@@ -421,7 +483,6 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 					"})(" + up + ", " + isSpamming + ");";
 
 			wv.evaluateJavascript(jsScript, result -> {
-				// Safely route the token evaluation and UI updates back onto the Main Thread loop
 				if (result == null || "0".equals(result)) {
 					wv.post(() -> executeNativeScrollFallback(wv, up, isSpamming));
 				}
@@ -432,18 +493,14 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 		}
 	}
 
-	// ISOLATED NATIVE PIPELINE WITH GESTURE COLLISION ARRAYS
 	private static boolean executeNativeScrollFallback(WebView wv, boolean up, boolean isSpamming) {
-		// Layer 2 Fallback: Native API frame translations
 		boolean systemScrolled = up ? wv.pageUp(false) : wv.pageDown(false);
 		if (systemScrolled) return true;
 
-		// Layer 3 Fallback: Hardware Event Tunneling
 		int key = up ? KeyEvent.KEYCODE_PAGE_UP : KeyEvent.KEYCODE_PAGE_DOWN;
 		wv.dispatchKeyEvent(new KeyEvent(KeyEvent.ACTION_DOWN, key));
 		wv.dispatchKeyEvent(new KeyEvent(KeyEvent.ACTION_UP, key));
 
-		// Layer 4 Fallback Protection: Skip heavy layout drag coordinates if user is spam-clicking
 		if (isSpamming) return true;
 
 		int touchSlop = android.view.ViewConfiguration.get(wv.getContext()).getScaledTouchSlop();
@@ -478,7 +535,6 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 		MainActivityDelegate d = delegate.peek();
 		if (d == null) return super.onKeyDown(keyCode, keyEvent);
 
-		// Global Intercept: Handle physical steering wheel keys or media knobs for web/list surfaces
 		if (keyCode == KeyEvent.KEYCODE_PAGE_DOWN || keyCode == KeyEvent.KEYCODE_MEDIA_NEXT) {
 			if (performFragmentScroll(false, d)) return true;
 		} else if (keyCode == KeyEvent.KEYCODE_PAGE_UP || keyCode == KeyEvent.KEYCODE_MEDIA_PREVIOUS) {
@@ -771,7 +827,6 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 				}
 				return true;
 			} else if (v instanceof WebView wv) {
-				// Linked Cursor Navigation logic to the integrated Universal Engine as well
 				return MainCarActivity.smartScrollWebView(wv, up);
 			} else if (v instanceof ViewGroup vg) {
 				for (int i = 0, n = vg.getChildCount(); i < n; i++) {
