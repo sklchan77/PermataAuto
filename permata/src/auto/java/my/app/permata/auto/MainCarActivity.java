@@ -22,6 +22,7 @@ import android.graphics.PorterDuff;
 import android.graphics.drawable.ColorDrawable;
 import android.graphics.drawable.Drawable;
 import android.graphics.drawable.StateListDrawable;
+import android.media.AudioManager; // ADDED FOR AUDIO FOCUS MANAGEMENT
 import android.os.Bundle;
 import android.os.OperationCanceledException;
 import android.os.SystemClock;
@@ -65,10 +66,8 @@ import my.app.utils.ui.menu.OverlayMenu;
  */
 public class MainCarActivity extends CarActivity implements PermataActivity {
 
+	// APPROACH 2: Safe runtime ID generation completely isolated from external view tag collisions
 	private static final int SMART_SCROLL_TIMESTAMP_ID = View.generateViewId();
-	
-	// Track the active instance cleanly so KeyEventHandler can reach it
-	private static java.lang.ref.WeakReference<MainCarActivity> activeInstance = new java.lang.ref.WeakReference<>(null);
 
 	static PermataMediaServiceConnection service;
 	@SuppressWarnings("unchecked")
@@ -107,28 +106,6 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 		}
 	}
 
-	/**
-	 * Global entry point hook called directly by KeyEventHandler to process 
-	 * background car inputs for active web views and list scrolls.
-	 */
-	public static boolean shareKeyEventToCarActivity(KeyEvent event) {
-		MainCarActivity activity = activeInstance.get();
-		if (activity == null || event == null) return false;
-
-		if (event.getAction() == KeyEvent.ACTION_DOWN) {
-			int keyCode = event.getKeyCode();
-			MainActivityDelegate d = activity.delegate.peek();
-			if (d != null) {
-				if (keyCode == KeyEvent.KEYCODE_PAGE_DOWN || keyCode == KeyEvent.KEYCODE_MEDIA_NEXT) {
-					return activity.performFragmentScroll(false, d);
-				} else if (keyCode == KeyEvent.KEYCODE_PAGE_UP || keyCode == KeyEvent.KEYCODE_MEDIA_PREVIOUS) {
-					return activity.performFragmentScroll(true, d);
-				}
-			}
-		}
-		return false;
-	}
-
 	static void initCarActivity(CarActivity a) {
 		a.setIgnoreConfigChanges(0xFFFFFFFF);
 		CarUiController ctrl = a.getCarUiController();
@@ -141,31 +118,38 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 		ActivityDelegate.setContextToDelegate(ctx -> d);
 		delegate = completed(d);
 		d.onActivityCreate(state);
+
+		// FORCE SYSTEM AUDIO FOCUS TAKEOVER ON STARTUP FOR WEB SURFACES
+		try {
+			AudioManager audioManager = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
+			if (audioManager != null) {
+				int result = audioManager.requestAudioFocus(
+						focusChange -> { /* Optional: Handle focus loss/gain events here */ },
+						AudioManager.STREAM_MUSIC,
+						AudioManager.AUDIOFOCUS_GAIN
+				);
+				
+				if (result == AudioManager.AUDIOFOCUS_REQUEST_GRANTED) {
+					Log.i("MainCarActivity", "Successfully grabbed Audio Focus from car radio for web views.");
+				}
+			}
+		} catch (Exception e) {
+			Log.e("MainCarActivity", "Failed to force audio focus takeover", e);
+		}
+
 		return d;
 	}
 
 	@Override
 	public void onResume() {
 		super.onResume();
-		activeInstance = new java.lang.ref.WeakReference<>(this);
 		getActivityDelegate().onSuccess(MainActivityDelegate::onActivityResume);
-	}
-
-	@Override
-	public void onPause() { // FIXED: Changed visibility access modifier from protected to public
-		if (activeInstance.get() == this) {
-			activeInstance.clear();
-		}
-		super.onPause();
 	}
 
 	@Override
 	@SuppressWarnings("unchecked")
 	public void onDestroy() {
 		super.onDestroy();
-		if (activeInstance.get() == this) {
-			activeInstance.clear();
-		}
 		getActivityDelegate().onSuccess(MainActivityDelegate::onActivityDestroy)
 				.thenRun(() -> ActivityDelegate.setContextToDelegate(null));
 		delegate = (FutureSupplier<MainActivityDelegate>) NO_DELEGATE;
@@ -335,6 +319,7 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 			}
 			return true;
 		} else if (v instanceof WebView wv) {
+			// Integrated Multi-Layered Fail-Safe Web Scrolling Engine
 			return smartScrollWebView(wv, up);
 		} else if (v instanceof ViewGroup vg) {
 			for (int i = 0, n = vg.getChildCount(); i < n; i++) {
@@ -344,9 +329,11 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 		return false;
 	}
 
+	// THE PRODUCTION-READY SPAM ENGINE: Powered by Main-Thread Decoupling & Numerical Tokens
 	private static boolean smartScrollWebView(WebView wv, boolean up) {
 		if (wv == null) return false;
 
+		// --- SPAM DETECTOR GATE (Using Approach 2 Inline Dynamic ID) ---
 		long now = android.os.SystemClock.uptimeMillis();
 		Object lastClickTag = wv.getTag(SMART_SCROLL_TIMESTAMP_ID);
 		long lastClickTime = (lastClickTag instanceof Long) ? (Long) lastClickTag : 0;
@@ -355,9 +342,12 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 		boolean isSpamming = (now - lastClickTime < 250);
 
 		if (wv.getSettings().getJavaScriptEnabled()) {
+			// Optimized JS payload returning exact integers (1 / 0) to avoid JSON string quote variations
 			String jsScript = "(function(isUp, isSpam) {" +
 					"  var currentTime = Date.now();" +
 					"  var target = window.__smartScrollTarget;" +
+					"  " +
+					"  /* DOM CACHE GATE: Reuses target element for 3s to save CPU overhead on spam streams */" +
 					"  if (!target || !document.contains(target) || (currentTime - (window.__lastScrollScan || 0) > 3000)) {" +
 					"    var doc = document.documentElement, body = document.body;" +
 					"    if (isUp) {" +
@@ -386,9 +376,12 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 					"    window.__smartScrollTarget = target;" +
 					"    window.__lastScrollScan = currentTime;" +
 					"  }" +
+					"  " +
 					"  if (!target) return 0;" +
 					"  var step = window.innerHeight * 0.75;" +
 					"  if (isUp) step = -step;" +
+					"  " +
+					"  /* SMOOTH SMOOTHING BYPASS: Drops down to instant frame rendering if user clicks aggressively */" +
 					"  var behavior = isSpam ? 'auto' : 'smooth';" +
 					"  try {" +
 					"    target.scrollBy({ top: step, behavior: behavior });" +
@@ -404,6 +397,7 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 					"})(" + up + ", " + isSpamming + ");";
 
 			wv.evaluateJavascript(jsScript, result -> {
+				// FIX: Safely route the token evaluation and UI updates back onto the Main Thread loop
 				if (result == null || "0".equals(result)) {
 					wv.post(() -> executeNativeScrollFallback(wv, up, isSpamming));
 				}
@@ -414,14 +408,18 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 		}
 	}
 
+	// ISOLATED NATIVE PIPELINE WITH GESTURE COLLISION ARRAYS
 	private static boolean executeNativeScrollFallback(WebView wv, boolean up, boolean isSpamming) {
+		// Layer 2 Fallback: Native API frame translations
 		boolean systemScrolled = up ? wv.pageUp(false) : wv.pageDown(false);
 		if (systemScrolled) return true;
 
+		// Layer 3 Fallback: Hardware Event Tunneling
 		int key = up ? KeyEvent.KEYCODE_PAGE_UP : KeyEvent.KEYCODE_PAGE_DOWN;
 		wv.dispatchKeyEvent(new KeyEvent(KeyEvent.ACTION_DOWN, key));
 		wv.dispatchKeyEvent(new KeyEvent(KeyEvent.ACTION_UP, key));
 
+		// Layer 4 Fallback Protection: Skip heavy layout drag coordinates if user is spam-clicking
 		if (isSpamming) return true;
 
 		int touchSlop = android.view.ViewConfiguration.get(wv.getContext()).getScaledTouchSlop();
@@ -456,6 +454,7 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 		MainActivityDelegate d = delegate.peek();
 		if (d == null) return super.onKeyDown(keyCode, keyEvent);
 
+		// Global Intercept: Handle physical steering wheel keys or media knobs for web/list surfaces
 		if (keyCode == KeyEvent.KEYCODE_PAGE_DOWN || keyCode == KeyEvent.KEYCODE_MEDIA_NEXT) {
 			if (performFragmentScroll(false, d)) return true;
 		} else if (keyCode == KeyEvent.KEYCODE_PAGE_UP || keyCode == KeyEvent.KEYCODE_MEDIA_PREVIOUS) {
@@ -748,6 +747,7 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 				}
 				return true;
 			} else if (v instanceof WebView wv) {
+				// Linked Cursor Navigation logic to the integrated Universal Engine as well
 				return MainCarActivity.smartScrollWebView(wv, up);
 			} else if (v instanceof ViewGroup vg) {
 				for (int i = 0, n = vg.getChildCount(); i < n; i++) {
