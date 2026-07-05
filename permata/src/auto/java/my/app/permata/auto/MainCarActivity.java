@@ -22,7 +22,7 @@ import android.graphics.PorterDuff;
 import android.graphics.drawable.ColorDrawable;
 import android.graphics.drawable.Drawable;
 import android.graphics.drawable.StateListDrawable;
-import android.media.AudioManager; // ADDED FOR AUDIO FOCUS MANAGEMENT
+import android.media.AudioManager; // Added for hardware audio focus management
 import android.os.Bundle;
 import android.os.OperationCanceledException;
 import android.os.SystemClock;
@@ -66,16 +66,38 @@ import my.app.utils.ui.menu.OverlayMenu;
  */
 public class MainCarActivity extends CarActivity implements PermataActivity {
 
-	// APPROACH 2: Safe runtime ID generation completely isolated from external view tag collisions
+	// Safe runtime ID generation completely isolated from external view tag collisions
 	private static final int SMART_SCROLL_TIMESTAMP_ID = View.generateViewId();
 
+	private static MainCarActivity activeInstance; // Global tracking context for background key routing
 	static PermataMediaServiceConnection service;
+	
 	@SuppressWarnings("unchecked")
 	@NonNull
 	private FutureSupplier<MainActivityDelegate> delegate =
 			(FutureSupplier<MainActivityDelegate>) NO_DELEGATE;
 	private CarEditText editText;
 	private TextWatcher textWatcher;
+
+	/**
+	 * Bridge method invoked by background KeyEventHandler to securely route background 
+	 * MediaSession steering wheel keys directly into the foreground WebView scroll pipeline.
+	 */
+	public static boolean shareKeyEventToCarActivity(KeyEvent event) {
+		MainCarActivity activity = activeInstance;
+		if (activity != null) {
+			MainActivityDelegate d = activity.delegate.peek();
+			if (d != null) {
+				int keyCode = event.getKeyCode();
+				if (keyCode == KeyEvent.KEYCODE_PAGE_DOWN || keyCode == KeyEvent.KEYCODE_MEDIA_NEXT) {
+					return activity.performFragmentScroll(false, d);
+				} else if (keyCode == KeyEvent.KEYCODE_PAGE_UP || keyCode == KeyEvent.KEYCODE_MEDIA_PREVIOUS) {
+					return activity.performFragmentScroll(true, d);
+				}
+			}
+		}
+		return false;
+	}
 
 	@NonNull
 	@Override
@@ -90,6 +112,7 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 
 	@Override
 	public void onCreate(Bundle savedInstanceState) {
+		activeInstance = this; // Initialize live runtime reference
 		MainActivityDelegate.setTheme(this, true);
 		super.onCreate(savedInstanceState);
 		initCarActivity(this);
@@ -149,6 +172,7 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 	@Override
 	@SuppressWarnings("unchecked")
 	public void onDestroy() {
+		if (activeInstance == this) activeInstance = null; // Clear allocation references to prevent leaks
 		super.onDestroy();
 		getActivityDelegate().onSuccess(MainActivityDelegate::onActivityDestroy)
 				.thenRun(() -> ActivityDelegate.setContextToDelegate(null));
@@ -397,7 +421,7 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 					"})(" + up + ", " + isSpamming + ");";
 
 			wv.evaluateJavascript(jsScript, result -> {
-				// FIX: Safely route the token evaluation and UI updates back onto the Main Thread loop
+				// Safely route the token evaluation and UI updates back onto the Main Thread loop
 				if (result == null || "0".equals(result)) {
 					wv.post(() -> executeNativeScrollFallback(wv, up, isSpamming));
 				}
