@@ -247,6 +247,34 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 		return true;
 	}
 
+	/**
+	 * WINDOW INTERCEPTION SYSTEM: Intercepts physical knob and steering wheel signals 
+	 * immediately upon window entry before custom view pipelines can miss them.
+	 */
+	@Override
+	public boolean dispatchKeyEvent(KeyEvent event) {
+		if (event.getAction() == KeyEvent.ACTION_DOWN) {
+			int keyCode = event.getKeyCode();
+
+			// Handle Knob Rotated Right / Media Next -> Scroll Down
+			if (keyCode == KeyEvent.KEYCODE_PAGE_DOWN || keyCode == KeyEvent.KEYCODE_MEDIA_NEXT) {
+				MainActivityDelegate d = delegate.peek();
+				if (d != null && performFragmentScroll(false, d)) {
+					return true; // SWALLOW EVENT: Intercept complete
+				}
+			} 
+			
+			// Handle Knob Rotated Left / Media Previous -> Scroll Up
+			else if (keyCode == KeyEvent.KEYCODE_PAGE_UP || keyCode == KeyEvent.KEYCODE_MEDIA_PREVIOUS) {
+				MainActivityDelegate d = delegate.peek();
+				if (d != null && performFragmentScroll(true, d)) {
+					return true; // SWALLOW EVENT: Intercept complete
+				}
+			}
+		}
+		return super.dispatchKeyEvent(event);
+	}
+
 	@Override
 	public boolean onKeyUp(int keyCode, KeyEvent keyEvent) {
 		Log.i(keyEvent);
@@ -308,8 +336,6 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 		}
 		return false;
 	}
-
-
 
 	// THE PRODUCTION-READY SPAM ENGINE: Powered by Main-Thread Decoupling & Numerical Tokens
 	private static boolean smartScrollWebView(WebView wv, boolean up) {
@@ -429,8 +455,6 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 
 		return true;
 	}
-
-
 
 	@Override
 	public boolean onKeyDown(int keyCode, KeyEvent keyEvent) {
