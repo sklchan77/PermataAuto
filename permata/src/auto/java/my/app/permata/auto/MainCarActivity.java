@@ -70,7 +70,10 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 
 	private static final int SMART_SCROLL_TIMESTAMP_ID = View.generateViewId();
 
-	private static MainCarActivity activeInstance; 
+	// Memory-isolated weak reference tracking to completely eliminate context leaks during sudden wireless drops.
+	private static java.lang.ref.WeakReference<MainCarActivity> activeInstanceRef = 
+			new java.lang.ref.WeakReference<>(null);
+
 	static PermataMediaServiceConnection service;
 	
 	@SuppressWarnings("unchecked")
@@ -106,11 +109,12 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 
 	/**
 	 * Hardened Bridge method routing background steering wheel controls to the foreground WebView layout.
-	 * Mitigates key repeat storms, thread allocation leaks, and sudden connection drops.
+	 * Decoupled via WeakReference to guarantee immunity against sudden wireless tether teardowns.
 	 */
 	public static boolean shareKeyEventToCarActivity(KeyEvent event) {
-		MainCarActivity activity = activeInstance;
-		if (activity != null) {
+		MainCarActivity activity = activeInstanceRef.get();
+		
+		if (activity != null && !activity.isFinishing()) {
 			MainActivityDelegate d = activity.delegate.peek();
 			if (d != null) {
 				int keyCode = event.getKeyCode();
@@ -124,8 +128,8 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 						// 2. Reuse the static handler mapping to prevent memory performance overhead.
 						mainThreadHandler.post(() -> {
 							try {
-								// 3. Dynamic null/lifecycle guard to protect against sudden car session disconnects mid-flight.
-								MainCarActivity currentValidActivity = activeInstance;
+								// 3. Dynamic secondary lifecycle guard to protect against sudden car session disconnects mid-flight.
+								MainCarActivity currentValidActivity = activeInstanceRef.get();
 								if (currentValidActivity != null && !currentValidActivity.isFinishing()) {
 									currentValidActivity.performFragmentScroll(!isNext, d);
 								}
@@ -134,7 +138,7 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 							}
 						});
 					}
-					// 4. Instantly consume key to prevent activating background music/IPTV apps.
+					// 4. Instantly consume key to prevent activating background music/IPTV apps on either screen.
 					return true; 
 				}
 			}
@@ -215,7 +219,9 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 
 	@Override
 	public void onCreate(Bundle savedInstanceState) {
-		activeInstance = this; 
+		// Initialize the WeakReference token inside the local heap immediately
+		activeInstanceRef = new java.lang.ref.WeakReference<>(this); 
+		
 		MainActivityDelegate.setTheme(this, true);
 		super.onCreate(savedInstanceState);
 		initCarActivity(this);
@@ -256,7 +262,10 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 	@Override
 	@SuppressWarnings("unchecked")
 	public void onDestroy() {
-		if (activeInstance == this) activeInstance = null; 
+		// Clean the wrapper reference block cleanly to avoid memory leaks
+		if (activeInstanceRef.get() == this) {
+			activeInstanceRef.clear();
+		}
 		
 		releasePlaybackFocus(); 
 
@@ -454,7 +463,7 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 					"  var currentTime = Date.now();" +
 					"  var target = window.__smartScrollTarget;" +
 					"  " +
-					"  if (!target || !document.contains(target) || (currentTime - (window.__lastScrollScan || 0) > 3000)) {" +
+					"  if (!target || !document.contains(target) || target.clientHeight === 0 || window.getComputedStyle(target).display === 'none' || (currentTime - (window.__lastScrollScan || 0) > 3000)) {" +
 					"    var doc = document.documentElement, body = document.body;" +
 					"    if (isUp) {" +
 					"      if (doc.scrollTop > 5 || body.scrollTop > 5 || window.pageYOffset > 5) target = window;" +
