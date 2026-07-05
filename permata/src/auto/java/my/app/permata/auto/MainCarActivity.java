@@ -152,7 +152,7 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 	}
 
 	@Override
-	protected void onPause() {
+	public void onPause() { // FIXED: Changed visibility access modifier from protected to public
 		if (activeInstance.get() == this) {
 			activeInstance.clear();
 		}
