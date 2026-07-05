@@ -39,16 +39,31 @@ public class KeyEventHandler {
 																				IntObjectFunction<KeyEvent, Boolean> defaultHandler) {
 		Log.i((activity == null) ? "Media: " : "Activity: ", event);
 
-		// Global Interception Pipeline for Android Auto Scroll Engines
-		// Diverts rotary knobs / media next-prev keys early if an active web/list surface wants to scroll.
-		if (my.app.permata.auto.MainCarActivity.shareKeyEventToCarActivity(event)) {
-			worker = null; // Reset pending click sequences for this key
-			return true;   // SWALLOW EVENT
-		}
-
 		if (event.isCanceled()) {
 			worker = null;
 			return defaultHandler.apply(event.getKeyCode(), event);
+		}
+
+		// --- PRODUCTION FOREGROUND CAR-ACTIVITY INTERCEPTION HOOK ---
+		// If the event originates from a background MediaSession (steering wheel controls) and an 
+		// active MainCarActivity instance is visible in the foreground, give the car UI first priority 
+		// to consume the event (e.g., processing smart-scrolling web players or lists).
+		if (activity == null) {
+			try {
+				Class<?> carActivityClass = Class.forName("my.app.permata.auto.MainCarActivity");
+				java.lang.reflect.Method shareMethod = carActivityClass.getMethod("shareKeyEventToCarActivity", KeyEvent.class);
+				Boolean intercepted = (Boolean) shareMethod.invoke(null, event);
+				
+				if (intercepted != null && intercepted) {
+					worker = null; // Purge any multi-click tracking workers
+					Log.i("KeyEventHandler", "Media key successfully consumed by foreground Car UI surface.");
+					return true; // Key event completely consumed; halt normal track skipping actions
+				}
+			} catch (ClassNotFoundException ignored) {
+				// Safe decoupling: Class not bundled in this build flavor (e.g., standalone mobile target)
+			} catch (Exception e) {
+				Log.e("KeyEventHandler", "Error executing dynamic bridge check against MainCarActivity runtime context", e);
+			}
 		}
 
 		if (worker != null) {
