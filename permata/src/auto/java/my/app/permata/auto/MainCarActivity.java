@@ -100,10 +100,13 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 		}
 	};
 
+	// Pre-allocated main thread handler to eliminate GC heap allocation churn during steering wheel click spams.
+	private static final android.os.Handler mainThreadHandler = 
+			new android.os.Handler(android.os.Looper.getMainLooper());
+
 	/**
-	 * Bridge method invoked by background KeyEventHandler to securely route background 
-	 * MediaSession steering wheel keys directly into the foreground WebView scroll pipeline.
-	 * Thread-safe implementation preventing CalledFromWrongThreadException and double-triggering.
+	 * Hardened Bridge method routing background steering wheel controls to the foreground WebView layout.
+	 * Mitigates key repeat storms, thread allocation leaks, and sudden connection drops.
 	 */
 	public static boolean shareKeyEventToCarActivity(KeyEvent event) {
 		MainCarActivity activity = activeInstance;
@@ -115,18 +118,23 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 				boolean isPrev = (keyCode == KeyEvent.KEYCODE_PAGE_UP || keyCode == KeyEvent.KEYCODE_MEDIA_PREVIOUS);
 
 				if (isNext || isPrev) {
-					// 1. Filter for ACTION_DOWN to eliminate double-scrolling when button is released
-					if (event.getAction() == KeyEvent.ACTION_DOWN) {
-						// 2. Safely jump off the background MediaSession binder thread onto Android's UI Main Looper
-						new android.os.Handler(android.os.Looper.getMainLooper()).post(() -> {
+					// 1. Filter for initial press down and completely drop hardware repeat counts to prevent runaway scrolling.
+					if (event.getAction() == KeyEvent.ACTION_DOWN && event.getRepeatCount() == 0) {
+						
+						// 2. Reuse the static handler mapping to prevent memory performance overhead.
+						mainThreadHandler.post(() -> {
 							try {
-								activity.performFragmentScroll(!isNext, d);
+								// 3. Dynamic null/lifecycle guard to protect against sudden car session disconnects mid-flight.
+								MainCarActivity currentValidActivity = activeInstance;
+								if (currentValidActivity != null && !currentValidActivity.isFinishing()) {
+									currentValidActivity.performFragmentScroll(!isNext, d);
+								}
 							} catch (Exception e) {
 								Log.e("MainCarActivity", "UI Thread exception during programmatic scroll dispatch", e);
 							}
 						});
 					}
-					// 3. Immediately consume the event on the background binder thread to block background player track-skipping
+					// 4. Instantly consume key to prevent activating background music/IPTV apps.
 					return true; 
 				}
 			}
@@ -151,7 +159,7 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 								.setContentType(AudioAttributes.CONTENT_TYPE_MOVIE) 
 								.build())
 						.setAcceptsDelayedFocusGain(true) 
-						.setOnAudioFocusChangeListener(focusChangeListener, new android.os.Handler(android.os.Looper.getMainLooper()));
+						.setOnAudioFocusChangeListener(focusChangeListener, mainThreadHandler);
 
 				AudioFocusRequest request = builder.build();
 				nativeFocusRequest = request;
