@@ -68,10 +68,9 @@ import my.app.utils.ui.menu.OverlayMenu;
  */
 public class MainCarActivity extends CarActivity implements PermataActivity {
 
-	// Safe runtime ID generation completely isolated from external view tag collisions
 	private static final int SMART_SCROLL_TIMESTAMP_ID = View.generateViewId();
 
-	private static MainCarActivity activeInstance; // Global tracking context for background key routing
+	private static MainCarActivity activeInstance; 
 	static PermataMediaServiceConnection service;
 	
 	@SuppressWarnings("unchecked")
@@ -82,7 +81,7 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 	private TextWatcher textWatcher;
 
 	// --- PRODUCTION STATE-AWARE AUDIO FOCUS CONFIGURATION ---
-	private Object nativeFocusRequest; // Type-erased reference holding AudioFocusRequest for API 26+
+	private Object nativeFocusRequest; 
 	private boolean hasActivityFocus = false;
 
 	private final AudioManager.OnAudioFocusChangeListener focusChangeListener = focusChange -> {
@@ -90,7 +89,6 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 			case AudioManager.AUDIOFOCUS_LOSS -> {
 				Log.w("MainCarActivity", "Permanent audio focus loss. Suspending foreground web playback surfaces.");
 				hasActivityFocus = false;
-				// UI context can optionally trigger Javascript event hooks here to pause active WebView play states
 			}
 			case AudioManager.AUDIOFOCUS_LOSS_TRANSIENT, AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK -> {
 				Log.i("MainCarActivity", "Transient context loss (e.g., car navigation voice chime event).");
@@ -105,6 +103,7 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 	/**
 	 * Bridge method invoked by background KeyEventHandler to securely route background 
 	 * MediaSession steering wheel keys directly into the foreground WebView scroll pipeline.
+	 * Thread-safe implementation preventing CalledFromWrongThreadException and double-triggering.
 	 */
 	public static boolean shareKeyEventToCarActivity(KeyEvent event) {
 		MainCarActivity activity = activeInstance;
@@ -112,10 +111,23 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 			MainActivityDelegate d = activity.delegate.peek();
 			if (d != null) {
 				int keyCode = event.getKeyCode();
-				if (keyCode == KeyEvent.KEYCODE_PAGE_DOWN || keyCode == KeyEvent.KEYCODE_MEDIA_NEXT) {
-					return activity.performFragmentScroll(false, d);
-				} else if (keyCode == KeyEvent.KEYCODE_PAGE_UP || keyCode == KeyEvent.KEYCODE_MEDIA_PREVIOUS) {
-					return activity.performFragmentScroll(true, d);
+				boolean isNext = (keyCode == KeyEvent.KEYCODE_PAGE_DOWN || keyCode == KeyEvent.KEYCODE_MEDIA_NEXT);
+				boolean isPrev = (keyCode == KeyEvent.KEYCODE_PAGE_UP || keyCode == KeyEvent.KEYCODE_MEDIA_PREVIOUS);
+
+				if (isNext || isPrev) {
+					// 1. Filter for ACTION_DOWN to eliminate double-scrolling when button is released
+					if (event.getAction() == KeyEvent.ACTION_DOWN) {
+						// 2. Safely jump off the background MediaSession binder thread onto Android's UI Main Looper
+						new android.os.Handler(android.os.Looper.getMainLooper()).post(() -> {
+							try {
+								activity.performFragmentScroll(!isNext, d);
+							} catch (Exception e) {
+								Log.e("MainCarActivity", "UI Thread exception during programmatic scroll dispatch", e);
+							}
+						});
+					}
+					// 3. Immediately consume the event on the background binder thread to block background player track-skipping
+					return true; 
 				}
 			}
 		}
@@ -126,7 +138,6 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 	 * Production safe, explicit on-demand focus capture mechanism.
 	 * Call this method dynamically only when a WebView or media player surface inside the Activity layout 
 	 * changes state to actively buffer or stream video audio pipelines.
-	 * * @param focusDurationHint Commonly AudioManager.AUDIOFOCUS_GAIN
 	 */
 	public boolean acquirePlaybackFocus(int focusDurationHint) {
 		try {
@@ -137,9 +148,9 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 				AudioFocusRequest.Builder builder = new AudioFocusRequest.Builder(focusDurationHint)
 						.setAudioAttributes(new AudioAttributes.Builder()
 								.setUsage(AudioAttributes.USAGE_MEDIA)
-								.setContentType(AudioAttributes.CONTENT_TYPE_MOVIE) // Dictates vehicle system optimization parameters for streaming video contents
+								.setContentType(AudioAttributes.CONTENT_TYPE_MOVIE) 
 								.build())
-						.setAcceptsDelayedFocusGain(true) // Required parameter fallback ensuring smooth interaction when system chimes take long transit processing lanes
+						.setAcceptsDelayedFocusGain(true) 
 						.setOnAudioFocusChangeListener(focusChangeListener, new android.os.Handler(android.os.Looper.getMainLooper()));
 
 				AudioFocusRequest request = builder.build();
@@ -196,7 +207,7 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 
 	@Override
 	public void onCreate(Bundle savedInstanceState) {
-		activeInstance = this; // Establish tracking reference path for background callbacks
+		activeInstance = this; 
 		MainActivityDelegate.setTheme(this, true);
 		super.onCreate(savedInstanceState);
 		initCarActivity(this);
@@ -225,7 +236,7 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 		ActivityDelegate.setContextToDelegate(ctx -> d);
 		delegate = completed(d);
 		d.onActivityCreate(state);
-		return d; // Global destructive onCreate startup focus demands dropped entirely to prevent player collision crashes
+		return d; 
 	}
 
 	@Override
@@ -237,9 +248,9 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 	@Override
 	@SuppressWarnings("unchecked")
 	public void onDestroy() {
-		if (activeInstance == this) activeInstance = null; // Clear static references immediately to avoid leak paths
+		if (activeInstance == this) activeInstance = null; 
 		
-		releasePlaybackFocus(); // Clean hardware registry maps preventing dead vehicle hardware volume lock conditions
+		releasePlaybackFocus(); 
 
 		super.onDestroy();
 		getActivityDelegate().onSuccess(MainActivityDelegate::onActivityDestroy)
