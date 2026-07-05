@@ -39,6 +39,13 @@ public class KeyEventHandler {
 																				IntObjectFunction<KeyEvent, Boolean> defaultHandler) {
 		Log.i((activity == null) ? "Media: " : "Activity: ", event);
 
+		// Global Interception Pipeline for Android Auto Scroll Engines
+		// Diverts rotary knobs / media next-prev keys early if an active web/list surface wants to scroll.
+		if (my.app.permata.auto.MainCarActivity.shareKeyEventToCarActivity(event)) {
+			worker = null; // Reset pending click sequences for this key
+			return true;   // SWALLOW EVENT
+		}
+
 		if (event.isCanceled()) {
 			worker = null;
 			return defaultHandler.apply(event.getKeyCode(), event);
