@@ -103,6 +103,48 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 						return onCreate(savedInstanceState, c);
 					});
 		}
+
+		// WINDOW INTERCEPTION PIPELINE VIA DYNAMIC PROXY
+		// Safely hooks early key signals without requiring standard Activity inheritance.
+		Window w = getWindow();
+		if (w != null) {
+			final Window.Callback originalCallback = w.getCallback();
+			if (originalCallback != null) {
+				w.setCallback((Window.Callback) java.lang.reflect.Proxy.newProxyInstance(
+					Window.Callback.class.getClassLoader(),
+					new Class<?>[]{Window.Callback.class},
+					(proxy, method, args) -> {
+						if ("dispatchKeyEvent".equals(method.getName()) && args != null && args.length == 1 && args[0] instanceof KeyEvent) {
+							KeyEvent event = (KeyEvent) args[0];
+							if (event.getAction() == KeyEvent.ACTION_DOWN) {
+								int keyCode = event.getKeyCode();
+
+								// Handle Knob Rotated Right / Media Next -> Scroll Down
+								if (keyCode == KeyEvent.KEYCODE_PAGE_DOWN || keyCode == KeyEvent.KEYCODE_MEDIA_NEXT) {
+									MainActivityDelegate d = delegate.peek();
+									if (d != null && performFragmentScroll(false, d)) {
+										return true; // SWALLOW EVENT
+									}
+								} 
+								
+								// Handle Knob Rotated Left / Media Previous -> Scroll Up
+								else if (keyCode == KeyEvent.KEYCODE_PAGE_UP || keyCode == KeyEvent.KEYCODE_MEDIA_PREVIOUS) {
+									MainActivityDelegate d = delegate.peek();
+									if (d != null && performFragmentScroll(true, d)) {
+										return true; // SWALLOW EVENT
+									}
+								}
+							}
+						}
+						try {
+							return method.invoke(originalCallback, args);
+						} catch (java.lang.reflect.InvocationTargetException e) {
+							throw e.getCause();
+						}
+					}
+				));
+			}
+		}
 	}
 
 	static void initCarActivity(CarActivity a) {
@@ -245,34 +287,6 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 		editText.setText(text);
 		stopInput();
 		return true;
-	}
-
-	/**
-	 * WINDOW INTERCEPTION SYSTEM: Intercepts physical knob and steering wheel signals 
-	 * immediately upon window entry before custom view pipelines can miss them.
-	 */
-	@Override
-	public boolean dispatchKeyEvent(KeyEvent event) {
-		if (event.getAction() == KeyEvent.ACTION_DOWN) {
-			int keyCode = event.getKeyCode();
-
-			// Handle Knob Rotated Right / Media Next -> Scroll Down
-			if (keyCode == KeyEvent.KEYCODE_PAGE_DOWN || keyCode == KeyEvent.KEYCODE_MEDIA_NEXT) {
-				MainActivityDelegate d = delegate.peek();
-				if (d != null && performFragmentScroll(false, d)) {
-					return true; // SWALLOW EVENT: Intercept complete
-				}
-			} 
-			
-			// Handle Knob Rotated Left / Media Previous -> Scroll Up
-			else if (keyCode == KeyEvent.KEYCODE_PAGE_UP || keyCode == KeyEvent.KEYCODE_MEDIA_PREVIOUS) {
-				MainActivityDelegate d = delegate.peek();
-				if (d != null && performFragmentScroll(true, d)) {
-					return true; // SWALLOW EVENT: Intercept complete
-				}
-			}
-		}
-		return super.dispatchKeyEvent(event);
 	}
 
 	@Override
