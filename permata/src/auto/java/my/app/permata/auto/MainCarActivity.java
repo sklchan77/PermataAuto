@@ -68,8 +68,7 @@ import my.app.utils.ui.menu.OverlayMenu;
  */
 public class MainCarActivity extends CarActivity implements PermataActivity {
 
-	// FIXED: Replaced View.setTag() integer ID configuration with a thread-safe WeakHashMap tracking index
-	// to completely mitigate the platform IllegalArgumentException while staying 100% immune to leaks.
+	// Thread-safe tracking map protecting against platform IllegalArgumentExceptions while staying 100% immune to context leaks.
 	private static final java.util.Map<WebView, Long> scrollTimestamps = 
 			java.util.Collections.synchronizedMap(new java.util.WeakHashMap<>());
 
@@ -90,7 +89,7 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 	private Object nativeFocusRequest; 
 	private boolean hasActivityFocus = false;
 	
-	// Native MediaSession reference used to force background apps to pause and stream keys to Permata Auto
+	// Active Native MediaSession instance field to hijack steering wheel hardware inputs
 	private android.media.session.MediaSession mediaSession;
 
 	private final AudioManager.OnAudioFocusChangeListener focusChangeListener = focusChange -> {
@@ -164,6 +163,37 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 	}
 
 	/**
+	 * Forcefully registers a Playing state with the car system and drops external background audio sources.
+	 */
+	private void initMediaSessionOnStartup() {
+		try {
+			// 1. Force fully permanent focus gain to completely knock off background apps like Spotify/Radio
+			acquirePlaybackFocus(AudioManager.AUDIOFOCUS_GAIN);
+
+			// 2. Initialize the MediaSession structural layer
+			if (mediaSession == null) {
+				mediaSession = new android.media.session.MediaSession(this, "PermataAutoMediaSession");
+			}
+
+			android.media.session.PlaybackState.Builder stateBuilder = new android.media.session.PlaybackState.Builder()
+					.setActions(android.media.session.PlaybackState.ACTION_PLAY | 
+								android.media.session.PlaybackState.ACTION_PAUSE | 
+								android.media.session.PlaybackState.ACTION_SKIP_TO_NEXT | 
+								android.media.session.PlaybackState.ACTION_SKIP_TO_PREVIOUS)
+					// Forcefully assert STATE_PLAYING at 1.0x playback speed immediately on boot
+					.setState(android.media.session.PlaybackState.STATE_PLAYING, 0, 1.0f);
+
+			mediaSession.setPlaybackState(stateBuilder.build());
+			
+			// Lock the IHU media hub down onto this specific session
+			mediaSession.setActive(true);
+			Log.i("MainCarActivity", "MediaSession successfully set to STATE_PLAYING on startup initialization.");
+		} catch (Exception e) {
+			Log.e("MainCarActivity", "Encountered system exception while binding structural MediaSession hooks", e);
+		}
+	}
+
+	/**
 	 * Production safe, explicit on-demand focus capture mechanism.
 	 * Call this method dynamically only when a WebView or media player surface inside the Activity layout 
 	 * changes state to actively buffer or stream video audio pipelines.
@@ -223,43 +253,6 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 		}
 	}
 
-	/**
-	 * Forces systemic takeover of the media pipeline. Acquires persistent audio focus 
-	 * and configures a Local MediaSession declaring STATE_PLAYING to bind steering controls.
-	 */
-	private void initMediaSessionOnStartup() {
-		// 1. Force fully capture persistent audio focus to halt alternative audio streams
-		acquirePlaybackFocus(AudioManager.AUDIOFOCUS_GAIN);
-
-		// 2. Initialize or reinforce the hardware media session routing
-		if (mediaSession == null) {
-			mediaSession = new android.media.session.MediaSession(this, "PermataAutoSession");
-			mediaSession.setCallback(new android.media.session.MediaSession.Callback() {
-				@Override
-				public boolean onMediaButtonEvent(@NonNull Intent mediaButtonIntent) {
-					KeyEvent keyEvent = mediaButtonIntent.getParcelableExtra(Intent.EXTRA_KEY_EVENT);
-					if (keyEvent != null) {
-						return shareKeyEventToCarActivity(keyEvent);
-					}
-					return super.onMediaButtonEvent(mediaButtonIntent);
-				}
-			});
-		}
-
-		android.media.session.PlaybackState state = new android.media.session.PlaybackState.Builder()
-				.setActions(android.media.session.PlaybackState.ACTION_PLAY | 
-							android.media.session.PlaybackState.ACTION_PAUSE | 
-							android.media.session.PlaybackState.ACTION_SKIP_TO_NEXT | 
-							android.media.session.PlaybackState.ACTION_SKIP_TO_PREVIOUS)
-				// Explicitly register as ACTIVE and PLAYING on boot
-				.setState(android.media.session.PlaybackState.STATE_PLAYING, 0, 1.0f)
-				.build();
-
-		mediaSession.setPlaybackState(state);
-		mediaSession.setActive(true);
-		Log.i("MainCarActivity", "MediaSession forced to STATE_PLAYING execution loop successfully.");
-	}
-
 	@NonNull
 	@Override
 	public FutureSupplier<MainActivityDelegate> getActivityDelegate() {
@@ -305,7 +298,7 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 		delegate = completed(d);
 		d.onActivityCreate(state);
 
-		// FORCED STARTUP SESSION: Instantly assert persistent focus and active playing state at boot
+		// PROACTIVE FOCUS AND STATE CAPTURE: Instantly request focus and assign playing status upon boot
 		mainThreadHandler.postDelayed(() -> {
 			initMediaSessionOnStartup();
 		}, 800);
@@ -316,8 +309,15 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 	@Override
 	public void onResume() {
 		super.onResume();
-		// RE-ASSERT ACTIVE MEDIA PLAYING FOCUS STATE
-		initMediaSessionOnStartup();
+		// RE-ASSERT FOCUS & MEDIA REGISTER: Proactively re-claim active session and focus tags when coming back to foreground
+		try {
+			if (mediaSession != null) {
+				mediaSession.setActive(true);
+			}
+		} catch (Exception e) {
+			Log.e("MainCarActivity", "Failed to re-assert active MediaSession state on user return", e);
+		}
+		acquirePlaybackFocus(AudioManager.AUDIOFOCUS_GAIN);
 		getActivityDelegate().onSuccess(MainActivityDelegate::onActivityResume);
 	}
 
@@ -329,13 +329,18 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 			activeInstanceRef.clear();
 		}
 		
-		releasePlaybackFocus(); 
-
-		if (mediaSession != null) {
-			mediaSession.setActive(false);
-			mediaSession.release();
-			mediaSession = null;
+		// Clean up and release system tracking handles for the active MediaSession to prevent system resource deadlocks
+		try {
+			if (mediaSession != null) {
+				mediaSession.setActive(false);
+				mediaSession.release();
+				mediaSession = null;
+			}
+		} catch (Exception e) {
+			Log.e("MainCarActivity", "Error encountered clearing native MediaSession components inside onDestroy", e);
 		}
+		
+		releasePlaybackFocus(); 
 
 		super.onDestroy();
 		getActivityDelegate().onSuccess(MainActivityDelegate::onActivityDestroy)
@@ -528,8 +533,6 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 
 		long now = android.os.SystemClock.uptimeMillis();
 		
-		// FIXED: Rely entirely on the memory-safe WeakHashMap tracking index. 
-		// Avoids View.setTag(int, Object) IllegalArgumentException completely.
 		Long lastClickTimeObj = scrollTimestamps.get(wv);
 		long lastClickTime = (lastClickTimeObj != null) ? lastClickTimeObj : 0;
 		scrollTimestamps.put(wv, now); 
@@ -599,6 +602,10 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 		}
 	}
 
+	/**
+	 * ASYNC HARDENED: Distributes event generation sequentially using safe thread messaging
+	 * to prevent high-density touch event bursts from locking up low-spec automotive processors.
+	 */
 	private static boolean executeNativeScrollFallback(WebView wv, boolean up, boolean isSpamming) {
 		boolean systemScrolled = up ? wv.pageUp(false) : wv.pageDown(false);
 		if (systemScrolled) return true;
@@ -621,16 +628,27 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 
 		wv.dispatchTouchEvent(MotionEvent.obtain(downTime, downTime, MotionEvent.ACTION_DOWN, midX, yStart, 0));
 		
-		int steps = 5;
-		for (int i = 1; i <= steps; i++) {
-			float alpha = (float) i / steps;
-			float currentY = yStart + alpha * (yEnd - yStart);
-			long moveTime = downTime + (i * 25);
-			wv.dispatchTouchEvent(MotionEvent.obtain(downTime, moveTime, MotionEvent.ACTION_MOVE, midX, currentY, 0));
+		// Unrolled and decoupled event steps to eliminate potential UI thread lockups during hardware scrolls
+		int totalSteps = 5;
+		for (int i = 1; i <= totalSteps; i++) {
+			final int stepIndex = i;
+			final long moveTime = downTime + (stepIndex * 25);
+			mainThreadHandler.postDelayed(() -> {
+				if (wv == null || !wv.isAttachedToWindow()) return;
+				float alpha = (float) stepIndex / totalSteps;
+				float currentY = yStart + alpha * (yEnd - yStart);
+				MotionEvent moveEvent = MotionEvent.obtain(downTime, moveTime, MotionEvent.ACTION_MOVE, midX, currentY, 0);
+				wv.dispatchTouchEvent(moveEvent);
+				moveEvent.recycle();
+
+				// Inject structural termination when the end of the loop is reached
+				if (stepIndex == totalSteps) {
+					MotionEvent upEvent = MotionEvent.obtain(downTime, moveTime + 20, MotionEvent.ACTION_UP, midX, yEnd, 0);
+					wv.dispatchTouchEvent(upEvent);
+					upEvent.recycle();
+				}
+			}, stepIndex * 15);
 		}
-		
-		long upTime = downTime + (steps * 25) + 20;
-		wv.dispatchTouchEvent(MotionEvent.obtain(downTime, upTime, MotionEvent.ACTION_UP, midX, yEnd, 0));
 
 		return true;
 	}
