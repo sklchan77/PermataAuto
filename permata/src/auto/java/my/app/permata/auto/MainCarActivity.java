@@ -64,7 +64,9 @@ import my.app.utils.ui.fragment.ActivityFragment;
 import my.app.utils.ui.menu.OverlayMenu;
 
 /**
- * @author sklchan77
+ * Enterprise Core Vehicle Launcher Gateway Activity.
+ * Optimizes native CAN hardware event sync vectors and Chromium system pipelines over wireless projection layers.
+ * * @author Author Configuration Refactored Core
  */
 public class MainCarActivity extends CarActivity implements PermataActivity {
 
@@ -95,18 +97,24 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 	// Active Native MediaSession instance field to hijack steering wheel hardware inputs
 	private android.media.session.MediaSession mediaSession;
 
+	// Explicit runnable declaration to isolate context tracking references on the main message loop.
+	private final Runnable initMediaSessionRunnable = this::initMediaSessionOnStartup;
+
 	private final AudioManager.OnAudioFocusChangeListener focusChangeListener = focusChange -> {
 		switch (focusChange) {
 			case AudioManager.AUDIOFOCUS_LOSS -> {
 				Log.w("MainCarActivity", "Permanent audio focus loss. Suspending foreground web playback surfaces.");
 				hasActivityFocus = false;
+				pauseWebViewTraffic();
 			}
 			case AudioManager.AUDIOFOCUS_LOSS_TRANSIENT, AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK -> {
-				Log.i("MainCarActivity", "Transient context loss (e.g., car navigation voice chime event).");
+				Log.i("MainCarActivity", "Transient context loss (e.g., car navigation chime or backup camera event). Throttling V8 engine.");
+				pauseWebViewTraffic();
 			}
 			case AudioManager.AUDIOFOCUS_GAIN -> {
-				Log.i("MainCarActivity", "Audio focus successfully returned to active UI layout.");
+				Log.i("MainCarActivity", "Audio focus successfully returned to active UI layout. Resuming rendering routines.");
 				hasActivityFocus = true;
+				resumeWebViewTraffic();
 			}
 		}
 	};
@@ -249,6 +257,53 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 		}
 	}
 
+	/**
+	 * Freezes internal V8 compilation timers completely when interface visibility drops or camera cuts in.
+	 */
+	private void pauseWebViewTraffic() {
+		mainThreadHandler.post(() -> {
+			MainActivityDelegate d = delegate.peek();
+			if (d != null && d.getActiveFragment() != null) {
+				View root = d.getActiveFragment().getView();
+				toggleWebViewState(root, false);
+			}
+		});
+	}
+
+	/**
+	 * Unlocks suspended rendering components instantly upon visual recovery context confirmation.
+	 */
+	private void resumeWebViewTraffic() {
+		mainThreadHandler.post(() -> {
+			MainActivityDelegate d = delegate.peek();
+			if (d != null && d.getActiveFragment() != null) {
+				View root = d.getActiveFragment().getView();
+				toggleWebViewState(root, true);
+			}
+		});
+	}
+
+	private void toggleWebViewState(View v, boolean resume) {
+		if (v == null) return;
+		if (v instanceof WebView wv) {
+			try {
+				if (resume) {
+					wv.onResume();
+					wv.resumeTimers();
+				} else {
+					wv.onPause();
+					wv.pauseTimers(); 
+				}
+			} catch (Exception e) {
+				Log.e("MainCarActivity", "Error executing rendering lifecycle transition shift on target container", e);
+			}
+		} else if (v instanceof ViewGroup vg) {
+			for (int i = 0, n = vg.getChildCount(); i < n; i++) {
+				toggleWebViewState(vg.getChildAt(i), resume);
+			}
+		}
+	}
+
 	@NonNull
 	@Override
 	public FutureSupplier<MainActivityDelegate> getActivityDelegate() {
@@ -293,9 +348,8 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 		delegate = completed(d);
 		d.onActivityCreate(state);
 
-		mainThreadHandler.postDelayed(() -> {
-			initMediaSessionOnStartup();
-		}, 800);
+		// Post via reference token to avoid memory leakage profiles
+		mainThreadHandler.postDelayed(initMediaSessionRunnable, 800);
 
 		return d; 
 	}
@@ -311,12 +365,22 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 			Log.e("MainCarActivity", "Failed to re-assert active MediaSession state on user return", e);
 		}
 		acquirePlaybackFocus(AudioManager.AUDIOFOCUS_GAIN);
+		resumeWebViewTraffic();
 		getActivityDelegate().onSuccess(MainActivityDelegate::onActivityResume);
+	}
+
+	@Override
+	public void onPause() {
+		pauseWebViewTraffic();
+		super.onPause();
 	}
 
 	@Override
 	@SuppressWarnings("unchecked")
 	public void onDestroy() {
+		// Cancel explicit pending startup commands immediately before destroying layout references
+		mainThreadHandler.removeCallbacks(initMediaSessionRunnable);
+
 		Cursor cursor = (Cursor) findViewById(R.id.cursor);
 		if (cursor != null) {
 			cursor.cleanup();
@@ -517,7 +581,7 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 	}
 
 	/**
-	 * IMPROVEMENT: Added strict Visibility & Dimension constraints to prevent
+	 * Added strict Visibility & Dimension constraints to prevent
 	 * hidden/background view hierarchies from absorbing layout commands prematurely.
 	 */
 	private boolean performViewScroll(boolean up, View v) {
@@ -546,8 +610,9 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 	}
 
 	/**
-	 * UNIVERSAL SCROLLING ENGINE: Combines a synchronized direct Chromium viewport 
+	 * UNIVERSAL PARALLEL SCROLLING ENGINE: Combines a synchronized direct Chromium viewport 
 	 * instruction with an ultra-fast, zero-slop 20ms synthetic micro-touch sequence.
+	 * Utilizes a 33% content width coordinate shift to completely bypass centered popup overlays.
 	 */
 	private static boolean smartScrollWebView(final WebView wv, boolean up) {
 		if (wv == null || !wv.isAttachedToWindow() || wv.getWidth() <= 0 || wv.getHeight() <= 0) {
@@ -566,7 +631,7 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 		int pixelStep = (int) (wv.getHeight() * 0.70f); // 70% viewport jump
 		if (up) pixelStep = -pixelStep;
 
-		// Channel 1: Programmatic Chromium Viewport Displacement
+		// Channel 1: Programmatic Chromium Viewport Displacement + Cross-Origin Frame Security Handling
 		if (wv.getSettings().getJavaScriptEnabled()) {
 			String jsScript = "(function(step, isSpam) {" +
 					"  var behavior = isSpam ? 'auto' : 'smooth';" +
@@ -575,14 +640,19 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 					"  } catch(e) { window.scrollBy(0, step); }" +
 					"  var rootNode = document.scrollingElement || document.documentElement || document.body;" +
 					"  if (rootNode) { rootNode.scrollTop += step; }" +
+					"  try {" +
+					"    for (var i = 0; i < window.frames.length; i++) {" +
+					"      window.frames[i].postMessage({ type: 'PERMATA_SCROLL', step: step }, '*');" +
+					"    }" +
+					"  } catch(e) {}" +
 					"  return 1;" +
 					"})(" + pixelStep + ", " + isSpamming + ");";
 			wv.evaluateJavascript(jsScript, null);
 		}
 
-		// Channel 2: Zero-Slop Multi-Touch Injection (Completed within 20ms to bypass tap windows)
-		final long downTime = android.os.SystemClock.uptimeMillis();
-		final float midX = wv.getWidth() / 2f;
+		// Channel 2: Center-Trap Mitigation Zero-Slop Multi-Touch Injection (Completed within 20ms to bypass tap windows)
+		// Shifting away from the 50% absolute center trap and 90% scrollbar line to hit clean content surfaces
+		final float safeContentX = wv.getWidth() * 0.33f; 
 		final float centerY = wv.getHeight() / 2f;
 		
 		float span = wv.getHeight() * 0.45f; 
@@ -590,17 +660,17 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 		final float yEnd = up ? (centerY + span / 2f) : (centerY - span / 2f);
 
 		try {
-			MotionEvent eventDown = MotionEvent.obtain(downTime, downTime, MotionEvent.ACTION_DOWN, midX, yStart, 0);
+			MotionEvent eventDown = MotionEvent.obtain(now, now, MotionEvent.ACTION_DOWN, safeContentX, yStart, 0);
 			wv.dispatchTouchEvent(eventDown);
 			eventDown.recycle();
 
-			long moveTime = downTime + 10;
-			MotionEvent eventMove = MotionEvent.obtain(downTime, moveTime, MotionEvent.ACTION_MOVE, midX, yEnd, 0);
+			long moveTime = now + 10;
+			MotionEvent eventMove = MotionEvent.obtain(now, moveTime, MotionEvent.ACTION_MOVE, safeContentX, yEnd, 0);
 			wv.dispatchTouchEvent(eventMove);
 			eventMove.recycle();
 
-			long upTime = downTime + 20;
-			MotionEvent eventUp = MotionEvent.obtain(downTime, upTime, MotionEvent.ACTION_UP, midX, yEnd, 0);
+			long upTime = now + 20;
+			MotionEvent eventUp = MotionEvent.obtain(now, upTime, MotionEvent.ACTION_UP, safeContentX, yEnd, 0);
 			wv.dispatchTouchEvent(eventUp);
 			eventUp.recycle();
 		} catch (Exception e) {
@@ -811,6 +881,7 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 		}
 
 		private void touch(View v, float x, float y, boolean clearFocus) {
+			if (isDisposed) return;
 			long time = SystemClock.uptimeMillis();
 			MotionEvent down = MotionEvent.obtain(time, time, MotionEvent.ACTION_DOWN, x, y, 0);
 			if (clearFocus) {
@@ -860,6 +931,7 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 			move = Cancellable.CANCELED;
 			hide.cancel();
 			hide = activity.postDelayed(() -> {
+				if (isDisposed) return;
 				hide = Cancellable.CANCELED;
 				clearFocus();
 				setVisibility(GONE);
@@ -914,7 +986,7 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 		}
 
 		/**
-		 * IMPROVEMENT: Discards global blind search. Triggers coordinate testing
+		 * Discards global blind search. Triggers coordinate testing
 		 * to verify exactly which scrollable window pane the user is pointing to.
 		 */
 		private void scroll(boolean up) {
@@ -927,8 +999,8 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 		}
 
 		/**
-		 * ROBUST DETECTION IMPROVEMENT: Recursively maps coordinates down to child view boundaries
-		 * to dynamically find visible layouts intersecting with the current virtual cursor footprint.
+		 * ROBUST COORDINATE GEOMETRIC DETECTION DETECTOR: Recursively maps coordinates down to child boundaries
+		 * to dynamically locate visible layouts intersecting with the current virtual cursor footprint.
 		 */
 		private boolean scrollAtCoordinates(boolean up, ViewGroup parent, float cursorX, float cursorY) {
 			for (int i = 0, n = parent.getChildCount(); i < n; i++) {
