@@ -249,8 +249,8 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 		android.media.session.PlaybackState state = new android.media.session.PlaybackState.Builder()
 				.setActions(android.media.session.PlaybackState.ACTION_PLAY | 
 							android.media.session.PlaybackState.ACTION_PAUSE | 
-							android.media.session.PlaybackState.ACTION_NEXT | 
-							android.media.session.PlaybackState.ACTION_PREVIOUS)
+							android.media.session.PlaybackState.ACTION_SKIP_TO_NEXT | 
+							android.media.session.PlaybackState.ACTION_SKIP_TO_PREVIOUS)
 				// Explicitly register as ACTIVE and PLAYING on boot
 				.setState(android.media.session.PlaybackState.STATE_PLAYING, 0, 1.0f)
 				.build();
