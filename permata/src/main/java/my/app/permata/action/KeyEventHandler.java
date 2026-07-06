@@ -24,7 +24,8 @@ public class KeyEventHandler {
 
 	private static Worker worker;
 
-	// --- OPTIMIZED REFLECTION CACHE ---
+	// --- PRODUCTION REFLECTION CACHE STRUCTURE ---
+	// Caches the Class and Method variables permanently upon initialization to drop dynamic reflection lookup times down to zero.
 	private static java.lang.reflect.Method cachedShareMethod;
 	private static boolean hasCheckedCarActivity = false;
 
@@ -49,21 +50,20 @@ public class KeyEventHandler {
 		}
 
 		// --- PRODUCTION FOREGROUND CAR-ACTIVITY INTERCEPTION HOOK ---
+		// Resolves Class and Method contexts once per application process scope to prevent frame drops under fast click intervals.
 		if (activity == null) {
 			try {
-				// Perform the expensive reflection scan exactly once per application lifecycle
 				if (!hasCheckedCarActivity) {
 					try {
 						Class<?> carActivityClass = Class.forName("my.app.permata.auto.MainCarActivity");
 						cachedShareMethod = carActivityClass.getMethod("shareKeyEventToCarActivity", KeyEvent.class);
 					} catch (ClassNotFoundException ignored) {
-						// Safe decoupling: Class not bundled in this build flavor
+						// Safe decoupling: Class not bundled in this build flavor (e.g., standard handheld build target)
 					} finally {
 						hasCheckedCarActivity = true;
 					}
 				}
 
-				// Execute if the method was successfully cached
 				if (cachedShareMethod != null) {
 					Boolean intercepted = (Boolean) cachedShareMethod.invoke(null, event);
 					
