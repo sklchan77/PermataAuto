@@ -89,6 +89,9 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 	// --- PRODUCTION STATE-AWARE AUDIO FOCUS CONFIGURATION ---
 	private Object nativeFocusRequest; 
 	private boolean hasActivityFocus = false;
+	
+	// Native MediaSession reference used to force background apps to pause and stream keys to Permata Auto
+	private android.media.session.MediaSession mediaSession;
 
 	private final AudioManager.OnAudioFocusChangeListener focusChangeListener = focusChange -> {
 		switch (focusChange) {
@@ -220,6 +223,43 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 		}
 	}
 
+	/**
+	 * Forces systemic takeover of the media pipeline. Acquires persistent audio focus 
+	 * and configures a Local MediaSession declaring STATE_PLAYING to bind steering controls.
+	 */
+	private void initMediaSessionOnStartup() {
+		// 1. Force fully capture persistent audio focus to halt alternative audio streams
+		acquirePlaybackFocus(AudioManager.AUDIOFOCUS_GAIN);
+
+		// 2. Initialize or reinforce the hardware media session routing
+		if (mediaSession == null) {
+			mediaSession = new android.media.session.MediaSession(this, "PermataAutoSession");
+			mediaSession.setCallback(new android.media.session.MediaSession.Callback() {
+				@Override
+				public boolean onMediaButtonEvent(@NonNull Intent mediaButtonIntent) {
+					KeyEvent keyEvent = mediaButtonIntent.getParcelableExtra(Intent.EXTRA_KEY_EVENT);
+					if (keyEvent != null) {
+						return shareKeyEventToCarActivity(keyEvent);
+					}
+					return super.onMediaButtonEvent(mediaButtonIntent);
+				}
+			});
+		}
+
+		android.media.session.PlaybackState state = new android.media.session.PlaybackState.Builder()
+				.setActions(android.media.session.PlaybackState.ACTION_PLAY | 
+							android.media.session.PlaybackState.ACTION_PAUSE | 
+							android.media.session.PlaybackState.ACTION_NEXT | 
+							android.media.session.PlaybackState.ACTION_PREVIOUS)
+				// Explicitly register as ACTIVE and PLAYING on boot
+				.setState(android.media.session.PlaybackState.STATE_PLAYING, 0, 1.0f)
+				.build();
+
+		mediaSession.setPlaybackState(state);
+		mediaSession.setActive(true);
+		Log.i("MainCarActivity", "MediaSession forced to STATE_PLAYING execution loop successfully.");
+	}
+
 	@NonNull
 	@Override
 	public FutureSupplier<MainActivityDelegate> getActivityDelegate() {
@@ -265,9 +305,9 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 		delegate = completed(d);
 		d.onActivityCreate(state);
 
-		// PROACTIVE FOCUS CAPTURE: Instantly request focus upon startup to bind keys to Permata at cold boot
+		// FORCED STARTUP SESSION: Instantly assert persistent focus and active playing state at boot
 		mainThreadHandler.postDelayed(() -> {
-			acquirePlaybackFocus(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK);
+			initMediaSessionOnStartup();
 		}, 800);
 
 		return d; 
@@ -276,8 +316,8 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 	@Override
 	public void onResume() {
 		super.onResume();
-		// RE-ASSERT FOCUS: Proactively lock keys onto the Permata browser when returning from other views
-		acquirePlaybackFocus(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK);
+		// RE-ASSERT ACTIVE MEDIA PLAYING FOCUS STATE
+		initMediaSessionOnStartup();
 		getActivityDelegate().onSuccess(MainActivityDelegate::onActivityResume);
 	}
 
@@ -290,6 +330,12 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 		}
 		
 		releasePlaybackFocus(); 
+
+		if (mediaSession != null) {
+			mediaSession.setActive(false);
+			mediaSession.release();
+			mediaSession = null;
+		}
 
 		super.onDestroy();
 		getActivityDelegate().onSuccess(MainActivityDelegate::onActivityDestroy)
