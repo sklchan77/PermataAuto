@@ -666,8 +666,77 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 		int pixelStep = (int) (wv.getHeight() * 0.70f); 
 		if (up) pixelStep = -pixelStep;
 
+
+
+
+
+
+
+
 		// 1. ADVANCED CONTEXTUAL ELEMENT DISCOVERY ENGINE (JAVASCRIPT LAYER)
 		if (wv.getSettings().getJavaScriptEnabled()) {
+			// =========================================================================
+			// ADDED: Universal Social Media & Video Auto-Cleaner Engine
+			// =========================================================================
+			String universalPayload = "(function(){" +
+					"const registry=[" +
+					"  {name:\"douyin\",match:/douyin\\.com/,execute:function(){" +
+					"    let fs=document.querySelector('.xgplayer-fullscreen,[class*=\"fullscreen\"],[title*=\"全屏\"],[aria-label*=\"全屏\"]');" +
+					"    if(!fs){for(let el of document.querySelectorAll('div,button,span')){if(el.textContent==='全屏'||(el.getAttribute('aria-label')&&el.getAttribute('aria-label').includes('全屏'))){fs=el;break;}}}" +
+					"    if(fs&&!fs.classList.contains('xgplayer-fullscreen-active'))fs.click();" +
+					"    let cl=document.querySelector('.xgplayer-clearscreen,[class*=\"clearscreen\"],[title*=\"清屏\"],[aria-label*=\"清屏\"]');" +
+					"    if(!cl){for(let el of document.querySelectorAll('div,button,span')){if(el.textContent.includes('清屏')||el.textContent.includes('洁净模式')){cl=el;break;}}}" +
+					"    if(cl)cl.click();" +
+					"  }}," +
+					"  {name:\"youtube\",match:/(youtube\\.com|youtu\\.be)/,execute:function(){" +
+					"    let ad=document.querySelector('.ytp-skip-ad-button,.ytp-ad-skip-button,[class*=\"skip-ad\"]');if(ad)ad.click();" +
+					"    ['yt-formatted-string[id=\"dismiss-button\"]','#dismiss-button button','[aria-label=\"No thanks\"]','[aria-label=\"Dismiss\"]'].forEach(s=>{" +
+					"      let b=document.querySelector(s);if(b)b.click();" +
+					"    });" +
+					"    for(let b of document.querySelectorAll('button,yt-formatted-string,tp-yt-paper-button')){" +
+					"      let t=b.textContent?b.textContent.toLowerCase().trim():'';" +
+					"      if(t==='no thanks'||t==='dismiss'||t==='以后再说'||t==='不用了')b.click();" +
+					"    }" +
+					"  }}," +
+					"  {name:\"tiktok\",match:/tiktok\\.com/,execute:function(){" +
+					"    let cl=document.querySelector('[data-e2e=\"login-modal\"] button[class*=\"Close\"],div[class*=\"DivModalClose\"]');if(cl)cl.click();" +
+					"    let mu=document.querySelector('[data-e2e=\"video-player-volume\"],[class*=\"volume\"] svg');" +
+					"    if(mu&&(mu.innerHTML.includes('mute')||mu.className.baseVal.includes('mute'))){" +
+					"      let vc=mu.closest('button')||mu.parentElement;if(vc)vc.click();" +
+					"    }" +
+					"    let th=document.querySelector('[data-e2e=\"browse-theatre-mode\"]');if(th)th.click();" +
+					"  }}," +
+					"  {name:\"instagram\",match:/instagram\\.com/,execute:function(){" +
+					"    for(let b of document.querySelectorAll('button,div,span')){" +
+					"      let t=b.textContent?b.textContent.trim():'';" +
+					"      if(t==='Not Now'||t==='以后再说'||t==='Cancel')b.click();" +
+					"    }" +
+					"    let un=document.querySelectorAll('svg[aria-label*=\"Audio\"],svg[aria-label*=\"Mute\"]');" +
+					"    un.forEach(s=>{" +
+					"      let l=s.getAttribute('aria-label');" +
+					"      if(l&&(l.includes('Mute')||l.includes('静音'))){let c=s.closest('button')||s.parentElement;if(c)c.click();}" +
+					"    });" +
+					"  }}," +
+					"  {name:\"facebook\",match:/facebook\\.com/,execute:function(){" +
+					"    let co=document.querySelector('[data-cookiebanner=\"accept_button\"],[data-testid=\"cookie-policy-manage-dialog-accept\"]');if(co)co.click();" +
+					"    let cd=document.querySelector('[aria-label=\"Close\"],[aria-label=\"关闭\"],[class*=\"layerCancel\"]');if(cd)cd.click();" +
+					"  }}" +
+					"];" +
+					"const active=registry.find(p=>p.match.test(window.location.hostname));" +
+					"if(!active)return;" +
+					"let guard=null;" +
+					"function run(){try{active.execute();}catch(e){}}" +
+					"const obs=new MutationObserver(()=>{if(guard)clearTimeout(guard);guard=setTimeout(run,50);});" +
+					"run();" +
+					"if(document.body){obs.observe(document.body,{childList:true,subtree:true});}" +
+					"else{window.addEventListener('DOMContentLoaded',()=>obs.observe(document.body,{childList:true,subtree:true}));}" +
+					"})();";
+			
+			wv.evaluateJavascript(universalPayload, null);
+
+			// =========================================================================
+			// RETAINED: Your original advanced coordinate-based scrolling algorithm
+			// =========================================================================
 			float density = wv.getContext().getResources().getDisplayMetrics().density;
 			float cssX = (relativeX >= 0) ? (relativeX / density) : -1;
 			float cssY = (relativeY >= 0) ? (relativeY / density) : -1;
@@ -731,6 +800,14 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 					"})(" + pixelStep + ", " + isSpamming + ", " + cssX + ", " + cssY + ");";
 			wv.evaluateJavascript(jsScript, null);
 		}
+
+
+
+
+
+
+
+
 
 		// 2. INDUSTRIAL MULTI-STEP INTERPOLATED SWIPE INJECTOR (CRITICAL FOR TIKTOK/DOUYIN/SHORTS)
 		// For media layout streams, centering the touch anchor prevents layout collisions with hidden side drawers.
