@@ -636,7 +636,8 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 			}
 			return true;
 		} else if (v instanceof WebView wv) {
-			return smartScrollWebView(wv, up);
+			// Fallback coordinates assigned when executing standard hardware page key down vectors
+			return smartScrollWebView(wv, up, -1f, -1f);
 		} else if (v instanceof ViewGroup vg) {
 			for (int i = 0, n = vg.getChildCount(); i < n; i++) {
 				if (performViewScroll(up, vg.getChildAt(i))) return true;
@@ -645,7 +646,11 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 		return false;
 	}
 
-	private static boolean smartScrollWebView(final WebView wv, boolean up) {
+	/**
+	 * Best-in-Class Smart Discovery Web Page Scrolling System.
+	 * Optimized for Short-Form Video Snap Containers (TikTok/Douyin/Shorts) and standard media feeds.
+	 */
+	private static boolean smartScrollWebView(final WebView wv, boolean up, float relativeX, float relativeY) {
 		if (wv == null || !wv.isAttachedToWindow() || wv.getWidth() <= 0 || wv.getHeight() <= 0) {
 			return false;
 		}
@@ -661,46 +666,120 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 		int pixelStep = (int) (wv.getHeight() * 0.70f); 
 		if (up) pixelStep = -pixelStep;
 
+		// 1. ADVANCED CONTEXTUAL ELEMENT DISCOVERY ENGINE (JAVASCRIPT LAYER)
 		if (wv.getSettings().getJavaScriptEnabled()) {
-			String jsScript = "(function(step, isSpam) {" +
+			float density = wv.getContext().getResources().getDisplayMetrics().density;
+			float cssX = (relativeX >= 0) ? (relativeX / density) : -1;
+			float cssY = (relativeY >= 0) ? (relativeY / density) : -1;
+
+			String jsScript = "(function(step, isSpam, cx, cy) {" +
 					"  var behavior = isSpam ? 'auto' : 'smooth';" +
+					"  var startEl = null;" +
+					"  if (cx >= 0 && cy >= 0) {" +
+					"    try { startEl = document.elementFromPoint(cx, cy); } catch(e) {}" +
+					"  }" +
+					"  if (!startEl) { startEl = document.activeElement || document.body; }" +
+					"  " +
+					"  function findScrollable(el) {" +
+					"    while (el && el !== document.documentElement && el !== document.body) {" +
+					"      var style = window.getComputedStyle(el);" +
+					"      var overflow = style.overflow + style.overflowY;" +
+					"      if ((el.scrollHeight > el.clientHeight) && (/auto|scroll/.test(overflow))) {" +
+					"        return el;" +
+					"      }" +
+					"      el = el.parentElement;" +
+					"    }" +
+					"    return document.scrollingElement || document.documentElement || document.body;" +
+					"  }" +
+					"  " +
+					"  var targetNode = findScrollable(startEl);" +
+					"  " +
+					"  var stickyHeight = 0;" +
 					"  try {" +
-					"    window.scrollBy({ top: step, behavior: behavior });" +
-					"  } catch(e) { window.scrollBy(0, step); }" +
-					"  var rootNode = document.scrollingElement || document.documentElement || document.body;" +
-					"  if (rootNode) { rootNode.scrollTop += step; }" +
+					"    var elems = document.querySelectorAll('*');" +
+					"    for (var i = 0; i < Math.min(elems.length, 120); i++) {" +
+					"      var s = window.getComputedStyle(elems[i]);" +
+					"      if ((s.position === 'fixed' || s.position === 'sticky') && elems[i].getBoundingClientRect().top <= 12) {" +
+					"        stickyHeight = Math.max(stickyHeight, elems[i].offsetHeight);" +
+					"      }" +
+					"    }" +
+					"  } catch(e) {}" +
+					"  " +
+					"  var adjustedStep = step;" +
+					"  if (stickyHeight > 0 && Math.abs(step) > stickyHeight) {" +
+					"    adjustedStep = step > 0 ? (step - stickyHeight) : (step + stickyHeight);" +
+					"  }" +
+					"  " +
+					"  try {" +
+					"    if (targetNode === document.body || targetNode === document.documentElement || targetNode === document.scrollingElement) {" +
+					"      window.scrollBy({ top: adjustedStep, behavior: behavior });" +
+					"    } else if (typeof targetNode.scrollBy === 'function') {" +
+					"      targetNode.scrollBy({ top: adjustedStep, behavior: behavior });" +
+					"    } else {" +
+					"      targetNode.scrollTop += adjustedStep;" +
+					"    }" +
+					"  } catch(e) {" +
+					"    window.scrollBy(0, adjustedStep);" +
+					"  }" +
+					"  " +
 					"  try {" +
 					"    for (var i = 0; i < window.frames.length; i++) {" +
-					"      window.frames[i].postMessage({ type: 'PERMATA_SCROLL', step: step }, '*');" +
+					"      window.frames[i].postMessage({ type: 'PERMATA_SCROLL', step: adjustedStep }, '*');" +
 					"    }" +
 					"  } catch(e) {}" +
 					"  return 1;" +
-					"})(" + pixelStep + ", " + isSpamming + ");";
+					"})(" + pixelStep + ", " + isSpamming + ", " + cssX + ", " + cssY + ");";
 			wv.evaluateJavascript(jsScript, null);
 		}
 
-		final float safeContentX = wv.getWidth() * 0.33f; 
-		final float centerY = wv.getHeight() / 2f;
+		// 2. INDUSTRIAL MULTI-STEP INTERPOLATED SWIPE INJECTOR (CRITICAL FOR TIKTOK/DOUYIN/SHORTS)
+		// For media layout streams, centering the touch anchor prevents layout collisions with hidden side drawers.
+		final float actionX = (relativeX >= 0) ? relativeX : (wv.getWidth() * 0.50f);
+		final float centerY = (relativeY >= 0) ? relativeY : (wv.getHeight() / 2f);
 		
-		float span = wv.getHeight() * 0.45f; 
+		// 60% viewport span ensures sufficient drag length to breach CSS scroll snap boundaries smoothly
+		float span = wv.getHeight() * 0.60f; 
 		final float yStart = up ? (centerY - span / 2f) : (centerY + span / 2f);
 		final float yEnd = up ? (centerY + span / 2f) : (centerY - span / 2f);
 
 		try {
-			MotionEvent eventDown = MotionEvent.obtain(now, now, MotionEvent.ACTION_DOWN, safeContentX, yStart, 0);
+			final long startTime = android.os.SystemClock.uptimeMillis();
+			
+			// Fire primary ACTION_DOWN frame instantly to begin physical tracking
+			MotionEvent eventDown = MotionEvent.obtain(startTime, startTime, MotionEvent.ACTION_DOWN, actionX, yStart, 0);
 			wv.dispatchTouchEvent(eventDown);
 			eventDown.recycle();
 
-			long moveTime = now + 10;
-			MotionEvent eventMove = MotionEvent.obtain(now, moveTime, MotionEvent.ACTION_MOVE, safeContentX, yEnd, 0);
-			wv.dispatchTouchEvent(eventMove);
-			eventMove.recycle();
+			// Generate 5 perfectly sequential move segments across a 150ms window to build realistic swipe velocity
+			final int stepCount = 5;
+			final long swipeDuration = 150; 
+			
+			for (int i = 1; i <= stepCount; i++) {
+				final float fraction = (float) i / stepCount;
+				final float currentY = yStart + (yEnd - yStart) * fraction;
+				final long moveTime = startTime + (long) (swipeDuration * fraction);
+				
+				wv.postDelayed(() -> {
+					if (wv.isAttachedToWindow()) {
+						MotionEvent eventMove = MotionEvent.obtain(startTime, moveTime, MotionEvent.ACTION_MOVE, actionX, currentY, 0);
+						wv.dispatchTouchEvent(eventMove);
+						eventMove.recycle();
+					}
+				}, (long) (swipeDuration * fraction));
+			}
 
-			long upTime = now + 20;
-			MotionEvent eventUp = MotionEvent.obtain(now, upTime, MotionEvent.ACTION_UP, safeContentX, yEnd, 0);
-			wv.dispatchTouchEvent(eventUp);
-			eventUp.recycle();
+			// Complete touch lifecycle state by triggering ACTION_UP at final target coordinate destination
+			wv.postDelayed(() -> {
+				if (wv.isAttachedToWindow()) {
+					long endTime = startTime + swipeDuration + 10;
+					MotionEvent eventUp = MotionEvent.obtain(startTime, endTime, MotionEvent.ACTION_UP, actionX, yEnd, 0);
+					wv.dispatchTouchEvent(eventUp);
+					eventUp.recycle();
+				}
+			}, swipeDuration + 10);
+
 		} catch (Exception e) {
+			// Failover fallback utilizing core key vectors if the window reference changes mid-execution
 			int backupKey = up ? KeyEvent.KEYCODE_PAGE_UP : KeyEvent.KEYCODE_PAGE_DOWN;
 			wv.dispatchKeyEvent(new KeyEvent(KeyEvent.ACTION_DOWN, backupKey));
 			wv.dispatchKeyEvent(new KeyEvent(KeyEvent.ACTION_UP, backupKey));
@@ -1040,7 +1119,8 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 						}
 						return true;
 					} else if (v instanceof WebView wv) {
-						return MainCarActivity.smartScrollWebView(wv, up);
+						// Pass contextual cursor coordinates downstream to ensure precision DOM element calculation
+						return MainCarActivity.smartScrollWebView(wv, up, relativeX, relativeY);
 					} else if (v instanceof ViewGroup vg) {
 						if (scrollAtCoordinates(up, vg, relativeX, relativeY)) return true;
 					}
