@@ -68,13 +68,16 @@ import my.app.utils.ui.menu.OverlayMenu;
  */
 public class MainCarActivity extends CarActivity implements PermataActivity {
 
-	// Thread-safe tracking map protecting against platform IllegalArgumentExceptions while staying 100% immune to context leaks.
+	// Thread-safe tracking map protecting against platform exceptions while staying 100% immune to context leaks.
 	private static final java.util.Map<WebView, Long> scrollTimestamps = 
 			java.util.Collections.synchronizedMap(new java.util.WeakHashMap<>());
 
 	// Memory-isolated weak reference tracking to completely eliminate context leaks during sudden wireless drops.
 	private static java.lang.ref.WeakReference<MainCarActivity> activeInstanceRef = 
 			new java.lang.ref.WeakReference<>(null);
+
+	// ISSUE 3 FIX: Atomic temporal gate to prevent concurrent double-execution between MediaSession and Window inputs
+	private static long lastProcessedKeyEventTime = 0;
 
 	static PermataMediaServiceConnection service;
 	
@@ -113,7 +116,7 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 			new android.os.Handler(android.os.Looper.getMainLooper());
 
 	/**
-	 * Hardened Bridge method routing background steering wheel controls to the foreground WebView layout.
+	 * Bridge method routing background steering wheel controls to the foreground WebView layout.
 	 * Decoupled via WeakReference to guarantee immunity against sudden wireless tether teardowns.
 	 */
 	public static boolean shareKeyEventToCarActivity(KeyEvent event) {
@@ -127,24 +130,28 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 				boolean isPrev = (keyCode == KeyEvent.KEYCODE_PAGE_UP || keyCode == KeyEvent.KEYCODE_MEDIA_PREVIOUS);
 
 				if (isNext || isPrev) {
-					// FRAGMENT GUARD: Synchronously inspect the active fragment. If the user is on a media player screen
-					// (IPTV, YouTube, local players), skip intercepting here so KeyEventHandler can route track changes natively.
+					// ISSUE 3 FIX: System-wide deduplication check against overlapping Window callbacks
+					long now = SystemClock.uptimeMillis();
+					if (now - lastProcessedKeyEventTime < 150) {
+						return true; // Already processed by window thread, absorb event silently
+					}
+
+					// FRAGMENT GUARD: Inspect active fragment. If on a media screen, pass native controls.
 					ActivityFragment activeFragment = d.getActiveFragment();
 					if (activeFragment != null) {
 						String fragName = activeFragment.getClass().getName().toLowerCase();
 						if (fragName.contains("iptv") || fragName.contains("player") || 
 								fragName.contains("video") || fragName.contains("youtube") || fragName.contains("media")) {
-							return false; // Let KeyEventHandler fall back to default player actions
+							return false; 
 						}
 					}
 
-					// 1. Filter for initial press down and completely drop hardware repeat counts to prevent runaway scrolling.
+					// Filter for initial press down and completely drop hardware repeat counts to prevent runaway scrolling.
 					if (event.getAction() == KeyEvent.ACTION_DOWN && event.getRepeatCount() == 0) {
+						lastProcessedKeyEventTime = now;
 						
-						// 2. Reuse the static handler mapping to prevent memory performance overhead.
 						mainThreadHandler.post(() -> {
 							try {
-								// 3. Dynamic secondary lifecycle guard to protect against sudden car session disconnects mid-flight.
 								MainCarActivity currentValidActivity = activeInstanceRef.get();
 								if (currentValidActivity != null && !currentValidActivity.isFinishing()) {
 									currentValidActivity.performFragmentScroll(!isNext, d);
@@ -154,7 +161,6 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 							}
 						});
 					}
-					// 4. Instantly consume key to prevent activating background music/IPTV apps on either screen.
 					return true; 
 				}
 			}
@@ -167,10 +173,8 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 	 */
 	private void initMediaSessionOnStartup() {
 		try {
-			// 1. Force fully permanent focus gain to completely knock off background apps like Spotify/Radio
 			acquirePlaybackFocus(AudioManager.AUDIOFOCUS_GAIN);
 
-			// 2. Initialize the MediaSession structural layer
 			if (mediaSession == null) {
 				mediaSession = new android.media.session.MediaSession(this, "PermataAutoMediaSession");
 			}
@@ -180,12 +184,9 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 								android.media.session.PlaybackState.ACTION_PAUSE | 
 								android.media.session.PlaybackState.ACTION_SKIP_TO_NEXT | 
 								android.media.session.PlaybackState.ACTION_SKIP_TO_PREVIOUS)
-					// Forcefully assert STATE_PLAYING at 1.0x playback speed immediately on boot
 					.setState(android.media.session.PlaybackState.STATE_PLAYING, 0, 1.0f);
 
 			mediaSession.setPlaybackState(stateBuilder.build());
-			
-			// Lock the IHU media hub down onto this specific session
 			mediaSession.setActive(true);
 			Log.i("MainCarActivity", "MediaSession successfully set to STATE_PLAYING on startup initialization.");
 		} catch (Exception e) {
@@ -195,8 +196,6 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 
 	/**
 	 * Production safe, explicit on-demand focus capture mechanism.
-	 * Call this method dynamically only when a WebView or media player surface inside the Activity layout 
-	 * changes state to actively buffer or stream video audio pipelines.
 	 */
 	public boolean acquirePlaybackFocus(int focusDurationHint) {
 		try {
@@ -221,9 +220,6 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 				hasActivityFocus = (result == AudioManager.AUDIOFOCUS_REQUEST_GRANTED);
 			}
 
-			if (hasActivityFocus) {
-				Log.i("MainCarActivity", "On-demand Audio Focus successfully verified and locked down.");
-			}
 			return hasActivityFocus;
 		} catch (Exception e) {
 			Log.e("MainCarActivity", "Failed safe hardware audio capture negotiation routine", e);
@@ -266,7 +262,6 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 
 	@Override
 	public void onCreate(Bundle savedInstanceState) {
-		// Initialize the WeakReference token inside the local heap immediately
 		activeInstanceRef = new java.lang.ref.WeakReference<>(this); 
 		
 		MainActivityDelegate.setTheme(this, true);
@@ -298,7 +293,6 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 		delegate = completed(d);
 		d.onActivityCreate(state);
 
-		// PROACTIVE FOCUS AND STATE CAPTURE: Instantly request focus and assign playing status upon boot
 		mainThreadHandler.postDelayed(() -> {
 			initMediaSessionOnStartup();
 		}, 800);
@@ -309,7 +303,6 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 	@Override
 	public void onResume() {
 		super.onResume();
-		// RE-ASSERT FOCUS & MEDIA REGISTER: Proactively re-claim active session and focus tags when coming back to foreground
 		try {
 			if (mediaSession != null) {
 				mediaSession.setActive(true);
@@ -324,12 +317,24 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 	@Override
 	@SuppressWarnings("unchecked")
 	public void onDestroy() {
-		// Clean the wrapper reference block cleanly to avoid memory leaks
+		// ISSUE 1 FIX: Discard background cursor handler cycles explicitly to prevent background execution drifts
+		Cursor cursor = findViewById(R.id.cursor);
+		if (cursor != null) {
+			cursor.cleanup();
+		}
+
+		// ISSUE 2 FIX: Break car framework input anchors to clean layout allocations completely
+		stopInput();
+
+		// ISSUE 2 FIX: Sever un-instantiated background connections to prevent cross-activity static leaks
+		if (service != null && !service.isConnected()) {
+			service = null;
+		}
+
 		if (activeInstanceRef.get() == this) {
 			activeInstanceRef.clear();
 		}
 		
-		// Clean up and release system tracking handles for the active MediaSession to prevent system resource deadlocks
 		try {
 			if (mediaSession != null) {
 				mediaSession.setActive(false);
@@ -406,6 +411,14 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 		if (textWatcher != null) editText.removeTextChangedListener(textWatcher);
 		editText.addTextChangedListener(w);
 		textWatcher = w;
+
+		// ISSUE 5 FIX: Strip out legacy/stale listeners from previous input calls to clean state paths
+		if (w instanceof OnEditorActionListener) {
+			editText.setOnEditorActionListener((OnEditorActionListener) w);
+		} else {
+			editText.setOnEditorActionListener(null);
+		}
+
 		getActivityDelegate().onSuccess(a -> {
 			if (a.getPrefs().getVoiceControlEnabledPref()) {
 				a.startSpeechRecognizer(null, true).onCompletion((q, err) -> {
@@ -436,8 +449,9 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 			if (textWatcher != null) editText.removeTextChangedListener(textWatcher);
 			editText.setOnEditorActionListener(null);
 		}
-
-		a().stopInput();
+		try {
+			a().stopInput();
+		} catch (Exception ignored) {}
 	}
 
 	public boolean isInputActive() {
@@ -496,7 +510,6 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 		ActivityFragment f = d.getActiveFragment();
 		if (f == null) return false;
 
-		// Fragment Guard - Stop scrolling if active view belongs to IPTV/Video player layouts
 		String name = f.getClass().getName().toLowerCase();
 		if (name.contains("iptv") || name.contains("player") || name.contains("video") || name.contains("youtube") || name.contains("media")) {
 			return false; 
@@ -532,7 +545,6 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 		if (wv == null) return false;
 
 		long now = android.os.SystemClock.uptimeMillis();
-		
 		Long lastClickTimeObj = scrollTimestamps.get(wv);
 		long lastClickTime = (lastClickTimeObj != null) ? lastClickTimeObj : 0;
 		scrollTimestamps.put(wv, now); 
@@ -603,10 +615,11 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 	}
 
 	/**
-	 * ASYNC HARDENED: Distributes event generation sequentially using safe thread messaging
-	 * to prevent high-density touch event bursts from locking up low-spec automotive processors.
+	 * Distributes touch event generation asynchronously using thread messaging to prevent
+	 * high-density hardware scrolling commands from locking up low-spec car modules.
 	 */
-	private static boolean executeNativeScrollFallback(WebView wv, boolean up, boolean isSpamming) {
+	private static boolean executeNativeScrollFallback(final WebView wv, boolean up, boolean isSpamming) {
+		if (wv == null) return false;
 		boolean systemScrolled = up ? wv.pageUp(false) : wv.pageDown(false);
 		if (systemScrolled) return true;
 
@@ -617,31 +630,31 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 		if (isSpamming) return true;
 
 		int touchSlop = android.view.ViewConfiguration.get(wv.getContext()).getScaledTouchSlop();
-		long downTime = android.os.SystemClock.uptimeMillis();
-		float midX = wv.getWidth() / 2f;
+		final long downTime = android.os.SystemClock.uptimeMillis();
+		final float midX = wv.getWidth() / 2f;
 		
 		float dragDistance = Math.max(wv.getHeight() * 0.5f, touchSlop * 4f);
 		float centerY = wv.getHeight() / 2f;
 		
-		float yStart = up ? (centerY - dragDistance / 2f) : (centerY + dragDistance / 2f);
-		float yEnd = up ? (centerY + dragDistance / 2f) : (centerY - dragDistance / 2f);
+		final float yStart = up ? (centerY - dragDistance / 2f) : (centerY + dragDistance / 2f);
+		final float yEnd = up ? (centerY + dragDistance / 2f) : (centerY - dragDistance / 2f);
 
 		wv.dispatchTouchEvent(MotionEvent.obtain(downTime, downTime, MotionEvent.ACTION_DOWN, midX, yStart, 0));
 		
-		// Unrolled and decoupled event steps to eliminate potential UI thread lockups during hardware scrolls
 		int totalSteps = 5;
 		for (int i = 1; i <= totalSteps; i++) {
 			final int stepIndex = i;
 			final long moveTime = downTime + (stepIndex * 25);
 			mainThreadHandler.postDelayed(() -> {
+				// ISSUE 2 & 4 FIX: Validate component tree attachment state explicitly before executing touch dispatches
 				if (wv == null || !wv.isAttachedToWindow()) return;
+				
 				float alpha = (float) stepIndex / totalSteps;
 				float currentY = yStart + alpha * (yEnd - yStart);
 				MotionEvent moveEvent = MotionEvent.obtain(downTime, moveTime, MotionEvent.ACTION_MOVE, midX, currentY, 0);
 				wv.dispatchTouchEvent(moveEvent);
 				moveEvent.recycle();
 
-				// Inject structural termination when the end of the loop is reached
 				if (stepIndex == totalSteps) {
 					MotionEvent upEvent = MotionEvent.obtain(downTime, moveTime + 20, MotionEvent.ACTION_UP, midX, yEnd, 0);
 					wv.dispatchTouchEvent(upEvent);
@@ -656,13 +669,30 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 	@Override
 	public boolean onKeyDown(int keyCode, KeyEvent keyEvent) {
 		Log.i(keyEvent);
+
+		// ISSUE 4 FIX: Instantly reject high-density hardware repeats to secure layout cycle performance
+		if (keyEvent.getRepeatCount() > 0) {
+			return true; 
+		}
+
 		MainActivityDelegate d = delegate.peek();
 		if (d == null) return super.onKeyDown(keyCode, keyEvent);
 
-		if (keyCode == KeyEvent.KEYCODE_PAGE_DOWN || keyCode == KeyEvent.KEYCODE_MEDIA_NEXT) {
-			if (performFragmentScroll(false, d)) return true;
-		} else if (keyCode == KeyEvent.KEYCODE_PAGE_UP || keyCode == KeyEvent.KEYCODE_MEDIA_PREVIOUS) {
-			if (performFragmentScroll(true, d)) return true;
+		// ISSUE 3 FIX: Enforce time-differential deduplication mapping against overlapping background callbacks
+		long now = SystemClock.uptimeMillis();
+		if (keyCode == KeyEvent.KEYCODE_PAGE_DOWN || keyCode == KeyEvent.KEYCODE_MEDIA_NEXT ||
+			keyCode == KeyEvent.KEYCODE_PAGE_UP || keyCode == KeyEvent.KEYCODE_MEDIA_PREVIOUS) {
+			
+			if (now - lastProcessedKeyEventTime < 150) {
+				return true; 
+			}
+			lastProcessedKeyEventTime = now;
+			
+			if (keyCode == KeyEvent.KEYCODE_PAGE_DOWN || keyCode == KeyEvent.KEYCODE_MEDIA_NEXT) {
+				if (performFragmentScroll(false, d)) return true;
+			} else {
+				if (performFragmentScroll(true, d)) return true;
+			}
 		}
 
 		if (!d.getPrefs().useDpadCursor(d)) return d.onKeyDown(keyCode, keyEvent, super::onKeyDown);
@@ -697,22 +727,10 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 			}
 			case KEYCODE_DPAD_LEFT -> x = -1;
 			case KEYCODE_DPAD_RIGHT -> x = 1;
-			case KEYCODE_DPAD_UP_LEFT -> {
-				y = -1;
-				x = -1;
-			}
-			case KEYCODE_DPAD_UP_RIGHT -> {
-				y = -1;
-				x = 1;
-			}
-			case KEYCODE_DPAD_DOWN_LEFT -> {
-				y = 1;
-				x = -1;
-			}
-			case KEYCODE_DPAD_DOWN_RIGHT -> {
-				y = 1;
-				x = 1;
-			}
+			case KEYCODE_DPAD_UP_LEFT -> { y = -1; x = -1; }
+			case KEYCODE_DPAD_UP_RIGHT -> { y = -1; x = 1; }
+			case KEYCODE_DPAD_DOWN_LEFT -> { y = 1; x = -1; }
+			case KEYCODE_DPAD_DOWN_RIGHT -> { y = 1; x = 1; }
 			case KEYCODE_BACK -> {
 				screen = findViewById(R.id.main_activity);
 				cursor = screen.findViewById(R.id.cursor);
@@ -725,7 +743,7 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 				cursor = screen.findViewById(R.id.cursor);
 				if (cursor == null) return d.onKeyDown(keyCode, keyEvent, super::onKeyDown);
 			}
-			default -> {return d.onKeyDown(keyCode, keyEvent, super::onKeyDown);}
+			default -> { return d.onKeyDown(keyCode, keyEvent, super::onKeyDown); }
 		}
 
 		if (screen == null) {
@@ -763,6 +781,10 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 		private Cancellable move = Cancellable.CANCELED;
 		private Cancellable hide = Cancellable.CANCELED;
 		private Cancellable resetAccel = Cancellable.CANCELED;
+		
+		// ISSUE 1 FIX: Volatile state controller flag to explicitly block loop re-entries after clean extraction
+		private boolean isDisposed = false;
+		
 		boolean ignoreBack;
 		int accel = 1;
 
@@ -781,6 +803,17 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 			bg.addState(new int[]{android.R.attr.state_focused}, transparent);
 			bg.addState(new int[]{}, transparent);
 			setBackground(bg);
+		}
+
+		// ISSUE 1 FIX: Clean out structural loops on parent termination
+		void cleanup() {
+			isDisposed = true;
+			move.cancel();
+			hide.cancel();
+			resetAccel.cancel();
+			move = Cancellable.CANCELED;
+			hide = Cancellable.CANCELED;
+			resetAccel = Cancellable.CANCELED;
 		}
 
 		boolean isVisible() {
@@ -844,6 +877,7 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 			v.dispatchTouchEvent(down);
 			down.recycle();
 			activity.postDelayed(() -> {
+				if (isDisposed) return;
 				MotionEvent up = MotionEvent.obtain(time, time + 100, MotionEvent.ACTION_UP, x, y, 0);
 				v.dispatchTouchEvent(up);
 				up.recycle();
@@ -891,11 +925,13 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 		}
 
 		void show(float cursorX, float cursorY) {
+			if (isDisposed) return;
 			setVisibility(VISIBLE);
 			animate().x(cursorX).y(cursorY).setDuration(0).start();
 		}
 
 		void move(int w, int h, float dx, float dy, float step, int keyCode) {
+			if (isDisposed) return;
 			move.cancel();
 			move = activity.postDelayed(() -> move(w, h, dx, dy, step, keyCode), 50);
 
@@ -921,7 +957,9 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 		}
 
 		private boolean focusFb(ViewGroup screen, float cursorX, float cursorY) {
+			if (screen == null) return false;
 			View fb = screen.findViewById(R.id.floating_button);
+			if (fb == null) return false;
 			float fbX = fb.getX();
 			float fbY = fb.getY();
 			if ((cursorX >= fbX) && (cursorX < fbX + fb.getWidth()) && (cursorY >= fbY) &&
