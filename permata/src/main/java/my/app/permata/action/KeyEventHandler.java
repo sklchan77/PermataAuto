@@ -24,6 +24,10 @@ public class KeyEventHandler {
 
 	private static Worker worker;
 
+	// --- OPTIMIZED REFLECTION CACHE ---
+	private static java.lang.reflect.Method cachedShareMethod;
+	private static boolean hasCheckedCarActivity = false;
+
 	public static boolean handleKeyEvent(MediaSessionCallback cb, KeyEvent event,
 																			 IntObjectFunction<KeyEvent, Boolean> defaultHandler) {
 		return handleKeyEvent(cb, null, event, defaultHandler);
@@ -45,22 +49,30 @@ public class KeyEventHandler {
 		}
 
 		// --- PRODUCTION FOREGROUND CAR-ACTIVITY INTERCEPTION HOOK ---
-		// If the event originates from a background MediaSession (steering wheel controls) and an 
-		// active MainCarActivity instance is visible in the foreground, give the car UI first priority 
-		// to consume the event (e.g., processing smart-scrolling web players or lists).
 		if (activity == null) {
 			try {
-				Class<?> carActivityClass = Class.forName("my.app.permata.auto.MainCarActivity");
-				java.lang.reflect.Method shareMethod = carActivityClass.getMethod("shareKeyEventToCarActivity", KeyEvent.class);
-				Boolean intercepted = (Boolean) shareMethod.invoke(null, event);
-				
-				if (intercepted != null && intercepted) {
-					worker = null; // Purge any multi-click tracking workers
-					Log.i("KeyEventHandler", "Media key successfully consumed by foreground Car UI surface.");
-					return true; // Key event completely consumed; halt normal track skipping actions
+				// Perform the expensive reflection scan exactly once per application lifecycle
+				if (!hasCheckedCarActivity) {
+					try {
+						Class<?> carActivityClass = Class.forName("my.app.permata.auto.MainCarActivity");
+						cachedShareMethod = carActivityClass.getMethod("shareKeyEventToCarActivity", KeyEvent.class);
+					} catch (ClassNotFoundException ignored) {
+						// Safe decoupling: Class not bundled in this build flavor
+					} finally {
+						hasCheckedCarActivity = true;
+					}
 				}
-			} catch (ClassNotFoundException ignored) {
-				// Safe decoupling: Class not bundled in this build flavor (e.g., standalone mobile target)
+
+				// Execute if the method was successfully cached
+				if (cachedShareMethod != null) {
+					Boolean intercepted = (Boolean) cachedShareMethod.invoke(null, event);
+					
+					if (intercepted != null && intercepted) {
+						worker = null; // Purge any multi-click tracking workers
+						Log.i("KeyEventHandler", "Media key successfully consumed by foreground Car UI surface.");
+						return true; // Key event completely consumed; halt normal track skipping actions
+					}
+				}
 			} catch (Exception e) {
 				Log.e("KeyEventHandler", "Error executing dynamic bridge check against MainCarActivity runtime context", e);
 			}
