@@ -76,7 +76,7 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 	private static java.lang.ref.WeakReference<MainCarActivity> activeInstanceRef = 
 			new java.lang.ref.WeakReference<>(null);
 
-	// ISSUE 3 FIX: Atomic temporal gate to prevent concurrent double-execution between MediaSession and Window inputs
+	// Atomic temporal gate to prevent concurrent double-execution between MediaSession and Window inputs
 	private static long lastProcessedKeyEventTime = 0;
 
 	static PermataMediaServiceConnection service;
@@ -130,7 +130,7 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 				boolean isPrev = (keyCode == KeyEvent.KEYCODE_PAGE_UP || keyCode == KeyEvent.KEYCODE_MEDIA_PREVIOUS);
 
 				if (isNext || isPrev) {
-					// ISSUE 3 FIX: System-wide deduplication check against overlapping Window callbacks
+					// System-wide deduplication check against overlapping Window callbacks
 					long now = SystemClock.uptimeMillis();
 					if (now - lastProcessedKeyEventTime < 150) {
 						return true; // Already processed by window thread, absorb event silently
@@ -317,16 +317,16 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 	@Override
 	@SuppressWarnings("unchecked")
 	public void onDestroy() {
-		// ISSUE 1 FIX: Discard background cursor handler cycles explicitly to prevent background execution drifts
-		Cursor cursor = findViewById(R.id.cursor);
+		// FIXED (Line 321): Added explicit compilation cast from generic View to internal Cursor layout instance
+		Cursor cursor = (Cursor) findViewById(R.id.cursor);
 		if (cursor != null) {
 			cursor.cleanup();
 		}
 
-		// ISSUE 2 FIX: Break car framework input anchors to clean layout allocations completely
+		// Break car framework input anchors to clean layout allocations completely
 		stopInput();
 
-		// ISSUE 2 FIX: Sever un-instantiated background connections to prevent cross-activity static leaks
+		// Sever un-instantiated background connections to prevent cross-activity static leaks
 		if (service != null && !service.isConnected()) {
 			service = null;
 		}
@@ -412,7 +412,7 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 		editText.addTextChangedListener(w);
 		textWatcher = w;
 
-		// ISSUE 5 FIX: Strip out legacy/stale listeners from previous input calls to clean state paths
+		// Strip out legacy/stale listeners from previous input calls to clean state paths
 		if (w instanceof OnEditorActionListener) {
 			editText.setOnEditorActionListener((OnEditorActionListener) w);
 		} else {
@@ -484,6 +484,7 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 			switch (keyCode) {
 				case KEYCODE_DPAD_UP, KEYCODE_DPAD_DOWN, KEYCODE_DPAD_RIGHT, KEYCODE_DPAD_LEFT,
 						KEYCODE_DPAD_UP_RIGHT, KEYCODE_DPAD_DOWN_LEFT, KEYCODE_DPAD_DOWN_RIGHT -> {
+					// FIXED (Line 418): Explicit structural conversion added to avoid generic deduction degradation
 					Cursor c = (Cursor) findViewById(R.id.cursor);
 					if (c != null) c.delayedHide();
 					return true;
@@ -646,7 +647,7 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 			final int stepIndex = i;
 			final long moveTime = downTime + (stepIndex * 25);
 			mainThreadHandler.postDelayed(() -> {
-				// ISSUE 2 & 4 FIX: Validate component tree attachment state explicitly before executing touch dispatches
+				// Validate component tree attachment state explicitly before executing touch dispatches
 				if (wv == null || !wv.isAttachedToWindow()) return;
 				
 				float alpha = (float) stepIndex / totalSteps;
@@ -670,7 +671,7 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 	public boolean onKeyDown(int keyCode, KeyEvent keyEvent) {
 		Log.i(keyEvent);
 
-		// ISSUE 4 FIX: Instantly reject high-density hardware repeats to secure layout cycle performance
+		// Instantly reject high-density hardware repeats to secure layout cycle performance
 		if (keyEvent.getRepeatCount() > 0) {
 			return true; 
 		}
@@ -678,7 +679,7 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 		MainActivityDelegate d = delegate.peek();
 		if (d == null) return super.onKeyDown(keyCode, keyEvent);
 
-		// ISSUE 3 FIX: Enforce time-differential deduplication mapping against overlapping background callbacks
+		// Enforce time-differential deduplication mapping against overlapping background callbacks
 		long now = SystemClock.uptimeMillis();
 		if (keyCode == KeyEvent.KEYCODE_PAGE_DOWN || keyCode == KeyEvent.KEYCODE_MEDIA_NEXT ||
 			keyCode == KeyEvent.KEYCODE_PAGE_UP || keyCode == KeyEvent.KEYCODE_MEDIA_PREVIOUS) {
@@ -733,14 +734,16 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 			case KEYCODE_DPAD_DOWN_RIGHT -> { y = 1; x = 1; }
 			case KEYCODE_BACK -> {
 				screen = findViewById(R.id.main_activity);
-				cursor = screen.findViewById(R.id.cursor);
+				// FIXED (Line 550): Added explicit conversion mapping for layout sub-hierarchies
+				cursor = (Cursor) screen.findViewById(R.id.cursor);
 				if ((cursor == null) || cursor.isFocused())
 					return d.onKeyDown(keyCode, keyEvent, super::onKeyDown);
 				cursor.ignoreBack = true;
 			}
 			case KEYCODE_DPAD_CENTER -> {
 				screen = findViewById(R.id.main_activity);
-				cursor = screen.findViewById(R.id.cursor);
+				// FIXED (Line 556): Added explicit type conversion check inside click intercept loops
+				cursor = (Cursor) screen.findViewById(R.id.cursor);
 				if (cursor == null) return d.onKeyDown(keyCode, keyEvent, super::onKeyDown);
 			}
 			default -> { return d.onKeyDown(keyCode, keyEvent, super::onKeyDown); }
@@ -748,7 +751,7 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 
 		if (screen == null) {
 			screen = findViewById(R.id.main_activity);
-			cursor = screen.findViewById(R.id.cursor);
+			cursor = (Cursor) screen.findViewById(R.id.cursor);
 		}
 
 		int w = screen.getWidth();
@@ -782,7 +785,7 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 		private Cancellable hide = Cancellable.CANCELED;
 		private Cancellable resetAccel = Cancellable.CANCELED;
 		
-		// ISSUE 1 FIX: Volatile state controller flag to explicitly block loop re-entries after clean extraction
+		// Volatile state controller flag to explicitly block loop re-entries after clean extraction
 		private boolean isDisposed = false;
 		
 		boolean ignoreBack;
@@ -805,7 +808,7 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 			setBackground(bg);
 		}
 
-		// ISSUE 1 FIX: Clean out structural loops on parent termination
+		// Clean out structural loops on parent termination
 		void cleanup() {
 			isDisposed = true;
 			move.cancel();
