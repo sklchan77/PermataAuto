@@ -68,7 +68,10 @@ import my.app.utils.ui.menu.OverlayMenu;
  */
 public class MainCarActivity extends CarActivity implements PermataActivity {
 
-	private static final int SMART_SCROLL_TIMESTAMP_ID = View.generateViewId();
+	// FIXED: Replaced View.setTag() integer ID configuration with a thread-safe WeakHashMap tracking index
+	// to completely mitigate the platform IllegalArgumentException while staying 100% immune to leaks.
+	private static final java.util.Map<WebView, Long> scrollTimestamps = 
+			java.util.Collections.synchronizedMap(new java.util.WeakHashMap<>());
 
 	// Memory-isolated weak reference tracking to completely eliminate context leaks during sudden wireless drops.
 	private static java.lang.ref.WeakReference<MainCarActivity> activeInstanceRef = 
@@ -452,9 +455,12 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 		if (wv == null) return false;
 
 		long now = android.os.SystemClock.uptimeMillis();
-		Object lastClickTag = wv.getTag(SMART_SCROLL_TIMESTAMP_ID);
-		long lastClickTime = (lastClickTag instanceof Long) ? (Long) lastClickTag : 0;
-		wv.setTag(SMART_SCROLL_TIMESTAMP_ID, now); 
+		
+		// FIXED: Rely entirely on the memory-safe WeakHashMap tracking index. 
+		// Avoids View.setTag(int, Object) IllegalArgumentException completely.
+		Long lastClickTimeObj = scrollTimestamps.get(wv);
+		long lastClickTime = (lastClickTimeObj != null) ? lastClickTimeObj : 0;
+		scrollTimestamps.put(wv, now); 
 		
 		boolean isSpamming = (now - lastClickTime < 250);
 
