@@ -66,7 +66,6 @@ import my.app.utils.ui.menu.OverlayMenu;
 /**
  * Enterprise Core Vehicle Launcher Gateway Activity.
  * Optimizes native CAN hardware event sync vectors and Chromium system pipelines over wireless projection layers.
- * * @author Author Configuration Refactored Core
  */
 public class MainCarActivity extends CarActivity implements PermataActivity {
 
