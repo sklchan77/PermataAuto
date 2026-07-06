@@ -317,16 +317,13 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 	@Override
 	@SuppressWarnings("unchecked")
 	public void onDestroy() {
-		// FIXED (Line 321): Added explicit compilation cast from generic View to internal Cursor layout instance
 		Cursor cursor = (Cursor) findViewById(R.id.cursor);
 		if (cursor != null) {
 			cursor.cleanup();
 		}
 
-		// Break car framework input anchors to clean layout allocations completely
 		stopInput();
 
-		// Sever un-instantiated background connections to prevent cross-activity static leaks
 		if (service != null && !service.isConnected()) {
 			service = null;
 		}
@@ -412,7 +409,6 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 		editText.addTextChangedListener(w);
 		textWatcher = w;
 
-		// Strip out legacy/stale listeners from previous input calls to clean state paths
 		if (w instanceof OnEditorActionListener) {
 			editText.setOnEditorActionListener((OnEditorActionListener) w);
 		} else {
@@ -484,7 +480,6 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 			switch (keyCode) {
 				case KEYCODE_DPAD_UP, KEYCODE_DPAD_DOWN, KEYCODE_DPAD_RIGHT, KEYCODE_DPAD_LEFT,
 						KEYCODE_DPAD_UP_RIGHT, KEYCODE_DPAD_DOWN_LEFT, KEYCODE_DPAD_DOWN_RIGHT -> {
-					// FIXED (Line 418): Explicit structural conversion added to avoid generic deduction degradation
 					Cursor c = (Cursor) findViewById(R.id.cursor);
 					if (c != null) c.delayedHide();
 					return true;
@@ -521,7 +516,15 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 		return false;
 	}
 
+	/**
+	 * IMPROVEMENT: Added strict Visibility & Dimension constraints to prevent
+	 * hidden/background view hierarchies from absorbing layout commands prematurely.
+	 */
 	private boolean performViewScroll(boolean up, View v) {
+		if (v == null || v.getVisibility() != View.VISIBLE || !v.isShown() || v.getWidth() <= 0 || v.getHeight() <= 0) {
+			return false;
+		}
+
 		if (v instanceof RecyclerView rv) {
 			LinearLayoutManager lm = (LinearLayoutManager) rv.getLayoutManager();
 			if (lm == null) return false;
@@ -542,8 +545,17 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 		return false;
 	}
 
-	private static boolean smartScrollWebView(WebView wv, boolean up) {
-		if (wv == null) return false;
+	/**
+	 * UNIVERSAL SCROLLING ENGINE: Combines a synchronized direct Chromium viewport 
+	 * instruction with an ultra-fast, zero-slop 20ms synthetic micro-touch sequence.
+	 */
+	private static boolean smartScrollWebView(final WebView wv, boolean up) {
+		if (wv == null || !wv.isAttachedToWindow() || wv.getWidth() <= 0 || wv.getHeight() <= 0) {
+			return false;
+		}
+
+		// Ensure the hardware focus layout maps to this view tree container completely
+		wv.requestFocus();
 
 		long now = android.os.SystemClock.uptimeMillis();
 		Long lastClickTimeObj = scrollTimestamps.get(wv);
@@ -551,117 +563,51 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 		scrollTimestamps.put(wv, now); 
 		
 		boolean isSpamming = (now - lastClickTime < 250);
+		int pixelStep = (int) (wv.getHeight() * 0.70f); // 70% viewport jump
+		if (up) pixelStep = -pixelStep;
 
+		// Channel 1: Programmatic Chromium Viewport Displacement
 		if (wv.getSettings().getJavaScriptEnabled()) {
-			String jsScript = "(function(isUp, isSpam) {" +
-					"  var currentTime = Date.now();" +
-					"  var target = window.__smartScrollTarget;" +
-					"  " +
-					"  if (!target || !document.contains(target) || target.clientHeight === 0 || window.getComputedStyle(target).display === 'none' || (currentTime - (window.__lastScrollScan || 0) > 3000)) {" +
-					"    var doc = document.documentElement, body = document.body;" +
-					"    if (isUp) {" +
-					"      if (doc.scrollTop > 5 || body.scrollTop > 5 || window.pageYOffset > 5) target = window;" +
-					"    } else {" +
-					"      var total = Math.max(doc.scrollHeight, body.scrollHeight, doc.offsetHeight, body.offsetHeight);" +
-					"      var current = window.pageYOffset || doc.scrollTop || body.scrollTop;" +
-					"      if (total - current > window.innerHeight + 5) target = window;" +
-					"    }" +
-					"    if (!target || target === window) {" +
-					"      var nodes = document.querySelectorAll('*'), bestNode = null, maxArea = 0;" +
-					"      for (var i = 0; i < nodes.length; i++) {" +
-					"        var el = nodes[i], s = window.getComputedStyle(el);" +
-					"        var overflow = s.overflowY || s.overflow || '';" +
-					"        if (overflow.indexOf('auto') !== -1 || overflow.indexOf('scroll') !== -1 || overflow.indexOf('overlay') !== -1 || el.scrollHeight > el.clientHeight) {" +
-					"          var canScroll = isUp ? el.scrollTop > 5 : (el.scrollHeight - el.scrollTop > el.clientHeight + 5);" +
-					"          if (canScroll) {" +
-					"            var r = el.getBoundingClientRect();" +
-					"            var area = r.width * r.height;" +
-					"            if (area > maxArea && r.width > 40 && r.height > 40) { maxArea = area; bestNode = el; }" +
-					"          }" +
-					"        }" +
-					"      }" +
-					"      target = bestNode || window;" +
-					"    }" +
-					"    window.__smartScrollTarget = target;" +
-					"    window.__lastScrollScan = currentTime;" +
-					"  }" +
-					"  " +
-					"  if (!target) return 0;" +
-					"  var step = window.innerHeight * 0.75;" +
-					"  if (isUp) step = -step;" +
-					"  " +
+			String jsScript = "(function(step, isSpam) {" +
 					"  var behavior = isSpam ? 'auto' : 'smooth';" +
 					"  try {" +
-					"    target.scrollBy({ top: step, behavior: behavior });" +
-					"  } catch(e) {" +
-					"    if (target === window) window.scrollBy(0, step);" +
-					"    else target.scrollTop += step;" +
-					"  }" +
-					"  try {" +
-					"    var wheelEvt = new WheelEvent('wheel', { deltaY: step, bubbles: true });" +
-					"    (target === window ? document.body : target).dispatchEvent(wheelEvt);" +
-					"  } catch(err) {}" +
+					"    window.scrollBy({ top: step, behavior: behavior });" +
+					"  } catch(e) { window.scrollBy(0, step); }" +
+					"  var rootNode = document.scrollingElement || document.documentElement || document.body;" +
+					"  if (rootNode) { rootNode.scrollTop += step; }" +
 					"  return 1;" +
-					"})(" + up + ", " + isSpamming + ");";
-
-			wv.evaluateJavascript(jsScript, result -> {
-				if (result == null || "0".equals(result)) {
-					wv.post(() -> executeNativeScrollFallback(wv, up, isSpamming));
-				}
-			});
-			return true; 
-		} else {
-			return executeNativeScrollFallback(wv, up, isSpamming);
+					"})(" + pixelStep + ", " + isSpamming + ");";
+			wv.evaluateJavascript(jsScript, null);
 		}
-	}
 
-	/**
-	 * Distributes touch event generation asynchronously using thread messaging to prevent
-	 * high-density hardware scrolling commands from locking up low-spec car modules.
-	 */
-	private static boolean executeNativeScrollFallback(final WebView wv, boolean up, boolean isSpamming) {
-		if (wv == null) return false;
-		boolean systemScrolled = up ? wv.pageUp(false) : wv.pageDown(false);
-		if (systemScrolled) return true;
-
-		int key = up ? KeyEvent.KEYCODE_PAGE_UP : KeyEvent.KEYCODE_PAGE_DOWN;
-		wv.dispatchKeyEvent(new KeyEvent(KeyEvent.ACTION_DOWN, key));
-		wv.dispatchKeyEvent(new KeyEvent(KeyEvent.ACTION_UP, key));
-
-		if (isSpamming) return true;
-
-		int touchSlop = android.view.ViewConfiguration.get(wv.getContext()).getScaledTouchSlop();
+		// Channel 2: Zero-Slop Multi-Touch Injection (Completed within 20ms to bypass tap windows)
 		final long downTime = android.os.SystemClock.uptimeMillis();
 		final float midX = wv.getWidth() / 2f;
+		final float centerY = wv.getHeight() / 2f;
 		
-		float dragDistance = Math.max(wv.getHeight() * 0.5f, touchSlop * 4f);
-		float centerY = wv.getHeight() / 2f;
-		
-		final float yStart = up ? (centerY - dragDistance / 2f) : (centerY + dragDistance / 2f);
-		final float yEnd = up ? (centerY + dragDistance / 2f) : (centerY - dragDistance / 2f);
+		float span = wv.getHeight() * 0.45f; 
+		final float yStart = up ? (centerY - span / 2f) : (centerY + span / 2f);
+		final float yEnd = up ? (centerY + span / 2f) : (centerY - span / 2f);
 
-		wv.dispatchTouchEvent(MotionEvent.obtain(downTime, downTime, MotionEvent.ACTION_DOWN, midX, yStart, 0));
-		
-		int totalSteps = 5;
-		for (int i = 1; i <= totalSteps; i++) {
-			final int stepIndex = i;
-			final long moveTime = downTime + (stepIndex * 25);
-			mainThreadHandler.postDelayed(() -> {
-				// Validate component tree attachment state explicitly before executing touch dispatches
-				if (wv == null || !wv.isAttachedToWindow()) return;
-				
-				float alpha = (float) stepIndex / totalSteps;
-				float currentY = yStart + alpha * (yEnd - yStart);
-				MotionEvent moveEvent = MotionEvent.obtain(downTime, moveTime, MotionEvent.ACTION_MOVE, midX, currentY, 0);
-				wv.dispatchTouchEvent(moveEvent);
-				moveEvent.recycle();
+		try {
+			MotionEvent eventDown = MotionEvent.obtain(downTime, downTime, MotionEvent.ACTION_DOWN, midX, yStart, 0);
+			wv.dispatchTouchEvent(eventDown);
+			eventDown.recycle();
 
-				if (stepIndex == totalSteps) {
-					MotionEvent upEvent = MotionEvent.obtain(downTime, moveTime + 20, MotionEvent.ACTION_UP, midX, yEnd, 0);
-					wv.dispatchTouchEvent(upEvent);
-					upEvent.recycle();
-				}
-			}, stepIndex * 15);
+			long moveTime = downTime + 10;
+			MotionEvent eventMove = MotionEvent.obtain(downTime, moveTime, MotionEvent.ACTION_MOVE, midX, yEnd, 0);
+			wv.dispatchTouchEvent(eventMove);
+			eventMove.recycle();
+
+			long upTime = downTime + 20;
+			MotionEvent eventUp = MotionEvent.obtain(downTime, upTime, MotionEvent.ACTION_UP, midX, yEnd, 0);
+			wv.dispatchTouchEvent(eventUp);
+			eventUp.recycle();
+		} catch (Exception e) {
+			// Channel 3 Fallback: Direct Key Frame Injection
+			int backupKey = up ? KeyEvent.KEYCODE_PAGE_UP : KeyEvent.KEYCODE_PAGE_DOWN;
+			wv.dispatchKeyEvent(new KeyEvent(KeyEvent.ACTION_DOWN, backupKey));
+			wv.dispatchKeyEvent(new KeyEvent(KeyEvent.ACTION_UP, backupKey));
 		}
 
 		return true;
@@ -671,7 +617,6 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 	public boolean onKeyDown(int keyCode, KeyEvent keyEvent) {
 		Log.i(keyEvent);
 
-		// Instantly reject high-density hardware repeats to secure layout cycle performance
 		if (keyEvent.getRepeatCount() > 0) {
 			return true; 
 		}
@@ -679,7 +624,6 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 		MainActivityDelegate d = delegate.peek();
 		if (d == null) return super.onKeyDown(keyCode, keyEvent);
 
-		// Enforce time-differential deduplication mapping against overlapping background callbacks
 		long now = SystemClock.uptimeMillis();
 		if (keyCode == KeyEvent.KEYCODE_PAGE_DOWN || keyCode == KeyEvent.KEYCODE_MEDIA_NEXT ||
 			keyCode == KeyEvent.KEYCODE_PAGE_UP || keyCode == KeyEvent.KEYCODE_MEDIA_PREVIOUS) {
@@ -734,7 +678,6 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 			case KEYCODE_DPAD_DOWN_RIGHT -> { y = 1; x = 1; }
 			case KEYCODE_BACK -> {
 				screen = findViewById(R.id.main_activity);
-				// FIXED (Line 550): Added explicit conversion mapping for layout sub-hierarchies
 				cursor = (Cursor) screen.findViewById(R.id.cursor);
 				if ((cursor == null) || cursor.isFocused())
 					return d.onKeyDown(keyCode, keyEvent, super::onKeyDown);
@@ -742,7 +685,6 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 			}
 			case KEYCODE_DPAD_CENTER -> {
 				screen = findViewById(R.id.main_activity);
-				// FIXED (Line 556): Added explicit type conversion check inside click intercept loops
 				cursor = (Cursor) screen.findViewById(R.id.cursor);
 				if (cursor == null) return d.onKeyDown(keyCode, keyEvent, super::onKeyDown);
 			}
@@ -785,7 +727,6 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 		private Cancellable hide = Cancellable.CANCELED;
 		private Cancellable resetAccel = Cancellable.CANCELED;
 		
-		// Volatile state controller flag to explicitly block loop re-entries after clean extraction
 		private boolean isDisposed = false;
 		
 		boolean ignoreBack;
@@ -808,7 +749,6 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 			setBackground(bg);
 		}
 
-		// Clean out structural loops on parent termination
 		void cleanup() {
 			isDisposed = true;
 			move.cancel();
@@ -841,7 +781,7 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 		private boolean click(ViewGroup parent, float cursorX, float cursorY) {
 			for (int i = 0, n = parent.getChildCount(); i < n; i++) {
 				View v = parent.getChildAt(i);
-				if (v.getVisibility() != VISIBLE) continue;
+				if (v == null || v.getVisibility() != VISIBLE) continue;
 				float x = cursorX - v.getX();
 				if ((x > 0) && (x < v.getWidth())) {
 					float y = cursorY - v.getY();
@@ -898,7 +838,7 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 		private void longClick(ViewGroup parent, float cursorX, float cursorY) {
 			for (int i = 0, n = parent.getChildCount(); i < n; i++) {
 				View v = parent.getChildAt(i);
-				if (v.getVisibility() != VISIBLE) continue;
+				if (v == null || v.getVisibility() != VISIBLE) continue;
 				float x = cursorX - v.getX();
 				if ((x > 0) && (x < v.getWidth())) {
 					float y = cursorY - v.getY();
@@ -973,29 +913,49 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 			return false;
 		}
 
+		/**
+		 * IMPROVEMENT: Discards global blind search. Triggers coordinate testing
+		 * to verify exactly which scrollable window pane the user is pointing to.
+		 */
 		private void scroll(boolean up) {
 			ActivityFragment f = activity.getActiveFragment();
 			if (f == null) return;
 			View root = f.getView();
-			if (root instanceof ViewGroup vg) scroll(up, vg);
+			if (root instanceof ViewGroup vg) {
+				scrollAtCoordinates(up, vg, getX(), getY());
+			}
 		}
 
-		private boolean scroll(boolean up, View v) {
-			if (v instanceof RecyclerView rv) {
-				LinearLayoutManager lm = (LinearLayoutManager) rv.getLayoutManager();
-				if (lm == null) return false;
-				int pos = lm.findFirstVisibleItemPosition();
-				if (up) {
-					if (pos > 0) lm.scrollToPositionWithOffset(pos - 1, 0);
-				} else {
-					if (pos < lm.getItemCount() - 1) lm.scrollToPositionWithOffset(pos + 1, 0);
+		/**
+		 * ROBUST DETECTION IMPROVEMENT: Recursively maps coordinates down to child view boundaries
+		 * to dynamically find visible layouts intersecting with the current virtual cursor footprint.
+		 */
+		private boolean scrollAtCoordinates(boolean up, ViewGroup parent, float cursorX, float cursorY) {
+			for (int i = 0, n = parent.getChildCount(); i < n; i++) {
+				View v = parent.getChildAt(i);
+				if (v == null || v.getVisibility() != View.VISIBLE || !v.isShown() || v.getWidth() <= 0 || v.getHeight() <= 0) {
+					continue;
 				}
-				return true;
-			} else if (v instanceof WebView wv) {
-				return MainCarActivity.smartScrollWebView(wv, up);
-			} else if (v instanceof ViewGroup vg) {
-				for (int i = 0, n = vg.getChildCount(); i < n; i++) {
-					if (scroll(up, vg.getChildAt(i))) return true;
+
+				float relativeX = cursorX - v.getX();
+				float relativeY = cursorY - v.getY();
+
+				if ((relativeX >= 0 && relativeX < v.getWidth()) && (relativeY >= 0 && relativeY < v.getHeight())) {
+					if (v instanceof RecyclerView rv) {
+						LinearLayoutManager lm = (LinearLayoutManager) rv.getLayoutManager();
+						if (lm == null) return false;
+						int pos = lm.findFirstVisibleItemPosition();
+						if (up) {
+							if (pos > 0) lm.scrollToPositionWithOffset(pos - 1, 0);
+						} else {
+							if (pos < lm.getItemCount() - 1) lm.scrollToPositionWithOffset(pos + 1, 0);
+						}
+						return true;
+					} else if (v instanceof WebView wv) {
+						return MainCarActivity.smartScrollWebView(wv, up);
+					} else if (v instanceof ViewGroup vg) {
+						if (scrollAtCoordinates(up, vg, relativeX, relativeY)) return true;
+					}
 				}
 			}
 			return false;
