@@ -2,14 +2,14 @@ package my.app.permata.auto;
 
 import static android.view.KeyEvent.KEYCODE_BACK;
 import static android.view.KeyEvent.KEYCODE_DPAD_CENTER;
-import static android.view.KeyEvent.KEYCODE_DPAD_UP;
 import static android.view.KeyEvent.KEYCODE_DPAD_DOWN;
-import static android.view.KeyEvent.KEYCODE_DPAD_LEFT;
-import static android.view.KeyEvent.KEYCODE_DPAD_RIGHT;
-import static android.view.KeyEvent.KEYCODE_DPAD_UP_LEFT;
-import static android.view.KeyEvent.KEYCODE_DPAD_UP_RIGHT;
 import static android.view.KeyEvent.KEYCODE_DPAD_DOWN_LEFT;
 import static android.view.KeyEvent.KEYCODE_DPAD_DOWN_RIGHT;
+import static android.view.KeyEvent.KEYCODE_DPAD_LEFT;
+import static android.view.KeyEvent.KEYCODE_DPAD_RIGHT;
+import static android.view.KeyEvent.KEYCODE_DPAD_UP;
+import static android.view.KeyEvent.KEYCODE_DPAD_UP_LEFT;
+import static android.view.KeyEvent.KEYCODE_DPAD_UP_RIGHT;
 import static my.app.utils.async.Completed.completed;
 import static my.app.utils.async.Completed.failed;
 import static my.app.utils.ui.UiUtils.showAlert;
@@ -39,7 +39,6 @@ import android.widget.EditText;
 import android.widget.TextView.OnEditorActionListener;
 
 import androidx.annotation.NonNull;
-import androidx.annotation.Nullable;
 import androidx.appcompat.content.res.AppCompatResources;
 import androidx.appcompat.widget.AppCompatImageView;
 import androidx.constraintlayout.widget.ConstraintLayout;
@@ -69,9 +68,11 @@ import my.app.utils.ui.menu.OverlayMenu;
  */
 public class MainCarActivity extends CarActivity implements PermataActivity {
 
+	// Memory-safe, crash-free scroll timestamp map tracking.
 	private static final java.util.Map<WebView, Long> scrollTimestamps = 
 			java.util.Collections.synchronizedMap(new java.util.WeakHashMap<>());
 
+	// Decoupled WeakReference to cleanly isolate the projection context.
 	private static java.lang.ref.WeakReference<MainCarActivity> activeInstanceRef = 
 			new java.lang.ref.WeakReference<>(null);
 
@@ -84,31 +85,33 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 	private CarEditText editText;
 	private TextWatcher textWatcher;
 
+	// --- PRODUCTION STATE-AWARE AUDIO FOCUS CONFIGURATION ---
 	private Object nativeFocusRequest; 
 	private boolean hasActivityFocus = false;
 
 	private final AudioManager.OnAudioFocusChangeListener focusChangeListener = focusChange -> {
 		switch (focusChange) {
 			case AudioManager.AUDIOFOCUS_LOSS -> {
-				Log.w("MainCarActivity", "Permanent audio focus loss.");
+				Log.w("MainCarActivity", "Permanent audio focus loss. Suspending foreground web playback surfaces.");
 				hasActivityFocus = false;
 			}
 			case AudioManager.AUDIOFOCUS_LOSS_TRANSIENT, AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK -> {
-				Log.i("MainCarActivity", "Transient focus shift context.");
+				Log.i("MainCarActivity", "Transient context loss (e.g., car navigation voice chime event).");
 			}
 			case AudioManager.AUDIOFOCUS_GAIN -> {
-				Log.i("MainCarActivity", "Audio focus returned to UI layout.");
+				Log.i("MainCarActivity", "Audio focus successfully returned to active UI layout.");
 				hasActivityFocus = true;
 			}
 		}
 	};
 
+	// Pre-allocated main thread handler to avoid garbage collection memory stutters.
 	private static final android.os.Handler mainThreadHandler = 
 			new android.os.Handler(android.os.Looper.getMainLooper());
 
 	/**
-	 * Hardened Bridge routing media keys to scrolling actions.
-	 * Patched with a synchronous context guard to prevent swallowing player actions.
+	 * Hardened Bridge routing background steering controls to the foreground browser view.
+	 * Decoupled with synchronous layout screening to prevent media player key lockouts.
 	 */
 	public static boolean shareKeyEventToCarActivity(KeyEvent event) {
 		MainCarActivity activity = activeInstanceRef.get();
@@ -121,18 +124,22 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 				boolean isPrev = (keyCode == KeyEvent.KEYCODE_PAGE_UP || keyCode == KeyEvent.KEYCODE_MEDIA_PREVIOUS);
 
 				if (isNext || isPrev) {
-					// FIXED (Symptom 2 & 4): Synchronous fragment screening. If the user is on a media
-					// fragment layout, skip interception entirely so track/channel skipping works.
+					// FIXED (Symptom 2 & 4): Synchronous fragment guard. If the driver is actively inside
+					// an IPTV or media player fragment screen, skip interception entirely so the keys fall
+					// through to the players natively.
 					ActivityFragment activeFragment = d.getActiveFragment();
 					if (activeFragment != null) {
 						String fragName = activeFragment.getClass().getName().toLowerCase();
 						if (fragName.contains("iptv") || fragName.contains("player") || 
 								fragName.contains("video") || fragName.contains("youtube") || fragName.contains("media")) {
-							return false; // Yield execution to KeyEventHandler
+							return false; // Skip browser scroll intercept; bypass directly to normal player controls
 						}
 					}
 
+					// 1. Filter out hardware repeat counts to prevent run-away scrolling.
 					if (event.getAction() == KeyEvent.ACTION_DOWN && event.getRepeatCount() == 0) {
+						
+						// 2. Schedule programmatic scroll to execute on main UI thread loop
 						mainThreadHandler.post(() -> {
 							try {
 								MainCarActivity currentValidActivity = activeInstanceRef.get();
@@ -144,13 +151,16 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 							}
 						});
 					}
-					return true; // Intercept solely for standard web browser navigation surfaces
+					return true; // Key event completely consumed for web view scrolling
 				}
 			}
 		}
 		return false;
 	}
 
+	/**
+	 * Dynamic on-demand hardware audio focus capture routine.
+	 */
 	public boolean acquirePlaybackFocus(int focusDurationHint) {
 		try {
 			AudioManager audioManager = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
@@ -175,7 +185,7 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 			}
 
 			if (hasActivityFocus) {
-				Log.i("MainCarActivity", "On-demand Audio Focus verified.");
+				Log.i("MainCarActivity", "On-demand Audio Focus successfully verified and locked down.");
 			}
 			return hasActivityFocus;
 		} catch (Exception e) {
@@ -184,6 +194,9 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 		}
 	}
 
+	/**
+	 * Explicit cleanup routine removing focus handlers.
+	 */
 	private void releasePlaybackFocus() {
 		try {
 			AudioManager audioManager = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
@@ -199,7 +212,7 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 			}
 			hasActivityFocus = false;
 		} catch (Exception e) {
-			Log.e("MainCarActivity", "Failed clean release execution against AudioService", e);
+			Log.e("MainCarActivity", "Failed clean release execution against System AudioService", e);
 		}
 	}
 
@@ -247,7 +260,7 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 		delegate = completed(d);
 		d.onActivityCreate(state);
 
-		// FIXED (Symptom 1): Proactively bind steering wheel token instantly on connection initialization 
+		// FIXED (Symptom 1): Claim transient focus on initialization to bind IHU steering keys instantly
 		mainThreadHandler.postDelayed(() -> {
 			acquirePlaybackFocus(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK);
 		}, 800);
@@ -258,7 +271,7 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 	@Override
 	public void onResume() {
 		super.onResume();
-		// FIXED (Symptom 5): Re-assert the automotive focus anchor to reclaim steering controls from the IHU Radio
+		// FIXED (Symptom 5): Re-assert the focus claim on resume to keep key inputs locked on web browser screens
 		acquirePlaybackFocus(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK);
 		getActivityDelegate().onSuccess(MainActivityDelegate::onActivityResume);
 	}
@@ -269,7 +282,9 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 		if (activeInstanceRef.get() == this) {
 			activeInstanceRef.clear();
 		}
+		
 		releasePlaybackFocus(); 
+
 		super.onDestroy();
 		getActivityDelegate().onSuccess(MainActivityDelegate::onActivityDestroy)
 				.thenRun(() -> ActivityDelegate.setContextToDelegate(null));
@@ -278,6 +293,7 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 
 	@Override
 	public void onConfigurationChanged(Configuration configuration) {
+		Log.i("Configuration changed: ", configuration);
 		super.onConfigurationChanged(configuration);
 	}
 
@@ -303,9 +319,11 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 	}
 
 	@Override
-	public void setRequestedOrientation(int requestedOrientation) {}
+	public void setRequestedOrientation(int requestedOrientation) {
+	}
 
-	public void recreate() {}
+	public void recreate() {
+	}
 
 	public void finish() {
 		getActivityDelegate().onSuccess(MainActivityDelegate::onActivityFinish);
@@ -361,6 +379,7 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 			if (textWatcher != null) editText.removeTextChangedListener(textWatcher);
 			editText.setOnEditorActionListener(null);
 		}
+
 		a().stopInput();
 	}
 
@@ -386,6 +405,7 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 
 	@Override
 	public boolean onKeyUp(int keyCode, KeyEvent keyEvent) {
+		Log.i(keyEvent);
 		MainActivityDelegate d = delegate.peek();
 		if (d == null) return super.onKeyUp(keyCode, keyEvent);
 
@@ -410,6 +430,7 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 				}
 			}
 		}
+
 		return d.onKeyUp(keyCode, keyEvent, super::onKeyDown);
 	}
 
@@ -418,8 +439,7 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 		ActivityFragment f = d.getActiveFragment();
 		if (f == null) return false;
 
-		// FIXED (Symptom 2 & 4 Core): Double layout guard mapping. Stops standard UI 
-		// view iteration if user is actively interacting with an independent media player layout.
+		// FIXED (Symptom 2 & 4): Double-guard mapping. Stop scrolling iteration if the active screen is a media player.
 		String name = f.getClass().getName().toLowerCase();
 		if (name.contains("iptv") || name.contains("player") || name.contains("video") || name.contains("youtube") || name.contains("media")) {
 			return false; 
@@ -562,6 +582,7 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 
 	@Override
 	public boolean onKeyDown(int keyCode, KeyEvent keyEvent) {
+		Log.i(keyEvent);
 		MainActivityDelegate d = delegate.peek();
 		if (d == null) return super.onKeyDown(keyCode, keyEvent);
 
@@ -603,10 +624,22 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 			}
 			case KEYCODE_DPAD_LEFT -> x = -1;
 			case KEYCODE_DPAD_RIGHT -> x = 1;
-			case KEYCODE_DPAD_UP_LEFT -> { y = -1; x = -1; }
-			case KEYCODE_DPAD_UP_RIGHT -> { y = -1; x = 1; }
-			case KEYCODE_DPAD_DOWN_LEFT -> { y = 1; x = -1; }
-			case KEYCODE_DPAD_DOWN_RIGHT -> { y = 1; x = 1; }
+			case KEYCODE_DPAD_UP_LEFT -> {
+				y = -1;
+				x = -1;
+			}
+			case KEYCODE_DPAD_UP_RIGHT -> {
+				y = -1;
+				x = 1;
+			}
+			case KEYCODE_DPAD_DOWN_LEFT -> {
+				y = 1;
+				x = -1;
+			}
+			case KEYCODE_DPAD_DOWN_RIGHT -> {
+				y = 1;
+				x = 1;
+			}
 			case KEYCODE_BACK -> {
 				screen = findViewById(R.id.main_activity);
 				cursor = screen.findViewById(R.id.cursor);
@@ -619,7 +652,7 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 				cursor = screen.findViewById(R.id.cursor);
 				if (cursor == null) return d.onKeyDown(keyCode, keyEvent, super::onKeyDown);
 			}
-			default -> { return d.onKeyDown(keyCode, keyEvent, super::onKeyDown); }
+			default -> {return d.onKeyDown(keyCode, keyEvent, super::onKeyDown);}
 		}
 
 		if (screen == null) {
@@ -640,6 +673,7 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 			int cursorSize = (int) (Math.min(w, h) * 0.05f);
 			cursor.move(w, h, x, y, cursorSize / 3f, keyCode);
 		}
+
 		return true;
 	}
 
@@ -676,10 +710,14 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 			setBackground(bg);
 		}
 
-		boolean isVisible() { return getVisibility() == VISIBLE; }
+		boolean isVisible() {
+			return getVisibility() == VISIBLE;
+		}
 
 		@Override
-		public void onClick(View v) { click(); }
+		public void onClick(View v) {
+			click();
+		}
 
 		boolean click() {
 			delayedHide();
@@ -713,6 +751,7 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 							activity.post(this::requestFocus);
 							return true;
 						}
+
 						if ((v instanceof ViewGroup vg) && click(vg, x, y)) return true;
 						touch(v, x, y, false);
 						return true;
@@ -848,6 +887,8 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 			return false;
 		}
 
-		private ViewGroup screen() { return (ViewGroup) getParent(); }
+		private ViewGroup screen() {
+			return (ViewGroup) getParent();
+		}
 	}
 }
