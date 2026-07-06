@@ -129,63 +129,105 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 	 */
 	public static boolean shareKeyEventToCarActivity(KeyEvent event) {
 		MainCarActivity activity = activeInstanceRef.get();
-		
-		if (activity != null && !activity.isFinishing()) {
-			MainActivityDelegate d = activity.delegate.peek();
-			if (d != null) {
-				int keyCode = event.getKeyCode();
-				boolean isNext = (keyCode == KeyEvent.KEYCODE_PAGE_DOWN || keyCode == KeyEvent.KEYCODE_MEDIA_NEXT);
-				boolean isPrev = (keyCode == KeyEvent.KEYCODE_PAGE_UP || keyCode == KeyEvent.KEYCODE_MEDIA_PREVIOUS);
+		if (activity == null || activity.isFinishing()) return false;
 
-				if (isNext || isPrev) {
-					// System-wide deduplication check against overlapping Window callbacks
-					long now = SystemClock.uptimeMillis();
-					if (now - lastProcessedKeyEventTime < 150) {
-						return true; // Already processed by window thread, absorb event silently
-					}
+		MainActivityDelegate d = activity.delegate.peek();
+		if (d == null) return false;
 
-					// FRAGMENT GUARD: Inspect active fragment. If on a media screen, pass native controls.
-					ActivityFragment activeFragment = d.getActiveFragment();
-					if (activeFragment != null) {
-						String fragName = activeFragment.getClass().getName().toLowerCase();
-						if (fragName.contains("iptv") || fragName.contains("player") || 
-								fragName.contains("video") || fragName.contains("youtube") || fragName.contains("media")) {
-							return false; 
-						}
-					}
+		int keyCode = event.getKeyCode();
+		boolean isNext = (keyCode == KeyEvent.KEYCODE_PAGE_DOWN || keyCode == KeyEvent.KEYCODE_MEDIA_NEXT || keyCode == KeyEvent.KEYCODE_CHANNEL_UP);
+		boolean isPrev = (keyCode == KeyEvent.KEYCODE_PAGE_UP || keyCode == KeyEvent.KEYCODE_MEDIA_PREVIOUS || keyCode == KeyEvent.KEYCODE_CHANNEL_DOWN);
 
-					// Filter for initial press down and completely drop hardware repeat counts to prevent runaway scrolling.
+		if (isNext || isPrev) {
+			long now = SystemClock.uptimeMillis();
+			if (now - lastProcessedKeyEventTime < 150) {
+				return true; // Absorb event duplicate split-second spam bounce safely
+			}
+
+			ActivityFragment activeFragment = d.getActiveFragment();
+			if (activeFragment != null) {
+				String fragName = activeFragment.getClass().getName().toLowerCase();
+				
+				// CRITICAL FIX: NATIVE IPTV & LOCAL MEDIA PLAYER MULTI-DISPATCH ENGINE
+				if (fragName.contains("iptv") || fragName.contains("player") || 
+					fragName.contains("video") || fragName.contains("media")) {
+					
 					if (event.getAction() == KeyEvent.ACTION_DOWN && event.getRepeatCount() == 0) {
 						lastProcessedKeyEventTime = now;
-						
 						mainThreadHandler.post(() -> {
 							try {
-								MainCarActivity currentValidActivity = activeInstanceRef.get();
-								if (currentValidActivity != null && !currentValidActivity.isFinishing()) {
-									currentValidActivity.performFragmentScroll(!isNext, d);
+								MainCarActivity curr = activeInstanceRef.get();
+								if (curr != null && !curr.isFinishing()) {
+									// 1. Send straight into active focused elements inside window tree view layout
+									curr.getWindow().getDecorView().dispatchKeyEvent(event);
+
+									// 2. Wrap into an explicit matching background intent matching local service signatures
+									Intent mediaIntent = new Intent(Intent.ACTION_MEDIA_BUTTON);
+									mediaIntent.putExtra(Intent.EXTRA_KEY_EVENT, event);
+									mediaIntent.setPackage(curr.getPackageName());
+									curr.sendBroadcast(mediaIntent);
 								}
 							} catch (Exception e) {
-								Log.e("MainCarActivity", "UI Thread exception during programmatic scroll dispatch", e);
+								Log.e("MainCarActivity", "Error executing localized target player dispatch loop", e);
 							}
 						});
 					}
-					return true; 
+					return true; // Successfully consumed and locked out from escaping back to standard car audio systems
 				}
 			}
+
+			// Filter actions for standard browser views (e.g. YouTube Web layout, standard web pages)
+			if (event.getAction() == KeyEvent.ACTION_DOWN && event.getRepeatCount() == 0) {
+				lastProcessedKeyEventTime = now;
+				mainThreadHandler.post(() -> {
+					try {
+						MainCarActivity currentValidActivity = activeInstanceRef.get();
+						if (currentValidActivity != null && !currentValidActivity.isFinishing()) {
+							currentValidActivity.performFragmentScroll(!isNext, d);
+						}
+					} catch (Exception e) {
+						Log.e("MainCarActivity", "UI Thread exception during programmatic scroll dispatch", e);
+					}
+				});
+			}
+			return true; 
 		}
 		return false;
 	}
 
 	/**
 	 * Forcefully registers a Playing state with the car system and drops external background audio sources.
+	 * Re-engineered to properly handle Android Auto connection teardown and setup signals safely.
 	 */
 	private void initMediaSessionOnStartup() {
 		try {
+			// Wipe clean any leftover context configurations from previous dead connections
+			if (mediaSession != null) {
+				try {
+					mediaSession.setActive(false);
+					mediaSession.release();
+				} catch (Exception ignored) {}
+				mediaSession = null;
+			}
+
+			// Force immediate audio context acquisition to hijack priority control before car radio can lock it
 			acquirePlaybackFocus(AudioManager.AUDIOFOCUS_GAIN);
 
-			if (mediaSession == null) {
-				mediaSession = new android.media.session.MediaSession(this, "PermataAutoMediaSession");
-			}
+			mediaSession = new android.media.session.MediaSession(this, "PermataAutoMediaSession");
+			mediaSession.setCallback(new android.media.session.MediaSession.Callback() {
+				@Override
+				public boolean onMediaButtonEvent(@NonNull Intent mediaButtonIntent) {
+					if (Intent.ACTION_MEDIA_BUTTON.equals(mediaButtonIntent.getAction())) {
+						KeyEvent keyEvent = mediaButtonIntent.getParcelableExtra(Intent.EXTRA_KEY_EVENT);
+						if (keyEvent != null && keyEvent.getAction() == KeyEvent.ACTION_DOWN) {
+							if (shareKeyEventToCarActivity(keyEvent)) {
+								return true; // Absorb event from leaking back out to car radio console
+							}
+						}
+					}
+					return super.onMediaButtonEvent(mediaButtonIntent);
+				}
+			}, mainThreadHandler);
 
 			android.media.session.PlaybackState.Builder stateBuilder = new android.media.session.PlaybackState.Builder()
 					.setActions(android.media.session.PlaybackState.ACTION_PLAY | 
@@ -195,8 +237,10 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 					.setState(android.media.session.PlaybackState.STATE_PLAYING, 0, 1.0f);
 
 			mediaSession.setPlaybackState(stateBuilder.build());
+			mediaSession.setFlags(android.media.session.MediaSession.FLAG_HANDLES_MEDIA_BUTTONS | 
+								  android.media.session.MediaSession.FLAG_HANDLES_TRANSPORT_CONTROLS);
 			mediaSession.setActive(true);
-			Log.i("MainCarActivity", "MediaSession successfully set to STATE_PLAYING on startup initialization.");
+			Log.i("MainCarActivity", "MediaSession successfully constructed and activated with strict vehicle audio filters.");
 		} catch (Exception e) {
 			Log.e("MainCarActivity", "Encountered system exception while binding structural MediaSession hooks", e);
 		}
@@ -214,7 +258,7 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 				AudioFocusRequest.Builder builder = new AudioFocusRequest.Builder(focusDurationHint)
 						.setAudioAttributes(new AudioAttributes.Builder()
 								.setUsage(AudioAttributes.USAGE_MEDIA)
-								.setContentType(AudioAttributes.CONTENT_TYPE_MOVIE) 
+								.setContentType(AudioAttributes.CONTENT_TYPE_MUSIC) 
 								.build())
 						.setAcceptsDelayedFocusGain(true) 
 						.setOnAudioFocusChangeListener(focusChangeListener, mainThreadHandler);
@@ -348,8 +392,9 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 		delegate = completed(d);
 		d.onActivityCreate(state);
 
-		// Post via reference token to avoid memory leakage profiles
-		mainThreadHandler.postDelayed(initMediaSessionRunnable, 800);
+		// Post token immediately on setup execution queue
+		mainThreadHandler.removeCallbacks(initMediaSessionRunnable);
+		mainThreadHandler.postDelayed(initMediaSessionRunnable, 300);
 
 		return d; 
 	}
@@ -357,14 +402,11 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 	@Override
 	public void onResume() {
 		super.onResume();
-		try {
-			if (mediaSession != null) {
-				mediaSession.setActive(true);
-			}
-		} catch (Exception e) {
-			Log.e("MainCarActivity", "Failed to re-assert active MediaSession state on user return", e);
-		}
-		acquirePlaybackFocus(AudioManager.AUDIOFOCUS_GAIN);
+		// RECONNECTION RE-BIND SAFETIES: Force local token registration to adapt during hot plugs
+		activeInstanceRef = new java.lang.ref.WeakReference<>(this);
+		
+		// Tear down and rebuild the media routing layer to keep Android Auto from orphaning session triggers
+		initMediaSessionOnStartup();
 		resumeWebViewTraffic();
 		getActivityDelegate().onSuccess(MainActivityDelegate::onActivityResume);
 	}
@@ -378,7 +420,6 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 	@Override
 	@SuppressWarnings("unchecked")
 	public void onDestroy() {
-		// Cancel explicit pending startup commands immediately before destroying layout references
 		mainThreadHandler.removeCallbacks(initMediaSessionRunnable);
 
 		Cursor cursor = (Cursor) findViewById(R.id.cursor);
@@ -571,7 +612,7 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 		if (f == null) return false;
 
 		String name = f.getClass().getName().toLowerCase();
-		if (name.contains("iptv") || name.contains("player") || name.contains("video") || name.contains("youtube") || name.contains("media")) {
+		if (name.contains("iptv") || name.contains("player") || name.contains("video") || name.contains("media")) {
 			return false; 
 		}
 
@@ -580,10 +621,6 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 		return false;
 	}
 
-	/**
-	 * Added strict Visibility & Dimension constraints to prevent
-	 * hidden/background view hierarchies from absorbing layout commands prematurely.
-	 */
 	private boolean performViewScroll(boolean up, View v) {
 		if (v == null || v.getVisibility() != View.VISIBLE || !v.isShown() || v.getWidth() <= 0 || v.getHeight() <= 0) {
 			return false;
@@ -609,17 +646,11 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 		return false;
 	}
 
-	/**
-	 * UNIVERSAL PARALLEL SCROLLING ENGINE: Combines a synchronized direct Chromium viewport 
-	 * instruction with an ultra-fast, zero-slop 20ms synthetic micro-touch sequence.
-	 * Utilizes a 33% content width coordinate shift to completely bypass centered popup overlays.
-	 */
 	private static boolean smartScrollWebView(final WebView wv, boolean up) {
 		if (wv == null || !wv.isAttachedToWindow() || wv.getWidth() <= 0 || wv.getHeight() <= 0) {
 			return false;
 		}
 
-		// Ensure the hardware focus layout maps to this view tree container completely
 		wv.requestFocus();
 
 		long now = android.os.SystemClock.uptimeMillis();
@@ -628,10 +659,9 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 		scrollTimestamps.put(wv, now); 
 		
 		boolean isSpamming = (now - lastClickTime < 250);
-		int pixelStep = (int) (wv.getHeight() * 0.70f); // 70% viewport jump
+		int pixelStep = (int) (wv.getHeight() * 0.70f); 
 		if (up) pixelStep = -pixelStep;
 
-		// Channel 1: Programmatic Chromium Viewport Displacement + Cross-Origin Frame Security Handling
 		if (wv.getSettings().getJavaScriptEnabled()) {
 			String jsScript = "(function(step, isSpam) {" +
 					"  var behavior = isSpam ? 'auto' : 'smooth';" +
@@ -650,8 +680,6 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 			wv.evaluateJavascript(jsScript, null);
 		}
 
-		// Channel 2: Center-Trap Mitigation Zero-Slop Multi-Touch Injection (Completed within 20ms to bypass tap windows)
-		// Shifting away from the 50% absolute center trap and 90% scrollbar line to hit clean content surfaces
 		final float safeContentX = wv.getWidth() * 0.33f; 
 		final float centerY = wv.getHeight() / 2f;
 		
@@ -674,7 +702,6 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 			wv.dispatchTouchEvent(eventUp);
 			eventUp.recycle();
 		} catch (Exception e) {
-			// Channel 3 Fallback: Direct Key Frame Injection
 			int backupKey = up ? KeyEvent.KEYCODE_PAGE_UP : KeyEvent.KEYCODE_PAGE_DOWN;
 			wv.dispatchKeyEvent(new KeyEvent(KeyEvent.ACTION_DOWN, backupKey));
 			wv.dispatchKeyEvent(new KeyEvent(KeyEvent.ACTION_UP, backupKey));
@@ -696,18 +723,16 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 
 		long now = SystemClock.uptimeMillis();
 		if (keyCode == KeyEvent.KEYCODE_PAGE_DOWN || keyCode == KeyEvent.KEYCODE_MEDIA_NEXT ||
-			keyCode == KeyEvent.KEYCODE_PAGE_UP || keyCode == KeyEvent.KEYCODE_MEDIA_PREVIOUS) {
+			keyCode == KeyEvent.KEYCODE_PAGE_UP || keyCode == KeyEvent.KEYCODE_MEDIA_PREVIOUS ||
+			keyCode == KeyEvent.KEYCODE_CHANNEL_UP || keyCode == KeyEvent.KEYCODE_CHANNEL_DOWN) {
 			
 			if (now - lastProcessedKeyEventTime < 150) {
 				return true; 
 			}
 			lastProcessedKeyEventTime = now;
 			
-			if (keyCode == KeyEvent.KEYCODE_PAGE_DOWN || keyCode == KeyEvent.KEYCODE_MEDIA_NEXT) {
-				if (performFragmentScroll(false, d)) return true;
-			} else {
-				if (performFragmentScroll(true, d)) return true;
-			}
+			boolean downDirection = (keyCode == KeyEvent.KEYCODE_PAGE_DOWN || keyCode == KeyEvent.KEYCODE_MEDIA_NEXT || keyCode == KeyEvent.KEYCODE_CHANNEL_UP);
+			if (performFragmentScroll(!downDirection, d)) return true;
 		}
 
 		if (!d.getPrefs().useDpadCursor(d)) return d.onKeyDown(keyCode, keyEvent, super::onKeyDown);
@@ -985,10 +1010,6 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 			return false;
 		}
 
-		/**
-		 * Discards global blind search. Triggers coordinate testing
-		 * to verify exactly which scrollable window pane the user is pointing to.
-		 */
 		private void scroll(boolean up) {
 			ActivityFragment f = activity.getActiveFragment();
 			if (f == null) return;
@@ -998,10 +1019,6 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 			}
 		}
 
-		/**
-		 * ROBUST COORDINATE GEOMETRIC DETECTION DETECTOR: Recursively maps coordinates down to child boundaries
-		 * to dynamically locate visible layouts intersecting with the current virtual cursor footprint.
-		 */
 		private boolean scrollAtCoordinates(boolean up, ViewGroup parent, float cursorX, float cursorY) {
 			for (int i = 0, n = parent.getChildCount(); i < n; i++) {
 				View v = parent.getChildAt(i);
