@@ -10,6 +10,7 @@ import static android.view.KeyEvent.KEYCODE_DPAD_RIGHT;
 import static android.view.KeyEvent.KEYCODE_DPAD_UP;
 import static android.view.KeyEvent.KEYCODE_DPAD_UP_LEFT;
 import static android.view.KeyEvent.KEYCODE_DPAD_UP_RIGHT;
+import static my.app.permata.ui.activity.PermataActivity.NO_DELEGATE;
 import static my.app.utils.async.Completed.completed;
 import static my.app.utils.async.Completed.failed;
 import static my.app.utils.ui.UiUtils.showAlert;
@@ -22,9 +23,6 @@ import android.graphics.PorterDuff;
 import android.graphics.drawable.ColorDrawable;
 import android.graphics.drawable.Drawable;
 import android.graphics.drawable.StateListDrawable;
-import android.media.AudioAttributes;
-import android.media.AudioFocusRequest;
-import android.media.AudioManager;
 import android.os.Bundle;
 import android.os.OperationCanceledException;
 import android.os.SystemClock;
@@ -39,6 +37,9 @@ import android.widget.EditText;
 import android.widget.TextView.OnEditorActionListener;
 
 import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
+import androidx.annotation.OptIn;
+import androidx.annotation.StringDef;
 import androidx.appcompat.content.res.AppCompatResources;
 import androidx.appcompat.widget.AppCompatImageView;
 import androidx.constraintlayout.widget.ConstraintLayout;
@@ -51,6 +52,9 @@ import com.google.android.apps.auto.sdk.CarUiController;
 
 import my.app.permata.R;
 import my.app.permata.media.service.PermataMediaServiceConnection;
+import my.app.permata.media.service.MediaSessionCallback;
+import my.app.permata.media.service.MediaSessionCallbackAssistant;
+import my.app.permata.media.lib.MediaLib;
 import my.app.permata.ui.activity.PermataActivity;
 import my.app.permata.ui.activity.MainActivityDelegate;
 import my.app.permata.ui.view.MediaItemListView;
@@ -65,19 +69,16 @@ import my.app.utils.ui.menu.OverlayMenu;
 
 /**
  * Enterprise Core Vehicle Launcher Gateway Activity.
- * Optimizes native CAN hardware event sync vectors and Chromium system pipelines over wireless projection layers.
+ * Optimizes native CAN hardware event sync vectors over standard wireless projection layers.
  */
-public class MainCarActivity extends CarActivity implements PermataActivity {
+public class MainCarActivity extends CarActivity implements PermataActivity, MediaSessionCallbackAssistant {
 
-	// Thread-safe tracking map protecting against platform exceptions while staying 100% immune to context leaks.
 	private static final java.util.Map<WebView, Long> scrollTimestamps = 
 			java.util.Collections.synchronizedMap(new java.util.WeakHashMap<>());
 
-	// Memory-isolated weak reference tracking to completely eliminate context leaks during sudden wireless drops.
 	private static java.lang.ref.WeakReference<MainCarActivity> activeInstanceRef = 
 			new java.lang.ref.WeakReference<>(null);
 
-	// Atomic temporal gate to prevent concurrent double-execution between MediaSession and Window inputs
 	private static long lastProcessedKeyEventTime = 0;
 
 	static PermataMediaServiceConnection service;
@@ -89,220 +90,78 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 	private CarEditText editText;
 	private TextWatcher textWatcher;
 
-	// --- PRODUCTION STATE-AWARE AUDIO FOCUS CONFIGURATION ---
-	private Object nativeFocusRequest; 
-	private boolean hasActivityFocus = false;
-	
-	// Active Native MediaSession instance field to hijack steering wheel hardware inputs
-	private android.media.session.MediaSession mediaSession;
-
-	// Explicit runnable declaration to isolate context tracking references on the main message loop.
-	private final Runnable initMediaSessionRunnable = this::initMediaSessionOnStartup;
-
-	private final AudioManager.OnAudioFocusChangeListener focusChangeListener = focusChange -> {
-		switch (focusChange) {
-			case AudioManager.AUDIOFOCUS_LOSS -> {
-				Log.w("MainCarActivity", "Permanent audio focus loss. Suspending foreground web playback surfaces.");
-				hasActivityFocus = false;
-				pauseWebViewTraffic();
-			}
-			case AudioManager.AUDIOFOCUS_LOSS_TRANSIENT, AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK -> {
-				Log.i("MainCarActivity", "Transient context loss (e.g., car navigation chime or backup camera event). Throttling V8 engine.");
-				pauseWebViewTraffic();
-			}
-			case AudioManager.AUDIOFOCUS_GAIN -> {
-				Log.i("MainCarActivity", "Audio focus successfully returned to active UI layout. Resuming rendering routines.");
-				hasActivityFocus = true;
-				resumeWebViewTraffic();
-			}
-		}
-	};
-
-	// Pre-allocated main thread handler to eliminate GC heap allocation churn during steering wheel click spams.
 	private static final android.os.Handler mainThreadHandler = 
 			new android.os.Handler(android.os.Looper.getMainLooper());
 
 	/**
-	 * Bridge method routing background steering wheel controls to the foreground WebView layout.
-	 * Decoupled via WeakReference to guarantee immunity against sudden wireless tether teardowns.
+	 * Unified Interception Engine routing actions arriving from the working background MediaSession token.
 	 */
-	public static boolean shareKeyEventToCarActivity(KeyEvent event) {
-		MainCarActivity activity = activeInstanceRef.get();
-		if (activity == null || activity.isFinishing()) return false;
-
-		MainActivityDelegate d = activity.delegate.peek();
+	private boolean shouldInterceptSteeringKey(boolean isNext) {
+		MainActivityDelegate d = delegate.peek();
 		if (d == null) return false;
 
-		int keyCode = event.getKeyCode();
-		boolean isNext = (keyCode == KeyEvent.KEYCODE_PAGE_DOWN || keyCode == KeyEvent.KEYCODE_MEDIA_NEXT || keyCode == KeyEvent.KEYCODE_CHANNEL_UP);
-		boolean isPrev = (keyCode == KeyEvent.KEYCODE_PAGE_UP || keyCode == KeyEvent.KEYCODE_MEDIA_PREVIOUS || keyCode == KeyEvent.KEYCODE_CHANNEL_DOWN);
+		ActivityFragment activeFragment = d.getActiveFragment();
+		if (activeFragment == null) return false;
 
-		if (isNext || isPrev) {
-			long now = SystemClock.uptimeMillis();
-			if (now - lastProcessedKeyEventTime < 150) {
-				return true; // Absorb event duplicate split-second spam bounce safely
-			}
+		String fragName = activeFragment.getClass().getName().toLowerCase();
+		
+		boolean isWebViewFragment = fragName.contains("web") || fragName.contains("browser") || 
+									 fragName.contains("youtube") || fragName.contains("short");
+		boolean isIptvOrCustomPlayer = fragName.contains("iptv") || fragName.contains("player");
 
-			ActivityFragment activeFragment = d.getActiveFragment();
-			if (activeFragment != null) {
-				String fragName = activeFragment.getClass().getName().toLowerCase();
-				
-				// CRITICAL FIX: NATIVE IPTV & LOCAL MEDIA PLAYER MULTI-DISPATCH ENGINE
-				if (fragName.contains("iptv") || fragName.contains("player") || 
-					fragName.contains("video") || fragName.contains("media")) {
-					
-					if (event.getAction() == KeyEvent.ACTION_DOWN && event.getRepeatCount() == 0) {
-						lastProcessedKeyEventTime = now;
-						mainThreadHandler.post(() -> {
-							try {
-								MainCarActivity curr = activeInstanceRef.get();
-								if (curr != null && !curr.isFinishing()) {
-									// 1. Send straight into active focused elements inside window tree view layout
-									curr.getWindow().getDecorView().dispatchKeyEvent(event);
-
-									// 2. Wrap into an explicit matching background intent matching local service signatures
-									Intent mediaIntent = new Intent(Intent.ACTION_MEDIA_BUTTON);
-									mediaIntent.putExtra(Intent.EXTRA_KEY_EVENT, event);
-									mediaIntent.setPackage(curr.getPackageName());
-									curr.sendBroadcast(mediaIntent);
-								}
-							} catch (Exception e) {
-								Log.e("MainCarActivity", "Error executing localized target player dispatch loop", e);
-							}
-						});
-					}
-					return true; // Successfully consumed and locked out from escaping back to standard car audio systems
-				}
-			}
-
-			// Filter actions for standard browser views (e.g. YouTube Web layout, standard web pages)
-			if (event.getAction() == KeyEvent.ACTION_DOWN && event.getRepeatCount() == 0) {
-				lastProcessedKeyEventTime = now;
-				mainThreadHandler.post(() -> {
-					try {
-						MainCarActivity currentValidActivity = activeInstanceRef.get();
-						if (currentValidActivity != null && !currentValidActivity.isFinishing()) {
-							currentValidActivity.performFragmentScroll(!isNext, d);
-						}
-					} catch (Exception e) {
-						Log.e("MainCarActivity", "UI Thread exception during programmatic scroll dispatch", e);
-					}
-				});
-			}
-			return true; 
-		}
-		return false;
-	}
-
-	/**
-	 * Forcefully registers a Playing state with the car system and drops external background audio sources.
-	 * Re-engineered to properly handle Android Auto connection teardown and setup signals safely.
-	 */
-	private void initMediaSessionOnStartup() {
-		try {
-			// Wipe clean any leftover context configurations from previous dead connections
-			if (mediaSession != null) {
-				try {
-					mediaSession.setActive(false);
-					mediaSession.release();
-				} catch (Exception ignored) {}
-				mediaSession = null;
-			}
-
-			// Force immediate audio context acquisition to hijack priority control before car radio can lock it
-			acquirePlaybackFocus(AudioManager.AUDIOFOCUS_GAIN);
-
-			mediaSession = new android.media.session.MediaSession(this, "PermataAutoMediaSession");
-			mediaSession.setCallback(new android.media.session.MediaSession.Callback() {
-				@Override
-				public boolean onMediaButtonEvent(@NonNull Intent mediaButtonIntent) {
-					if (Intent.ACTION_MEDIA_BUTTON.equals(mediaButtonIntent.getAction())) {
-						KeyEvent keyEvent = mediaButtonIntent.getParcelableExtra(Intent.EXTRA_KEY_EVENT);
-						if (keyEvent != null && keyEvent.getAction() == KeyEvent.ACTION_DOWN) {
-							if (shareKeyEventToCarActivity(keyEvent)) {
-								return true; // Absorb event from leaking back out to car radio console
-							}
-						}
-					}
-					return super.onMediaButtonEvent(mediaButtonIntent);
-				}
-			}, mainThreadHandler);
-
-			android.media.session.PlaybackState.Builder stateBuilder = new android.media.session.PlaybackState.Builder()
-					.setActions(android.media.session.PlaybackState.ACTION_PLAY | 
-								android.media.session.PlaybackState.ACTION_PAUSE | 
-								android.media.session.PlaybackState.ACTION_SKIP_TO_NEXT | 
-								android.media.session.PlaybackState.ACTION_SKIP_TO_PREVIOUS)
-					.setState(android.media.session.PlaybackState.STATE_PLAYING, 0, 1.0f);
-
-			mediaSession.setPlaybackState(stateBuilder.build());
-			mediaSession.setFlags(android.media.session.MediaSession.FLAG_HANDLES_MEDIA_BUTTONS | 
-								  android.media.session.MediaSession.FLAG_HANDLES_TRANSPORT_CONTROLS);
-			mediaSession.setActive(true);
-			Log.i("MainCarActivity", "MediaSession successfully constructed and activated with strict vehicle audio filters.");
-		} catch (Exception e) {
-			Log.e("MainCarActivity", "Encountered system exception while binding structural MediaSession hooks", e);
-		}
-	}
-
-	/**
-	 * Production safe, explicit on-demand focus capture mechanism.
-	 */
-	public boolean acquirePlaybackFocus(int focusDurationHint) {
-		try {
-			AudioManager audioManager = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
-			if (audioManager == null) return false;
-
-			if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
-				AudioFocusRequest.Builder builder = new AudioFocusRequest.Builder(focusDurationHint)
-						.setAudioAttributes(new AudioAttributes.Builder()
-								.setUsage(AudioAttributes.USAGE_MEDIA)
-								.setContentType(AudioAttributes.CONTENT_TYPE_MUSIC) 
-								.build())
-						.setAcceptsDelayedFocusGain(true) 
-						.setOnAudioFocusChangeListener(focusChangeListener, mainThreadHandler);
-
-				AudioFocusRequest request = builder.build();
-				nativeFocusRequest = request;
-				int result = audioManager.requestAudioFocus(request);
-				hasActivityFocus = (result == AudioManager.AUDIOFOCUS_REQUEST_GRANTED);
-			} else {
-				int result = audioManager.requestAudioFocus(focusChangeListener, AudioManager.STREAM_MUSIC, focusDurationHint);
-				hasActivityFocus = (result == AudioManager.AUDIOFOCUS_REQUEST_GRANTED);
-			}
-
-			return hasActivityFocus;
-		} catch (Exception e) {
-			Log.e("MainCarActivity", "Failed safe hardware audio capture negotiation routine", e);
+		// If it's a standard media list context, pass it through to let background media skip tracks normally
+		if (!isWebViewFragment && !isIptvOrCustomPlayer) {
 			return false;
 		}
-	}
 
-	/**
-	 * Explicit cleanup routine removing dead handlers from internal SystemServer tracking maps.
-	 */
-	private void releasePlaybackFocus() {
-		try {
-			AudioManager audioManager = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
-			if (audioManager != null) {
-				if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
-					if (nativeFocusRequest instanceof AudioFocusRequest request) {
-						audioManager.abandonAudioFocusRequest(request);
-						nativeFocusRequest = null;
-					}
-				} else {
-					audioManager.abandonAudioFocus(focusChangeListener);
-				}
-			}
-			hasActivityFocus = false;
-		} catch (Exception e) {
-			Log.e("MainCarActivity", "Failed clean release extraction execution loop against System AudioService", e);
+		long now = SystemClock.uptimeMillis();
+		if (now - lastProcessedKeyEventTime < 150) {
+			return true; 
 		}
+		lastProcessedKeyEventTime = now;
+
+		if (isIptvOrCustomPlayer) {
+			mainThreadHandler.post(() -> {
+				try {
+					int keyCode = isNext ? KeyEvent.KEYCODE_MEDIA_NEXT : KeyEvent.KEYCODE_MEDIA_PREVIOUS;
+					KeyEvent downEvent = new KeyEvent(KeyEvent.ACTION_DOWN, keyCode);
+					getWindow().getDecorView().dispatchKeyEvent(downEvent);
+				} catch (Exception e) {
+					Log.e("MainCarActivity", "Error executing localized target player dispatch loop", e);
+				}
+			});
+			return true; 
+		}
+
+		// Web display structures -> handle programmatic smooth scrolling layout vectors
+		mainThreadHandler.post(() -> {
+			try {
+				performFragmentScroll(!isNext, d);
+			} catch (Exception e) {
+				Log.e("MainCarActivity", "UI Thread exception during programmatic scroll dispatch", e);
+			}
+		});
+		return true; 
 	}
 
-	/**
-	 * Freezes internal V8 compilation timers completely when interface visibility drops or camera cuts in.
-	 */
+	@NonNull
+	@Override
+	public FutureSupplier<MediaLib.PlayableItem> getNextPlayable(MediaLib.Item i) {
+		if (shouldInterceptSteeringKey(true)) {
+			return my.app.utils.async.Completed.completedNull(); // Abort background track skips cleanly
+		}
+		return i.getNextPlayable();
+	}
+
+	@NonNull
+	@Override
+	public FutureSupplier<MediaLib.PlayableItem> getPrevPlayable(MediaLib.Item i) {
+		if (shouldInterceptSteeringKey(false)) {
+			return my.app.utils.async.Completed.completedNull(); // Abort background track skips cleanly
+		}
+		return i.getPrevPlayable();
+	}
+
 	private void pauseWebViewTraffic() {
 		mainThreadHandler.post(() -> {
 			MainActivityDelegate d = delegate.peek();
@@ -313,9 +172,6 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 		});
 	}
 
-	/**
-	 * Unlocks suspended rendering components instantly upon visual recovery context confirmation.
-	 */
 	private void resumeWebViewTraffic() {
 		mainThreadHandler.post(() -> {
 			MainActivityDelegate d = delegate.peek();
@@ -338,7 +194,7 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 					wv.pauseTimers(); 
 				}
 			} catch (Exception e) {
-				Log.e("MainCarActivity", "Error executing rendering lifecycle transition shift on target container", e);
+				Log.e("MainCarActivity", "Error executing rendering lifecycle transition shift", e);
 			}
 		} else if (v instanceof ViewGroup vg) {
 			for (int i = 0, n = vg.getChildCount(); i < n; i++) {
@@ -391,9 +247,11 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 		delegate = completed(d);
 		d.onActivityCreate(state);
 
-		// Post token immediately on setup execution queue
-		mainThreadHandler.removeCallbacks(initMediaSessionRunnable);
-		mainThreadHandler.postDelayed(initMediaSessionRunnable, 300);
+		// Safely chain assistant tracking vectors directly to original background media controls
+		MediaSessionCallback cb = s.getMediaSessionCallback();
+		if (cb != null) {
+			cb.addAssistant(this, 1);
+		}
 
 		return d; 
 	}
@@ -401,11 +259,15 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 	@Override
 	public void onResume() {
 		super.onResume();
-		// RECONNECTION RE-BIND SAFETIES: Force local token registration to adapt during hot plugs
 		activeInstanceRef = new java.lang.ref.WeakReference<>(this);
 		
-		// Tear down and rebuild the media routing layer to keep Android Auto from orphaning session triggers
-		initMediaSessionOnStartup();
+		if (service != null && service.isConnected()) {
+			MediaSessionCallback cb = service.getMediaSessionCallback();
+			if (cb != null) {
+				cb.addAssistant(this, 1);
+			}
+		}
+		
 		resumeWebViewTraffic();
 		getActivityDelegate().onSuccess(MainActivityDelegate::onActivityResume);
 	}
@@ -419,14 +281,19 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 	@Override
 	@SuppressWarnings("unchecked")
 	public void onDestroy() {
-		mainThreadHandler.removeCallbacks(initMediaSessionRunnable);
+		stopInput();
+
+		if (service != null && service.isConnected()) {
+			MediaSessionCallback cb = service.getMediaSessionCallback();
+			if (cb != null) {
+				cb.removeAssistant(this);
+			}
+		}
 
 		Cursor cursor = (Cursor) findViewById(R.id.cursor);
 		if (cursor != null) {
 			cursor.cleanup();
 		}
-
-		stopInput();
 
 		if (service != null && !service.isConnected()) {
 			service = null;
@@ -435,18 +302,6 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 		if (activeInstanceRef.get() == this) {
 			activeInstanceRef.clear();
 		}
-		
-		try {
-			if (mediaSession != null) {
-				mediaSession.setActive(false);
-				mediaSession.release();
-				mediaSession = null;
-			}
-		} catch (Exception e) {
-			Log.e("MainCarActivity", "Error encountered clearing native MediaSession components inside onDestroy", e);
-		}
-		
-		releasePlaybackFocus(); 
 
 		super.onDestroy();
 		getActivityDelegate().onSuccess(MainActivityDelegate::onActivityDestroy)
@@ -456,7 +311,6 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 
 	@Override
 	public void onConfigurationChanged(Configuration configuration) {
-		Log.i("Configuration changed: ", configuration);
 		super.onConfigurationChanged(configuration);
 	}
 
@@ -576,7 +430,6 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 
 	@Override
 	public boolean onKeyUp(int keyCode, KeyEvent keyEvent) {
-		Log.i(keyEvent);
 		MainActivityDelegate d = delegate.peek();
 		if (d == null) return super.onKeyUp(keyCode, keyEvent);
 
@@ -636,7 +489,6 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 			}
 			return true;
 		} else if (v instanceof WebView wv) {
-			// Fallback coordinates assigned when executing standard hardware page key down vectors
 			return smartScrollWebView(wv, up, -1f, -1f);
 		} else if (v instanceof ViewGroup vg) {
 			for (int i = 0, n = vg.getChildCount(); i < n; i++) {
@@ -646,10 +498,6 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 		return false;
 	}
 
-	/**
-	 * Best-in-Class Smart Discovery Web Page Scrolling System.
-	 * Optimized for Short-Form Video Snap Containers (TikTok/Douyin/Shorts) and standard media feeds.
-	 */
 	private static boolean smartScrollWebView(final WebView wv, boolean up, float relativeX, float relativeY) {
 		if (wv == null || !wv.isAttachedToWindow() || wv.getWidth() <= 0 || wv.getHeight() <= 0) {
 			return false;
@@ -666,18 +514,7 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 		int pixelStep = (int) (wv.getHeight() * 0.70f); 
 		if (up) pixelStep = -pixelStep;
 
-
-
-
-
-
-
-
-		// 1. ADVANCED CONTEXTUAL ELEMENT DISCOVERY ENGINE (JAVASCRIPT LAYER)
 		if (wv.getSettings().getJavaScriptEnabled()) {
-			// =========================================================================
-			// ADDED: Universal Social Media & Video Auto-Cleaner Engine
-			// =========================================================================
 			String universalPayload = "(function(){" +
 					"const registry=[" +
 					"  {name:\"douyin\",match:/douyin\\.com/,execute:function(){" +
@@ -734,9 +571,6 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 			
 			wv.evaluateJavascript(universalPayload, null);
 
-			// =========================================================================
-			// RETAINED: Your original advanced coordinate-based scrolling algorithm
-			// =========================================================================
 			float density = wv.getContext().getResources().getDisplayMetrics().density;
 			float cssX = (relativeX >= 0) ? (relativeX / density) : -1;
 			float cssY = (relativeY >= 0) ? (relativeY / density) : -1;
@@ -801,20 +635,9 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 			wv.evaluateJavascript(jsScript, null);
 		}
 
-
-
-
-
-
-
-
-
-		// 2. INDUSTRIAL MULTI-STEP INTERPOLATED SWIPE INJECTOR (CRITICAL FOR TIKTOK/DOUYIN/SHORTS)
-		// For media layout streams, centering the touch anchor prevents layout collisions with hidden side drawers.
 		final float actionX = (relativeX >= 0) ? relativeX : (wv.getWidth() * 0.50f);
 		final float centerY = (relativeY >= 0) ? relativeY : (wv.getHeight() / 2f);
 		
-		// 60% viewport span ensures sufficient drag length to breach CSS scroll snap boundaries smoothly
 		float span = wv.getHeight() * 0.60f; 
 		final float yStart = up ? (centerY - span / 2f) : (centerY + span / 2f);
 		final float yEnd = up ? (centerY + span / 2f) : (centerY - span / 2f);
@@ -822,12 +645,10 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 		try {
 			final long startTime = android.os.SystemClock.uptimeMillis();
 			
-			// Fire primary ACTION_DOWN frame instantly to begin physical tracking
 			MotionEvent eventDown = MotionEvent.obtain(startTime, startTime, MotionEvent.ACTION_DOWN, actionX, yStart, 0);
 			wv.dispatchTouchEvent(eventDown);
 			eventDown.recycle();
 
-			// Generate 5 perfectly sequential move segments across a 150ms window to build realistic swipe velocity
 			final int stepCount = 5;
 			final long swipeDuration = 150; 
 			
@@ -845,7 +666,6 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 				}, (long) (swipeDuration * fraction));
 			}
 
-			// Complete touch lifecycle state by triggering ACTION_UP at final target coordinate destination
 			wv.postDelayed(() -> {
 				if (wv.isAttachedToWindow()) {
 					long endTime = startTime + swipeDuration + 10;
@@ -856,7 +676,6 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 			}, swipeDuration + 10);
 
 		} catch (Exception e) {
-			// Failover fallback utilizing core key vectors if the window reference changes mid-execution
 			int backupKey = up ? KeyEvent.KEYCODE_PAGE_UP : KeyEvent.KEYCODE_PAGE_DOWN;
 			wv.dispatchKeyEvent(new KeyEvent(KeyEvent.ACTION_DOWN, backupKey));
 			wv.dispatchKeyEvent(new KeyEvent(KeyEvent.ACTION_UP, backupKey));
@@ -867,8 +686,6 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 
 	@Override
 	public boolean onKeyDown(int keyCode, KeyEvent keyEvent) {
-		Log.i(keyEvent);
-
 		if (keyEvent.getRepeatCount() > 0) {
 			return true; 
 		}
@@ -898,9 +715,9 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 		Cursor cursor = null;
 
 		switch (keyCode) {
-			case KEYCODE_DPAD_UP -> {
-				OverlayMenu m = d.getActiveMenu();
-				if (m instanceof View v) {
+			case KEYCODE_DPAD_UP:
+				OverlayMenu mUp = d.getActiveMenu();
+				if (mUp instanceof View v) {
 					View f = v.focusSearch(View.FOCUS_UP);
 					if (f != null) {
 						f.requestFocus();
@@ -908,10 +725,10 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 					}
 				}
 				y = -1;
-			}
-			case KEYCODE_DPAD_DOWN -> {
-				OverlayMenu m = d.getActiveMenu();
-				if (m instanceof View v) {
+				break;
+			case KEYCODE_DPAD_DOWN:
+				OverlayMenu mDown = d.getActiveMenu();
+				if (mDown instanceof View v) {
 					View f = v.focusSearch(View.FOCUS_DOWN);
 					if (f != null) {
 						f.requestFocus();
@@ -919,26 +736,43 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 					}
 				}
 				y = 1;
-			}
-			case KEYCODE_DPAD_LEFT -> x = -1;
-			case KEYCODE_DPAD_RIGHT -> x = 1;
-			case KEYCODE_DPAD_UP_LEFT -> { y = -1; x = -1; }
-			case KEYCODE_DPAD_UP_RIGHT -> { y = -1; x = 1; }
-			case KEYCODE_DPAD_DOWN_LEFT -> { y = 1; x = -1; }
-			case KEYCODE_DPAD_DOWN_RIGHT -> { y = 1; x = 1; }
-			case KEYCODE_BACK -> {
+				break;
+			case KEYCODE_DPAD_LEFT:
+				x = -1;
+				break;
+			case KEYCODE_DPAD_RIGHT:
+				x = 1;
+				break;
+			case KEYCODE_DPAD_UP_LEFT:
+				y = -1;
+				x = -1;
+				break;
+			case KEYCODE_DPAD_UP_RIGHT:
+				y = -1;
+				x = 1;
+				break;
+			case KEYCODE_DPAD_DOWN_LEFT:
+				y = 1;
+				x = -1;
+				break;
+			case KEYCODE_DPAD_DOWN_RIGHT:
+				y = 1;
+				x = 1;
+				break;
+			case KEYCODE_BACK:
 				screen = findViewById(R.id.main_activity);
 				cursor = (Cursor) screen.findViewById(R.id.cursor);
 				if ((cursor == null) || cursor.isFocused())
 					return d.onKeyDown(keyCode, keyEvent, super::onKeyDown);
 				cursor.ignoreBack = true;
-			}
-			case KEYCODE_DPAD_CENTER -> {
+				break;
+			case KEYCODE_DPAD_CENTER:
 				screen = findViewById(R.id.main_activity);
 				cursor = (Cursor) screen.findViewById(R.id.cursor);
 				if (cursor == null) return d.onKeyDown(keyCode, keyEvent, super::onKeyDown);
-			}
-			default -> { return d.onKeyDown(keyCode, keyEvent, super::onKeyDown); }
+				break;
+			default:
+				return d.onKeyDown(keyCode, keyEvent, super::onKeyDown);
 		}
 
 		if (screen == null) {
@@ -1196,7 +1030,6 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 						}
 						return true;
 					} else if (v instanceof WebView wv) {
-						// Pass contextual cursor coordinates downstream to ensure precision DOM element calculation
 						return MainCarActivity.smartScrollWebView(wv, up, relativeX, relativeY);
 					} else if (v instanceof ViewGroup vg) {
 						if (scrollAtCoordinates(up, vg, relativeX, relativeY)) return true;
