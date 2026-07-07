@@ -24,11 +24,6 @@ public class KeyEventHandler {
 
 	private static Worker worker;
 
-	// --- PRODUCTION REFLECTION CACHE STRUCTURE ---
-	// Caches the Class and Method variables permanently upon initialization to drop dynamic reflection lookup times down to zero.
-	private static java.lang.reflect.Method cachedShareMethod;
-	private static boolean hasCheckedCarActivity = false;
-
 	public static boolean handleKeyEvent(MediaSessionCallback cb, KeyEvent event,
 																			 IntObjectFunction<KeyEvent, Boolean> defaultHandler) {
 		return handleKeyEvent(cb, null, event, defaultHandler);
@@ -47,35 +42,6 @@ public class KeyEventHandler {
 		if (event.isCanceled()) {
 			worker = null;
 			return defaultHandler.apply(event.getKeyCode(), event);
-		}
-
-		// --- PRODUCTION FOREGROUND CAR-ACTIVITY INTERCEPTION HOOK ---
-		// Resolves Class and Method contexts once per application process scope to prevent frame drops under fast click intervals.
-		if (activity == null) {
-			try {
-				if (!hasCheckedCarActivity) {
-					try {
-						Class<?> carActivityClass = Class.forName("my.app.permata.auto.MainCarActivity");
-						cachedShareMethod = carActivityClass.getMethod("shareKeyEventToCarActivity", KeyEvent.class);
-					} catch (ClassNotFoundException ignored) {
-						// Safe decoupling: Class not bundled in this build flavor (e.g., standard handheld build target)
-					} finally {
-						hasCheckedCarActivity = true;
-					}
-				}
-
-				if (cachedShareMethod != null) {
-					Boolean intercepted = (Boolean) cachedShareMethod.invoke(null, event);
-					
-					if (intercepted != null && intercepted) {
-						worker = null; // Purge any multi-click tracking workers
-						Log.i("KeyEventHandler", "Media key successfully consumed by foreground Car UI surface.");
-						return true; // Key event completely consumed; halt normal track skipping actions
-					}
-				}
-			} catch (Exception e) {
-				Log.e("KeyEventHandler", "Error executing dynamic bridge check against MainCarActivity runtime context", e);
-			}
 		}
 
 		if (worker != null) {
