@@ -23,6 +23,7 @@ import android.graphics.PorterDuff;
 import android.graphics.drawable.ColorDrawable;
 import android.graphics.drawable.Drawable;
 import android.graphics.drawable.StateListDrawable;
+import android.media.AudioManager;
 import android.os.Bundle;
 import android.os.OperationCanceledException;
 import android.os.SystemClock;
@@ -38,8 +39,6 @@ import android.widget.TextView.OnEditorActionListener;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
-import androidx.annotation.OptIn;
-import androidx.annotation.StringDef;
 import androidx.appcompat.content.res.AppCompatResources;
 import androidx.appcompat.widget.AppCompatImageView;
 import androidx.constraintlayout.widget.ConstraintLayout;
@@ -105,16 +104,10 @@ public class MainCarActivity extends CarActivity implements PermataActivity, Med
 		ActivityFragment activeFragment = d.getActiveFragment();
 		if (activeFragment == null) return false;
 
-		String fragName = activeFragment.getClass().getName();
-		
-		// Hardened check using constant
-		boolean isWebViewFragment = fragName.equals(TARGET_WEB_BROWSER_CLASS);
-		
-		String fragNameLower = fragName.toLowerCase();
-		boolean isIptvOrCustomPlayer = fragNameLower.contains("iptv") || fragNameLower.contains("player");
-
-		if (!isWebViewFragment && !isIptvOrCustomPlayer) {
-			return false;
+		// ONLY intercept if it is strictly the generic web browser.
+		if (!TARGET_WEB_BROWSER_CLASS.equals(activeFragment.getClass().getName())) {
+			// This gracefully allows IPTV, Local Media, and YouTube to skip tracks natively!
+			return false; 
 		}
 
 		long now = SystemClock.uptimeMillis();
@@ -123,31 +116,14 @@ public class MainCarActivity extends CarActivity implements PermataActivity, Med
 		}
 		lastProcessedKeyEventTime = now;
 
-		if (isIptvOrCustomPlayer) {
-			mainThreadHandler.post(() -> {
-				try {
-					int keyCode = isNext ? KeyEvent.KEYCODE_MEDIA_NEXT : KeyEvent.KEYCODE_MEDIA_PREVIOUS;
-					KeyEvent downEvent = new KeyEvent(KeyEvent.ACTION_DOWN, keyCode);
-					getWindow().getDecorView().dispatchKeyEvent(downEvent);
-				} catch (Exception e) {
-					Log.e("MainCarActivity", "Error executing localized target player dispatch loop", e);
-				}
-			});
-			return true; 
-		}
-
-		if (isWebViewFragment) {
-			mainThreadHandler.post(() -> {
-				try {
-					performFragmentScroll(!isNext, d);
-				} catch (Exception e) {
-					Log.e("MainCarActivity", "UI Thread exception during programmatic scroll dispatch", e);
-				}
-			});
-			return true; 
-		}
-		
-		return false;
+		mainThreadHandler.post(() -> {
+			try {
+				performFragmentScroll(!isNext, d);
+			} catch (Exception e) {
+				Log.e("MainCarActivity", "UI Thread exception during programmatic scroll dispatch", e);
+			}
+		});
+		return true; 
 	}
 
 	@NonNull
@@ -182,10 +158,28 @@ public class MainCarActivity extends CarActivity implements PermataActivity, Med
 		mainThreadHandler.post(() -> {
 			MainActivityDelegate d = delegate.peek();
 			if (d != null && d.getActiveFragment() != null) {
+				stealAudioFocusForWeb(d.getActiveFragment());
 				View root = d.getActiveFragment().getView();
 				toggleWebViewState(root, true);
 			}
 		});
+	}
+
+	/**
+	 * Steals Audio Focus silently to forcefully route Android Auto media buttons
+	 * away from the FM Radio and into the Permata Auto session when browsing the web.
+	 */
+	private void stealAudioFocusForWeb(ActivityFragment fragment) {
+		try {
+			if (TARGET_WEB_BROWSER_CLASS.equals(fragment.getClass().getName())) {
+				AudioManager am = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
+				if (am != null) {
+					am.requestAudioFocus(null, AudioManager.STREAM_MUSIC, AudioManager.AUDIOFOCUS_GAIN);
+				}
+			}
+		} catch (Exception e) {
+			Log.w("MainCarActivity", "Silent audio focus grab failed", e);
+		}
 	}
 
 	private void toggleWebViewState(View v, boolean resume) {
@@ -253,7 +247,6 @@ public class MainCarActivity extends CarActivity implements PermataActivity, Med
 		delegate = completed(d);
 		d.onActivityCreate(state);
 
-		// Safely chain assistant tracking vectors directly to original background media controls
 		MediaSessionCallback cb = s.getMediaSessionCallback();
 		if (cb != null) {
 			cb.addAssistant(this, 1);
@@ -270,6 +263,8 @@ public class MainCarActivity extends CarActivity implements PermataActivity, Med
 		if (service != null && service.isConnected()) {
 			MediaSessionCallback cb = service.getMediaSessionCallback();
 			if (cb != null) {
+				// Prevent zombie leaks on AA reconnect by clearing old instances first
+				cb.removeAssistant(this);
 				cb.addAssistant(this, 1);
 			}
 		}
@@ -469,14 +464,56 @@ public class MainCarActivity extends CarActivity implements PermataActivity, Med
 		ActivityFragment f = d.getActiveFragment();
 		if (f == null) return false;
 
-		// Hardened check using constant
-		if (!f.getClass().getName().equals(TARGET_WEB_BROWSER_CLASS)) {
+		if (!TARGET_WEB_BROWSER_CLASS.equals(f.getClass().getName())) {
 			return false; 
 		}
 
 		View root = f.getView();
-		if (root instanceof ViewGroup vg) return performViewScroll(up, vg);
+		if (root == null) return false;
+
+		// Aggressive WebView Hunter: Bypasses Android's strict occlusion/visibility rules
+		WebView targetWebView = findTargetWebView(root);
+
+		if (targetWebView != null) {
+			return smartScrollWebView(targetWebView, up, -1f, -1f);
+		}
+
+		// Fallback for native list scrolling (if WebView genuinely isn't present)
+		if (root instanceof ViewGroup vg) {
+			return performViewScroll(up, vg);
+		}
+		
 		return false;
+	}
+
+	private WebView findTargetWebView(View root) {
+		// Strategy 1: Find exact target by cross-module ID reference (safest)
+		int targetBrowserId = root.getContext().getResources().getIdentifier("browserWebView", "id", root.getContext().getPackageName());
+		if (targetBrowserId != 0) {
+			View found = root.findViewById(targetBrowserId);
+			if (found instanceof WebView) {
+				return (WebView) found;
+			}
+		}
+
+		// Strategy 2: Deep recursive scan ignoring strict Android visibility/occlusion rules
+		return scanForWebView(root);
+	}
+
+	private WebView scanForWebView(View view) {
+		if (view instanceof WebView) {
+			WebView wv = (WebView) view;
+			if (wv.getWidth() == 0 || wv.getWidth() > 100) {
+				return wv;
+			}
+		}
+		if (view instanceof ViewGroup vg) {
+			for (int i = 0; i < vg.getChildCount(); i++) {
+				WebView deepFound = scanForWebView(vg.getChildAt(i));
+				if (deepFound != null) return deepFound;
+			}
+		}
+		return null;
 	}
 
 	private boolean performViewScroll(boolean up, View v) {
@@ -494,8 +531,6 @@ public class MainCarActivity extends CarActivity implements PermataActivity, Med
 				if (pos < lm.getItemCount() - 1) lm.scrollToPositionWithOffset(pos + 1, 0);
 			}
 			return true;
-		} else if (v instanceof WebView wv) {
-			return smartScrollWebView(wv, up, -1f, -1f);
 		} else if (v instanceof ViewGroup vg) {
 			for (int i = 0, n = vg.getChildCount(); i < n; i++) {
 				if (performViewScroll(up, vg.getChildAt(i))) return true;
@@ -517,10 +552,9 @@ public class MainCarActivity extends CarActivity implements PermataActivity, Med
 		scrollTimestamps.put(wv, now); 
 		
 		boolean isSpamming = (now - lastClickTime < 250);
-		int pixelStep = (int) (wv.getHeight() * 0.70f); 
-		if (up) pixelStep = -pixelStep;
 
 		if (wv.getSettings().getJavaScriptEnabled()) {
+			// Phase 1: Universal DOM Overrides (Fullscreen, Mute Bypass)
 			String universalPayload = "(function(){" +
 					"const registry=[" +
 					"  {name:\"douyin\",match:/douyin\\.com/,execute:function(){" +
@@ -530,16 +564,6 @@ public class MainCarActivity extends CarActivity implements PermataActivity, Med
 					"    let cl=document.querySelector('.xgplayer-clearscreen,[class*=\"clearscreen\"],[title*=\"清屏\"],[aria-label*=\"清屏\"]');" +
 					"    if(!cl){for(let el of document.querySelectorAll('div,button,span')){if(el.textContent.includes('清屏')||el.textContent.includes('洁净模式')){cl=el;break;}}}" +
 					"    if(cl)cl.click();" +
-					"  }}," +
-					"  {name:\"youtube\",match:/(youtube\\.com|youtu\\.be)/,execute:function(){" +
-					"    let ad=document.querySelector('.ytp-skip-ad-button,.ytp-ad-skip-button,[class*=\"skip-ad\"]');if(ad)ad.click();" +
-					"    ['yt-formatted-string[id=\"dismiss-button\"]','#dismiss-button button','[aria-label=\"No thanks\"]','[aria-label=\"Dismiss\"]'].forEach(s=>{" +
-					"      let b=document.querySelector(s);if(b)b.click();" +
-					"    });" +
-					"    for(let b of document.querySelectorAll('button,yt-formatted-string,tp-yt-paper-button')){" +
-					"      let t=b.textContent?b.textContent.toLowerCase().trim():'';" +
-					"      if(t==='no thanks'||t==='dismiss'||t==='以后再说'||t==='不用了')b.click();" +
-					"    }" +
 					"  }}," +
 					"  {name:\"tiktok\",match:/tiktok\\.com/,execute:function(){" +
 					"    let cl=document.querySelector('[data-e2e=\"login-modal\"] button[class*=\"Close\"],div[class*=\"DivModalClose\"]');if(cl)cl.click();" +
@@ -559,10 +583,6 @@ public class MainCarActivity extends CarActivity implements PermataActivity, Med
 					"      let l=s.getAttribute('aria-label');" +
 					"      if(l&&(l.includes('Mute')||l.includes('静音'))){let c=s.closest('button')||s.parentElement;if(c)c.click();}" +
 					"    });" +
-					"  }}," +
-					"  {name:\"facebook\",match:/facebook\\.com/,execute:function(){" +
-					"    let co=document.querySelector('[data-cookiebanner=\"accept_button\"],[data-testid=\"cookie-policy-manage-dialog-accept\"]');if(co)co.click();" +
-					"    let cd=document.querySelector('[aria-label=\"Close\"],[aria-label=\"关闭\"],[class*=\"layerCancel\"]');if(cd)cd.click();" +
 					"  }}" +
 					"];" +
 					"const active=registry.find(p=>p.match.test(window.location.hostname));" +
@@ -574,73 +594,71 @@ public class MainCarActivity extends CarActivity implements PermataActivity, Med
 					"if(document.body){obs.observe(document.body,{childList:true,subtree:true});}" +
 					"else{window.addEventListener('DOMContentLoaded',()=>obs.observe(document.body,{childList:true,subtree:true}));}" +
 					"})();";
-			
 			wv.evaluateJavascript(universalPayload, null);
 
-			float density = wv.getContext().getResources().getDisplayMetrics().density;
-			float cssX = (relativeX >= 0) ? (relativeX / density) : -1;
-			float cssY = (relativeY >= 0) ? (relativeY / density) : -1;
-
-			String jsScript = "(function(step, isSpam, cx, cy) {" +
-					"  var behavior = isSpam ? 'auto' : 'smooth';" +
-					"  var startEl = null;" +
-					"  if (cx >= 0 && cy >= 0) {" +
-					"    try { startEl = document.elementFromPoint(cx, cy); } catch(e) {}" +
-					"  }" +
-					"  if (!startEl) { startEl = document.activeElement || document.body; }" +
-					"  " +
-					"  function findScrollable(el) {" +
-					"    while (el && el !== document.documentElement && el !== document.body) {" +
-					"      var style = window.getComputedStyle(el);" +
-					"      var overflow = style.overflow + style.overflowY;" +
-					"      if ((el.scrollHeight > el.clientHeight) && (/auto|scroll/.test(overflow))) {" +
-					"        return el;" +
-					"      }" +
-					"      el = el.parentElement;" +
-					"    }" +
-					"    return document.scrollingElement || document.documentElement || document.body;" +
-					"  }" +
-					"  " +
-					"  var targetNode = findScrollable(startEl);" +
-					"  " +
-					"  var stickyHeight = 0;" +
+			// Phase 2: Advanced Contextual Scrolling Engine (Bypasses Window Locks)
+			String advancedJsScript = "(function() {" +
 					"  try {" +
-					"    var elems = document.querySelectorAll('*');" +
-					"    for (var i = 0; i < Math.min(elems.length, 120); i++) {" +
-					"      var s = window.getComputedStyle(elems[i]);" +
-					"      if ((s.position === 'fixed' || s.position === 'sticky') && elems[i].getBoundingClientRect().top <= 12) {" +
-					"        stickyHeight = Math.max(stickyHeight, elems[i].offsetHeight);" +
-					"      }" +
-					"    }" +
-					"  } catch(e) {}" +
-					"  " +
-					"  var adjustedStep = step;" +
-					"  if (stickyHeight > 0 && Math.abs(step) > stickyHeight) {" +
-					"    adjustedStep = step > 0 ? (step - stickyHeight) : (step + stickyHeight);" +
-					"  }" +
-					"  " +
-					"  try {" +
-					"    if (targetNode === document.body || targetNode === document.documentElement || targetNode === document.scrollingElement) {" +
-					"      window.scrollBy({ top: adjustedStep, behavior: behavior });" +
-					"    } else if (typeof targetNode.scrollBy === 'function') {" +
-					"      targetNode.scrollBy({ top: adjustedStep, behavior: behavior });" +
+					"    var isDown = " + (!up) + ";" +
+					"    var ihuWidth = window.innerWidth;" +
+					"    var ihuHeight = window.innerHeight;" +
+					"    var targetBtn = null;" +
+					"    if (isDown) {" +
+					"      targetBtn = document.querySelector('[data-e2e=\"arrow-down\"]') || " +
+					"                  document.querySelector('.xgplayer-playswitch-next') || " +
+					"                  document.querySelector('.slide-down-btn') || " +
+					"                  document.querySelector('[aria-label=\"Next video\"]') || " +
+					"                  document.querySelector('[aria-label=\"Next\"]');" +
 					"    } else {" +
-					"      targetNode.scrollTop += adjustedStep;" +
+					"      targetBtn = document.querySelector('[data-e2e=\"arrow-up\"]') || " +
+					"                  document.querySelector('.xgplayer-playswitch-prev') || " +
+					"                  document.querySelector('.slide-up-btn') || " +
+					"                  document.querySelector('[aria-label=\"Previous video\"]') || " +
+					"                  document.querySelector('[aria-label=\"Go back\"]');" +
 					"    }" +
-					"  } catch(e) {" +
-					"    window.scrollBy(0, adjustedStep);" +
+					"    if (targetBtn) {" +
+					"      targetBtn.click();" +
+					"      return;" +
+					"    }" +
+					"    var scrollTarget = null;" +
+					"    var elements = document.querySelectorAll('*');" +
+					"    for (var i = 0; i < elements.length; i++) {" +
+					"      var el = elements[i];" +
+					"      var style = window.getComputedStyle(el);" +
+					"      if ((style.overflowY === 'auto' || style.overflowY === 'scroll' || style.scrollSnapType !== 'none') && el.scrollHeight > el.clientHeight) {" +
+					"        var rect = el.getBoundingClientRect();" +
+					"        if (rect.width > ihuWidth * 0.3 && rect.height > ihuHeight * 0.3) {" +
+					"          scrollTarget = el;" +
+					"          break;" +
+					"        }" +
+					"      }" +
+					"    }" +
+					"    if (!scrollTarget) scrollTarget = document.querySelector('main') || document.body;" +
+					"    var viewHeight = (scrollTarget === document.body) ? ihuHeight : scrollTarget.clientHeight;" +
+					"    var amount = isDown ? (viewHeight * 0.90) : -(viewHeight * 0.90);" +
+					"    var activeNode = document.activeElement || scrollTarget || document.body;" +
+					"    try {" +
+					"      var wheelEvt = new WheelEvent('wheel', { deltaY: amount, bubbles: true, cancelable: true });" +
+					"      activeNode.dispatchEvent(wheelEvt);" +
+					"    } catch(wErr) {}" +
+					"    if (scrollTarget && scrollTarget.scrollBy) {" +
+					"      scrollTarget.scrollBy({ top: amount, behavior: 'smooth' });" +
+					"    } else {" +
+					"      window.scrollBy({ top: amount, behavior: 'smooth' });" +
+					"    }" +
+					"    var keyStr = isDown ? 'ArrowDown' : 'ArrowUp';" +
+					"    var keyCode = isDown ? 40 : 38;" +
+					"    var kEvt = new KeyboardEvent('keydown', { key: keyStr, code: keyStr, keyCode: keyCode, window: window, bubbles: true, cancelable: true });" +
+					"    activeNode.dispatchEvent(kEvt);" +
+					"  } catch (err) {" +
+					"    var fall = " + (!up) + " ? window.innerHeight : -window.innerHeight;" +
+					"    window.scrollBy(0, fall);" +
 					"  }" +
-					"  " +
-					"  try {" +
-					"    for (var i = 0; i < window.frames.length; i++) {" +
-					"      window.frames[i].postMessage({ type: 'PERMATA_SCROLL', step: adjustedStep }, '*');" +
-					"    }" +
-					"  } catch(e) {}" +
-					"  return 1;" +
-					"})(" + pixelStep + ", " + isSpamming + ", " + cssX + ", " + cssY + ");";
-			wv.evaluateJavascript(jsScript, null);
+					"})();";
+			wv.evaluateJavascript(advancedJsScript, null);
 		}
 
+		// Phase 3: Hardware Fallback Simulated Swipe (For stubborn UIs)
 		final float actionX = (relativeX >= 0) ? relativeX : (wv.getWidth() * 0.50f);
 		final float centerY = (relativeY >= 0) ? relativeY : (wv.getHeight() / 2f);
 		
