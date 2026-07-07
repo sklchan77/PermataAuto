@@ -264,46 +264,48 @@ public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener 
                     @NonNull androidx.media3.exoplayer.video.VideoRendererEventListener eventListener,
                     long allowedVideoJoiningTimeMs, @NonNull ArrayList<androidx.media3.exoplayer.Renderer> out) {
                 
-                // SURGERY: Inject custom Video Renderer to handle Audio Advance (Video Delay)
-                out.add(new androidx.media3.exoplayer.video.MediaCodecVideoRenderer(
-                        context, mediaCodecSelector, allowedVideoJoiningTimeMs,
-                        enableDecoderFallback, eventHandler, eventListener, 50) {
-                    
-                    @Override
-                    protected boolean processOutputBuffer(
-                            long positionUs, long elapsedRealtimeUs, @Nullable androidx.media3.exoplayer.mediacodec.MediaCodecAdapter codec,
-                            @Nullable java.nio.ByteBuffer buffer, int bufferIndex, int bufferFlags,
-                            int sampleCount, long bufferPresentationTimeUs,
-                            boolean isDecodeOnlyBuffer, boolean isLastBuffer,
-                            @NonNull Format format) throws androidx.media3.exoplayer.ExoPlaybackException {
-                        
-                        long adjustedPositionUs = positionUs;
-                        int currentDelayMs = audioDelayMs.get();
-                        
-                        // If delay is negative (Advance Audio), we delay the video presentation
-                        if (currentDelayMs < 0) {
-                            adjustedPositionUs = positionUs - (Math.abs(currentDelayMs) * 1000L);
-                        }
-                        
-                        return super.processOutputBuffer(
-                                adjustedPositionUs, elapsedRealtimeUs, codec, buffer, bufferIndex,
-                                bufferFlags, sampleCount, bufferPresentationTimeUs,
-                                isDecodeOnlyBuffer, isLastBuffer, format);
-                    }
-                });
-                
+                // 1. Let ExoPlayer build the standard renderer list first to avoid duplicates
                 super.buildVideoRenderers(context, extensionRendererMode, mediaCodecSelector, 
                         enableDecoderFallback, eventHandler, eventListener, 5000L, out);
+                
+                // 2. Find and replace the default video renderer to inject Audio Advance logic safely
+                for (int i = 0; i < out.size(); i++) {
+                    if (out.get(i).getClass() == androidx.media3.exoplayer.video.MediaCodecVideoRenderer.class) {
+                        out.set(i, new androidx.media3.exoplayer.video.MediaCodecVideoRenderer(
+                                context, mediaCodecSelector, allowedVideoJoiningTimeMs,
+                                enableDecoderFallback, eventHandler, eventListener, 50) {
+                            
+                            @Override
+                            protected boolean processOutputBuffer(
+                                    long positionUs, long elapsedRealtimeUs, @Nullable androidx.media3.exoplayer.mediacodec.MediaCodecAdapter codec,
+                                    @Nullable java.nio.ByteBuffer buffer, int bufferIndex, int bufferFlags,
+                                    int sampleCount, long bufferPresentationTimeUs,
+                                    boolean isDecodeOnlyBuffer, boolean isLastBuffer,
+                                    @NonNull Format format) throws androidx.media3.exoplayer.ExoPlaybackException {
+                                
+                                long adjustedPositionUs = positionUs;
+                                int currentDelayMs = audioDelayMs.get();
+                                
+                                // If delay is negative (Advance Audio), we delay the video presentation
+                                if (currentDelayMs < 0) {
+                                    adjustedPositionUs = positionUs - (Math.abs(currentDelayMs) * 1000L);
+                                }
+                                
+                                return super.processOutputBuffer(
+                                        adjustedPositionUs, elapsedRealtimeUs, codec, buffer, bufferIndex,
+                                        bufferFlags, sampleCount, bufferPresentationTimeUs,
+                                        isDecodeOnlyBuffer, isLastBuffer, format);
+                            }
+                        });
+                        break; 
+                    }
+                }
             }
 
             @Override
             protected AudioSink buildAudioSink(@NonNull Context context, boolean enableFloatOutput, boolean enableAudioTrackPlaybackParams) {
+                // Default Audio sink without the aggressive 5-second PCM buffer constraint
                 DefaultAudioSink sink = new DefaultAudioSink.Builder(context)
-                        .setAudioTrackBufferSizeProvider(new DefaultAudioTrackBufferSizeProvider.Builder()
-                                .setMaxPcmBufferDurationUs(5000_000)
-                                .setPcmBufferMultiplicationFactor(16)
-                                // SURGERY: Removed setOffloadBufferDurationUs to prevent Web Codec bypass
-                                .build())
                         .setEnableAudioTrackPlaybackParams(true)
                         .setAudioProcessorChain(new DefaultAudioSink.DefaultAudioProcessorChain(audioProc))
                         .build();
@@ -368,9 +370,8 @@ public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener 
                 .setLivePlaybackSpeedControl(liveSpeedControl)
                 .setBandwidthMeter(bandwidthMeter)
                 .setTrackSelector(trackSelector) 
-                .setAudioAttributes(audioAttributes, true) // OS Focus Ducking (Nav sounds, calls)
+                .setAudioAttributes(audioAttributes, false) // FALSE: Let Permata native handle focus ducking
                 .setHandleAudioBecomingNoisy(true) // Pause on Bluetooth/Cable disconnect
-                .setWakeMode(C.WAKE_MODE_NETWORK) // Keep stream alive when IHU screen is off
                 .build();
 
         this.player.addListener(this);
