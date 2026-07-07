@@ -73,6 +73,8 @@ import my.app.utils.ui.menu.OverlayMenu;
  */
 public class MainCarActivity extends CarActivity implements PermataActivity, MediaSessionCallbackAssistant {
 
+	private static final String TARGET_WEB_BROWSER_CLASS = "my.app.permata.addon.web.WebBrowserFragment";
+
 	private static final java.util.Map<WebView, Long> scrollTimestamps = 
 			java.util.Collections.synchronizedMap(new java.util.WeakHashMap<>());
 
@@ -103,13 +105,14 @@ public class MainCarActivity extends CarActivity implements PermataActivity, Med
 		ActivityFragment activeFragment = d.getActiveFragment();
 		if (activeFragment == null) return false;
 
-		String fragName = activeFragment.getClass().getName().toLowerCase();
+		String fragName = activeFragment.getClass().getName();
 		
-		boolean isWebViewFragment = fragName.contains("web") || fragName.contains("browser") || 
-									 fragName.contains("youtube") || fragName.contains("short");
-		boolean isIptvOrCustomPlayer = fragName.contains("iptv") || fragName.contains("player");
+		// Hardened check using constant
+		boolean isWebViewFragment = fragName.equals(TARGET_WEB_BROWSER_CLASS);
+		
+		String fragNameLower = fragName.toLowerCase();
+		boolean isIptvOrCustomPlayer = fragNameLower.contains("iptv") || fragNameLower.contains("player");
 
-		// If it's a standard media list context, pass it through to let background media skip tracks normally
 		if (!isWebViewFragment && !isIptvOrCustomPlayer) {
 			return false;
 		}
@@ -133,15 +136,18 @@ public class MainCarActivity extends CarActivity implements PermataActivity, Med
 			return true; 
 		}
 
-		// Web display structures -> handle programmatic smooth scrolling layout vectors
-		mainThreadHandler.post(() -> {
-			try {
-				performFragmentScroll(!isNext, d);
-			} catch (Exception e) {
-				Log.e("MainCarActivity", "UI Thread exception during programmatic scroll dispatch", e);
-			}
-		});
-		return true; 
+		if (isWebViewFragment) {
+			mainThreadHandler.post(() -> {
+				try {
+					performFragmentScroll(!isNext, d);
+				} catch (Exception e) {
+					Log.e("MainCarActivity", "UI Thread exception during programmatic scroll dispatch", e);
+				}
+			});
+			return true; 
+		}
+		
+		return false;
 	}
 
 	@NonNull
@@ -463,8 +469,8 @@ public class MainCarActivity extends CarActivity implements PermataActivity, Med
 		ActivityFragment f = d.getActiveFragment();
 		if (f == null) return false;
 
-		String name = f.getClass().getName().toLowerCase();
-		if (name.contains("iptv") || name.contains("player") || name.contains("video") || name.contains("media")) {
+		// Hardened check using constant
+		if (!f.getClass().getName().equals(TARGET_WEB_BROWSER_CLASS)) {
 			return false; 
 		}
 
