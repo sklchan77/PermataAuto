@@ -27,9 +27,14 @@ import androidx.media3.common.VideoSize;
 import androidx.media3.common.util.HandlerWrapper;
 import androidx.media3.common.util.UnstableApi;
 import androidx.media3.common.util.Util;
+import androidx.media3.database.StandaloneDatabaseProvider;
 import androidx.media3.datasource.DataSource;
 import androidx.media3.datasource.DefaultDataSource;
 import androidx.media3.datasource.DefaultHttpDataSource;
+import androidx.media3.datasource.cache.Cache;
+import androidx.media3.datasource.cache.CacheDataSource;
+import androidx.media3.datasource.cache.LeastRecentlyUsedCacheEvictor;
+import androidx.media3.datasource.cache.SimpleCache;
 import androidx.media3.datasource.cronet.CronetDataSource;
 import androidx.media3.datasource.cronet.CronetUtil;
 import androidx.media3.extractor.DefaultExtractorsFactory;
@@ -50,6 +55,7 @@ import androidx.media3.exoplayer.upstream.LoadErrorHandlingPolicy;
 
 import org.chromium.net.CronetEngine;
 
+import java.io.File;
 import java.io.IOException;
 import java.lang.ref.WeakReference;
 import java.lang.reflect.Field;
@@ -95,6 +101,11 @@ public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener 
 
     private static final DataSource.Factory httpDsFactory;
     private static final ExecutorService asyncIoExecutor = Executors.newFixedThreadPool(2);
+    
+    // Global Cache Instances
+    private static Cache downloadCache;
+    private static StandaloneDatabaseProvider databaseProvider;
+    private static final long MAX_CACHE_SIZE_BYTES = 200 * 1024 * 1024; // 200 MB Rolling Cache
 
     static {
         String standardUserAgent = "Mozilla/5.0 (Linux; Android 10; TV) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/100.0.0.0 Mobile Safari/537.36 Permata/" + BuildConfig.VERSION_NAME;
@@ -120,6 +131,15 @@ public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener 
         }
     }
     
+    private static synchronized Cache getCache(Context context) {
+        if (downloadCache == null) {
+            File cacheDir = new File(context.getCacheDir(), "exo_media_cache");
+            databaseProvider = new StandaloneDatabaseProvider(context);
+            downloadCache = new SimpleCache(cacheDir, new LeastRecentlyUsedCacheEvictor(MAX_CACHE_SIZE_BYTES), databaseProvider);
+        }
+        return downloadCache;
+    }
+
     private final Accessor accessor = new Accessor(this);
     private final Timeline.Period period = new Timeline.Period();
     private final PendingLoadAudioProcessor audioProc = new PendingLoadAudioProcessor(accessor);
@@ -131,6 +151,7 @@ public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener 
     private final Context appCtx;
     private final DefaultBandwidthMeter bandwidthMeter;
     private final DefaultDataSource.Factory dsFactory;
+    private final CacheDataSource.Factory cacheDataSourceFactory;
     
     private volatile PlayableItem source;
     private volatile boolean preparing;
@@ -172,6 +193,13 @@ public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener 
         );
 
         this.dsFactory = new DefaultDataSource.Factory(appCtx, wrappingFactory);
+        
+        // Caching Layer Injection
+        this.cacheDataSourceFactory = new CacheDataSource.Factory()
+                .setCache(getCache(appCtx))
+                .setUpstreamDataSourceFactory(this.dsFactory)
+                .setFlags(CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR);
+
         DefaultLoadErrorHandlingPolicy customErrorPolicy = new DefaultLoadErrorHandlingPolicy() {
             @Override
             public long getRetryDelayMsFor(LoadErrorInfo loadErrorInfo) {
@@ -215,14 +243,18 @@ public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener 
             }
         };
 
+        // EXTRACTOR UPGRADES: CBR Seeking & IPTV Ad-Junk Dropping
         DefaultExtractorsFactory extractorsFactory = new DefaultExtractorsFactory()
+                .setConstantBitrateSeekingEnabled(true)
                 .setTsExtractorFlags(DefaultTsPayloadReaderFactory.FLAG_DETECT_ACCESS_UNITS 
-                        | DefaultTsPayloadReaderFactory.FLAG_ALLOW_NON_IDR_KEYFRAMES);
+                        | DefaultTsPayloadReaderFactory.FLAG_ALLOW_NON_IDR_KEYFRAMES
+                        | DefaultTsPayloadReaderFactory.FLAG_IGNORE_SPLICE_INFO_STREAM);
 
         this.mediaSourceFactory = new DefaultMediaSourceFactory(appCtx, extractorsFactory)
-                .setDataSourceFactory(dsFactory)
+                .setDataSourceFactory(cacheDataSourceFactory) // Mounted the Cache Factory
                 .setLoadErrorHandlingPolicy(customErrorPolicy);
 
+        // RENDERER UPGRADES: Hardware Fallbacks & Audio Advances
         DefaultRenderersFactory renderersFactory = new DefaultRenderersFactory(appCtx) {
             @Override
             protected void buildVideoRenderers(
@@ -294,7 +326,7 @@ public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener 
 
                 return sink;
             }
-        };
+        }.setEnableDecoderFallback(true); // CRITICAL: Soft-decoding fallback for IHU hardware crashes
 
         // Adaptive Buffer Control (Minimize waste on cellular)
         int minBufferMs = isMetered ? 2500 : 5000;
@@ -324,12 +356,21 @@ public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener 
             );
         }
 
+        // AUDIO FOCUS UPGRADES
+        androidx.media3.common.AudioAttributes audioAttributes = new androidx.media3.common.AudioAttributes.Builder()
+                .setUsage(C.USAGE_MEDIA)
+                .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
+                .build();
+
         this.player = new ExoPlayer.Builder(appCtx, renderersFactory)
                 .setMediaSourceFactory(mediaSourceFactory)
                 .setLoadControl(loadControl)
                 .setLivePlaybackSpeedControl(liveSpeedControl)
                 .setBandwidthMeter(bandwidthMeter)
-                .setTrackSelector(trackSelector) // Applied the dynamic track selector
+                .setTrackSelector(trackSelector) 
+                .setAudioAttributes(audioAttributes, true) // OS Focus Ducking (Nav sounds, calls)
+                .setHandleAudioBecomingNoisy(true) // Pause on Bluetooth/Cable disconnect
+                .setWakeMode(C.WAKE_MODE_NETWORK) // Keep stream alive when IHU screen is off
                 .build();
 
         this.player.addListener(this);
