@@ -105,13 +105,12 @@ public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener 
             Log.e(e, "Cronet engine initialization failed safely falling back.");
         }
 
-    if (cre != null) {
-        java.util.Map<String, String> defaultHeaders = new java.util.HashMap<>();
-        defaultHeaders.put("User-Agent", standardUserAgent);
-        httpDsFactory = new CronetDataSource.Factory(cre, asyncIoExecutor)
-                .setDefaultRequestProperties(defaultHeaders);
-    } else {
-
+        if (cre != null) {
+            java.util.Map<String, String> defaultHeaders = new java.util.HashMap<>();
+            defaultHeaders.put("User-Agent", standardUserAgent);
+            httpDsFactory = new CronetDataSource.Factory(cre, asyncIoExecutor)
+                    .setDefaultRequestProperties(defaultHeaders);
+        } else {
             CookieManager cookieManager = new CookieManager();
             cookieManager.setCookiePolicy(CookiePolicy.ACCEPT_ORIGINAL_SERVER);
             CookieHandler.setDefault(cookieManager);
@@ -120,6 +119,7 @@ public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener 
                     .setAllowCrossProtocolRedirects(true);
         }
     }
+    
     private final Accessor accessor = new Accessor(this);
     private final Timeline.Period period = new Timeline.Period();
     private final PendingLoadAudioProcessor audioProc = new PendingLoadAudioProcessor(accessor);
@@ -149,8 +149,14 @@ public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener 
         super(listener);
         this.appCtx = ctx.getApplicationContext();
 
+        // SMART NETWORK METERING: Assess the active network environment
+        android.net.ConnectivityManager cm = (android.net.ConnectivityManager) appCtx.getSystemService(Context.CONNECTIVITY_SERVICE);
+        boolean isMetered = cm != null && cm.isActiveNetworkMetered();
+
+        // Dynamic Bandwidth Estimation
+        long initialBitrate = isMetered ? 1_000_000L : 5_000_000L; // 1 Mbps (Cellular) vs 5 Mbps (Wi-Fi)
         this.bandwidthMeter = new DefaultBandwidthMeter.Builder(appCtx)
-                .setInitialBitrateEstimate(2_000_000)
+                .setInitialBitrateEstimate(initialBitrate)
                 .build();
 
         DataSource.Factory wrappingFactory = new androidx.media3.datasource.ResolvingDataSource.Factory(
@@ -290,8 +296,14 @@ public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener 
             }
         };
 
+        // Adaptive Buffer Control (Minimize waste on cellular)
+        int minBufferMs = isMetered ? 2500 : 5000;
+        int maxBufferMs = isMetered ? 25000 : 50000; // 25s on Cellular, 50s on Wi-Fi
+        int bufferForPlaybackMs = isMetered ? 1000 : 2500;
+        int bufferForPlaybackAfterRebufferMs = isMetered ? 2500 : 5000;
+
         DefaultLoadControl loadControl = new DefaultLoadControl.Builder()
-                .setBufferDurationsMs(5000, 50000, 1000, 5000)
+                .setBufferDurationsMs(minBufferMs, maxBufferMs, bufferForPlaybackMs, bufferForPlaybackAfterRebufferMs)
                 .setPrioritizeTimeOverSizeThresholds(true)
                 .build();
 
@@ -300,11 +312,24 @@ public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener 
                 .setFallbackMaxPlaybackSpeed(1.15f)
                 .build();
 
+        // Cellular Data Saver (Constrain peak bitrates)
+        androidx.media3.exoplayer.trackselection.DefaultTrackSelector trackSelector = 
+                new androidx.media3.exoplayer.trackselection.DefaultTrackSelector(appCtx);
+        
+        if (isMetered) {
+            trackSelector.setParameters(
+                trackSelector.buildUponParameters()
+                    .setMaxVideoBitrate(2_500_000) // Cap at ~1080p standard bitrate on cellular
+                    .setForceHighestSupportedBitrate(false)
+            );
+        }
+
         this.player = new ExoPlayer.Builder(appCtx, renderersFactory)
                 .setMediaSourceFactory(mediaSourceFactory)
                 .setLoadControl(loadControl)
                 .setLivePlaybackSpeedControl(liveSpeedControl)
                 .setBandwidthMeter(bandwidthMeter)
+                .setTrackSelector(trackSelector) // Applied the dynamic track selector
                 .build();
 
         this.player.addListener(this);
@@ -395,23 +420,23 @@ public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener 
             return;
         }
 
-    String cleanPath = path.contains("?") ? path.substring(0, path.indexOf('?')) : path;
-    String lastSegment = cleanPath.substring(cleanPath.lastIndexOf('/') + 1);
-    boolean isNakedLiveFeed = !cleanPath.isEmpty() && !lastSegment.contains(".") && cleanPath.split("/").length >= 2;
+        String cleanPath = path.contains("?") ? path.substring(0, path.indexOf('?')) : path;
+        String lastSegment = cleanPath.substring(cleanPath.lastIndexOf('/') + 1);
+        boolean isNakedLiveFeed = !cleanPath.isEmpty() && !lastSegment.contains(".") && cleanPath.split("/").length >= 2;
 
-    boolean isFlatPortStream = path.equals("") || path.equals("/");
-    boolean hasLiveQueryToken = urlString.contains("m3u8") || urlString.contains("=ts") || urlString.contains("stream") || urlString.contains("output=");
+        boolean isFlatPortStream = path.equals("") || path.equals("/");
+        boolean hasLiveQueryToken = urlString.contains("m3u8") || urlString.contains("=ts") || urlString.contains("stream") || urlString.contains("output=");
 
-    if (path.contains(".m3u8") || path.contains(".ts") || hasLiveQueryToken || isNakedLiveFeed || isFlatPortStream) {
-        
-        String inferredMimeType = null;
-        if (isFlatPortStream || urlString.contains("m3u8") || !path.contains(".")) {
-            inferredMimeType = androidx.media3.common.MimeTypes.APPLICATION_M3U8;
+        if (path.contains(".m3u8") || path.contains(".ts") || hasLiveQueryToken || isNakedLiveFeed || isFlatPortStream) {
+            
+            String inferredMimeType = null;
+            if (isFlatPortStream || urlString.contains("m3u8") || !path.contains(".")) {
+                inferredMimeType = androidx.media3.common.MimeTypes.APPLICATION_M3U8;
+            }
+
+            applyMediaSource(sourceItem, uri, inferredMimeType);
+            return;
         }
-
-        applyMediaSource(sourceItem, uri, inferredMimeType);
-        return;
-    }
 
         if (path.contains(".mpd") || urlString.contains("format=mpd")) {
             applyMediaSource(sourceItem, uri, androidx.media3.common.MimeTypes.APPLICATION_MPD);
@@ -434,47 +459,47 @@ public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener 
                 conn.setReadTimeout(2000);
                 conn.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 10; TV) AppleWebKit/537.36");
 
-            int responseCode = -1;
-            try {
-                responseCode = conn.getResponseCode();
-            } catch (Exception ex) {
-                Log.w("ExoPlayerEngine: Initial HEAD probe rejected or timed out. Checking generation context...");
-            }
-
-            if (generation != activeStreamId.get()) {
-                try { conn.disconnect(); } catch (Exception ignored) {}
-                return;
-            }
-
-            if (responseCode != 200) {
-                try { conn.disconnect(); } catch (Exception ignored) {}
-
-                if (generation != activeStreamId.get()) return;
-
-                conn = (java.net.HttpURLConnection) url.openConnection();
-                
-                if (generation != activeStreamId.get()) {
-                    try { conn.disconnect(); } catch (Exception ignored) {}
-                    return;
-                }
-                conn.setRequestMethod("GET");
-                conn.setConnectTimeout(2000);
-                conn.setReadTimeout(2000);
-                conn.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 10; TV) AppleWebKit/537.36");
-
-                if (generation != activeStreamId.get()) {
-                    try { conn.disconnect(); } catch (Exception ignored) {}
-                    return;
-                }
-
+                int responseCode = -1;
                 try {
                     responseCode = conn.getResponseCode();
                 } catch (Exception ex) {
-                    Log.w("ExoPlayerEngine: Adaptive secondary GET probe timed out safely.");
+                    Log.w("ExoPlayerEngine: Initial HEAD probe rejected or timed out. Checking generation context...");
                 }
-            }
 
-            String contentTypeHeader = conn.getContentType();
+                if (generation != activeStreamId.get()) {
+                    try { conn.disconnect(); } catch (Exception ignored) {}
+                    return;
+                }
+
+                if (responseCode != 200) {
+                    try { conn.disconnect(); } catch (Exception ignored) {}
+
+                    if (generation != activeStreamId.get()) return;
+
+                    conn = (java.net.HttpURLConnection) url.openConnection();
+                    
+                    if (generation != activeStreamId.get()) {
+                        try { conn.disconnect(); } catch (Exception ignored) {}
+                        return;
+                    }
+                    conn.setRequestMethod("GET");
+                    conn.setConnectTimeout(2000);
+                    conn.setReadTimeout(2000);
+                    conn.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 10; TV) AppleWebKit/537.36");
+
+                    if (generation != activeStreamId.get()) {
+                        try { conn.disconnect(); } catch (Exception ignored) {}
+                        return;
+                    }
+
+                    try {
+                        responseCode = conn.getResponseCode();
+                    } catch (Exception ex) {
+                        Log.w("ExoPlayerEngine: Adaptive secondary GET probe timed out safely.");
+                    }
+                }
+
+                String contentTypeHeader = conn.getContentType();
 
                 if (contentTypeHeader != null) {
                     String contentType = contentTypeHeader.toLowerCase().trim();
