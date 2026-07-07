@@ -44,6 +44,7 @@ import androidx.media3.exoplayer.upstream.LoadErrorHandlingPolicy;
 
 import org.chromium.net.CronetEngine;
 
+import java.io.IOException;
 import java.lang.ref.WeakReference;
 import java.lang.reflect.Field;
 import java.net.CookieHandler;
@@ -73,6 +74,7 @@ import my.app.permata.media.service.MediaSessionCallback;
 import my.app.permata.media.sub.SubGrid;
 import my.app.permata.media.sub.Subtitles;
 import my.app.permata.ui.view.VideoView;
+import my.app.utils.async.FutureSupplier;
 import my.app.utils.log.Log;
 import my.app.utils.text.SharedTextBuilder;
 
@@ -176,7 +178,7 @@ public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener 
                         | DefaultTsPayloadReaderFactory.FLAG_ALLOW_NON_IDR_KEYFRAMES
                         | DefaultTsPayloadReaderFactory.FLAG_IGNORE_SPLICE_INFO_STREAM);
 
-        // RIP OUT THE CACHE: Use pure dsFactory (RAM buffering only) to prevent Time-Travel and eMMC wear out
+        // RAM buffering only, ensuring time-travel cache trap doesn't hit live streams
         this.mediaSourceFactory = new DefaultMediaSourceFactory(appCtx, extractorsFactory)
                 .setDataSourceFactory(this.dsFactory) 
                 .setLoadErrorHandlingPolicy(standardErrorPolicy);
