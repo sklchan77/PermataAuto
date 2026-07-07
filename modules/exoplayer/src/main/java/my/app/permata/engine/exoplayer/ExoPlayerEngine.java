@@ -9,16 +9,12 @@ import static my.app.utils.misc.Assert.assertMainThread;
 
 import android.annotation.SuppressLint;
 import android.content.Context;
-import android.media.AudioManager;
 import android.net.Uri;
-import android.os.Bundle;
-import android.support.v4.media.MediaDescriptionCompat;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.media3.common.C;
 import androidx.media3.common.Format;
-import androidx.media3.common.MediaItem;
 import androidx.media3.common.PlaybackException;
 import androidx.media3.common.PlaybackParameters;
 import androidx.media3.common.Player;
@@ -27,18 +23,12 @@ import androidx.media3.common.VideoSize;
 import androidx.media3.common.util.HandlerWrapper;
 import androidx.media3.common.util.UnstableApi;
 import androidx.media3.common.util.Util;
-import androidx.media3.database.StandaloneDatabaseProvider;
 import androidx.media3.datasource.DataSource;
 import androidx.media3.datasource.DefaultDataSource;
 import androidx.media3.datasource.DefaultHttpDataSource;
-import androidx.media3.datasource.cache.Cache;
-import androidx.media3.datasource.cache.CacheDataSource;
-import androidx.media3.datasource.cache.LeastRecentlyUsedCacheEvictor;
-import androidx.media3.datasource.cache.SimpleCache;
 import androidx.media3.datasource.cronet.CronetDataSource;
 import androidx.media3.datasource.cronet.CronetUtil;
 import androidx.media3.extractor.DefaultExtractorsFactory;
-import androidx.media3.extractor.ts.TsExtractor;
 import androidx.media3.extractor.ts.DefaultTsPayloadReaderFactory;
 import androidx.media3.exoplayer.DefaultLoadControl;
 import androidx.media3.exoplayer.DefaultLivePlaybackSpeedControl;
@@ -48,15 +38,12 @@ import androidx.media3.exoplayer.audio.AudioSink;
 import androidx.media3.exoplayer.audio.DefaultAudioSink;
 import androidx.media3.exoplayer.audio.DefaultAudioTrackBufferSizeProvider;
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory;
-import androidx.media3.exoplayer.source.MediaSource;
 import androidx.media3.exoplayer.upstream.DefaultBandwidthMeter;
 import androidx.media3.exoplayer.upstream.DefaultLoadErrorHandlingPolicy;
 import androidx.media3.exoplayer.upstream.LoadErrorHandlingPolicy;
 
 import org.chromium.net.CronetEngine;
 
-import java.io.File;
-import java.io.IOException;
 import java.lang.ref.WeakReference;
 import java.lang.reflect.Field;
 import java.net.CookieHandler;
@@ -82,13 +69,10 @@ import my.app.permata.media.engine.MediaEngine;
 import my.app.permata.media.engine.MediaEngineBase;
 import my.app.permata.media.engine.SubtitleStreamInfo;
 import my.app.permata.media.lib.MediaLib.PlayableItem;
-import my.app.permata.media.pref.MediaPrefs;
 import my.app.permata.media.service.MediaSessionCallback;
 import my.app.permata.media.sub.SubGrid;
 import my.app.permata.media.sub.Subtitles;
 import my.app.permata.ui.view.VideoView;
-import my.app.utils.app.App;
-import my.app.utils.async.FutureSupplier;
 import my.app.utils.log.Log;
 import my.app.utils.text.SharedTextBuilder;
 
@@ -102,13 +86,9 @@ public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener 
     private static final DataSource.Factory httpDsFactory;
     private static final ExecutorService asyncIoExecutor = Executors.newFixedThreadPool(2);
     
-    // Global Cache Instances
-    private static Cache downloadCache;
-    private static StandaloneDatabaseProvider databaseProvider;
-    private static final long MAX_CACHE_SIZE_BYTES = 200 * 1024 * 1024; // 200 MB Rolling Cache
-
     static {
-        String standardUserAgent = "Mozilla/5.0 (Linux; Android 10; TV) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/100.0.0.0 Mobile Safari/537.36 Permata/" + BuildConfig.VERSION_NAME;
+        // VLC Spoofing User-Agent to bypass strict IPTV anti-scraping firewalls
+        String standardUserAgent = "VLC/3.0.16 LibVLC/3.0.16 PermataAuto/" + BuildConfig.VERSION_NAME;
         CronetEngine cre = null;
         try {
             cre = CronetUtil.buildCronetEngine(PermataApplication.get(), standardUserAgent, true);
@@ -119,6 +99,9 @@ public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener 
         if (cre != null) {
             java.util.Map<String, String> defaultHeaders = new java.util.HashMap<>();
             defaultHeaders.put("User-Agent", standardUserAgent);
+            defaultHeaders.put("Accept", "*/*"); 
+            defaultHeaders.put("Connection", "keep-alive");
+            
             httpDsFactory = new CronetDataSource.Factory(cre, asyncIoExecutor)
                     .setDefaultRequestProperties(defaultHeaders);
         } else {
@@ -131,15 +114,6 @@ public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener 
         }
     }
     
-    private static synchronized Cache getCache(Context context) {
-        if (downloadCache == null) {
-            File cacheDir = new File(context.getCacheDir(), "exo_media_cache");
-            databaseProvider = new StandaloneDatabaseProvider(context);
-            downloadCache = new SimpleCache(cacheDir, new LeastRecentlyUsedCacheEvictor(MAX_CACHE_SIZE_BYTES), databaseProvider);
-        }
-        return downloadCache;
-    }
-
     private final Accessor accessor = new Accessor(this);
     private final Timeline.Period period = new Timeline.Period();
     private final PendingLoadAudioProcessor audioProc = new PendingLoadAudioProcessor(accessor);
@@ -147,11 +121,10 @@ public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener 
     private ExoPlayer player;
     private AudioEffects audioEffects;
     private final Object engineLock = new Object();
-    private final MediaSource.Factory mediaSourceFactory;
+    private final DefaultMediaSourceFactory mediaSourceFactory;
     private final Context appCtx;
     private final DefaultBandwidthMeter bandwidthMeter;
     private final DefaultDataSource.Factory dsFactory;
-    private final CacheDataSource.Factory cacheDataSourceFactory;
     
     private volatile PlayableItem source;
     private volatile boolean preparing;
@@ -194,65 +167,19 @@ public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener 
 
         this.dsFactory = new DefaultDataSource.Factory(appCtx, wrappingFactory);
         
-        // Caching Layer Injection
-        this.cacheDataSourceFactory = new CacheDataSource.Factory()
-                .setCache(getCache(appCtx))
-                .setUpstreamDataSourceFactory(this.dsFactory)
-                .setFlags(CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR);
+        // Use Standard Error Policy to prevent infinite retry loops on dead chunks
+        LoadErrorHandlingPolicy standardErrorPolicy = new DefaultLoadErrorHandlingPolicy();
 
-        DefaultLoadErrorHandlingPolicy customErrorPolicy = new DefaultLoadErrorHandlingPolicy() {
-            @Override
-            public long getRetryDelayMsFor(LoadErrorInfo loadErrorInfo) {
-                IOException exception = loadErrorInfo.exception;
-
-                if (exception instanceof androidx.media3.datasource.HttpDataSource.InvalidResponseCodeException) {
-                    int responseCode = ((androidx.media3.datasource.HttpDataSource.InvalidResponseCodeException) exception).responseCode;
-                    int currentDataType = loadErrorInfo.mediaLoadData != null ? loadErrorInfo.mediaLoadData.dataType : C.DATA_TYPE_UNKNOWN;
-
-                    if ((responseCode == 404 || responseCode == 410) && currentDataType == C.DATA_TYPE_MEDIA) {
-                        if (hasSuccessfullyRendered) {
-                            Log.w("ExoPlayerEngine", "Active media segment vanished (HTTP " + responseCode + "). Breaking internal chain for background re-probe.");
-                            return C.TIME_UNSET;
-                        } else {
-                            Log.e("ExoPlayerEngine", "Dead stream link caught on initialization step (HTTP " + responseCode + "). Halting.");
-                            return C.TIME_UNSET;
-                        }
-                    }
-                    if (responseCode == 401 || responseCode == 403 || responseCode == 404 || responseCode == 410) {
-                        return C.TIME_UNSET;
-                    }
-                }
-                if (exception instanceof IOException) {
-                    long baseDelay = Math.min((loadErrorInfo.errorCount - 1) * 1500L + 1000L, 10000L); 
-                    long jitter = (long) (Math.random() * 400) - 200; 
-                    return baseDelay + jitter;
-                }
-
-                return super.getRetryDelayMsFor(loadErrorInfo);
-            }
-
-            @Override
-            public int getMinimumLoadableRetryCount(int dataType) {
-                if (dataType == C.DATA_TYPE_MANIFEST) {
-                    if (hasSuccessfullyRendered) {
-                        return Integer.MAX_VALUE;
-                    }
-                    return 3;
-                }
-                return dataType == C.DATA_TYPE_MEDIA ? Integer.MAX_VALUE : super.getMinimumLoadableRetryCount(dataType);
-            }
-        };
-
-        // EXTRACTOR UPGRADES: CBR Seeking & IPTV Ad-Junk Dropping
+        // EXTRACTOR UPGRADES: Stripped out ConstantBitrateSeeking (breaks IPTV timelines)
         DefaultExtractorsFactory extractorsFactory = new DefaultExtractorsFactory()
-                .setConstantBitrateSeekingEnabled(true)
                 .setTsExtractorFlags(DefaultTsPayloadReaderFactory.FLAG_DETECT_ACCESS_UNITS 
                         | DefaultTsPayloadReaderFactory.FLAG_ALLOW_NON_IDR_KEYFRAMES
                         | DefaultTsPayloadReaderFactory.FLAG_IGNORE_SPLICE_INFO_STREAM);
 
+        // RIP OUT THE CACHE: Use pure dsFactory (RAM buffering only) to prevent Time-Travel and eMMC wear out
         this.mediaSourceFactory = new DefaultMediaSourceFactory(appCtx, extractorsFactory)
-                .setDataSourceFactory(cacheDataSourceFactory) // Mounted the Cache Factory
-                .setLoadErrorHandlingPolicy(customErrorPolicy);
+                .setDataSourceFactory(this.dsFactory) 
+                .setLoadErrorHandlingPolicy(standardErrorPolicy);
 
         // RENDERER UPGRADES: Hardware Fallbacks & Audio Advances
         DefaultRenderersFactory renderersFactory = new DefaultRenderersFactory(appCtx) {
@@ -264,11 +191,9 @@ public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener 
                     @NonNull androidx.media3.exoplayer.video.VideoRendererEventListener eventListener,
                     long allowedVideoJoiningTimeMs, @NonNull ArrayList<androidx.media3.exoplayer.Renderer> out) {
                 
-                // 1. Let ExoPlayer build the standard renderer list first to avoid duplicates
                 super.buildVideoRenderers(context, extensionRendererMode, mediaCodecSelector, 
                         enableDecoderFallback, eventHandler, eventListener, 5000L, out);
                 
-                // 2. Find and replace the default video renderer to inject Audio Advance logic safely
                 for (int i = 0; i < out.size(); i++) {
                     if (out.get(i).getClass() == androidx.media3.exoplayer.video.MediaCodecVideoRenderer.class) {
                         out.set(i, new androidx.media3.exoplayer.video.MediaCodecVideoRenderer(
@@ -286,7 +211,6 @@ public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener 
                                 long adjustedPositionUs = positionUs;
                                 int currentDelayMs = audioDelayMs.get();
                                 
-                                // If delay is negative (Advance Audio), we delay the video presentation
                                 if (currentDelayMs < 0) {
                                     adjustedPositionUs = positionUs - (Math.abs(currentDelayMs) * 1000L);
                                 }
@@ -304,7 +228,6 @@ public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener 
 
             @Override
             protected AudioSink buildAudioSink(@NonNull Context context, boolean enableFloatOutput, boolean enableAudioTrackPlaybackParams) {
-                // Default Audio sink without the aggressive 5-second PCM buffer constraint
                 DefaultAudioSink sink = new DefaultAudioSink.Builder(context)
                         .setEnableAudioTrackPlaybackParams(true)
                         .setAudioProcessorChain(new DefaultAudioSink.DefaultAudioProcessorChain(audioProc))
@@ -328,11 +251,11 @@ public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener 
 
                 return sink;
             }
-        }.setEnableDecoderFallback(true); // CRITICAL: Soft-decoding fallback for IHU hardware crashes
+        }.setEnableDecoderFallback(true);
 
-        // Adaptive Buffer Control (Minimize waste on cellular)
+        // Adaptive Buffer Control
         int minBufferMs = isMetered ? 2500 : 5000;
-        int maxBufferMs = isMetered ? 25000 : 50000; // 25s on Cellular, 50s on Wi-Fi
+        int maxBufferMs = isMetered ? 25000 : 50000; 
         int bufferForPlaybackMs = isMetered ? 1000 : 2500;
         int bufferForPlaybackAfterRebufferMs = isMetered ? 2500 : 5000;
 
@@ -346,14 +269,14 @@ public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener 
                 .setFallbackMaxPlaybackSpeed(1.15f)
                 .build();
 
-        // Cellular Data Saver (Constrain peak bitrates)
+        // Cellular Data Saver
         androidx.media3.exoplayer.trackselection.DefaultTrackSelector trackSelector = 
                 new androidx.media3.exoplayer.trackselection.DefaultTrackSelector(appCtx);
         
         if (isMetered) {
             trackSelector.setParameters(
                 trackSelector.buildUponParameters()
-                    .setMaxVideoBitrate(2_500_000) // Cap at ~1080p standard bitrate on cellular
+                    .setMaxVideoBitrate(2_500_000) 
                     .setForceHighestSupportedBitrate(false)
             );
         }
@@ -370,8 +293,9 @@ public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener 
                 .setLivePlaybackSpeedControl(liveSpeedControl)
                 .setBandwidthMeter(bandwidthMeter)
                 .setTrackSelector(trackSelector) 
-                .setAudioAttributes(audioAttributes, false) // FALSE: Let Permata native handle focus ducking
-                .setHandleAudioBecomingNoisy(true) // Pause on Bluetooth/Cable disconnect
+                .setAudioAttributes(audioAttributes, false) 
+                .setHandleAudioBecomingNoisy(true) 
+                .setWakeMode(C.WAKE_MODE_NETWORK)
                 .build();
 
         this.player.addListener(this);
@@ -437,18 +361,19 @@ public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener 
         if (scheme == null) scheme = "http";
         scheme = scheme.toLowerCase().trim();
 
-        String urlString = uri.toString().toLowerCase();
-        String path = uri.getPath() != null ? uri.getPath().toLowerCase() : "";
+        Log.d("ExoPlayerEngine", "Routing stream: [" + uri.toString() + "]");
 
-        Log.d("ExoPlayerEngine", "Universal Route Matrix checking protocol scheme: [" + scheme + "]");
-
+        // Handle P2P proxy routing
         if (scheme.equals("p2p") || scheme.equals("p3p")) {
             applyMediaSource(sourceItem, uri, androidx.media3.common.MimeTypes.APPLICATION_M3U8);
             return;
         }
+
+        // Handle local files explicitly
         if (scheme.equals("file") || scheme.equals("content")) {
+            String path = uri.getPath() != null ? uri.getPath().toLowerCase() : "";
             if (path.contains(".m3u8")) {
-                applyMediaSource(sourceItem, uri, null);
+                applyMediaSource(sourceItem, uri, androidx.media3.common.MimeTypes.APPLICATION_M3U8);
             } else if (path.contains(".mpd")) {
                 applyMediaSource(sourceItem, uri, androidx.media3.common.MimeTypes.APPLICATION_MPD);
             } else {
@@ -457,127 +382,19 @@ public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener 
             return;
         }
 
+        // Handle RTSP/RTMP normally
         if (scheme.equals("rtsp") || scheme.equals("rtmp")) {
             applyMediaSource(sourceItem, uri, androidx.media3.common.MimeTypes.APPLICATION_RTSP);
             return;
         }
 
-        String cleanPath = path.contains("?") ? path.substring(0, path.indexOf('?')) : path;
-        String lastSegment = cleanPath.substring(cleanPath.lastIndexOf('/') + 1);
-        boolean isNakedLiveFeed = !cleanPath.isEmpty() && !lastSegment.contains(".") && cleanPath.split("/").length >= 2;
-
-        boolean isFlatPortStream = path.equals("") || path.equals("/");
-        boolean hasLiveQueryToken = urlString.contains("m3u8") || urlString.contains("=ts") || urlString.contains("stream") || urlString.contains("output=");
-
-        if (path.contains(".m3u8") || path.contains(".ts") || hasLiveQueryToken || isNakedLiveFeed || isFlatPortStream) {
-            
-            String inferredMimeType = null;
-            if (isFlatPortStream || urlString.contains("m3u8") || !path.contains(".")) {
-                inferredMimeType = androidx.media3.common.MimeTypes.APPLICATION_M3U8;
+        // BYPASS TRAP: Pass NULL MIME-type for all external HTTP/HTTPS streams. 
+        // This allows ExoPlayer to dynamically sniff the bytes, preventing errors
+        // when shorteners (like jmp2.uk) redirect from .m3u8 to raw .ts pipes!
+        my.app.utils.app.App.get().run(() -> {
+            if (generation == activeStreamId.get()) {
+                applyMediaSource(sourceItem, uri, null);
             }
-
-            applyMediaSource(sourceItem, uri, inferredMimeType);
-            return;
-        }
-
-        if (path.contains(".mpd") || urlString.contains("format=mpd")) {
-            applyMediaSource(sourceItem, uri, androidx.media3.common.MimeTypes.APPLICATION_MPD);
-            return;
-        }
-        if (path.contains(".ism") || urlString.contains("format=ism")) {
-            applyMediaSource(sourceItem, uri, androidx.media3.common.MimeTypes.APPLICATION_SS);
-            return;
-        }
-        asyncIoExecutor.execute(() -> {
-            if (generation != activeStreamId.get()) return;
-
-            String inferredMimeType = null;
-            java.net.HttpURLConnection conn = null;
-            try {
-                java.net.URL url = new java.net.URL(uri.toString());
-                conn = (java.net.HttpURLConnection) url.openConnection();
-                conn.setRequestMethod("HEAD");
-                conn.setConnectTimeout(2000);
-                conn.setReadTimeout(2000);
-                conn.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 10; TV) AppleWebKit/537.36");
-
-                int responseCode = -1;
-                try {
-                    responseCode = conn.getResponseCode();
-                } catch (Exception ex) {
-                    Log.w("ExoPlayerEngine: Initial HEAD probe rejected or timed out. Checking generation context...");
-                }
-
-                if (generation != activeStreamId.get()) {
-                    try { conn.disconnect(); } catch (Exception ignored) {}
-                    return;
-                }
-
-                if (responseCode != 200) {
-                    try { conn.disconnect(); } catch (Exception ignored) {}
-
-                    if (generation != activeStreamId.get()) return;
-
-                    conn = (java.net.HttpURLConnection) url.openConnection();
-                    
-                    if (generation != activeStreamId.get()) {
-                        try { conn.disconnect(); } catch (Exception ignored) {}
-                        return;
-                    }
-                    conn.setRequestMethod("GET");
-                    conn.setConnectTimeout(2000);
-                    conn.setReadTimeout(2000);
-                    conn.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 10; TV) AppleWebKit/537.36");
-
-                    if (generation != activeStreamId.get()) {
-                        try { conn.disconnect(); } catch (Exception ignored) {}
-                        return;
-                    }
-
-                    try {
-                        responseCode = conn.getResponseCode();
-                    } catch (Exception ex) {
-                        Log.w("ExoPlayerEngine: Adaptive secondary GET probe timed out safely.");
-                    }
-                }
-
-                String contentTypeHeader = conn.getContentType();
-
-                if (contentTypeHeader != null) {
-                    String contentType = contentTypeHeader.toLowerCase().trim();
-                    if (contentType.contains("mpegurl") || contentType.contains("apple.mpegurl") || 
-                        contentType.contains("mpeg.url") || contentType.contains("application/vnd.apple.mpegurl") ||
-                        contentType.contains("application/x-mpegurl")) {
-                        inferredMimeType = null;
-                    } else if (contentType.contains("dash+xml") || contentType.contains("application/dash+xml")) {
-                        inferredMimeType = androidx.media3.common.MimeTypes.APPLICATION_MPD;
-                    } else if (contentType.contains("video/mp2t") || contentType.contains("video/mpeg")) {
-                        inferredMimeType = null;
-                    }
-                }
-            } catch (Exception e) {
-                Log.w("ExoPlayerEngine: Network sniffer connection parsing operation failed.", e);
-            } finally {
-                if (conn != null) {
-                    try { conn.disconnect(); } catch (Exception ignored) {}
-                }
-            }
-            if (inferredMimeType == null) {
-                int port = uri.getPort();
-                if (urlString.contains("/live/") || urlString.contains("/stream/") || urlString.contains("playlist") || urlString.contains("get.php") 
-                    || port == 8000 || port == 8080 || port == 8880 || port == 3999 || port == 9000) {
-                    inferredMimeType = null; 
-                }
-            }
-
-            if (generation != activeStreamId.get()) return;
-
-            final String finalMime = inferredMimeType;
-            my.app.utils.app.App.get().run(() -> {
-                if (generation == activeStreamId.get()) {
-                    applyMediaSource(sourceItem, uri, finalMime);
-                }
-            });
         });
     }
 
@@ -597,7 +414,6 @@ public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener 
             this.buffering = false;
             this.hasSuccessfullyRendered = false;
             
-            // Clear runtime audio offset counters on a new stream preparation
             this.pendingDelayBytes = 0;
 
             Uri uri = source.getLocation();
@@ -890,7 +706,6 @@ public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener 
         });
     }
 
-    // --- INTERFACE AUDIO DELAY CONTRACT OVERRIDES ---
     @Override
     public boolean isAudioDelaySupported() {
         return true;
@@ -1008,38 +823,6 @@ public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener 
         asyncIoExecutor.execute(() -> {
             if (currentGeneration != activeStreamId.get()) return;
 
-            boolean isVanishedChunk = error.getCause() instanceof androidx.media3.datasource.HttpDataSource.InvalidResponseCodeException;
-            boolean isNetworkFailure = error.errorCode == PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED
-                    || error.errorCode == PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS
-                    || error.errorCode == PlaybackException.ERROR_CODE_IO_UNSPECIFIED;
-
-            if (hasSuccessfullyRendered && (error.errorCode == PlaybackException.ERROR_CODE_BEHIND_LIVE_WINDOW || isVanishedChunk || isNetworkFailure)) {
-                Log.w("ExoPlayerEngine", "Active stream connection interrupted. Initiating background loopback retry [Gen ID: " + currentGeneration + "].");
-                
-                my.app.utils.app.App.get().run(() -> {
-                    synchronized (engineLock) {
-                        if (currentGeneration == activeStreamId.get() && player != null) {
-                            this.buffering = true;
-                            Optional.ofNullable(listener).ifPresent(l -> l.onEngineBuffering(this, player.getBufferedPercentage()));
-                        }
-                    }
-                });
-
-                try {
-                    Thread.sleep(2000); 
-                } catch (InterruptedException ignored) {}
-
-                if (currentGeneration != activeStreamId.get()) return;
-
-                synchronized (engineLock) {
-                    if (currentGeneration == activeStreamId.get() && source != null) {
-                        this.preparing = true;
-                        this.buffering = false;
-                        universallyResolveAndPrepare(source, source.getLocation(), currentGeneration);
-                    }
-                }
-                return;
-            }
             Log.e("ExoPlayerEngine", "Terminal stream breakdown exposed: " + error.getMessage());
             my.app.utils.app.App.get().run(() -> {
                 synchronized (engineLock) {
