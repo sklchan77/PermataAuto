@@ -144,7 +144,6 @@ public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener 
     // Lipsync Core Correction Controls
     private final AtomicInteger audioDelayMs = new AtomicInteger(0);
     private long pendingDelayBytes = 0;
-    private long pendingAdvanceBytes = 0;
 
     public ExoPlayerEngine(@NonNull Context ctx, @NonNull Listener listener) {
         super(listener);
@@ -217,6 +216,7 @@ public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener 
         this.mediaSourceFactory = new DefaultMediaSourceFactory(appCtx, extractorsFactory)
                 .setDataSourceFactory(dsFactory)
                 .setLoadErrorHandlingPolicy(customErrorPolicy);
+
         DefaultRenderersFactory renderersFactory = new DefaultRenderersFactory(appCtx) {
             @Override
             protected void buildVideoRenderers(
@@ -225,6 +225,35 @@ public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener 
                     boolean enableDecoderFallback, @NonNull android.os.Handler eventHandler,
                     @NonNull androidx.media3.exoplayer.video.VideoRendererEventListener eventListener,
                     long allowedVideoJoiningTimeMs, @NonNull ArrayList<androidx.media3.exoplayer.Renderer> out) {
+                
+                // SURGERY: Inject custom Video Renderer to handle Audio Advance (Video Delay)
+                out.add(new androidx.media3.exoplayer.video.MediaCodecVideoRenderer(
+                        context, mediaCodecSelector, allowedVideoJoiningTimeMs,
+                        enableDecoderFallback, eventHandler, eventListener, 50) {
+                    
+                    @Override
+                    protected boolean processOutputBuffer(
+                            long positionUs, long elapsedRealtimeUs, @Nullable androidx.media3.exoplayer.mediacodec.MediaCodecAdapter codec,
+                            @Nullable java.nio.ByteBuffer buffer, int bufferIndex, int bufferFlags,
+                            int sampleCount, long bufferPresentationTimeUs,
+                            boolean isDecodeOnlyBuffer, boolean isLastBuffer,
+                            @NonNull Format format) throws androidx.media3.exoplayer.ExoPlaybackException {
+                        
+                        long adjustedPositionUs = positionUs;
+                        int currentDelayMs = audioDelayMs.get();
+                        
+                        // If delay is negative (Advance Audio), we delay the video presentation
+                        if (currentDelayMs < 0) {
+                            adjustedPositionUs = positionUs - (Math.abs(currentDelayMs) * 1000L);
+                        }
+                        
+                        return super.processOutputBuffer(
+                                adjustedPositionUs, elapsedRealtimeUs, codec, buffer, bufferIndex,
+                                bufferFlags, sampleCount, bufferPresentationTimeUs,
+                                isDecodeOnlyBuffer, isLastBuffer, format);
+                    }
+                });
+                
                 super.buildVideoRenderers(context, extensionRendererMode, mediaCodecSelector, 
                         enableDecoderFallback, eventHandler, eventListener, 5000L, out);
             }
@@ -235,7 +264,7 @@ public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener 
                         .setAudioTrackBufferSizeProvider(new DefaultAudioTrackBufferSizeProvider.Builder()
                                 .setMaxPcmBufferDurationUs(5000_000)
                                 .setPcmBufferMultiplicationFactor(16)
-                                .setOffloadBufferDurationUs(120_000_000)
+                                // SURGERY: Removed setOffloadBufferDurationUs to prevent Web Codec bypass
                                 .build())
                         .setEnableAudioTrackPlaybackParams(true)
                         .setAudioProcessorChain(new DefaultAudioSink.DefaultAudioProcessorChain(audioProc))
@@ -503,7 +532,6 @@ public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener 
             
             // Clear runtime audio offset counters on a new stream preparation
             this.pendingDelayBytes = 0;
-            this.pendingAdvanceBytes = 0;
 
             Uri uri = source.getLocation();
             this.isHls = Util.inferContentType(uri) == C.CONTENT_TYPE_HLS;
@@ -806,37 +834,28 @@ public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener 
         return audioDelayMs.get();
     }
 
-@Override
-public void setAudioDelay(int milliseconds) {
-    synchronized (engineLock) {
-        int currentDelay = audioDelayMs.get();
-        if (currentDelay == milliseconds) return;
+    @Override
+    public void setAudioDelay(int milliseconds) {
+        synchronized (engineLock) {
+            int currentDelay = audioDelayMs.get();
+            if (currentDelay == milliseconds) return;
 
-        audioDelayMs.set(milliseconds);
+            audioDelayMs.set(milliseconds);
 
-        int deltaMs = milliseconds - currentDelay;
-        if (player != null && source != null) {
-            long bytesPerMs = audioProc.getEstimatedBytesPerMs();
-            if (deltaMs > 0) {
-                this.pendingDelayBytes += deltaMs * bytesPerMs;
-                this.pendingAdvanceBytes = 0; 
+            if (player != null && source != null) {
+                if (milliseconds > 0) {
+                    long bytesPerMs = audioProc.getEstimatedBytesPerMs();
+                    int positiveDelta = milliseconds - Math.max(0, currentDelay);
+                    if (positiveDelta > 0) {
+                        this.pendingDelayBytes += positiveDelta * bytesPerMs;
+                    }
+                }
                 
-                // Only flush instantly for DELAYS.
-                // This clears the buffer so silence injection is heard immediately.
                 long currentPosition = player.getCurrentPosition();
                 player.seekTo(currentPosition); 
-            } else {
-                this.pendingAdvanceBytes += Math.abs(deltaMs) * bytesPerMs;
-                this.pendingDelayBytes = 0; 
-                
-                // DO NOT call seekTo() here. 
-                // Letting queueInput silently drop the incoming bytes without a 
-                // hard pipeline flush allows the audio track to cleanly skip forward.
             }
         }
     }
-}
-
 
     @Override
     public void close() {
@@ -1154,7 +1173,7 @@ public void setAudioDelay(int milliseconds) {
         private java.nio.ByteBuffer buffer;
         private java.nio.ByteBuffer outputBuffer;
         private boolean inputEnded;
-        private long bytesPerMs = 192; // Default baseline calculation tracker (48000Hz * 2 channels * 2 bytes PCM) / 1000
+        private long bytesPerMs = 192; 
 
         public PendingLoadAudioProcessor(Accessor accessor) {
             this.accessor = accessor;
@@ -1181,7 +1200,6 @@ public void setAudioDelay(int milliseconds) {
                 synchronized (engineLock) {
                     if (this.bytesPerMs > 0 && computedBytesPerMs != this.bytesPerMs) {
                         pendingDelayBytes = (pendingDelayBytes / this.bytesPerMs) * computedBytesPerMs;
-                        pendingAdvanceBytes = (pendingAdvanceBytes / this.bytesPerMs) * computedBytesPerMs;
                     }
                     this.bytesPerMs = computedBytesPerMs > 0 ? computedBytesPerMs : 192;
                 }
@@ -1200,16 +1218,6 @@ public void setAudioDelay(int milliseconds) {
             if (remaining == 0) return;
 
             synchronized (engineLock) {
-                // Scenario A: ADVANCE AUDIO - Discard raw input bytes to bring audio track forward
-                if (pendingAdvanceBytes > 0) {
-                    int bytesToDiscard = (int) Math.min(remaining, pendingAdvanceBytes);
-                    inputBuffer.position(inputBuffer.position() + bytesToDiscard);
-                    pendingAdvanceBytes -= bytesToDiscard;
-                    remaining = inputBuffer.remaining();
-                    if (remaining == 0) return;
-                }
-
-                // Scenario B: DELAY AUDIO - Fabricate silences incrementally to hold audio track back
                 if (pendingDelayBytes > 0) {
                     int bytesToInject = (int) Math.min(4096, pendingDelayBytes);
                     if (buffer.capacity() < bytesToInject) {
@@ -1218,7 +1226,6 @@ public void setAudioDelay(int milliseconds) {
                         buffer.clear();
                     }
 
-                    // Feed raw silent zeroes into PCM layout
                     for (int i = 0; i < bytesToInject; i++) {
                         buffer.put((byte) 0);
                     }
@@ -1226,12 +1233,10 @@ public void setAudioDelay(int milliseconds) {
                     outputBuffer = buffer;
                     pendingDelayBytes -= bytesToInject;
 
-                    // Do not drain the main buffer track yet; wait for the next render loop tick
                     return;
                 }
             }
 
-            // Normal processing fallback loop
             if (buffer.capacity() < remaining) {
                 buffer = java.nio.ByteBuffer.allocateDirect(remaining).order(java.nio.ByteOrder.nativeOrder());
             } else {
