@@ -554,7 +554,7 @@ public class MainCarActivity extends CarActivity implements PermataActivity, Med
 		boolean isSpamming = (now - lastClickTime < 250);
 
 		if (wv.getSettings().getJavaScriptEnabled()) {
-			// Phase 1: Universal DOM Overrides (13-Site VIP Registry)
+			// Phase 1: Universal DOM Overrides (18-Site Enterprise Registry)
 			String universalPayload = "(function(){" +
 					"const registry=[" +
 					"  {name:\"douyin\",match:/douyin\\.com/,execute:function(){" +
@@ -633,13 +633,37 @@ public class MainCarActivity extends CarActivity implements PermataActivity, Med
 					"  {name:\"weibo\",match:/weibo\\.(com|cn)/,execute:function(){" +
 					"    let oa=document.querySelectorAll('.f-bg-toast, [class*=\"open-app\"], [class*=\"app-btn\"]');" +
 					"    oa.forEach(el=>{el.style.display='none';});" +
+					"  }}," +
+					"  {name:\"snapchat\",match:/snapchat\\.com/,execute:function(){" +
+					"    let ab=document.querySelector('.AppBanner, [class*=\"Banner\"], [class*=\"DownloadApp\"]');" +
+					"    if(ab)ab.style.display='none';" +
+					"    let ub=document.querySelector('[aria-label=\"Unmute\"], .unmute-icon');if(ub)ub.click();" +
+					"  }}," +
+					"  {name:\"likee\",match:/likee\\.video/,execute:function(){" +
+					"    let dw=document.querySelector('.download-bar, [class*=\"Download\"], [class*=\"guide\"]');" +
+					"    if(dw)dw.style.display='none';" +
+					"    let cb=document.querySelector('.close-btn, [class*=\"close\"]');if(cb)cb.click();" +
+					"  }}," +
+					"  {name:\"moj\",match:/(mojapp\\.in|sharechat\\.com)/,execute:function(){" +
+					"    let login=document.querySelector('.login-modal, [class*=\"LoginOverlay\"]');" +
+					"    if(login)login.style.display='none';" +
+					"    if(document.body) document.body.style.overflow='auto';" +
+					"  }}," +
+					"  {name:\"vk\",match:/vk\\.com/,execute:function(){" +
+					"    let lb=document.querySelector('.UnauthBox, .box_layout, [id*=\"login\"]');" +
+					"    if(lb)lb.style.display='none';" +
+					"    let um=document.querySelector('.ShortsVideo__unmute, [class*=\"unmute\"]');if(um)um.click();" +
+					"  }}," +
+					"  {name:\"kwai\",match:/(kwai\\.com|snackvideo\\.com)/,execute:function(){" +
+					"    let ob=document.querySelector('.open-app-bar, [class*=\"banner\"], .login-dialog');" +
+					"    if(ob)ob.style.display='none';" +
 					"  }}" +
 					"];" +
 					"const active=registry.find(p=>p.match.test(window.location.hostname));" +
 					"if(!active)return;" +
 					"let guard=null;" +
 					"function run(){try{active.execute();}catch(e){}}" +
-					"const obs=new MutationObserver(()=>{if(guard)clearTimeout(guard);guard=setTimeout(run,50);});" +
+					"const obs=new MutationObserver(()=>{if(guard)clearTimeout(guard);guard=setTimeout(run,100);});" +
 					"run();" +
 					"if(document.body){obs.observe(document.body,{childList:true,subtree:true});}" +
 					"else{window.addEventListener('DOMContentLoaded',()=>obs.observe(document.body,{childList:true,subtree:true}));}" +
