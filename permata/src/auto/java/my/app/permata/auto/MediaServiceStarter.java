@@ -15,7 +15,8 @@ public class MediaServiceStarter extends BroadcastReceiver {
 		if (BluetoothDevice.ACTION_ACL_CONNECTED.equals(intent.getAction())) {
 			Log.i("Connected to bluetooth");
 			PermataMediaServiceConnection.connect(null).onSuccess(c -> {
-				Log.i("Media service started");
+				Log.i("Media service started. Disconnecting wake-up binding to prevent zombie leak.");
+				c.disconnect();
 			}).onFailure(Log::e);
 		}
 	}
