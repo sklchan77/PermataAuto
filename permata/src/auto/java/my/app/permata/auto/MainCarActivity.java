@@ -27,6 +27,7 @@ import android.media.AudioManager;
 import android.os.Bundle;
 import android.os.OperationCanceledException;
 import android.os.SystemClock;
+import android.support.v4.media.session.PlaybackStateCompat;
 import android.text.TextWatcher;
 import android.view.KeyEvent;
 import android.view.MotionEvent;
@@ -50,6 +51,7 @@ import com.google.android.apps.auto.sdk.CarActivity;
 import com.google.android.apps.auto.sdk.CarUiController;
 
 import my.app.permata.R;
+import my.app.permata.media.service.PermataMediaService;
 import my.app.permata.media.service.PermataMediaServiceConnection;
 import my.app.permata.media.service.MediaSessionCallback;
 import my.app.permata.media.service.MediaSessionCallbackAssistant;
@@ -71,8 +73,6 @@ import my.app.utils.ui.menu.OverlayMenu;
  * Optimizes native CAN hardware event sync vectors over standard wireless projection layers.
  */
 public class MainCarActivity extends CarActivity implements PermataActivity, MediaSessionCallbackAssistant {
-
-	private static final String TARGET_WEB_BROWSER_CLASS = "my.app.permata.addon.web.WebBrowserFragment";
 
 	private static final java.util.Map<WebView, Long> scrollTimestamps = 
 			java.util.Collections.synchronizedMap(new java.util.WeakHashMap<>());
@@ -104,9 +104,12 @@ public class MainCarActivity extends CarActivity implements PermataActivity, Med
 		ActivityFragment activeFragment = d.getActiveFragment();
 		if (activeFragment == null) return false;
 
-		// ONLY intercept if it is strictly the generic web browser.
-		if (!TARGET_WEB_BROWSER_CLASS.equals(activeFragment.getClass().getName())) {
-			// This gracefully allows IPTV, Local Media, and YouTube to skip tracks natively!
+		View root = activeFragment.getView();
+		if (root == null) return false;
+
+		// The High-Speed Omni-Hunter: Fast, Safe, and Cascading
+		WebView targetWebView = omniWebViewHunter(root);
+		if (targetWebView == null) {
 			return false; 
 		}
 
@@ -118,7 +121,7 @@ public class MainCarActivity extends CarActivity implements PermataActivity, Med
 
 		mainThreadHandler.post(() -> {
 			try {
-				performFragmentScroll(!isNext, d);
+				smartScrollWebView(targetWebView, !isNext, -1f, -1f);
 			} catch (Exception e) {
 				Log.e("MainCarActivity", "UI Thread exception during programmatic scroll dispatch", e);
 			}
@@ -130,7 +133,7 @@ public class MainCarActivity extends CarActivity implements PermataActivity, Med
 	@Override
 	public FutureSupplier<MediaLib.PlayableItem> getNextPlayable(MediaLib.Item i) {
 		if (shouldInterceptSteeringKey(true)) {
-			return my.app.utils.async.Completed.completedNull(); // Abort background track skips cleanly
+			return my.app.utils.async.Completed.completedNull(); 
 		}
 		return i.getNextPlayable();
 	}
@@ -139,7 +142,7 @@ public class MainCarActivity extends CarActivity implements PermataActivity, Med
 	@Override
 	public FutureSupplier<MediaLib.PlayableItem> getPrevPlayable(MediaLib.Item i) {
 		if (shouldInterceptSteeringKey(false)) {
-			return my.app.utils.async.Completed.completedNull(); // Abort background track skips cleanly
+			return my.app.utils.async.Completed.completedNull(); 
 		}
 		return i.getPrevPlayable();
 	}
@@ -165,13 +168,10 @@ public class MainCarActivity extends CarActivity implements PermataActivity, Med
 		});
 	}
 
-	/**
-	 * Steals Audio Focus silently to forcefully route Android Auto media buttons
-	 * away from the FM Radio and into the Permata Auto session when browsing the web.
-	 */
 	private void stealAudioFocusForWeb(ActivityFragment fragment) {
 		try {
-			if (TARGET_WEB_BROWSER_CLASS.equals(fragment.getClass().getName())) {
+			View root = fragment.getView();
+			if (root != null && omniWebViewHunter(root) != null) {
 				AudioManager am = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
 				if (am != null) {
 					am.requestAudioFocus(null, AudioManager.STREAM_MUSIC, AudioManager.AUDIOFOCUS_GAIN);
@@ -263,7 +263,6 @@ public class MainCarActivity extends CarActivity implements PermataActivity, Med
 		if (service != null && service.isConnected()) {
 			MediaSessionCallback cb = service.getMediaSessionCallback();
 			if (cb != null) {
-				// Prevent zombie leaks on AA reconnect by clearing old instances first
 				cb.removeAssistant(this);
 				cb.addAssistant(this, 1);
 			}
@@ -288,6 +287,17 @@ public class MainCarActivity extends CarActivity implements PermataActivity, Med
 			MediaSessionCallback cb = service.getMediaSessionCallback();
 			if (cb != null) {
 				cb.removeAssistant(this);
+				
+				// SURGERY 3: Single-File Zombie Purge.
+				// Assassinate the background service if playback is dead upon UI disconnect.
+				int state = cb.getPlaybackState().getState();
+				if (state == PlaybackStateCompat.STATE_NONE || 
+					state == PlaybackStateCompat.STATE_STOPPED || 
+					state == PlaybackStateCompat.STATE_ERROR) {
+					try {
+						getContext().stopService(new Intent(getContext(), PermataMediaService.class));
+					} catch (Exception ignored) {}
+				}
 			}
 		}
 
@@ -464,64 +474,122 @@ public class MainCarActivity extends CarActivity implements PermataActivity, Med
 		ActivityFragment f = d.getActiveFragment();
 		if (f == null) return false;
 
-		if (!TARGET_WEB_BROWSER_CLASS.equals(f.getClass().getName())) {
-			return false; 
-		}
-
 		View root = f.getView();
 		if (root == null) return false;
 
-		// Aggressive WebView Hunter: Bypasses Android's strict occlusion/visibility rules
-		WebView targetWebView = findTargetWebView(root);
+		WebView targetWebView = omniWebViewHunter(root);
 
 		if (targetWebView != null) {
 			return smartScrollWebView(targetWebView, up, -1f, -1f);
 		}
 
-		// Fallback for native list scrolling (if WebView genuinely isn't present)
-		if (root instanceof ViewGroup vg) {
-			return performViewScroll(up, vg);
+		if (root instanceof ViewGroup) {
+			return performViewScroll(up, root);
 		}
 		
 		return false;
 	}
 
-	private WebView findTargetWebView(View root) {
-		// Strategy 1: Find exact target by cross-module ID reference (safest)
-		int targetBrowserId = root.getContext().getResources().getIdentifier("browserWebView", "id", root.getContext().getPackageName());
-		if (targetBrowserId != 0) {
-			View found = root.findViewById(targetBrowserId);
-			if (found instanceof WebView) {
-				return (WebView) found;
+	/**
+	 * High-Speed Omni-Hunter. Cascades through 5 layers. 
+	 * Wraps traversal in safety logic to prevent Binder Thread race conditions and ANRs.
+	 */
+	private WebView omniWebViewHunter(View root) {
+		if (root == null) return null;
+
+		try {
+			// LAYER 1: Explicit ID Strike
+			int targetBrowserId = root.getContext().getResources().getIdentifier("browserWebView", "id", root.getContext().getPackageName());
+			if (targetBrowserId != 0) {
+				View found = root.findViewById(targetBrowserId);
+				if (found instanceof WebView && isValidWebView((WebView) found)) {
+					return (WebView) found;
+				}
 			}
+
+			// LAYER 2: Focus Tree Traversal
+			View focused = root.findFocus();
+			if (focused != null) {
+				if (focused instanceof WebView && isValidWebView((WebView) focused)) {
+					return (WebView) focused;
+				}
+				View parent = (View) focused.getParent();
+				while (parent != null) {
+					if (parent instanceof WebView && isValidWebView((WebView) parent)) {
+						return (WebView) parent;
+					}
+					if (parent.getParent() instanceof View) {
+						parent = (View) parent.getParent();
+					} else {
+						parent = null;
+					}
+				}
+			}
+
+			// LAYER 3 & 4: High-Speed Breadth-First Net with Smart Pruning
+			java.util.List<WebView> validCandidates = new java.util.ArrayList<>();
+			java.util.Queue<View> queue = new java.util.LinkedList<>();
+			queue.add(root);
+
+			while (!queue.isEmpty()) {
+				View current = queue.poll();
+				if (current == null || current.getVisibility() != View.VISIBLE) continue;
+
+				if (current instanceof WebView) {
+					if (isValidWebView((WebView) current)) {
+						validCandidates.add((WebView) current);
+					}
+				} else if (current instanceof ViewGroup) {
+					// We DO NOT check parent width/height here anymore, 
+					// to prevent 0x0 wrapper layouts from ruining the scan.
+					ViewGroup vg = (ViewGroup) current;
+					for (int i = 0; i < vg.getChildCount(); i++) {
+						queue.add(vg.getChildAt(i));
+					}
+				}
+			}
+
+			// LAYER 5: Tie-Breaker Matrix
+			if (!validCandidates.isEmpty()) {
+				if (validCandidates.size() == 1) {
+					return validCandidates.get(0);
+				}
+				java.util.Collections.sort(validCandidates, new java.util.Comparator<WebView>() {
+					@Override
+					public int compare(WebView w1, WebView w2) {
+						int area1 = w1.getWidth() * w1.getHeight();
+						int area2 = w2.getWidth() * w2.getHeight();
+						return Integer.compare(area2, area1); 
+					}
+				});
+				return validCandidates.get(0); 
+			}
+
+		} catch (Exception e) {
+			Log.w("MainCarActivity", "Omni-Hunter absorbed a background thread collision.", e);
 		}
 
-		// Strategy 2: Deep recursive scan ignoring strict Android visibility/occlusion rules
-		return scanForWebView(root);
+		return null; 
 	}
 
-	private WebView scanForWebView(View view) {
-		if (view instanceof WebView) {
-			WebView wv = (WebView) view;
-			if (wv.getWidth() == 0 || wv.getWidth() > 100) {
-				return wv;
-			}
-		}
-		if (view instanceof ViewGroup vg) {
-			for (int i = 0; i < vg.getChildCount(); i++) {
-				WebView deepFound = scanForWebView(vg.getChildAt(i));
-				if (deepFound != null) return deepFound;
-			}
-		}
-		return null;
+	/**
+	 * Confirms physical visibility and enforcing the strict 200x200 pixel rule.
+	 */
+	private boolean isValidWebView(WebView wv) {
+		return wv != null && 
+		       wv.getVisibility() == View.VISIBLE && 
+		       wv.isShown() && 
+		       wv.isAttachedToWindow() && 
+		       wv.getWidth() >= 200 && 
+		       wv.getHeight() >= 200;
 	}
 
 	private boolean performViewScroll(boolean up, View v) {
 		if (v == null || v.getVisibility() != View.VISIBLE || !v.isShown() || v.getWidth() <= 0 || v.getHeight() <= 0) {
 			return false;
 		}
-
-		if (v instanceof RecyclerView rv) {
+		if (v instanceof RecyclerView) {
+			RecyclerView rv = (RecyclerView) v;
 			LinearLayoutManager lm = (LinearLayoutManager) rv.getLayoutManager();
 			if (lm == null) return false;
 			int pos = lm.findFirstVisibleItemPosition();
@@ -531,8 +599,9 @@ public class MainCarActivity extends CarActivity implements PermataActivity, Med
 				if (pos < lm.getItemCount() - 1) lm.scrollToPositionWithOffset(pos + 1, 0);
 			}
 			return true;
-		} else if (v instanceof ViewGroup vg) {
-			for (int i = 0, n = vg.getChildCount(); i < n; i++) {
+		} else if (v instanceof ViewGroup) {
+			ViewGroup vg = (ViewGroup) v;
+			for (int i = 0; i < vg.getChildCount(); i++) {
 				if (performViewScroll(up, vg.getChildAt(i))) return true;
 			}
 		}
@@ -551,11 +620,14 @@ public class MainCarActivity extends CarActivity implements PermataActivity, Med
 		long lastClickTime = (lastClickTimeObj != null) ? lastClickTimeObj : 0;
 		scrollTimestamps.put(wv, now); 
 		
-		boolean isSpamming = (now - lastClickTime < 250);
-
 		if (wv.getSettings().getJavaScriptEnabled()) {
-			// Phase 1: Universal DOM Overrides (18-Site Enterprise Registry)
 			String universalPayload = "(function(){" +
+					"document.addEventListener('click', function(e) {" +
+					"  var a = e.target.closest('a');" +
+					"  if(a && a.href && !a.href.startsWith('http')) {" +
+					"    e.preventDefault(); e.stopPropagation();" +
+					"  }" +
+					"}, true);" +
 					"const registry=[" +
 					"  {name:\"douyin\",match:/douyin\\.com/,execute:function(){" +
 					"    let fs=document.querySelector('.xgplayer-fullscreen,[class*=\"fullscreen\"],[title*=\"全屏\"],[aria-label*=\"全屏\"]');" +
@@ -670,7 +742,6 @@ public class MainCarActivity extends CarActivity implements PermataActivity, Med
 					"})();";
 			wv.evaluateJavascript(universalPayload, null);
 
-			// Phase 2: Advanced Contextual Scrolling Engine (Bypasses Window Locks)
 			String advancedJsScript = "(function() {" +
 					"  try {" +
 					"    var isDown = " + (!up) + ";" +
@@ -732,7 +803,6 @@ public class MainCarActivity extends CarActivity implements PermataActivity, Med
 			wv.evaluateJavascript(advancedJsScript, null);
 		}
 
-		// Phase 3: Hardware Fallback Simulated Swipe (For stubborn UIs)
 		final float actionX = (relativeX >= 0) ? relativeX : (wv.getWidth() * 0.50f);
 		final float centerY = (relativeY >= 0) ? relativeY : (wv.getHeight() / 2f);
 		
