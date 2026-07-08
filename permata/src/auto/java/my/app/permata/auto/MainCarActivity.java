@@ -554,21 +554,20 @@ public class MainCarActivity extends CarActivity implements PermataActivity, Med
 		boolean isSpamming = (now - lastClickTime < 250);
 
 		if (wv.getSettings().getJavaScriptEnabled()) {
-			// Phase 1: Universal DOM Overrides (Fullscreen, Mute Bypass)
+			// Phase 1: Universal DOM Overrides (13-Site VIP Registry)
 			String universalPayload = "(function(){" +
 					"const registry=[" +
 					"  {name:\"douyin\",match:/douyin\\.com/,execute:function(){" +
 					"    let fs=document.querySelector('.xgplayer-fullscreen,[class*=\"fullscreen\"],[title*=\"全屏\"],[aria-label*=\"全屏\"]');" +
-					"    if(!fs){for(let el of document.querySelectorAll('div,button,span')){if(el.textContent==='全屏'||(el.getAttribute('aria-label')&&el.getAttribute('aria-label').includes('全屏'))){fs=el;break;}}}" +
 					"    if(fs&&!fs.classList.contains('xgplayer-fullscreen-active'))fs.click();" +
 					"    let cl=document.querySelector('.xgplayer-clearscreen,[class*=\"clearscreen\"],[title*=\"清屏\"],[aria-label*=\"清屏\"]');" +
-					"    if(!cl){for(let el of document.querySelectorAll('div,button,span')){if(el.textContent.includes('清屏')||el.textContent.includes('洁净模式')){cl=el;break;}}}" +
 					"    if(cl)cl.click();" +
+					"    let lc=document.querySelector('.dy-account-close,[class*=\"close-btn\"]');if(lc)lc.click();" +
 					"  }}," +
 					"  {name:\"tiktok\",match:/tiktok\\.com/,execute:function(){" +
 					"    let cl=document.querySelector('[data-e2e=\"login-modal\"] button[class*=\"Close\"],div[class*=\"DivModalClose\"]');if(cl)cl.click();" +
 					"    let mu=document.querySelector('[data-e2e=\"video-player-volume\"],[class*=\"volume\"] svg');" +
-					"    if(mu&&(mu.innerHTML.includes('mute')||mu.className.baseVal.includes('mute'))){" +
+					"    if(mu&&(mu.innerHTML.includes('mute')||(mu.className.baseVal&&mu.className.baseVal.includes('mute')))){" +
 					"      let vc=mu.closest('button')||mu.parentElement;if(vc)vc.click();" +
 					"    }" +
 					"    let th=document.querySelector('[data-e2e=\"browse-theatre-mode\"]');if(th)th.click();" +
@@ -583,6 +582,57 @@ public class MainCarActivity extends CarActivity implements PermataActivity, Med
 					"      let l=s.getAttribute('aria-label');" +
 					"      if(l&&(l.includes('Mute')||l.includes('静音'))){let c=s.closest('button')||s.parentElement;if(c)c.click();}" +
 					"    });" +
+					"  }}," +
+					"  {name:\"youtube\",match:/(youtube\\.com|youtu\\.be)/,execute:function(){" +
+					"    let ad=document.querySelector('.ytp-skip-ad-button,.ytp-ad-skip-button,.ytp-skip-button');if(ad)ad.click();" +
+					"    let dm=document.querySelectorAll('yt-button-renderer[id=\"dismiss-button\"],[aria-label=\"No thanks\"],[aria-label=\"Dismiss\"],.yt-spec-button-shape-next--text');" +
+					"    dm.forEach(b=>{if(b.textContent&&(b.textContent.includes('No thanks')||b.textContent.includes('Skip')||b.textContent.includes('Dismiss')))b.click();});" +
+					"    let fs=document.querySelector('.ytp-fullscreen-button');" +
+					"    if(fs&&fs.getAttribute('aria-label')&&fs.getAttribute('aria-label').includes('full screen'))fs.click();" +
+					"  }}," +
+					"  {name:\"facebook\",match:/facebook\\.com/,execute:function(){" +
+					"    let co=document.querySelector('[data-cookiebanner=\"accept_button\"],[data-testid=\"cookie-policy-manage-dialog-accept\"]');if(co)co.click();" +
+					"    let cd=document.querySelector('[aria-label=\"Close\"],[aria-label=\"关闭\"],[class*=\"layerCancel\"]');if(cd)cd.click();" +
+					"  }}," +
+					"  {name:\"bilibili\",match:/bilibili\\.com/,execute:function(){" +
+					"    let fs=document.querySelector('.bilibili-player-video-btn-fullscreen,.sq-wrap,.m-bilibili-space-fullscreen,.mplayer-fullscreen');" +
+					"    if(fs&&!fs.classList.contains('closed'))fs.click();" +
+					"    let pl=document.querySelector('.mplayer-play');if(pl&&pl.classList.contains('play'))pl.click();" +
+					"    let ab=document.querySelector('.m-home-float-openapp,.launch-app-btn,.open-app-btn');" +
+					"    if(ab&&ab.parentElement)ab.parentElement.style.display='none';" +
+					"  }}," +
+					"  {name:\"kuaishou\",match:/kuaishou\\.com/,execute:function(){" +
+					"    let fs=document.querySelector('[aria-label*=\"全屏\"],.fullscreen-icon');if(fs)fs.click();" +
+					"    let cb=document.querySelector('.login-close,[class*=\"close-btn\"],[aria-label=\"关闭\"]');if(cb)cb.click();" +
+					"  }}," +
+					"  {name:\"xiaohongshu\",match:/xiaohongshu\\.com/,execute:function(){" +
+					"    let ov=document.querySelectorAll('[class*=\"app-open\"],[class*=\"download-btn\"],[class*=\"login-box\"]');" +
+					"    ov.forEach(el=>{el.style.display='none';});" +
+					"    let cb=document.querySelector('.close-icon,[class*=\"close\"]');if(cb)cb.click();" +
+					"  }}," +
+					"  {name:\"reddit\",match:/reddit\\.com/,execute:function(){" +
+					"    let pb=document.querySelectorAll('.XPromoPopup, [class*=\"bottom-bar\"], [class*=\"Prompt\"]');" +
+					"    pb.forEach(el=>{el.style.display='none';});" +
+					"    let xb=document.querySelector('button[aria-label=\"Close\"], button[aria-label=\"Dismiss\"]');if(xb)xb.click();" +
+					"    if(document.body&&window.getComputedStyle(document.body).overflow==='hidden') document.body.style.overflow='auto';" +
+					"  }}," +
+					"  {name:\"x\",match:/(twitter\\.com|x\\.com)/,execute:function(){" +
+					"    let bb=document.querySelector('[data-testid=\"BottomBar\"]');if(bb)bb.style.display='none';" +
+					"    let cb=document.querySelector('[data-testid=\"app-bar-close\"]');if(cb)cb.click();" +
+					"  }}," +
+					"  {name:\"pinterest\",match:/pinterest\\.com/,execute:function(){" +
+					"    let wb=document.querySelectorAll('[data-test-id=\"gift-wrap\"], .UnauthBanner, [data-test-id=\"signup-banner\"]');" +
+					"    wb.forEach(el=>{el.style.display='none';});" +
+					"    if(document.body) document.body.style.overflow='auto';" +
+					"  }}," +
+					"  {name:\"twitch\",match:/twitch\\.tv/,execute:function(){" +
+					"    let ma=document.querySelector('[data-a-target=\"player-overlay-mature-accept\"]');if(ma)ma.click();" +
+					"    let ap=document.querySelectorAll('.tw-bottom-0, .tw-fixed');" +
+					"    ap.forEach(b=>{if(b.textContent&&b.textContent.includes('App'))b.style.display='none';});" +
+					"  }}," +
+					"  {name:\"weibo\",match:/weibo\\.(com|cn)/,execute:function(){" +
+					"    let oa=document.querySelectorAll('.f-bg-toast, [class*=\"open-app\"], [class*=\"app-btn\"]');" +
+					"    oa.forEach(el=>{el.style.display='none';});" +
 					"  }}" +
 					"];" +
 					"const active=registry.find(p=>p.match.test(window.location.hostname));" +
