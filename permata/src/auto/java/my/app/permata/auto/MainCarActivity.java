@@ -10,7 +10,6 @@ import static android.view.KeyEvent.KEYCODE_DPAD_RIGHT;
 import static android.view.KeyEvent.KEYCODE_DPAD_UP;
 import static android.view.KeyEvent.KEYCODE_DPAD_UP_LEFT;
 import static android.view.KeyEvent.KEYCODE_DPAD_UP_RIGHT;
-import static my.app.permata.ui.activity.PermataActivity.NO_DELEGATE;
 import static my.app.utils.async.Completed.completed;
 import static my.app.utils.async.Completed.failed;
 import static my.app.utils.ui.UiUtils.showAlert;
@@ -23,11 +22,9 @@ import android.graphics.PorterDuff;
 import android.graphics.drawable.ColorDrawable;
 import android.graphics.drawable.Drawable;
 import android.graphics.drawable.StateListDrawable;
-import android.media.AudioManager;
 import android.os.Bundle;
 import android.os.OperationCanceledException;
 import android.os.SystemClock;
-import android.support.v4.media.session.PlaybackStateCompat;
 import android.text.TextWatcher;
 import android.view.KeyEvent;
 import android.view.MotionEvent;
@@ -39,7 +36,6 @@ import android.widget.EditText;
 import android.widget.TextView.OnEditorActionListener;
 
 import androidx.annotation.NonNull;
-import androidx.annotation.Nullable;
 import androidx.appcompat.content.res.AppCompatResources;
 import androidx.appcompat.widget.AppCompatImageView;
 import androidx.constraintlayout.widget.ConstraintLayout;
@@ -51,11 +47,7 @@ import com.google.android.apps.auto.sdk.CarActivity;
 import com.google.android.apps.auto.sdk.CarUiController;
 
 import my.app.permata.R;
-import my.app.permata.media.service.PermataMediaService;
 import my.app.permata.media.service.PermataMediaServiceConnection;
-import my.app.permata.media.service.MediaSessionCallback;
-import my.app.permata.media.service.MediaSessionCallbackAssistant;
-import my.app.permata.media.lib.MediaLib;
 import my.app.permata.ui.activity.PermataActivity;
 import my.app.permata.ui.activity.MainActivityDelegate;
 import my.app.permata.ui.view.MediaItemListView;
@@ -69,139 +61,16 @@ import my.app.utils.ui.fragment.ActivityFragment;
 import my.app.utils.ui.menu.OverlayMenu;
 
 /**
- * Enterprise Core Vehicle Launcher Gateway Activity.
- * Optimizes native CAN hardware event sync vectors over standard wireless projection layers.
+ * @author sklchan77
  */
-public class MainCarActivity extends CarActivity implements PermataActivity, MediaSessionCallbackAssistant {
-
-	private static final java.util.Map<WebView, Long> scrollTimestamps = 
-			java.util.Collections.synchronizedMap(new java.util.WeakHashMap<>());
-
-	private static java.lang.ref.WeakReference<MainCarActivity> activeInstanceRef = 
-			new java.lang.ref.WeakReference<>(null);
-
-	private static long lastProcessedKeyEventTime = 0;
-
+public class MainCarActivity extends CarActivity implements PermataActivity {
 	static PermataMediaServiceConnection service;
-	
 	@SuppressWarnings("unchecked")
 	@NonNull
 	private FutureSupplier<MainActivityDelegate> delegate =
 			(FutureSupplier<MainActivityDelegate>) NO_DELEGATE;
 	private CarEditText editText;
 	private TextWatcher textWatcher;
-
-	private static final android.os.Handler mainThreadHandler = 
-			new android.os.Handler(android.os.Looper.getMainLooper());
-
-	/**
-	 * Unified Interception Engine routing actions arriving from the working background MediaSession token.
-	 */
-	private boolean shouldInterceptSteeringKey(boolean isNext) {
-		MainActivityDelegate d = delegate.peek();
-		if (d == null) return false;
-
-		ActivityFragment activeFragment = d.getActiveFragment();
-		if (activeFragment == null) return false;
-
-		View root = activeFragment.getView();
-		if (root == null) return false;
-
-		// The High-Speed Omni-Hunter: Fast, Safe, and Cascading
-		WebView targetWebView = omniWebViewHunter(root);
-		if (targetWebView == null) {
-			return false; 
-		}
-
-		long now = SystemClock.uptimeMillis();
-		if (now - lastProcessedKeyEventTime < 150) {
-			return true; 
-		}
-		lastProcessedKeyEventTime = now;
-
-		mainThreadHandler.post(() -> {
-			try {
-				smartScrollWebView(targetWebView, !isNext, -1f, -1f);
-			} catch (Exception e) {
-				Log.e("MainCarActivity", "UI Thread exception during programmatic scroll dispatch", e);
-			}
-		});
-		return true; 
-	}
-
-	@NonNull
-	@Override
-	public FutureSupplier<MediaLib.PlayableItem> getNextPlayable(MediaLib.Item i) {
-		if (shouldInterceptSteeringKey(true)) {
-			return my.app.utils.async.Completed.completedNull(); 
-		}
-		return i.getNextPlayable();
-	}
-
-	@NonNull
-	@Override
-	public FutureSupplier<MediaLib.PlayableItem> getPrevPlayable(MediaLib.Item i) {
-		if (shouldInterceptSteeringKey(false)) {
-			return my.app.utils.async.Completed.completedNull(); 
-		}
-		return i.getPrevPlayable();
-	}
-
-	private void pauseWebViewTraffic() {
-		mainThreadHandler.post(() -> {
-			MainActivityDelegate d = delegate.peek();
-			if (d != null && d.getActiveFragment() != null) {
-				View root = d.getActiveFragment().getView();
-				toggleWebViewState(root, false);
-			}
-		});
-	}
-
-	private void resumeWebViewTraffic() {
-		mainThreadHandler.post(() -> {
-			MainActivityDelegate d = delegate.peek();
-			if (d != null && d.getActiveFragment() != null) {
-				stealAudioFocusForWeb(d.getActiveFragment());
-				View root = d.getActiveFragment().getView();
-				toggleWebViewState(root, true);
-			}
-		});
-	}
-
-	private void stealAudioFocusForWeb(ActivityFragment fragment) {
-		try {
-			View root = fragment.getView();
-			if (root != null && omniWebViewHunter(root) != null) {
-				AudioManager am = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
-				if (am != null) {
-					am.requestAudioFocus(null, AudioManager.STREAM_MUSIC, AudioManager.AUDIOFOCUS_GAIN);
-				}
-			}
-		} catch (Exception e) {
-			Log.w("MainCarActivity", "Silent audio focus grab failed", e);
-		}
-	}
-
-	private void toggleWebViewState(View v, boolean resume) {
-		if (v == null) return;
-		if (v instanceof WebView wv) {
-			try {
-				if (resume) {
-					wv.onResume();
-					wv.resumeTimers();
-				} else {
-					wv.onPause();
-					wv.pauseTimers(); 
-				}
-			} catch (Exception e) {
-				Log.e("MainCarActivity", "Error executing rendering lifecycle transition shift", e);
-			}
-		} else if (v instanceof ViewGroup vg) {
-			for (int i = 0, n = vg.getChildCount(); i < n; i++) {
-				toggleWebViewState(vg.getChildAt(i), resume);
-			}
-		}
-	}
 
 	@NonNull
 	@Override
@@ -216,8 +85,6 @@ public class MainCarActivity extends CarActivity implements PermataActivity, Med
 
 	@Override
 	public void onCreate(Bundle savedInstanceState) {
-		activeInstanceRef = new java.lang.ref.WeakReference<>(this); 
-		
 		MainActivityDelegate.setTheme(this, true);
 		super.onCreate(savedInstanceState);
 		initCarActivity(this);
@@ -246,74 +113,18 @@ public class MainCarActivity extends CarActivity implements PermataActivity, Med
 		ActivityDelegate.setContextToDelegate(ctx -> d);
 		delegate = completed(d);
 		d.onActivityCreate(state);
-
-		MediaSessionCallback cb = s.getMediaSessionCallback();
-		if (cb != null) {
-			cb.addAssistant(this, 1);
-		}
-
-		return d; 
+		return d;
 	}
 
 	@Override
 	public void onResume() {
 		super.onResume();
-		activeInstanceRef = new java.lang.ref.WeakReference<>(this);
-		
-		if (service != null && service.isConnected()) {
-			MediaSessionCallback cb = service.getMediaSessionCallback();
-			if (cb != null) {
-				cb.removeAssistant(this);
-				cb.addAssistant(this, 1);
-			}
-		}
-		
-		resumeWebViewTraffic();
 		getActivityDelegate().onSuccess(MainActivityDelegate::onActivityResume);
-	}
-
-	@Override
-	public void onPause() {
-		pauseWebViewTraffic();
-		super.onPause();
 	}
 
 	@Override
 	@SuppressWarnings("unchecked")
 	public void onDestroy() {
-		stopInput();
-
-		if (service != null && service.isConnected()) {
-			MediaSessionCallback cb = service.getMediaSessionCallback();
-			if (cb != null) {
-				cb.removeAssistant(this);
-				
-				// SURGERY 3: Single-File Zombie Purge.
-				// Assassinate the background service if playback is dead upon UI disconnect.
-				int state = cb.getPlaybackState().getState();
-				if (state == PlaybackStateCompat.STATE_NONE || 
-					state == PlaybackStateCompat.STATE_STOPPED || 
-					state == PlaybackStateCompat.STATE_ERROR) {
-					try {
-						getContext().stopService(new Intent(getContext(), PermataMediaService.class));
-					} catch (Exception ignored) {}
-				}
-			}
-		}
-
-		Cursor cursor = (Cursor) findViewById(R.id.cursor);
-		if (cursor != null) {
-			cursor.cleanup();
-		}
-
-		if (service != null && !service.isConnected()) {
-			service = null;
-		}
-
-		if (activeInstanceRef.get() == this) {
-			activeInstanceRef.clear();
-		}
-
 		super.onDestroy();
 		getActivityDelegate().onSuccess(MainActivityDelegate::onActivityDestroy)
 				.thenRun(() -> ActivityDelegate.setContextToDelegate(null));
@@ -322,6 +133,7 @@ public class MainCarActivity extends CarActivity implements PermataActivity, Med
 
 	@Override
 	public void onConfigurationChanged(Configuration configuration) {
+		Log.i("Configuration changed: ", configuration);
 		super.onConfigurationChanged(configuration);
 	}
 
@@ -377,13 +189,6 @@ public class MainCarActivity extends CarActivity implements PermataActivity, Med
 		if (textWatcher != null) editText.removeTextChangedListener(textWatcher);
 		editText.addTextChangedListener(w);
 		textWatcher = w;
-
-		if (w instanceof OnEditorActionListener) {
-			editText.setOnEditorActionListener((OnEditorActionListener) w);
-		} else {
-			editText.setOnEditorActionListener(null);
-		}
-
 		getActivityDelegate().onSuccess(a -> {
 			if (a.getPrefs().getVoiceControlEnabledPref()) {
 				a.startSpeechRecognizer(null, true).onCompletion((q, err) -> {
@@ -414,9 +219,8 @@ public class MainCarActivity extends CarActivity implements PermataActivity, Med
 			if (textWatcher != null) editText.removeTextChangedListener(textWatcher);
 			editText.setOnEditorActionListener(null);
 		}
-		try {
-			a().stopInput();
-		} catch (Exception ignored) {}
+
+		a().stopInput();
 	}
 
 	public boolean isInputActive() {
@@ -441,6 +245,7 @@ public class MainCarActivity extends CarActivity implements PermataActivity, Med
 
 	@Override
 	public boolean onKeyUp(int keyCode, KeyEvent keyEvent) {
+		Log.i(keyEvent);
 		MainActivityDelegate d = delegate.peek();
 		if (d == null) return super.onKeyUp(keyCode, keyEvent);
 
@@ -469,412 +274,11 @@ public class MainCarActivity extends CarActivity implements PermataActivity, Med
 		return d.onKeyUp(keyCode, keyEvent, super::onKeyDown);
 	}
 
-	private boolean performFragmentScroll(boolean up, MainActivityDelegate d) {
-		if (d == null) return false;
-		ActivityFragment f = d.getActiveFragment();
-		if (f == null) return false;
-
-		View root = f.getView();
-		if (root == null) return false;
-
-		WebView targetWebView = omniWebViewHunter(root);
-
-		if (targetWebView != null) {
-			return smartScrollWebView(targetWebView, up, -1f, -1f);
-		}
-
-		if (root instanceof ViewGroup) {
-			return performViewScroll(up, root);
-		}
-		
-		return false;
-	}
-
-	/**
-	 * High-Speed Omni-Hunter. Cascades through 5 layers. 
-	 * Wraps traversal in safety logic to prevent Binder Thread race conditions and ANRs.
-	 */
-	private WebView omniWebViewHunter(View root) {
-		if (root == null) return null;
-
-		try {
-			// LAYER 1: Explicit ID Strike
-			int targetBrowserId = root.getContext().getResources().getIdentifier("browserWebView", "id", root.getContext().getPackageName());
-			if (targetBrowserId != 0) {
-				View found = root.findViewById(targetBrowserId);
-				if (found instanceof WebView && isValidWebView((WebView) found)) {
-					return (WebView) found;
-				}
-			}
-
-			// LAYER 2: Focus Tree Traversal
-			View focused = root.findFocus();
-			if (focused != null) {
-				if (focused instanceof WebView && isValidWebView((WebView) focused)) {
-					return (WebView) focused;
-				}
-				View parent = (View) focused.getParent();
-				while (parent != null) {
-					if (parent instanceof WebView && isValidWebView((WebView) parent)) {
-						return (WebView) parent;
-					}
-					if (parent.getParent() instanceof View) {
-						parent = (View) parent.getParent();
-					} else {
-						parent = null;
-					}
-				}
-			}
-
-			// LAYER 3 & 4: High-Speed Breadth-First Net with Smart Pruning
-			java.util.List<WebView> validCandidates = new java.util.ArrayList<>();
-			java.util.Queue<View> queue = new java.util.LinkedList<>();
-			queue.add(root);
-
-			while (!queue.isEmpty()) {
-				View current = queue.poll();
-				if (current == null || current.getVisibility() != View.VISIBLE) continue;
-
-				if (current instanceof WebView) {
-					if (isValidWebView((WebView) current)) {
-						validCandidates.add((WebView) current);
-					}
-				} else if (current instanceof ViewGroup) {
-					// We DO NOT check parent width/height here anymore, 
-					// to prevent 0x0 wrapper layouts from ruining the scan.
-					ViewGroup vg = (ViewGroup) current;
-					for (int i = 0; i < vg.getChildCount(); i++) {
-						queue.add(vg.getChildAt(i));
-					}
-				}
-			}
-
-			// LAYER 5: Tie-Breaker Matrix
-			if (!validCandidates.isEmpty()) {
-				if (validCandidates.size() == 1) {
-					return validCandidates.get(0);
-				}
-				java.util.Collections.sort(validCandidates, new java.util.Comparator<WebView>() {
-					@Override
-					public int compare(WebView w1, WebView w2) {
-						int area1 = w1.getWidth() * w1.getHeight();
-						int area2 = w2.getWidth() * w2.getHeight();
-						return Integer.compare(area2, area1); 
-					}
-				});
-				return validCandidates.get(0); 
-			}
-
-		} catch (Exception e) {
-			Log.w("MainCarActivity", "Omni-Hunter absorbed a background thread collision.", e);
-		}
-
-		return null; 
-	}
-
-	/**
-	 * Confirms physical visibility and enforcing the strict 200x200 pixel rule.
-	 */
-	private boolean isValidWebView(WebView wv) {
-		return wv != null && 
-		       wv.getVisibility() == View.VISIBLE && 
-		       wv.isShown() && 
-		       wv.isAttachedToWindow() && 
-		       wv.getWidth() >= 200 && 
-		       wv.getHeight() >= 200;
-	}
-
-	private boolean performViewScroll(boolean up, View v) {
-		if (v == null || v.getVisibility() != View.VISIBLE || !v.isShown() || v.getWidth() <= 0 || v.getHeight() <= 0) {
-			return false;
-		}
-		if (v instanceof RecyclerView) {
-			RecyclerView rv = (RecyclerView) v;
-			LinearLayoutManager lm = (LinearLayoutManager) rv.getLayoutManager();
-			if (lm == null) return false;
-			int pos = lm.findFirstVisibleItemPosition();
-			if (up) {
-				if (pos > 0) lm.scrollToPositionWithOffset(pos - 1, 0);
-			} else {
-				if (pos < lm.getItemCount() - 1) lm.scrollToPositionWithOffset(pos + 1, 0);
-			}
-			return true;
-		} else if (v instanceof ViewGroup) {
-			ViewGroup vg = (ViewGroup) v;
-			for (int i = 0; i < vg.getChildCount(); i++) {
-				if (performViewScroll(up, vg.getChildAt(i))) return true;
-			}
-		}
-		return false;
-	}
-
-	private static boolean smartScrollWebView(final WebView wv, boolean up, float relativeX, float relativeY) {
-		if (wv == null || !wv.isAttachedToWindow() || wv.getWidth() <= 0 || wv.getHeight() <= 0) {
-			return false;
-		}
-
-		wv.requestFocus();
-
-		long now = android.os.SystemClock.uptimeMillis();
-		Long lastClickTimeObj = scrollTimestamps.get(wv);
-		long lastClickTime = (lastClickTimeObj != null) ? lastClickTimeObj : 0;
-		scrollTimestamps.put(wv, now); 
-		
-		if (wv.getSettings().getJavaScriptEnabled()) {
-			String universalPayload = "(function(){" +
-					"document.addEventListener('click', function(e) {" +
-					"  var a = e.target.closest('a');" +
-					"  if(a && a.href && !a.href.startsWith('http')) {" +
-					"    e.preventDefault(); e.stopPropagation();" +
-					"  }" +
-					"}, true);" +
-					"const registry=[" +
-					"  {name:\"douyin\",match:/douyin\\.com/,execute:function(){" +
-					"    let fs=document.querySelector('.xgplayer-fullscreen,[class*=\"fullscreen\"],[title*=\"全屏\"],[aria-label*=\"全屏\"]');" +
-					"    if(fs&&!fs.classList.contains('xgplayer-fullscreen-active'))fs.click();" +
-					"    let cl=document.querySelector('.xgplayer-clearscreen,[class*=\"clearscreen\"],[title*=\"清屏\"],[aria-label*=\"清屏\"]');" +
-					"    if(cl)cl.click();" +
-					"    let lc=document.querySelector('.dy-account-close,[class*=\"close-btn\"]');if(lc)lc.click();" +
-					"  }}," +
-					"  {name:\"tiktok\",match:/tiktok\\.com/,execute:function(){" +
-					"    let cl=document.querySelector('[data-e2e=\"login-modal\"] button[class*=\"Close\"],div[class*=\"DivModalClose\"]');if(cl)cl.click();" +
-					"    let mu=document.querySelector('[data-e2e=\"video-player-volume\"],[class*=\"volume\"] svg');" +
-					"    if(mu&&(mu.innerHTML.includes('mute')||(mu.className.baseVal&&mu.className.baseVal.includes('mute')))){" +
-					"      let vc=mu.closest('button')||mu.parentElement;if(vc)vc.click();" +
-					"    }" +
-					"    let th=document.querySelector('[data-e2e=\"browse-theatre-mode\"]');if(th)th.click();" +
-					"  }}," +
-					"  {name:\"instagram\",match:/instagram\\.com/,execute:function(){" +
-					"    for(let b of document.querySelectorAll('button,div,span')){" +
-					"      let t=b.textContent?b.textContent.trim():'';" +
-					"      if(t==='Not Now'||t==='以后再说'||t==='Cancel')b.click();" +
-					"    }" +
-					"    let un=document.querySelectorAll('svg[aria-label*=\"Audio\"],svg[aria-label*=\"Mute\"]');" +
-					"    un.forEach(s=>{" +
-					"      let l=s.getAttribute('aria-label');" +
-					"      if(l&&(l.includes('Mute')||l.includes('静音'))){let c=s.closest('button')||s.parentElement;if(c)c.click();}" +
-					"    });" +
-					"  }}," +
-					"  {name:\"youtube\",match:/(youtube\\.com|youtu\\.be)/,execute:function(){" +
-					"    let ad=document.querySelector('.ytp-skip-ad-button,.ytp-ad-skip-button,.ytp-skip-button');if(ad)ad.click();" +
-					"    let dm=document.querySelectorAll('yt-button-renderer[id=\"dismiss-button\"],[aria-label=\"No thanks\"],[aria-label=\"Dismiss\"],.yt-spec-button-shape-next--text');" +
-					"    dm.forEach(b=>{if(b.textContent&&(b.textContent.includes('No thanks')||b.textContent.includes('Skip')||b.textContent.includes('Dismiss')))b.click();});" +
-					"    let fs=document.querySelector('.ytp-fullscreen-button');" +
-					"    if(fs&&fs.getAttribute('aria-label')&&fs.getAttribute('aria-label').includes('full screen'))fs.click();" +
-					"  }}," +
-					"  {name:\"facebook\",match:/facebook\\.com/,execute:function(){" +
-					"    let co=document.querySelector('[data-cookiebanner=\"accept_button\"],[data-testid=\"cookie-policy-manage-dialog-accept\"]');if(co)co.click();" +
-					"    let cd=document.querySelector('[aria-label=\"Close\"],[aria-label=\"关闭\"],[class*=\"layerCancel\"]');if(cd)cd.click();" +
-					"  }}," +
-					"  {name:\"bilibili\",match:/bilibili\\.com/,execute:function(){" +
-					"    let fs=document.querySelector('.bilibili-player-video-btn-fullscreen,.sq-wrap,.m-bilibili-space-fullscreen,.mplayer-fullscreen');" +
-					"    if(fs&&!fs.classList.contains('closed'))fs.click();" +
-					"    let pl=document.querySelector('.mplayer-play');if(pl&&pl.classList.contains('play'))pl.click();" +
-					"    let ab=document.querySelector('.m-home-float-openapp,.launch-app-btn,.open-app-btn');" +
-					"    if(ab&&ab.parentElement)ab.parentElement.style.display='none';" +
-					"  }}," +
-					"  {name:\"kuaishou\",match:/kuaishou\\.com/,execute:function(){" +
-					"    let fs=document.querySelector('[aria-label*=\"全屏\"],.fullscreen-icon');if(fs)fs.click();" +
-					"    let cb=document.querySelector('.login-close,[class*=\"close-btn\"],[aria-label=\"关闭\"]');if(cb)cb.click();" +
-					"  }}," +
-					"  {name:\"xiaohongshu\",match:/xiaohongshu\\.com/,execute:function(){" +
-					"    let ov=document.querySelectorAll('[class*=\"app-open\"],[class*=\"download-btn\"],[class*=\"login-box\"]');" +
-					"    ov.forEach(el=>{el.style.display='none';});" +
-					"    let cb=document.querySelector('.close-icon,[class*=\"close\"]');if(cb)cb.click();" +
-					"  }}," +
-					"  {name:\"reddit\",match:/reddit\\.com/,execute:function(){" +
-					"    let pb=document.querySelectorAll('.XPromoPopup, [class*=\"bottom-bar\"], [class*=\"Prompt\"]');" +
-					"    pb.forEach(el=>{el.style.display='none';});" +
-					"    let xb=document.querySelector('button[aria-label=\"Close\"], button[aria-label=\"Dismiss\"]');if(xb)xb.click();" +
-					"    if(document.body&&window.getComputedStyle(document.body).overflow==='hidden') document.body.style.overflow='auto';" +
-					"  }}," +
-					"  {name:\"x\",match:/(twitter\\.com|x\\.com)/,execute:function(){" +
-					"    let bb=document.querySelector('[data-testid=\"BottomBar\"]');if(bb)bb.style.display='none';" +
-					"    let cb=document.querySelector('[data-testid=\"app-bar-close\"]');if(cb)cb.click();" +
-					"  }}," +
-					"  {name:\"pinterest\",match:/pinterest\\.com/,execute:function(){" +
-					"    let wb=document.querySelectorAll('[data-test-id=\"gift-wrap\"], .UnauthBanner, [data-test-id=\"signup-banner\"]');" +
-					"    wb.forEach(el=>{el.style.display='none';});" +
-					"    if(document.body) document.body.style.overflow='auto';" +
-					"  }}," +
-					"  {name:\"twitch\",match:/twitch\\.tv/,execute:function(){" +
-					"    let ma=document.querySelector('[data-a-target=\"player-overlay-mature-accept\"]');if(ma)ma.click();" +
-					"    let ap=document.querySelectorAll('.tw-bottom-0, .tw-fixed');" +
-					"    ap.forEach(b=>{if(b.textContent&&b.textContent.includes('App'))b.style.display='none';});" +
-					"  }}," +
-					"  {name:\"weibo\",match:/weibo\\.(com|cn)/,execute:function(){" +
-					"    let oa=document.querySelectorAll('.f-bg-toast, [class*=\"open-app\"], [class*=\"app-btn\"]');" +
-					"    oa.forEach(el=>{el.style.display='none';});" +
-					"  }}," +
-					"  {name:\"snapchat\",match:/snapchat\\.com/,execute:function(){" +
-					"    let ab=document.querySelector('.AppBanner, [class*=\"Banner\"], [class*=\"DownloadApp\"]');" +
-					"    if(ab)ab.style.display='none';" +
-					"    let ub=document.querySelector('[aria-label=\"Unmute\"], .unmute-icon');if(ub)ub.click();" +
-					"  }}," +
-					"  {name:\"likee\",match:/likee\\.video/,execute:function(){" +
-					"    let dw=document.querySelector('.download-bar, [class*=\"Download\"], [class*=\"guide\"]');" +
-					"    if(dw)dw.style.display='none';" +
-					"    let cb=document.querySelector('.close-btn, [class*=\"close\"]');if(cb)cb.click();" +
-					"  }}," +
-					"  {name:\"moj\",match:/(mojapp\\.in|sharechat\\.com)/,execute:function(){" +
-					"    let login=document.querySelector('.login-modal, [class*=\"LoginOverlay\"]');" +
-					"    if(login)login.style.display='none';" +
-					"    if(document.body) document.body.style.overflow='auto';" +
-					"  }}," +
-					"  {name:\"vk\",match:/vk\\.com/,execute:function(){" +
-					"    let lb=document.querySelector('.UnauthBox, .box_layout, [id*=\"login\"]');" +
-					"    if(lb)lb.style.display='none';" +
-					"    let um=document.querySelector('.ShortsVideo__unmute, [class*=\"unmute\"]');if(um)um.click();" +
-					"  }}," +
-					"  {name:\"kwai\",match:/(kwai\\.com|snackvideo\\.com)/,execute:function(){" +
-					"    let ob=document.querySelector('.open-app-bar, [class*=\"banner\"], .login-dialog');" +
-					"    if(ob)ob.style.display='none';" +
-					"  }}" +
-					"];" +
-					"const active=registry.find(p=>p.match.test(window.location.hostname));" +
-					"if(!active)return;" +
-					"let guard=null;" +
-					"function run(){try{active.execute();}catch(e){}}" +
-					"const obs=new MutationObserver(()=>{if(guard)clearTimeout(guard);guard=setTimeout(run,100);});" +
-					"run();" +
-					"if(document.body){obs.observe(document.body,{childList:true,subtree:true});}" +
-					"else{window.addEventListener('DOMContentLoaded',()=>obs.observe(document.body,{childList:true,subtree:true}));}" +
-					"})();";
-			wv.evaluateJavascript(universalPayload, null);
-
-			String advancedJsScript = "(function() {" +
-					"  try {" +
-					"    var isDown = " + (!up) + ";" +
-					"    var ihuWidth = window.innerWidth;" +
-					"    var ihuHeight = window.innerHeight;" +
-					"    var targetBtn = null;" +
-					"    if (isDown) {" +
-					"      targetBtn = document.querySelector('[data-e2e=\"arrow-down\"]') || " +
-					"                  document.querySelector('.xgplayer-playswitch-next') || " +
-					"                  document.querySelector('.slide-down-btn') || " +
-					"                  document.querySelector('[aria-label=\"Next video\"]') || " +
-					"                  document.querySelector('[aria-label=\"Next\"]');" +
-					"    } else {" +
-					"      targetBtn = document.querySelector('[data-e2e=\"arrow-up\"]') || " +
-					"                  document.querySelector('.xgplayer-playswitch-prev') || " +
-					"                  document.querySelector('.slide-up-btn') || " +
-					"                  document.querySelector('[aria-label=\"Previous video\"]') || " +
-					"                  document.querySelector('[aria-label=\"Go back\"]');" +
-					"    }" +
-					"    if (targetBtn) {" +
-					"      targetBtn.click();" +
-					"      return;" +
-					"    }" +
-					"    var scrollTarget = null;" +
-					"    var elements = document.querySelectorAll('*');" +
-					"    for (var i = 0; i < elements.length; i++) {" +
-					"      var el = elements[i];" +
-					"      var style = window.getComputedStyle(el);" +
-					"      if ((style.overflowY === 'auto' || style.overflowY === 'scroll' || style.scrollSnapType !== 'none') && el.scrollHeight > el.clientHeight) {" +
-					"        var rect = el.getBoundingClientRect();" +
-					"        if (rect.width > ihuWidth * 0.3 && rect.height > ihuHeight * 0.3) {" +
-					"          scrollTarget = el;" +
-					"          break;" +
-					"        }" +
-					"      }" +
-					"    }" +
-					"    if (!scrollTarget) scrollTarget = document.querySelector('main') || document.body;" +
-					"    var viewHeight = (scrollTarget === document.body) ? ihuHeight : scrollTarget.clientHeight;" +
-					"    var amount = isDown ? (viewHeight * 0.90) : -(viewHeight * 0.90);" +
-					"    var activeNode = document.activeElement || scrollTarget || document.body;" +
-					"    try {" +
-					"      var wheelEvt = new WheelEvent('wheel', { deltaY: amount, bubbles: true, cancelable: true });" +
-					"      activeNode.dispatchEvent(wheelEvt);" +
-					"    } catch(wErr) {}" +
-					"    if (scrollTarget && scrollTarget.scrollBy) {" +
-					"      scrollTarget.scrollBy({ top: amount, behavior: 'smooth' });" +
-					"    } else {" +
-					"      window.scrollBy({ top: amount, behavior: 'smooth' });" +
-					"    }" +
-					"    var keyStr = isDown ? 'ArrowDown' : 'ArrowUp';" +
-					"    var keyCode = isDown ? 40 : 38;" +
-					"    var kEvt = new KeyboardEvent('keydown', { key: keyStr, code: keyStr, keyCode: keyCode, window: window, bubbles: true, cancelable: true });" +
-					"    activeNode.dispatchEvent(kEvt);" +
-					"  } catch (err) {" +
-					"    var fall = " + (!up) + " ? window.innerHeight : -window.innerHeight;" +
-					"    window.scrollBy(0, fall);" +
-					"  }" +
-					"})();";
-			wv.evaluateJavascript(advancedJsScript, null);
-		}
-
-		final float actionX = (relativeX >= 0) ? relativeX : (wv.getWidth() * 0.50f);
-		final float centerY = (relativeY >= 0) ? relativeY : (wv.getHeight() / 2f);
-		
-		float span = wv.getHeight() * 0.60f; 
-		final float yStart = up ? (centerY - span / 2f) : (centerY + span / 2f);
-		final float yEnd = up ? (centerY + span / 2f) : (centerY - span / 2f);
-
-		try {
-			final long startTime = android.os.SystemClock.uptimeMillis();
-			
-			MotionEvent eventDown = MotionEvent.obtain(startTime, startTime, MotionEvent.ACTION_DOWN, actionX, yStart, 0);
-			wv.dispatchTouchEvent(eventDown);
-			eventDown.recycle();
-
-			final int stepCount = 5;
-			final long swipeDuration = 150; 
-			
-			for (int i = 1; i <= stepCount; i++) {
-				final float fraction = (float) i / stepCount;
-				final float currentY = yStart + (yEnd - yStart) * fraction;
-				final long moveTime = startTime + (long) (swipeDuration * fraction);
-				
-				wv.postDelayed(() -> {
-					if (wv.isAttachedToWindow()) {
-						MotionEvent eventMove = MotionEvent.obtain(startTime, moveTime, MotionEvent.ACTION_MOVE, actionX, currentY, 0);
-						wv.dispatchTouchEvent(eventMove);
-						eventMove.recycle();
-					}
-				}, (long) (swipeDuration * fraction));
-			}
-
-			wv.postDelayed(() -> {
-				if (wv.isAttachedToWindow()) {
-					long endTime = startTime + swipeDuration + 10;
-					MotionEvent eventUp = MotionEvent.obtain(startTime, endTime, MotionEvent.ACTION_UP, actionX, yEnd, 0);
-					wv.dispatchTouchEvent(eventUp);
-					eventUp.recycle();
-				}
-			}, swipeDuration + 10);
-
-		} catch (Exception e) {
-			int backupKey = up ? KeyEvent.KEYCODE_PAGE_UP : KeyEvent.KEYCODE_PAGE_DOWN;
-			wv.dispatchKeyEvent(new KeyEvent(KeyEvent.ACTION_DOWN, backupKey));
-			wv.dispatchKeyEvent(new KeyEvent(KeyEvent.ACTION_UP, backupKey));
-		}
-
-		return true;
-	}
-
 	@Override
 	public boolean onKeyDown(int keyCode, KeyEvent keyEvent) {
-		if (keyEvent.getRepeatCount() > 0) {
-			return true; 
-		}
-
+		Log.i(keyEvent);
 		MainActivityDelegate d = delegate.peek();
 		if (d == null) return super.onKeyDown(keyCode, keyEvent);
-
-		long now = SystemClock.uptimeMillis();
-		if (keyCode == KeyEvent.KEYCODE_PAGE_DOWN || keyCode == KeyEvent.KEYCODE_MEDIA_NEXT ||
-			keyCode == KeyEvent.KEYCODE_PAGE_UP || keyCode == KeyEvent.KEYCODE_MEDIA_PREVIOUS ||
-			keyCode == KeyEvent.KEYCODE_CHANNEL_UP || keyCode == KeyEvent.KEYCODE_CHANNEL_DOWN) {
-			
-			if (now - lastProcessedKeyEventTime < 150) {
-				return true; 
-			}
-			lastProcessedKeyEventTime = now;
-			
-			boolean downDirection = (keyCode == KeyEvent.KEYCODE_PAGE_DOWN || keyCode == KeyEvent.KEYCODE_MEDIA_NEXT || keyCode == KeyEvent.KEYCODE_CHANNEL_UP);
-			if (performFragmentScroll(!downDirection, d)) return true;
-		}
-
 		if (!d.getPrefs().useDpadCursor(d)) return d.onKeyDown(keyCode, keyEvent, super::onKeyDown);
 
 		float x = 0;
@@ -883,9 +287,9 @@ public class MainCarActivity extends CarActivity implements PermataActivity, Med
 		Cursor cursor = null;
 
 		switch (keyCode) {
-			case KEYCODE_DPAD_UP:
-				OverlayMenu mUp = d.getActiveMenu();
-				if (mUp instanceof View v) {
+			case KEYCODE_DPAD_UP -> {
+				OverlayMenu m = d.getActiveMenu();
+				if (m instanceof View v) {
 					View f = v.focusSearch(View.FOCUS_UP);
 					if (f != null) {
 						f.requestFocus();
@@ -893,10 +297,10 @@ public class MainCarActivity extends CarActivity implements PermataActivity, Med
 					}
 				}
 				y = -1;
-				break;
-			case KEYCODE_DPAD_DOWN:
-				OverlayMenu mDown = d.getActiveMenu();
-				if (mDown instanceof View v) {
+			}
+			case KEYCODE_DPAD_DOWN -> {
+				OverlayMenu m = d.getActiveMenu();
+				if (m instanceof View v) {
 					View f = v.focusSearch(View.FOCUS_DOWN);
 					if (f != null) {
 						f.requestFocus();
@@ -904,48 +308,43 @@ public class MainCarActivity extends CarActivity implements PermataActivity, Med
 					}
 				}
 				y = 1;
-				break;
-			case KEYCODE_DPAD_LEFT:
-				x = -1;
-				break;
-			case KEYCODE_DPAD_RIGHT:
-				x = 1;
-				break;
-			case KEYCODE_DPAD_UP_LEFT:
+			}
+			case KEYCODE_DPAD_LEFT -> x = -1;
+			case KEYCODE_DPAD_RIGHT -> x = 1;
+			case KEYCODE_DPAD_UP_LEFT -> {
 				y = -1;
 				x = -1;
-				break;
-			case KEYCODE_DPAD_UP_RIGHT:
+			}
+			case KEYCODE_DPAD_UP_RIGHT -> {
 				y = -1;
 				x = 1;
-				break;
-			case KEYCODE_DPAD_DOWN_LEFT:
+			}
+			case KEYCODE_DPAD_DOWN_LEFT -> {
 				y = 1;
 				x = -1;
-				break;
-			case KEYCODE_DPAD_DOWN_RIGHT:
+			}
+			case KEYCODE_DPAD_DOWN_RIGHT -> {
 				y = 1;
 				x = 1;
-				break;
-			case KEYCODE_BACK:
+			}
+			case KEYCODE_BACK -> {
 				screen = findViewById(R.id.main_activity);
-				cursor = (Cursor) screen.findViewById(R.id.cursor);
+				cursor = screen.findViewById(R.id.cursor);
 				if ((cursor == null) || cursor.isFocused())
 					return d.onKeyDown(keyCode, keyEvent, super::onKeyDown);
 				cursor.ignoreBack = true;
-				break;
-			case KEYCODE_DPAD_CENTER:
+			}
+			case KEYCODE_DPAD_CENTER -> {
 				screen = findViewById(R.id.main_activity);
-				cursor = (Cursor) screen.findViewById(R.id.cursor);
+				cursor = screen.findViewById(R.id.cursor);
 				if (cursor == null) return d.onKeyDown(keyCode, keyEvent, super::onKeyDown);
-				break;
-			default:
-				return d.onKeyDown(keyCode, keyEvent, super::onKeyDown);
+			}
+			default -> {return d.onKeyDown(keyCode, keyEvent, super::onKeyDown);}
 		}
 
 		if (screen == null) {
 			screen = findViewById(R.id.main_activity);
-			cursor = (Cursor) screen.findViewById(R.id.cursor);
+			cursor = screen.findViewById(R.id.cursor);
 		}
 
 		int w = screen.getWidth();
@@ -978,9 +377,6 @@ public class MainCarActivity extends CarActivity implements PermataActivity, Med
 		private Cancellable move = Cancellable.CANCELED;
 		private Cancellable hide = Cancellable.CANCELED;
 		private Cancellable resetAccel = Cancellable.CANCELED;
-		
-		private boolean isDisposed = false;
-		
 		boolean ignoreBack;
 		int accel = 1;
 
@@ -999,16 +395,6 @@ public class MainCarActivity extends CarActivity implements PermataActivity, Med
 			bg.addState(new int[]{android.R.attr.state_focused}, transparent);
 			bg.addState(new int[]{}, transparent);
 			setBackground(bg);
-		}
-
-		void cleanup() {
-			isDisposed = true;
-			move.cancel();
-			hide.cancel();
-			resetAccel.cancel();
-			move = Cancellable.CANCELED;
-			hide = Cancellable.CANCELED;
-			resetAccel = Cancellable.CANCELED;
 		}
 
 		boolean isVisible() {
@@ -1033,7 +419,7 @@ public class MainCarActivity extends CarActivity implements PermataActivity, Med
 		private boolean click(ViewGroup parent, float cursorX, float cursorY) {
 			for (int i = 0, n = parent.getChildCount(); i < n; i++) {
 				View v = parent.getChildAt(i);
-				if (v == null || v.getVisibility() != VISIBLE) continue;
+				if (v.getVisibility() != VISIBLE) continue;
 				float x = cursorX - v.getX();
 				if ((x > 0) && (x < v.getWidth())) {
 					float y = cursorY - v.getY();
@@ -1063,7 +449,6 @@ public class MainCarActivity extends CarActivity implements PermataActivity, Med
 		}
 
 		private void touch(View v, float x, float y, boolean clearFocus) {
-			if (isDisposed) return;
 			long time = SystemClock.uptimeMillis();
 			MotionEvent down = MotionEvent.obtain(time, time, MotionEvent.ACTION_DOWN, x, y, 0);
 			if (clearFocus) {
@@ -1073,7 +458,6 @@ public class MainCarActivity extends CarActivity implements PermataActivity, Med
 			v.dispatchTouchEvent(down);
 			down.recycle();
 			activity.postDelayed(() -> {
-				if (isDisposed) return;
 				MotionEvent up = MotionEvent.obtain(time, time + 100, MotionEvent.ACTION_UP, x, y, 0);
 				v.dispatchTouchEvent(up);
 				up.recycle();
@@ -1091,7 +475,7 @@ public class MainCarActivity extends CarActivity implements PermataActivity, Med
 		private void longClick(ViewGroup parent, float cursorX, float cursorY) {
 			for (int i = 0, n = parent.getChildCount(); i < n; i++) {
 				View v = parent.getChildAt(i);
-				if (v == null || v.getVisibility() != VISIBLE) continue;
+				if (v.getVisibility() != VISIBLE) continue;
 				float x = cursorX - v.getX();
 				if ((x > 0) && (x < v.getWidth())) {
 					float y = cursorY - v.getY();
@@ -1113,7 +497,6 @@ public class MainCarActivity extends CarActivity implements PermataActivity, Med
 			move = Cancellable.CANCELED;
 			hide.cancel();
 			hide = activity.postDelayed(() -> {
-				if (isDisposed) return;
 				hide = Cancellable.CANCELED;
 				clearFocus();
 				setVisibility(GONE);
@@ -1122,13 +505,11 @@ public class MainCarActivity extends CarActivity implements PermataActivity, Med
 		}
 
 		void show(float cursorX, float cursorY) {
-			if (isDisposed) return;
 			setVisibility(VISIBLE);
 			animate().x(cursorX).y(cursorY).setDuration(0).start();
 		}
 
 		void move(int w, int h, float dx, float dy, float step, int keyCode) {
-			if (isDisposed) return;
 			move.cancel();
 			move = activity.postDelayed(() -> move(w, h, dx, dy, step, keyCode), 50);
 
@@ -1154,9 +535,7 @@ public class MainCarActivity extends CarActivity implements PermataActivity, Med
 		}
 
 		private boolean focusFb(ViewGroup screen, float cursorX, float cursorY) {
-			if (screen == null) return false;
 			View fb = screen.findViewById(R.id.floating_button);
-			if (fb == null) return false;
 			float fbX = fb.getX();
 			float fbY = fb.getY();
 			if ((cursorX >= fbX) && (cursorX < fbX + fb.getWidth()) && (cursorY >= fbY) &&
@@ -1171,37 +550,27 @@ public class MainCarActivity extends CarActivity implements PermataActivity, Med
 			ActivityFragment f = activity.getActiveFragment();
 			if (f == null) return;
 			View root = f.getView();
-			if (root instanceof ViewGroup vg) {
-				scrollAtCoordinates(up, vg, getX(), getY());
-			}
+			if (root instanceof ViewGroup vg) scroll(up, vg);
 		}
 
-		private boolean scrollAtCoordinates(boolean up, ViewGroup parent, float cursorX, float cursorY) {
-			for (int i = 0, n = parent.getChildCount(); i < n; i++) {
-				View v = parent.getChildAt(i);
-				if (v == null || v.getVisibility() != View.VISIBLE || !v.isShown() || v.getWidth() <= 0 || v.getHeight() <= 0) {
-					continue;
+		private boolean scroll(boolean up, View v) {
+			if (v instanceof RecyclerView rv) {
+				LinearLayoutManager lm = (LinearLayoutManager) rv.getLayoutManager();
+				if (lm == null) return false;
+				int pos = lm.findFirstVisibleItemPosition();
+				if (up) {
+					if (pos > 0) lm.scrollToPositionWithOffset(pos - 1, 0);
+				} else {
+					if (pos < lm.getItemCount() - 1) lm.scrollToPositionWithOffset(pos + 1, 0);
 				}
-
-				float relativeX = cursorX - v.getX();
-				float relativeY = cursorY - v.getY();
-
-				if ((relativeX >= 0 && relativeX < v.getWidth()) && (relativeY >= 0 && relativeY < v.getHeight())) {
-					if (v instanceof RecyclerView rv) {
-						LinearLayoutManager lm = (LinearLayoutManager) rv.getLayoutManager();
-						if (lm == null) return false;
-						int pos = lm.findFirstVisibleItemPosition();
-						if (up) {
-							if (pos > 0) lm.scrollToPositionWithOffset(pos - 1, 0);
-						} else {
-							if (pos < lm.getItemCount() - 1) lm.scrollToPositionWithOffset(pos + 1, 0);
-						}
-						return true;
-					} else if (v instanceof WebView wv) {
-						return MainCarActivity.smartScrollWebView(wv, up, relativeX, relativeY);
-					} else if (v instanceof ViewGroup vg) {
-						if (scrollAtCoordinates(up, vg, relativeX, relativeY)) return true;
-					}
+				return true;
+			} else if (v instanceof WebView wv) {
+				if (up) wv.pageUp(false);
+				else wv.pageDown(false);
+				return true;
+			} else if (v instanceof ViewGroup vg) {
+				for (int i = 0, n = vg.getChildCount(); i < n; i++) {
+					if (scroll(up, vg.getChildAt(i))) return true;
 				}
 			}
 			return false;
