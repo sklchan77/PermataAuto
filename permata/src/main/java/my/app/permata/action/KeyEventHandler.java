@@ -7,6 +7,7 @@ import static android.view.KeyEvent.ACTION_UP;
 
 import android.view.KeyEvent;
 import android.view.MotionEvent;
+import android.view.View;
 import android.webkit.WebView;
 import android.widget.EditText;
 
@@ -60,9 +61,6 @@ public class KeyEventHandler {
 		// === CAR IHU TARGET RESOLUTION & SCROLL INJECTION ===
 		MainActivityDelegate targetActivity = activity;
 		if (targetActivity == null && cb != null) {
-			// When steering wheel events route via the background service, activity is null.
-			// Extracting the assistant from MediaSessionCallback ensures we target the Car IHU (Priority 0) 
-			// over the Phone screen (Priority 1), fixing the "scrolling on phone instead of car" issue.
 			if (cb.getAssistant() instanceof MainActivityDelegate) {
 				targetActivity = (MainActivityDelegate) cb.getAssistant();
 			}
@@ -73,26 +71,48 @@ public class KeyEventHandler {
 				WebView webView = scanFragmentsForWebView(targetActivity);
 				if (webView != null) {
 					boolean isNext = (code == KeyEvent.KEYCODE_MEDIA_NEXT);
-					Log.i("Steering Wheel Web Scroll Intercepted on Car IHU. Next: " + isNext);
+					
+					// Dynamically target the FullScreenView if active, otherwise use normal WebView
+					View targetView = webView;
+					try {
+						Method getChromeClient = webView.getClass().getMethod("getWebChromeClient");
+						Object chromeClient = getChromeClient.invoke(webView);
+						if (chromeClient != null) {
+							Method isFullScreenMethod = chromeClient.getClass().getMethod("isFullScreen");
+							boolean isFullScreen = (Boolean) isFullScreenMethod.invoke(chromeClient);
+							if (isFullScreen) {
+								Method getFullScreenViewMethod = chromeClient.getClass().getMethod("getFullScreenView");
+								View fullScreenView = (View) getFullScreenViewMethod.invoke(chromeClient);
+								if (fullScreenView != null && fullScreenView.getVisibility() == View.VISIBLE) {
+									targetView = fullScreenView;
+									Log.i("Steering Wheel Scroll Intercepted. Targeting FullScreenView. Next: " + isNext);
+								}
+							} else {
+								Log.i("Steering Wheel Scroll Intercepted. Targeting Normal WebView. Next: " + isNext);
+							}
+						}
+					} catch (Exception e) {
+						Log.e(e, "Reflection for FullScreenView failed, falling back to WebView.");
+					}
 
-					float centerX = webView.getWidth() / 2f;
-					float startY = isNext ? (webView.getHeight() * 0.8f) : (webView.getHeight() * 0.2f);
-					float endY = isNext ? (webView.getHeight() * 0.2f) : (webView.getHeight() * 0.8f);
+					float centerX = targetView.getWidth() / 2f;
+					float startY = isNext ? (targetView.getHeight() * 0.8f) : (targetView.getHeight() * 0.2f);
+					float endY = isNext ? (targetView.getHeight() * 0.2f) : (targetView.getHeight() * 0.8f);
 
 					long downTime = uptimeMillis();
 					
 					MotionEvent downEvent = MotionEvent.obtain(downTime, downTime, MotionEvent.ACTION_DOWN, centerX, startY, 0);
-					webView.dispatchTouchEvent(downEvent);
+					targetView.dispatchTouchEvent(downEvent);
 					downEvent.recycle();
 
 					long moveTime = downTime + 30;
 					MotionEvent moveEvent = MotionEvent.obtain(downTime, moveTime, MotionEvent.ACTION_MOVE, centerX, endY, 0);
-					webView.dispatchTouchEvent(moveEvent);
+					targetView.dispatchTouchEvent(moveEvent);
 					moveEvent.recycle();
 
 					long upTime = moveTime + 30;
 					MotionEvent upEvent = MotionEvent.obtain(downTime, upTime, MotionEvent.ACTION_UP, centerX, endY, 0);
-					webView.dispatchTouchEvent(upEvent);
+					targetView.dispatchTouchEvent(upEvent);
 					upEvent.recycle();
 
 					return true;
