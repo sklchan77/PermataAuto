@@ -6,14 +6,19 @@ import static android.view.KeyEvent.ACTION_MULTIPLE;
 import static android.view.KeyEvent.ACTION_UP;
 
 import android.view.KeyEvent;
+import android.view.MotionEvent;
+import android.webkit.WebView;
 import android.widget.EditText;
 
 import androidx.annotation.Nullable;
+
+import java.lang.reflect.Method;
 
 import my.app.permata.media.service.MediaSessionCallback;
 import my.app.permata.ui.activity.MainActivityDelegate;
 import my.app.utils.function.IntObjectFunction;
 import my.app.utils.log.Log;
+import my.app.utils.ui.fragment.ActivityFragment;
 
 /**
  * @author sklchan77
@@ -51,6 +56,47 @@ public class KeyEventHandler {
 		}
 
 		var code = event.getKeyCode();
+
+		// === SURGERY PRECISION: WEB BROWSER SCROLL INTERCEPTION ===
+		if (activity != null && event.getAction() == ACTION_DOWN) {
+			if (code == KeyEvent.KEYCODE_MEDIA_NEXT || code == KeyEvent.KEYCODE_MEDIA_PREVIOUS) {
+				WebView webView = scanFragmentsForWebView(activity);
+				if (webView != null) {
+					boolean isNext = (code == KeyEvent.KEYCODE_MEDIA_NEXT);
+					Log.i("Steering Wheel Web Scroll Intercepted. Next: " + isNext);
+
+					float centerX = webView.getWidth() / 2f;
+					// Swiping UP (bottom to top) goes to NEXT video.
+					// Swiping DOWN (top to bottom) goes to PREV video.
+					float startY = isNext ? (webView.getHeight() * 0.8f) : (webView.getHeight() * 0.2f);
+					float endY = isNext ? (webView.getHeight() * 0.2f) : (webView.getHeight() * 0.8f);
+
+					long downTime = uptimeMillis();
+
+					// 1. ACTION_DOWN
+					MotionEvent downEvent = MotionEvent.obtain(downTime, downTime, MotionEvent.ACTION_DOWN, centerX, startY, 0);
+					webView.dispatchTouchEvent(downEvent);
+					downEvent.recycle();
+
+					// 2. ACTION_MOVE (Smooth physical scroll simulation)
+					long moveTime = downTime + 30;
+					MotionEvent moveEvent = MotionEvent.obtain(downTime, moveTime, MotionEvent.ACTION_MOVE, centerX, endY, 0);
+					webView.dispatchTouchEvent(moveEvent);
+					moveEvent.recycle();
+
+					// 3. ACTION_UP
+					long upTime = moveTime + 30;
+					MotionEvent upEvent = MotionEvent.obtain(downTime, upTime, MotionEvent.ACTION_UP, centerX, endY, 0);
+					webView.dispatchTouchEvent(upEvent);
+					upEvent.recycle();
+
+					// Consume the event so the Media Engine doesn't skip the current playing audio/video
+					return true;
+				}
+			}
+		}
+		// ==========================================================
+
 		var k = Key.get(code);
 		if (k == null) return defaultHandler.apply(code, event);
 
@@ -83,6 +129,26 @@ public class KeyEventHandler {
 
 		worker = new Worker(cb, activity, k, clickAction, dblClickAction, longClickAction);
 		return true;
+	}
+
+	private static WebView scanFragmentsForWebView(MainActivityDelegate activity) {
+		try {
+			ActivityFragment activeFragment = activity.getActiveFragment();
+			if (activeFragment != null) {
+				String className = activeFragment.getClass().getName();
+				// Target ONLY WebBrowserFragment. Exclude YoutubeFragment explicitly.
+				if (className.endsWith("WebBrowserFragment") && !className.endsWith("YoutubeFragment")) {
+					Method getWebViewMethod = activeFragment.getClass().getMethod("getWebView");
+					Object result = getWebViewMethod.invoke(activeFragment);
+					if (result instanceof WebView) {
+						return (WebView) result;
+					}
+				}
+			}
+		} catch (Exception e) {
+			Log.e(e, "Failed to scan for WebView");
+		}
+		return null;
 	}
 
 	private static void performAction(Action action, MediaSessionCallback cb,
