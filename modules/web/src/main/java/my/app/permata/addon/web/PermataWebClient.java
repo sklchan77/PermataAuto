@@ -4,6 +4,8 @@ import static my.app.utils.ui.activity.ActivityListener.FRAGMENT_CONTENT_CHANGED
 
 import android.graphics.Bitmap;
 import android.net.Uri;
+import android.os.SystemClock;
+import android.view.MotionEvent;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebView;
 
@@ -53,19 +55,74 @@ public class PermataWebClient extends WebViewClientCompat {
 		((PermataWebView) view).hideKeyboard();
 		v.pageLoaded(url);
 		f.onSuccess(a -> a.fireBroadcastEvent(FRAGMENT_CONTENT_CHANGED));
+
+		// === MEDIA SESSION JAVASCRIPT INJECTION ===
+		// Hooks into Chromium's active MediaSession (created by TikTok/Instagram players)
+		// Routes the steering wheel Next/Prev requests back to our Java client via a dummy URL
+		if (!isYoutubeUri(Uri.parse(url))) {
+			String js = "try { " +
+				"  if (!window.__permataFrame) { " +
+				"    window.__permataFrame = document.createElement('iframe'); " +
+				"    window.__permataFrame.style.display = 'none'; " +
+				"    document.body.appendChild(window.__permataFrame); " +
+				"  } " +
+				"  navigator.mediaSession.setActionHandler('nexttrack', () => { window.__permataFrame.src = 'permata://scroll/next'; }); " +
+				"  navigator.mediaSession.setActionHandler('previoustrack', () => { window.__permataFrame.src = 'permata://scroll/prev'; }); " +
+				"} catch(e) {}";
+			view.evaluateJavascript(js, null);
+		}
+		// ==========================================
 	}
 
 	@Override
 	public boolean shouldOverrideUrlLoading(@NonNull WebView view,
 																					@NonNull WebResourceRequest request) {
-		if (isYoutubeUri(request.getUrl())) {
+		Uri url = request.getUrl();
+		String scheme = url.getScheme();
+
+		// === CHROMIUM SCROLL EVENT INTERCEPTION ===
+		if ("permata".equals(scheme) && "scroll".equals(url.getHost())) {
+			boolean isNext = url.getPath() != null && url.getPath().contains("next");
+			Log.i("Steering Wheel Scroll via JS Intercepted. Next: " + isNext);
+
+			float centerX = view.getWidth() / 2f;
+			float startY = isNext ? (view.getHeight() * 0.8f) : (view.getHeight() * 0.2f);
+			float endY = isNext ? (view.getHeight() * 0.2f) : (view.getHeight() * 0.8f);
+
+			long downTime = SystemClock.uptimeMillis();
+			
+			MotionEvent downEvent = MotionEvent.obtain(downTime, downTime, MotionEvent.ACTION_DOWN, centerX, startY, 0);
+			view.dispatchTouchEvent(downEvent);
+			downEvent.recycle();
+
+			long moveTime = downTime + 30;
+			MotionEvent moveEvent = MotionEvent.obtain(downTime, moveTime, MotionEvent.ACTION_MOVE, centerX, endY, 0);
+			view.dispatchTouchEvent(moveEvent);
+			moveEvent.recycle();
+
+			long upTime = moveTime + 30;
+			MotionEvent upEvent = MotionEvent.obtain(downTime, upTime, MotionEvent.ACTION_UP, centerX, endY, 0);
+			view.dispatchTouchEvent(upEvent);
+			upEvent.recycle();
+
+			return true; 
+		}
+
+		// === FIX FOR ERR_UNKNOWN_URL_SCHEME CRASH ===
+		// Block deep links like snssdk1128:// which halt the view
+		if (scheme != null && !scheme.startsWith("http") && !scheme.equals("file") && !scheme.equals("content") && !scheme.equals("permata")) {
+			Log.i("Blocked unsupported URL scheme to prevent web crash: " + url.toString());
+			return true; 
+		}
+
+		if (isYoutubeUri(url)) {
 			try {
 				MainActivityDelegate a =
 						MainActivityDelegate.getActivityDelegate(view.getContext()).peek();
 				if (a == null) return false;
 				if (!(a.showFragment(my.app.permata.R.id.youtube_fragment) instanceof YoutubeFragment f))
 					return false;
-				f.loadUrl(request.getUrl().toString());
+				f.loadUrl(url.toString());
 				return true;
 			} catch (IllegalArgumentException ex) {
 				Log.d(ex);
