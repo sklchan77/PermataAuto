@@ -57,50 +57,54 @@ public class KeyEventHandler {
 
 		var code = event.getKeyCode();
 
-		// === SURGERY PRECISION: WEB BROWSER SCROLL INTERCEPTION ===
-		if (activity != null && event.getAction() == ACTION_DOWN) {
+		// === CAR IHU TARGET RESOLUTION & SCROLL INJECTION ===
+		MainActivityDelegate targetActivity = activity;
+		if (targetActivity == null && cb != null) {
+			// When steering wheel events route via the background service, activity is null.
+			// Extracting the assistant from MediaSessionCallback ensures we target the Car IHU (Priority 0) 
+			// over the Phone screen (Priority 1), fixing the "scrolling on phone instead of car" issue.
+			if (cb.getAssistant() instanceof MainActivityDelegate) {
+				targetActivity = (MainActivityDelegate) cb.getAssistant();
+			}
+		}
+
+		if (targetActivity != null && event.getAction() == ACTION_DOWN) {
 			if (code == KeyEvent.KEYCODE_MEDIA_NEXT || code == KeyEvent.KEYCODE_MEDIA_PREVIOUS) {
-				WebView webView = scanFragmentsForWebView(activity);
+				WebView webView = scanFragmentsForWebView(targetActivity);
 				if (webView != null) {
 					boolean isNext = (code == KeyEvent.KEYCODE_MEDIA_NEXT);
-					Log.i("Steering Wheel Web Scroll Intercepted. Next: " + isNext);
+					Log.i("Steering Wheel Web Scroll Intercepted on Car IHU. Next: " + isNext);
 
 					float centerX = webView.getWidth() / 2f;
-					// Swiping UP (bottom to top) goes to NEXT video.
-					// Swiping DOWN (top to bottom) goes to PREV video.
 					float startY = isNext ? (webView.getHeight() * 0.8f) : (webView.getHeight() * 0.2f);
 					float endY = isNext ? (webView.getHeight() * 0.2f) : (webView.getHeight() * 0.8f);
 
 					long downTime = uptimeMillis();
-
-					// 1. ACTION_DOWN
+					
 					MotionEvent downEvent = MotionEvent.obtain(downTime, downTime, MotionEvent.ACTION_DOWN, centerX, startY, 0);
 					webView.dispatchTouchEvent(downEvent);
 					downEvent.recycle();
 
-					// 2. ACTION_MOVE (Smooth physical scroll simulation)
 					long moveTime = downTime + 30;
 					MotionEvent moveEvent = MotionEvent.obtain(downTime, moveTime, MotionEvent.ACTION_MOVE, centerX, endY, 0);
 					webView.dispatchTouchEvent(moveEvent);
 					moveEvent.recycle();
 
-					// 3. ACTION_UP
 					long upTime = moveTime + 30;
 					MotionEvent upEvent = MotionEvent.obtain(downTime, upTime, MotionEvent.ACTION_UP, centerX, endY, 0);
 					webView.dispatchTouchEvent(upEvent);
 					upEvent.recycle();
 
-					// Consume the event so the Media Engine doesn't skip the current playing audio/video
 					return true;
 				}
 			}
 		}
-		// ==========================================================
+		// ====================================================
 
 		var k = Key.get(code);
 		if (k == null) return defaultHandler.apply(code, event);
 
-		if (!k.isMedia() && (activity != null) && (activity.getCurrentFocus() instanceof EditText)) {
+		if (!k.isMedia() && (targetActivity != null) && (targetActivity.getCurrentFocus() instanceof EditText)) {
 			return defaultHandler.apply(code, event);
 		}
 
@@ -110,7 +114,7 @@ public class KeyEventHandler {
 		var action = event.getAction();
 		if (action == ACTION_MULTIPLE) {
 			Log.i(k, " key double click");
-			performAction(dblClickAction, cb, activity, uptimeMillis());
+			performAction(dblClickAction, cb, targetActivity, uptimeMillis());
 			return true;
 		}
 		if (action != ACTION_DOWN) return defaultHandler.apply(code, event);
@@ -123,11 +127,11 @@ public class KeyEventHandler {
 		if (((clickAction == dblClickAction) && (clickAction == longClickAction)) ||
 				((dblClickAction == Action.NONE) && (longClickAction == Action.NONE))) {
 			Log.i(k, " key click");
-			performAction(clickAction, cb, activity, uptimeMillis());
+			performAction(clickAction, cb, targetActivity, uptimeMillis());
 			return true;
 		}
 
-		worker = new Worker(cb, activity, k, clickAction, dblClickAction, longClickAction);
+		worker = new Worker(cb, targetActivity, k, clickAction, dblClickAction, longClickAction);
 		return true;
 	}
 
@@ -136,13 +140,10 @@ public class KeyEventHandler {
 			ActivityFragment activeFragment = activity.getActiveFragment();
 			if (activeFragment != null) {
 				String className = activeFragment.getClass().getName();
-				// Target ONLY WebBrowserFragment. Exclude YoutubeFragment explicitly.
 				if (className.endsWith("WebBrowserFragment") && !className.endsWith("YoutubeFragment")) {
 					Method getWebViewMethod = activeFragment.getClass().getMethod("getWebView");
 					Object result = getWebViewMethod.invoke(activeFragment);
-					if (result instanceof WebView) {
-						return (WebView) result;
-					}
+					if (result instanceof WebView) return (WebView) result;
 				}
 			}
 		} catch (Exception e) {
