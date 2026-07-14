@@ -42,13 +42,18 @@ public class KeyEventHandler {
 			"let res = 'Discovery [Layer 2]: JS Registry Miss (No custom formatting applied)'; " +
 			"if (!window.__permataDOMInit) {" +
 			"  window.__permataDOMInit = true;" +
-			"  const trigger = function(el) { if(!el) return; el.dispatchEvent(new MouseEvent('mousedown',{bubbles:true,cancelable:true,view:window})); el.dispatchEvent(new MouseEvent('mouseup',{bubbles:true,cancelable:true,view:window})); el.click(); };" +
+			"  const trigger = function(el) { if(!el) return; " +
+			"    try { el.dispatchEvent(new TouchEvent('touchstart',{bubbles:true,cancelable:true})); el.dispatchEvent(new TouchEvent('touchend',{bubbles:true,cancelable:true})); } catch(e){} " +
+			"    el.dispatchEvent(new MouseEvent('mousedown',{bubbles:true,cancelable:true,view:window})); " +
+			"    el.dispatchEvent(new MouseEvent('mouseup',{bubbles:true,cancelable:true,view:window})); " +
+			"    el.click(); " +
+			"  };" +
 			"  const registry=[" +
 			"    {name:\"douyin\",match:/douyin\\.com/,execute:function(){" +
 			"      let fs=document.querySelector('xg-fullscreen, .xgplayer-fullscreen, [title*=\"全屏\"]');" +
-			"      if(fs && !document.fullscreenElement && fs.getAttribute('data-state') !== 'full') trigger(fs);" +
+			"      if(fs && !document.fullscreenElement && !fs.classList.contains('xgplayer-fullscreen-active') && fs.getAttribute('data-state') !== 'full') trigger(fs);" +
 			"      let cl=document.querySelector('xg-clear-screen, .xgplayer-clearscreen, [title*=\"清屏\"]');" +
-			"      if(cl && cl.getAttribute('data-state') !== 'clear') trigger(cl);" +
+			"      if(cl && !cl.classList.contains('xgplayer-clearscreen-active') && cl.getAttribute('data-state') !== 'clear') trigger(cl);" +
 			"      let lc=document.querySelector('.dy-account-close, .login-mask-enter-done .close, [class*=\"close-btn\"]');" +
 			"      if(lc) trigger(lc);" +
 			"    }}," +
@@ -163,13 +168,14 @@ public class KeyEventHandler {
 			"return res;" +
 			"})();";
 
+	// Polls up to 8 times (4 seconds total) to catch Douyin resetting its UI on slow network buffering
 	private static final String JS_POLLING_PAYLOAD = "try { " +
 			"  if(window.__permataActive) { " +
 			"    let attempts = 0; " +
 			"    let interval = setInterval(() => { " +
 			"      try { window.__permataActive.execute(); } catch(e){} " +
 			"      attempts++; " +
-			"      if(attempts >= 5) clearInterval(interval); " +
+			"      if(attempts >= 8) clearInterval(interval); " +
 			"    }, 500); " +
 			"  } " +
 			"} catch(e){}";
@@ -455,7 +461,7 @@ public class KeyEventHandler {
 			touchTarget.dispatchKeyEvent(new KeyEvent(KeyEvent.ACTION_UP, backupKey));
 		}
 
-		Log.i(hostTag + "Scroll [Phase 4]: Dispatching Post-Scroll Formatting Polling (2.5s duration).");
+		Log.i(hostTag + "Scroll [Phase 4]: Dispatching Post-Scroll Formatting Polling (4.0s duration).");
 		wv.postDelayed(() -> {
 			if (wv.isAttachedToWindow() && wv.getSettings().getJavaScriptEnabled()) {
 				wv.evaluateJavascript(JS_POLLING_PAYLOAD, null);
