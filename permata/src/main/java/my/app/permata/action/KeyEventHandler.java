@@ -36,6 +36,144 @@ public class KeyEventHandler {
 	// Tracks scroll timestamps to prevent spamming and ANRs
 	private static final Map<View, Long> scrollTimestamps = new WeakHashMap<>();
 
+	// === ZERO-ALLOCATION JAVASCRIPT PAYLOADS ===
+	// Storing these as static constants prevents the Garbage Collector from causing micro-stutters on IHUs
+	private static final String JS_UNIVERSAL_PAYLOAD = "(function(){" +
+			"let res = 'Discovery [Layer 2]: JS Registry Miss (No custom formatting applied)'; " +
+			"if (!window.__permataDOMInit) {" +
+			"  window.__permataDOMInit = true;" +
+			"  const trigger = function(el) { if(!el) return; el.dispatchEvent(new MouseEvent('mousedown',{bubbles:true,cancelable:true,view:window})); el.dispatchEvent(new MouseEvent('mouseup',{bubbles:true,cancelable:true,view:window})); el.click(); };" +
+			"  const registry=[" +
+			"    {name:\"douyin\",match:/douyin\\.com/,execute:function(){" +
+			"      let fs=document.querySelector('xg-fullscreen, .xgplayer-fullscreen, [title*=\"全屏\"]');" +
+			"      if(fs && !document.fullscreenElement && fs.getAttribute('data-state') !== 'full') trigger(fs);" +
+			"      let cl=document.querySelector('xg-clear-screen, .xgplayer-clearscreen, [title*=\"清屏\"]');" +
+			"      if(cl && cl.getAttribute('data-state') !== 'clear') trigger(cl);" +
+			"      let lc=document.querySelector('.dy-account-close, .login-mask-enter-done .close, [class*=\"close-btn\"]');" +
+			"      if(lc) trigger(lc);" +
+			"    }}," +
+			"    {name:\"tiktok\",match:/tiktok\\.com/,execute:function(){" +
+			"      let cl=document.querySelector('[data-e2e=\"login-modal\"] button[class*=\"Close\"],div[class*=\"DivModalClose\"]');if(cl)trigger(cl);" +
+			"      let mu=document.querySelector('[data-e2e=\"video-player-volume\"],[class*=\"volume\"] svg');" +
+			"      if(mu&&(mu.innerHTML.includes('mute')||(mu.className.baseVal&&mu.className.baseVal.includes('mute')))){" +
+			"        let vc=mu.closest('button')||mu.parentElement;if(vc)trigger(vc);" +
+			"      }" +
+			"      let th=document.querySelector('[data-e2e=\"browse-theatre-mode\"]');if(th)trigger(th);" +
+			"    }}," +
+			"    {name:\"instagram\",match:/instagram\\.com/,execute:function(){" +
+			"      for(let b of document.querySelectorAll('button,div,span')){" +
+			"        let t=b.textContent?b.textContent.trim():'';" +
+			"        if(t==='Not Now'||t==='以后再说'||t==='Cancel')trigger(b);" +
+			"      }" +
+			"      let un=document.querySelectorAll('svg[aria-label*=\"Audio\"],svg[aria-label*=\"Mute\"]');" +
+			"      un.forEach(s=>{" +
+			"        let l=s.getAttribute('aria-label');" +
+			"        if(l&&(l.includes('Mute')||l.includes('静音'))){let c=s.closest('button')||s.parentElement;if(c)trigger(c);}" +
+			"      });" +
+			"    }}," +
+			"    {name:\"youtube\",match:/(youtube\\.com|youtu\\.be)/,execute:function(){" +
+			"      let ad=document.querySelector('.ytp-skip-ad-button,.ytp-ad-skip-button,.ytp-skip-button');if(ad)trigger(ad);" +
+			"      let dm=document.querySelectorAll('yt-button-renderer[id=\"dismiss-button\"],[aria-label=\"No thanks\"],[aria-label=\"Dismiss\"],.yt-spec-button-shape-next--text');" +
+			"      dm.forEach(b=>{if(b.textContent&&(b.textContent.includes('No thanks')||b.textContent.includes('Skip')||b.textContent.includes('Dismiss')))trigger(b);});" +
+			"      let fs=document.querySelector('.ytp-fullscreen-button');" +
+			"      if(fs&&fs.getAttribute('aria-label')&&fs.getAttribute('aria-label').includes('full screen'))trigger(fs);" +
+			"    }}," +
+			"    {name:\"facebook\",match:/facebook\\.com/,execute:function(){" +
+			"      let co=document.querySelector('[data-cookiebanner=\"accept_button\"],[data-testid=\"cookie-policy-manage-dialog-accept\"]');if(co)trigger(co);" +
+			"      let cd=document.querySelector('[aria-label=\"Close\"],[aria-label=\"关闭\"],[class*=\"layerCancel\"]');if(cd)trigger(cd);" +
+			"    }}," +
+			"    {name:\"bilibili\",match:/bilibili\\.com/,execute:function(){" +
+			"      let fs=document.querySelector('.bilibili-player-video-btn-fullscreen,.sq-wrap,.m-bilibili-space-fullscreen,.mplayer-fullscreen');" +
+			"      if(fs&&!fs.classList.contains('closed'))trigger(fs);" +
+			"      let pl=document.querySelector('.mplayer-play');if(pl&&pl.classList.contains('play'))trigger(pl);" +
+			"      let ab=document.querySelector('.m-home-float-openapp,.launch-app-btn,.open-app-btn');" +
+			"      if(ab&&ab.parentElement)ab.parentElement.style.display='none';" +
+			"    }}," +
+			"    {name:\"kuaishou\",match:/kuaishou\\.com/,execute:function(){" +
+			"      let fs=document.querySelector('[aria-label*=\"全屏\"],.fullscreen-icon');if(fs)trigger(fs);" +
+			"      let cb=document.querySelector('.login-close,[class*=\"close-btn\"],[aria-label=\"关闭\"]');if(cb)trigger(cb);" +
+			"    }}," +
+			"    {name:\"xiaohongshu\",match:/xiaohongshu\\.com/,execute:function(){" +
+			"      let ov=document.querySelectorAll('[class*=\"app-open\"],[class*=\"download-btn\"],[class*=\"login-box\"]');" +
+			"      ov.forEach(el=>{el.style.display='none';});" +
+			"      let cb=document.querySelector('.close-icon,[class*=\"close\"]');if(cb)trigger(cb);" +
+			"    }}," +
+			"    {name:\"reddit\",match:/reddit\\.com/,execute:function(){" +
+			"      let pb=document.querySelectorAll('.XPromoPopup, [class*=\"bottom-bar\"], [class*=\"Prompt\"]');" +
+			"      pb.forEach(el=>{el.style.display='none';});" +
+			"      let xb=document.querySelector('button[aria-label=\"Close\"], button[aria-label=\"Dismiss\"]');if(xb)trigger(xb);" +
+			"      if(document.body&&window.getComputedStyle(document.body).overflow==='hidden') document.body.style.overflow='auto';" +
+			"    }}," +
+			"    {name:\"x\",match:/(twitter\\.com|x\\.com)/,execute:function(){" +
+			"      let bb=document.querySelector('[data-testid=\"BottomBar\"]');if(bb)bb.style.display='none';" +
+			"      let cb=document.querySelector('[data-testid=\"app-bar-close\"]');if(cb)trigger(cb);" +
+			"    }}," +
+			"    {name:\"pinterest\",match:/pinterest\\.com/,execute:function(){" +
+			"      let wb=document.querySelectorAll('[data-test-id=\"gift-wrap\"], .UnauthBanner, [data-test-id=\"signup-banner\"]');" +
+			"      wb.forEach(el=>{el.style.display='none';});" +
+			"      if(document.body) document.body.style.overflow='auto';" +
+			"    }}," +
+			"    {name:\"twitch\",match:/twitch\\.tv/,execute:function(){" +
+			"      let ma=document.querySelector('[data-a-target=\"player-overlay-mature-accept\"]');if(ma)trigger(ma);" +
+			"      let ap=document.querySelectorAll('.tw-bottom-0, .tw-fixed');" +
+			"      ap.forEach(b=>{if(b.textContent&&b.textContent.includes('App'))b.style.display='none';});" +
+			"    }}," +
+			"    {name:\"weibo\",match:/weibo\\.(com|cn)/,execute:function(){" +
+			"      let oa=document.querySelectorAll('.f-bg-toast, [class*=\"open-app\"], [class*=\"app-btn\"]');" +
+			"      oa.forEach(el=>{el.style.display='none';});" +
+			"    }}," +
+			"    {name:\"snapchat\",match:/snapchat\\.com/,execute:function(){" +
+			"      let ab=document.querySelector('.AppBanner, [class*=\"Banner\"], [class*=\"DownloadApp\"]');" +
+			"      if(ab)ab.style.display='none';" +
+			"      let ub=document.querySelector('[aria-label=\"Unmute\"], .unmute-icon');if(ub)trigger(ub);" +
+			"    }}," +
+			"    {name:\"likee\",match:/likee\\.video/,execute:function(){" +
+			"      let dw=document.querySelector('.download-bar, [class*=\"Download\"], [class*=\"guide\"]');" +
+			"      if(dw)dw.style.display='none';" +
+			"      let cb=document.querySelector('.close-btn, [class*=\"close\"]');if(cb)trigger(cb);" +
+			"    }}," +
+			"    {name:\"moj\",match:/(mojapp\\.in|sharechat\\.com)/,execute:function(){" +
+			"      let login=document.querySelector('.login-modal, [class*=\"LoginOverlay\"]');" +
+			"      if(login)login.style.display='none';" +
+			"      if(document.body) document.body.style.overflow='auto';" +
+			"    }}," +
+			"    {name:\"vk\",match:/vk\\.com/,execute:function(){" +
+			"      let lb=document.querySelector('.UnauthBox, .box_layout, [id*=\"login\"]');" +
+			"      if(lb)lb.style.display='none';" +
+			"      let um=document.querySelector('.ShortsVideo__unmute, [class*=\"unmute\"]');if(um)trigger(um);" +
+			"    }}," +
+			"    {name:\"kwai\",match:/(kwai\\.com|snackvideo\\.com)/,execute:function(){" +
+			"      let ob=document.querySelector('.open-app-bar, [class*=\"banner\"], .login-dialog');" +
+			"      if(ob)ob.style.display='none';" +
+			"    }}" +
+			"  ];" +
+			"  window.__permataActive = registry.find(p=>p.match.test(window.location.hostname));" +
+			"  if (window.__permataActive) {" +
+			"    const run = () => { try { window.__permataActive.execute(); } catch(e){} };" +
+			"    let guard = null;" +
+			"    const obs = new MutationObserver(() => { if(guard) clearTimeout(guard); guard = setTimeout(run, 100); });" +
+			"    if(document.body) obs.observe(document.body, {childList:true, subtree:true});" +
+			"    else window.addEventListener('DOMContentLoaded', () => obs.observe(document.body, {childList:true, subtree:true}));" +
+			"  }" +
+			"}" +
+			"if (window.__permataActive) { " +
+			"  res = 'Discovery [Layer 2]: JS Registry Match Success -> ' + window.__permataActive.name;" +
+			"  try { window.__permataActive.execute(); } catch(e){} " +
+			"}" +
+			"return res;" +
+			"})();";
+
+	private static final String JS_POLLING_PAYLOAD = "try { " +
+			"  if(window.__permataActive) { " +
+			"    let attempts = 0; " +
+			"    let interval = setInterval(() => { " +
+			"      try { window.__permataActive.execute(); } catch(e){} " +
+			"      attempts++; " +
+			"      if(attempts >= 5) clearInterval(interval); " +
+			"    }, 500); " +
+			"  } " +
+			"} catch(e){}";
+
 	public static boolean handleKeyEvent(MediaSessionCallback cb, KeyEvent event,
 																			 IntObjectFunction<KeyEvent, Boolean> defaultHandler) {
 		return handleKeyEvent(cb, null, event, defaultHandler);
@@ -75,7 +213,6 @@ public class KeyEventHandler {
 		if (targetActivity != null && event.getAction() == ACTION_DOWN) {
 			if (code == KeyEvent.KEYCODE_MEDIA_NEXT || code == KeyEvent.KEYCODE_MEDIA_PREVIOUS) {
 				
-				// 1. Hot-path Optimization: Fast synchronous check to instantly halt media skip
 				ActivityFragment activeFragment = targetActivity.getActiveFragment();
 				if (activeFragment != null) {
 					String className = activeFragment.getClass().getName();
@@ -83,12 +220,10 @@ public class KeyEventHandler {
 						
 						boolean isNext = (code == KeyEvent.KEYCODE_MEDIA_NEXT);
 						
-						// 2. Thread Safety: Offload reflection and touch injection to the Main UI Thread
 						targetActivity.post(() -> {
 							WebView webView = scanFragmentsForWebView(activeFragment);
 							if (webView != null) {
 								
-								// Extract Hostname for detailed contextual logging
 								String currentUrl = webView.getUrl();
 								String host = "unknown";
 								if (currentUrl != null) {
@@ -99,7 +234,6 @@ public class KeyEventHandler {
 								}
 								final String hostTag = "[Host: " + host + "] ";
 
-								// Dynamically target the FullScreenView if active, otherwise use normal WebView
 								View targetView = webView;
 								try {
 									Method getChromeClient = webView.getClass().getMethod("getWebChromeClient");
@@ -124,13 +258,10 @@ public class KeyEventHandler {
 									Log.e(e, hostTag + "Discovery [Layer 3]: Reflection for FullScreenView failed, falling back to WebView.");
 								}
 
-								// Trigger the Smart Scroll injection
-								// "up" parameter is false when skipping to Next (scrolling down), true when skipping to Prev
 								smartScrollWebView(webView, targetView, !isNext, -1f, -1f, hostTag);
 							}
 						});
 						
-						// Consume event synchronously to prevent the Media Engine from skipping the track
 						return true;
 					}
 				}
@@ -187,10 +318,6 @@ public class KeyEventHandler {
 		return null;
 	}
 
-	/**
-	 * Smart Scrolling Engine: Executes precise JS overrides and hardware fallback swipes.
-	 * Runs exclusively on the Main UI Thread.
-	 */
 	private static void smartScrollWebView(final WebView wv, final View touchTarget, boolean up, float relativeX, float relativeY, final String hostTag) {
 		if (wv == null || touchTarget == null || !touchTarget.isAttachedToWindow() || touchTarget.getWidth() <= 0 || touchTarget.getHeight() <= 0) {
 			return;
@@ -200,7 +327,6 @@ public class KeyEventHandler {
 		Long lastClickTimeObj = scrollTimestamps.get(touchTarget);
 		long lastClickTime = (lastClickTimeObj != null) ? lastClickTimeObj : 0;
 		
-		// 3. ANR/Spam Protection: Drop events if fired faster than 250ms (e.g. user holds down steering wheel button)
 		if (now - lastClickTime < 250) {
 			Log.w(hostTag + "Scroll [Anti-Spam]: Key event dropped to prevent ANR.");
 			return;
@@ -210,137 +336,11 @@ public class KeyEventHandler {
 		touchTarget.requestFocus();
 
 		if (wv.getSettings().getJavaScriptEnabled()) {
-			// Phase 1: Universal DOM Overrides (18-Site Enterprise Registry)
-			String universalPayload = "(function(){" +
-					"let res = 'Discovery [Layer 2]: JS Registry Miss (No custom formatting applied)'; " +
-					"if (!window.__permataDOMInit) {" +
-					"  window.__permataDOMInit = true;" +
-					"  const trigger = function(el) { if(!el) return; el.dispatchEvent(new MouseEvent('mousedown',{bubbles:true,cancelable:true,view:window})); el.dispatchEvent(new MouseEvent('mouseup',{bubbles:true,cancelable:true,view:window})); el.click(); };" +
-					"  const registry=[" +
-					"    {name:\"douyin\",match:/douyin\\.com/,execute:function(){" +
-					"      let fs=document.querySelector('xg-fullscreen, .xgplayer-fullscreen, [title*=\"全屏\"]');" +
-					"      if(fs && !document.fullscreenElement && fs.getAttribute('data-state') !== 'full') trigger(fs);" +
-					"      let cl=document.querySelector('xg-clear-screen, .xgplayer-clearscreen, [title*=\"清屏\"]');" +
-					"      if(cl && cl.getAttribute('data-state') !== 'clear') trigger(cl);" +
-					"      let lc=document.querySelector('.dy-account-close, .login-mask-enter-done .close, [class*=\"close-btn\"]');" +
-					"      if(lc) trigger(lc);" +
-					"    }}," +
-					"    {name:\"tiktok\",match:/tiktok\\.com/,execute:function(){" +
-					"      let cl=document.querySelector('[data-e2e=\"login-modal\"] button[class*=\"Close\"],div[class*=\"DivModalClose\"]');if(cl)trigger(cl);" +
-					"      let mu=document.querySelector('[data-e2e=\"video-player-volume\"],[class*=\"volume\"] svg');" +
-					"      if(mu&&(mu.innerHTML.includes('mute')||(mu.className.baseVal&&mu.className.baseVal.includes('mute')))){" +
-					"        let vc=mu.closest('button')||mu.parentElement;if(vc)trigger(vc);" +
-					"      }" +
-					"      let th=document.querySelector('[data-e2e=\"browse-theatre-mode\"]');if(th)trigger(th);" +
-					"    }}," +
-					"    {name:\"instagram\",match:/instagram\\.com/,execute:function(){" +
-					"      for(let b of document.querySelectorAll('button,div,span')){" +
-					"        let t=b.textContent?b.textContent.trim():'';" +
-					"        if(t==='Not Now'||t==='以后再说'||t==='Cancel')trigger(b);" +
-					"      }" +
-					"      let un=document.querySelectorAll('svg[aria-label*=\"Audio\"],svg[aria-label*=\"Mute\"]');" +
-					"      un.forEach(s=>{" +
-					"        let l=s.getAttribute('aria-label');" +
-					"        if(l&&(l.includes('Mute')||l.includes('静音'))){let c=s.closest('button')||s.parentElement;if(c)trigger(c);}" +
-					"      });" +
-					"    }}," +
-					"    {name:\"youtube\",match:/(youtube\\.com|youtu\\.be)/,execute:function(){" +
-					"      let ad=document.querySelector('.ytp-skip-ad-button,.ytp-ad-skip-button,.ytp-skip-button');if(ad)trigger(ad);" +
-					"      let dm=document.querySelectorAll('yt-button-renderer[id=\"dismiss-button\"],[aria-label=\"No thanks\"],[aria-label=\"Dismiss\"],.yt-spec-button-shape-next--text');" +
-					"      dm.forEach(b=>{if(b.textContent&&(b.textContent.includes('No thanks')||b.textContent.includes('Skip')||b.textContent.includes('Dismiss')))trigger(b);});" +
-					"      let fs=document.querySelector('.ytp-fullscreen-button');" +
-					"      if(fs&&fs.getAttribute('aria-label')&&fs.getAttribute('aria-label').includes('full screen'))trigger(fs);" +
-					"    }}," +
-					"    {name:\"facebook\",match:/facebook\\.com/,execute:function(){" +
-					"      let co=document.querySelector('[data-cookiebanner=\"accept_button\"],[data-testid=\"cookie-policy-manage-dialog-accept\"]');if(co)trigger(co);" +
-					"      let cd=document.querySelector('[aria-label=\"Close\"],[aria-label=\"关闭\"],[class*=\"layerCancel\"]');if(cd)trigger(cd);" +
-					"    }}," +
-					"    {name:\"bilibili\",match:/bilibili\\.com/,execute:function(){" +
-					"      let fs=document.querySelector('.bilibili-player-video-btn-fullscreen,.sq-wrap,.m-bilibili-space-fullscreen,.mplayer-fullscreen');" +
-					"      if(fs&&!fs.classList.contains('closed'))trigger(fs);" +
-					"      let pl=document.querySelector('.mplayer-play');if(pl&&pl.classList.contains('play'))trigger(pl);" +
-					"      let ab=document.querySelector('.m-home-float-openapp,.launch-app-btn,.open-app-btn');" +
-					"      if(ab&&ab.parentElement)ab.parentElement.style.display='none';" +
-					"    }}," +
-					"    {name:\"kuaishou\",match:/kuaishou\\.com/,execute:function(){" +
-					"      let fs=document.querySelector('[aria-label*=\"全屏\"],.fullscreen-icon');if(fs)trigger(fs);" +
-					"      let cb=document.querySelector('.login-close,[class*=\"close-btn\"],[aria-label=\"关闭\"]');if(cb)trigger(cb);" +
-					"    }}," +
-					"    {name:\"xiaohongshu\",match:/xiaohongshu\\.com/,execute:function(){" +
-					"      let ov=document.querySelectorAll('[class*=\"app-open\"],[class*=\"download-btn\"],[class*=\"login-box\"]');" +
-					"      ov.forEach(el=>{el.style.display='none';});" +
-					"      let cb=document.querySelector('.close-icon,[class*=\"close\"]');if(cb)trigger(cb);" +
-					"    }}," +
-					"    {name:\"reddit\",match:/reddit\\.com/,execute:function(){" +
-					"      let pb=document.querySelectorAll('.XPromoPopup, [class*=\"bottom-bar\"], [class*=\"Prompt\"]');" +
-					"      pb.forEach(el=>{el.style.display='none';});" +
-					"      let xb=document.querySelector('button[aria-label=\"Close\"], button[aria-label=\"Dismiss\"]');if(xb)trigger(xb);" +
-					"      if(document.body&&window.getComputedStyle(document.body).overflow==='hidden') document.body.style.overflow='auto';" +
-					"    }}," +
-					"    {name:\"x\",match:/(twitter\\.com|x\\.com)/,execute:function(){" +
-					"      let bb=document.querySelector('[data-testid=\"BottomBar\"]');if(bb)bb.style.display='none';" +
-					"      let cb=document.querySelector('[data-testid=\"app-bar-close\"]');if(cb)trigger(cb);" +
-					"    }}," +
-					"    {name:\"pinterest\",match:/pinterest\\.com/,execute:function(){" +
-					"      let wb=document.querySelectorAll('[data-test-id=\"gift-wrap\"], .UnauthBanner, [data-test-id=\"signup-banner\"]');" +
-					"      wb.forEach(el=>{el.style.display='none';});" +
-					"      if(document.body) document.body.style.overflow='auto';" +
-					"    }}," +
-					"    {name:\"twitch\",match:/twitch\\.tv/,execute:function(){" +
-					"      let ma=document.querySelector('[data-a-target=\"player-overlay-mature-accept\"]');if(ma)trigger(ma);" +
-					"      let ap=document.querySelectorAll('.tw-bottom-0, .tw-fixed');" +
-					"      ap.forEach(b=>{if(b.textContent&&b.textContent.includes('App'))b.style.display='none';});" +
-					"    }}," +
-					"    {name:\"weibo\",match:/weibo\\.(com|cn)/,execute:function(){" +
-					"      let oa=document.querySelectorAll('.f-bg-toast, [class*=\"open-app\"], [class*=\"app-btn\"]');" +
-					"      oa.forEach(el=>{el.style.display='none';});" +
-					"    }}," +
-					"    {name:\"snapchat\",match:/snapchat\\.com/,execute:function(){" +
-					"      let ab=document.querySelector('.AppBanner, [class*=\"Banner\"], [class*=\"DownloadApp\"]');" +
-					"      if(ab)ab.style.display='none';" +
-					"      let ub=document.querySelector('[aria-label=\"Unmute\"], .unmute-icon');if(ub)trigger(ub);" +
-					"    }}," +
-					"    {name:\"likee\",match:/likee\\.video/,execute:function(){" +
-					"      let dw=document.querySelector('.download-bar, [class*=\"Download\"], [class*=\"guide\"]');" +
-					"      if(dw)dw.style.display='none';" +
-					"      let cb=document.querySelector('.close-btn, [class*=\"close\"]');if(cb)trigger(cb);" +
-					"    }}," +
-					"    {name:\"moj\",match:/(mojapp\\.in|sharechat\\.com)/,execute:function(){" +
-					"      let login=document.querySelector('.login-modal, [class*=\"LoginOverlay\"]');" +
-					"      if(login)login.style.display='none';" +
-					"      if(document.body) document.body.style.overflow='auto';" +
-					"    }}," +
-					"    {name:\"vk\",match:/vk\\.com/,execute:function(){" +
-					"      let lb=document.querySelector('.UnauthBox, .box_layout, [id*=\"login\"]');" +
-					"      if(lb)lb.style.display='none';" +
-					"      let um=document.querySelector('.ShortsVideo__unmute, [class*=\"unmute\"]');if(um)trigger(um);" +
-					"    }}," +
-					"    {name:\"kwai\",match:/(kwai\\.com|snackvideo\\.com)/,execute:function(){" +
-					"      let ob=document.querySelector('.open-app-bar, [class*=\"banner\"], .login-dialog');" +
-					"      if(ob)ob.style.display='none';" +
-					"    }}" +
-					"  ];" +
-					"  window.__permataActive = registry.find(p=>p.match.test(window.location.hostname));" +
-					"  if (window.__permataActive) {" +
-					"    const run = () => { try { window.__permataActive.execute(); } catch(e){} };" +
-					"    let guard = null;" +
-					"    const obs = new MutationObserver(() => { if(guard) clearTimeout(guard); guard = setTimeout(run, 100); });" +
-					"    if(document.body) obs.observe(document.body, {childList:true, subtree:true});" +
-					"    else window.addEventListener('DOMContentLoaded', () => obs.observe(document.body, {childList:true, subtree:true}));" +
-					"  }" +
-					"}" +
-					"if (window.__permataActive) { " +
-					"  res = 'Discovery [Layer 2]: JS Registry Match Success -> ' + window.__permataActive.name;" +
-					"  try { window.__permataActive.execute(); } catch(e){} " +
-					"}" +
-					"return res;" +
-					"})();";
-					
-			wv.evaluateJavascript(universalPayload, value -> {
+			wv.evaluateJavascript(JS_UNIVERSAL_PAYLOAD, value -> {
 				if (value != null && !value.equals("null")) Log.i(hostTag + value.replace("\"", ""));
 			});
 
-			// Phase 2: Advanced Contextual Scrolling Engine (Bypasses Window Locks)
+			// Dynamic string building remains here because it depends on the "up" boolean direction
 			String advancedJsScript = "(function() {" +
 					"  try {" +
 					"    var isDown = " + (!up) + ";" +
@@ -407,7 +407,6 @@ public class KeyEventHandler {
 			});
 		}
 
-		// Phase 3: Hardware Fallback Simulated Swipe (For stubborn UIs)
 		final float actionX = (relativeX >= 0) ? relativeX : (touchTarget.getWidth() * 0.50f);
 		final float centerY = (relativeY >= 0) ? relativeY : (touchTarget.getHeight() / 2f);
 		
@@ -456,21 +455,10 @@ public class KeyEventHandler {
 			touchTarget.dispatchKeyEvent(new KeyEvent(KeyEvent.ACTION_UP, backupKey));
 		}
 
-		// Phase 4: Post-Scroll Auto-Formatting (Staggered Polling for Resilience)
 		Log.i(hostTag + "Scroll [Phase 4]: Dispatching Post-Scroll Formatting Polling (2.5s duration).");
 		wv.postDelayed(() -> {
 			if (wv.isAttachedToWindow() && wv.getSettings().getJavaScriptEnabled()) {
-				String enforceFormatPolling = "try { " +
-						"  if(window.__permataActive) { " +
-						"    let attempts = 0; " +
-						"    let interval = setInterval(() => { " +
-						"      try { window.__permataActive.execute(); } catch(e){} " +
-						"      attempts++; " +
-						"      if(attempts >= 5) clearInterval(interval); " +
-						"    }, 500); " +
-						"  } " +
-						"} catch(e){}";
-				wv.evaluateJavascript(enforceFormatPolling, null);
+				wv.evaluateJavascript(JS_POLLING_PAYLOAD, null);
 			}
 		}, 400);
 	}
