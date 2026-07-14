@@ -32,7 +32,7 @@ public class KeyEventHandler {
 
 	private static Worker worker;
 	
-	// Tracks scroll timestamps to prevent spamming
+	// Tracks scroll timestamps to prevent spamming and ANRs
 	private static final Map<View, Long> scrollTimestamps = new WeakHashMap<>();
 
 	public static boolean handleKeyEvent(MediaSessionCallback cb, KeyEvent event,
@@ -73,36 +73,51 @@ public class KeyEventHandler {
 
 		if (targetActivity != null && event.getAction() == ACTION_DOWN) {
 			if (code == KeyEvent.KEYCODE_MEDIA_NEXT || code == KeyEvent.KEYCODE_MEDIA_PREVIOUS) {
-				WebView webView = scanFragmentsForWebView(targetActivity);
-				if (webView != null) {
-					boolean isNext = (code == KeyEvent.KEYCODE_MEDIA_NEXT);
-					
-					// Dynamically target the FullScreenView if active, otherwise use normal WebView
-					View targetView = webView;
-					try {
-						Method getChromeClient = webView.getClass().getMethod("getWebChromeClient");
-						Object chromeClient = getChromeClient.invoke(webView);
-						if (chromeClient != null) {
-							Method isFullScreenMethod = chromeClient.getClass().getMethod("isFullScreen");
-							boolean isFullScreen = (Boolean) isFullScreenMethod.invoke(chromeClient);
-							if (isFullScreen) {
-								Method getFullScreenViewMethod = chromeClient.getClass().getMethod("getFullScreenView");
-								View fullScreenView = (View) getFullScreenViewMethod.invoke(chromeClient);
-								if (fullScreenView != null && fullScreenView.getVisibility() == View.VISIBLE) {
-									targetView = fullScreenView;
-									Log.i("Steering Wheel Scroll Intercepted. Targeting FullScreenView. Next: " + isNext);
+				
+				// 1. Hot-path Optimization: Fast synchronous check to instantly halt media skip
+				ActivityFragment activeFragment = targetActivity.getActiveFragment();
+				if (activeFragment != null) {
+					String className = activeFragment.getClass().getName();
+					if (className.endsWith("WebBrowserFragment") && !className.endsWith("YoutubeFragment")) {
+						
+						boolean isNext = (code == KeyEvent.KEYCODE_MEDIA_NEXT);
+						
+						// 2. Thread Safety: Offload reflection and touch injection to the Main UI Thread
+						targetActivity.post(() -> {
+							WebView webView = scanFragmentsForWebView(activeFragment);
+							if (webView != null) {
+								// Dynamically target the FullScreenView if active, otherwise use normal WebView
+								View targetView = webView;
+								try {
+									Method getChromeClient = webView.getClass().getMethod("getWebChromeClient");
+									Object chromeClient = getChromeClient.invoke(webView);
+									if (chromeClient != null) {
+										Method isFullScreenMethod = chromeClient.getClass().getMethod("isFullScreen");
+										boolean isFullScreen = (Boolean) isFullScreenMethod.invoke(chromeClient);
+										if (isFullScreen) {
+											Method getFullScreenViewMethod = chromeClient.getClass().getMethod("getFullScreenView");
+											View fullScreenView = (View) getFullScreenViewMethod.invoke(chromeClient);
+											if (fullScreenView != null && fullScreenView.getVisibility() == View.VISIBLE) {
+												targetView = fullScreenView;
+												Log.i("Steering Wheel Scroll Intercepted. Targeting FullScreenView. Next: " + isNext);
+											}
+										} else {
+											Log.i("Steering Wheel Scroll Intercepted. Targeting Normal WebView. Next: " + isNext);
+										}
+									}
+								} catch (Exception e) {
+									Log.e(e, "Reflection for FullScreenView failed, falling back to WebView.");
 								}
-							} else {
-								Log.i("Steering Wheel Scroll Intercepted. Targeting Normal WebView. Next: " + isNext);
-							}
-						}
-					} catch (Exception e) {
-						Log.e(e, "Reflection for FullScreenView failed, falling back to WebView.");
-					}
 
-					// Trigger the new Smart Scroll injection
-					// "up" parameter is false when skipping to Next (scrolling down), true when skipping to Prev (scrolling up)
-					return smartScrollWebView(webView, targetView, !isNext, -1f, -1f);
+								// Trigger the Smart Scroll injection
+								// "up" parameter is false when skipping to Next (scrolling down), true when skipping to Prev
+								smartScrollWebView(webView, targetView, !isNext, -1f, -1f);
+							}
+						});
+						
+						// Consume event synchronously to prevent the Media Engine from skipping the track
+						return true;
+					}
 				}
 			}
 		}
@@ -142,137 +157,158 @@ public class KeyEventHandler {
 		return true;
 	}
 
+	private static WebView scanFragmentsForWebView(ActivityFragment activeFragment) {
+		try {
+			Method getWebViewMethod = activeFragment.getClass().getMethod("getWebView");
+			Object result = getWebViewMethod.invoke(activeFragment);
+			if (result instanceof WebView) return (WebView) result;
+		} catch (Exception e) {
+			Log.e(e, "Failed to scan for WebView");
+		}
+		return null;
+	}
+
 	/**
 	 * Smart Scrolling Engine: Executes precise JS overrides and hardware fallback swipes.
+	 * Runs exclusively on the Main UI Thread.
 	 */
-	private static boolean smartScrollWebView(final WebView wv, final View touchTarget, boolean up, float relativeX, float relativeY) {
+	private static void smartScrollWebView(final WebView wv, final View touchTarget, boolean up, float relativeX, float relativeY) {
 		if (wv == null || touchTarget == null || !touchTarget.isAttachedToWindow() || touchTarget.getWidth() <= 0 || touchTarget.getHeight() <= 0) {
-			return false;
+			return;
 		}
-
-		touchTarget.requestFocus();
 
 		long now = android.os.SystemClock.uptimeMillis();
 		Long lastClickTimeObj = scrollTimestamps.get(touchTarget);
 		long lastClickTime = (lastClickTimeObj != null) ? lastClickTimeObj : 0;
+		
+		// 3. ANR/Spam Protection: Drop events if fired faster than 250ms (e.g. user holds down steering wheel button)
+		if (now - lastClickTime < 250) {
+			return;
+		}
 		scrollTimestamps.put(touchTarget, now); 
 		
-		boolean isSpamming = (now - lastClickTime < 250);
+		touchTarget.requestFocus();
 
 		if (wv.getSettings().getJavaScriptEnabled()) {
 			// Phase 1: Universal DOM Overrides (18-Site Enterprise Registry)
 			String universalPayload = "(function(){" +
-					"const registry=[" +
-					"  {name:\"douyin\",match:/douyin\\.com/,execute:function(){" +
-					"    let fs=document.querySelector('.xgplayer-fullscreen,[class*=\"fullscreen\"],[title*=\"全屏\"],[aria-label*=\"全屏\"]');" +
-					"    if(fs&&!fs.classList.contains('xgplayer-fullscreen-active'))fs.click();" +
-					"    let cl=document.querySelector('.xgplayer-clearscreen,[class*=\"clearscreen\"],[title*=\"清屏\"],[aria-label*=\"清屏\"]');" +
-					"    if(cl)cl.click();" +
-					"    let lc=document.querySelector('.dy-account-close,[class*=\"close-btn\"]');if(lc)lc.click();" +
-					"  }}," +
-					"  {name:\"tiktok\",match:/tiktok\\.com/,execute:function(){" +
-					"    let cl=document.querySelector('[data-e2e=\"login-modal\"] button[class*=\"Close\"],div[class*=\"DivModalClose\"]');if(cl)cl.click();" +
-					"    let mu=document.querySelector('[data-e2e=\"video-player-volume\"],[class*=\"volume\"] svg');" +
-					"    if(mu&&(mu.innerHTML.includes('mute')||(mu.className.baseVal&&mu.className.baseVal.includes('mute')))){" +
-					"      let vc=mu.closest('button')||mu.parentElement;if(vc)vc.click();" +
-					"    }" +
-					"    let th=document.querySelector('[data-e2e=\"browse-theatre-mode\"]');if(th)th.click();" +
-					"  }}," +
-					"  {name:\"instagram\",match:/instagram\\.com/,execute:function(){" +
-					"    for(let b of document.querySelectorAll('button,div,span')){" +
-					"      let t=b.textContent?b.textContent.trim():'';" +
-					"      if(t==='Not Now'||t==='以后再说'||t==='Cancel')b.click();" +
-					"    }" +
-					"    let un=document.querySelectorAll('svg[aria-label*=\"Audio\"],svg[aria-label*=\"Mute\"]');" +
-					"    un.forEach(s=>{" +
-					"      let l=s.getAttribute('aria-label');" +
-					"      if(l&&(l.includes('Mute')||l.includes('静音'))){let c=s.closest('button')||s.parentElement;if(c)c.click();}" +
-					"    });" +
-					"  }}," +
-					"  {name:\"youtube\",match:/(youtube\\.com|youtu\\.be)/,execute:function(){" +
-					"    let ad=document.querySelector('.ytp-skip-ad-button,.ytp-ad-skip-button,.ytp-skip-button');if(ad)ad.click();" +
-					"    let dm=document.querySelectorAll('yt-button-renderer[id=\"dismiss-button\"],[aria-label=\"No thanks\"],[aria-label=\"Dismiss\"],.yt-spec-button-shape-next--text');" +
-					"    dm.forEach(b=>{if(b.textContent&&(b.textContent.includes('No thanks')||b.textContent.includes('Skip')||b.textContent.includes('Dismiss')))b.click();});" +
-					"    let fs=document.querySelector('.ytp-fullscreen-button');" +
-					"    if(fs&&fs.getAttribute('aria-label')&&fs.getAttribute('aria-label').includes('full screen'))fs.click();" +
-					"  }}," +
-					"  {name:\"facebook\",match:/facebook\\.com/,execute:function(){" +
-					"    let co=document.querySelector('[data-cookiebanner=\"accept_button\"],[data-testid=\"cookie-policy-manage-dialog-accept\"]');if(co)co.click();" +
-					"    let cd=document.querySelector('[aria-label=\"Close\"],[aria-label=\"关闭\"],[class*=\"layerCancel\"]');if(cd)cd.click();" +
-					"  }}," +
-					"  {name:\"bilibili\",match:/bilibili\\.com/,execute:function(){" +
-					"    let fs=document.querySelector('.bilibili-player-video-btn-fullscreen,.sq-wrap,.m-bilibili-space-fullscreen,.mplayer-fullscreen');" +
-					"    if(fs&&!fs.classList.contains('closed'))fs.click();" +
-					"    let pl=document.querySelector('.mplayer-play');if(pl&&pl.classList.contains('play'))pl.click();" +
-					"    let ab=document.querySelector('.m-home-float-openapp,.launch-app-btn,.open-app-btn');" +
-					"    if(ab&&ab.parentElement)ab.parentElement.style.display='none';" +
-					"  }}," +
-					"  {name:\"kuaishou\",match:/kuaishou\\.com/,execute:function(){" +
-					"    let fs=document.querySelector('[aria-label*=\"全屏\"],.fullscreen-icon');if(fs)fs.click();" +
-					"    let cb=document.querySelector('.login-close,[class*=\"close-btn\"],[aria-label=\"关闭\"]');if(cb)cb.click();" +
-					"  }}," +
-					"  {name:\"xiaohongshu\",match:/xiaohongshu\\.com/,execute:function(){" +
-					"    let ov=document.querySelectorAll('[class*=\"app-open\"],[class*=\"download-btn\"],[class*=\"login-box\"]');" +
-					"    ov.forEach(el=>{el.style.display='none';});" +
-					"    let cb=document.querySelector('.close-icon,[class*=\"close\"]');if(cb)cb.click();" +
-					"  }}," +
-					"  {name:\"reddit\",match:/reddit\\.com/,execute:function(){" +
-					"    let pb=document.querySelectorAll('.XPromoPopup, [class*=\"bottom-bar\"], [class*=\"Prompt\"]');" +
-					"    pb.forEach(el=>{el.style.display='none';});" +
-					"    let xb=document.querySelector('button[aria-label=\"Close\"], button[aria-label=\"Dismiss\"]');if(xb)xb.click();" +
-					"    if(document.body&&window.getComputedStyle(document.body).overflow==='hidden') document.body.style.overflow='auto';" +
-					"  }}," +
-					"  {name:\"x\",match:/(twitter\\.com|x\\.com)/,execute:function(){" +
-					"    let bb=document.querySelector('[data-testid=\"BottomBar\"]');if(bb)bb.style.display='none';" +
-					"    let cb=document.querySelector('[data-testid=\"app-bar-close\"]');if(cb)cb.click();" +
-					"  }}," +
-					"  {name:\"pinterest\",match:/pinterest\\.com/,execute:function(){" +
-					"    let wb=document.querySelectorAll('[data-test-id=\"gift-wrap\"], .UnauthBanner, [data-test-id=\"signup-banner\"]');" +
-					"    wb.forEach(el=>{el.style.display='none';});" +
-					"    if(document.body) document.body.style.overflow='auto';" +
-					"  }}," +
-					"  {name:\"twitch\",match:/twitch\\.tv/,execute:function(){" +
-					"    let ma=document.querySelector('[data-a-target=\"player-overlay-mature-accept\"]');if(ma)ma.click();" +
-					"    let ap=document.querySelectorAll('.tw-bottom-0, .tw-fixed');" +
-					"    ap.forEach(b=>{if(b.textContent&&b.textContent.includes('App'))b.style.display='none';});" +
-					"  }}," +
-					"  {name:\"weibo\",match:/weibo\\.(com|cn)/,execute:function(){" +
-					"    let oa=document.querySelectorAll('.f-bg-toast, [class*=\"open-app\"], [class*=\"app-btn\"]');" +
-					"    oa.forEach(el=>{el.style.display='none';});" +
-					"  }}," +
-					"  {name:\"snapchat\",match:/snapchat\\.com/,execute:function(){" +
-					"    let ab=document.querySelector('.AppBanner, [class*=\"Banner\"], [class*=\"DownloadApp\"]');" +
-					"    if(ab)ab.style.display='none';" +
-					"    let ub=document.querySelector('[aria-label=\"Unmute\"], .unmute-icon');if(ub)ub.click();" +
-					"  }}," +
-					"  {name:\"likee\",match:/likee\\.video/,execute:function(){" +
-					"    let dw=document.querySelector('.download-bar, [class*=\"Download\"], [class*=\"guide\"]');" +
-					"    if(dw)dw.style.display='none';" +
-					"    let cb=document.querySelector('.close-btn, [class*=\"close\"]');if(cb)cb.click();" +
-					"  }}," +
-					"  {name:\"moj\",match:/(mojapp\\.in|sharechat\\.com)/,execute:function(){" +
-					"    let login=document.querySelector('.login-modal, [class*=\"LoginOverlay\"]');" +
-					"    if(login)login.style.display='none';" +
-					"    if(document.body) document.body.style.overflow='auto';" +
-					"  }}," +
-					"  {name:\"vk\",match:/vk\\.com/,execute:function(){" +
-					"    let lb=document.querySelector('.UnauthBox, .box_layout, [id*=\"login\"]');" +
-					"    if(lb)lb.style.display='none';" +
-					"    let um=document.querySelector('.ShortsVideo__unmute, [class*=\"unmute\"]');if(um)um.click();" +
-					"  }}," +
-					"  {name:\"kwai\",match:/(kwai\\.com|snackvideo\\.com)/,execute:function(){" +
-					"    let ob=document.querySelector('.open-app-bar, [class*=\"banner\"], .login-dialog');" +
-					"    if(ob)ob.style.display='none';" +
-					"  }}" +
-					"];" +
-					"const active=registry.find(p=>p.match.test(window.location.hostname));" +
-					"if(!active)return;" +
-					"let guard=null;" +
-					"function run(){try{active.execute();}catch(e){}}" +
-					"const obs=new MutationObserver(()=>{if(guard)clearTimeout(guard);guard=setTimeout(run,100);});" +
-					"run();" +
-					"if(document.body){obs.observe(document.body,{childList:true,subtree:true});}" +
-					"else{window.addEventListener('DOMContentLoaded',()=>obs.observe(document.body,{childList:true,subtree:true}));}" +
+					"if (!window.__permataDOMInit) {" +
+					"  window.__permataDOMInit = true;" +
+					"  const trigger = function(el) { if(!el) return; el.dispatchEvent(new MouseEvent('mousedown',{bubbles:true,cancelable:true,view:window})); el.dispatchEvent(new MouseEvent('mouseup',{bubbles:true,cancelable:true,view:window})); el.click(); };" +
+					"  const registry=[" +
+					"    {name:\"douyin\",match:/douyin\\.com/,execute:function(){" +
+					"      let fs=document.querySelector('xg-fullscreen, .xgplayer-fullscreen, [title*=\"全屏\"]');" +
+					"      if(fs && !document.fullscreenElement && fs.getAttribute('data-state') !== 'full') trigger(fs);" +
+					"      let cl=document.querySelector('xg-clear-screen, .xgplayer-clearscreen, [title*=\"清屏\"]');" +
+					"      if(cl && cl.getAttribute('data-state') !== 'clear') trigger(cl);" +
+					"      let lc=document.querySelector('.dy-account-close, .login-mask-enter-done .close, [class*=\"close-btn\"]');" +
+					"      if(lc) trigger(lc);" +
+					"    }}," +
+					"    {name:\"tiktok\",match:/tiktok\\.com/,execute:function(){" +
+					"      let cl=document.querySelector('[data-e2e=\"login-modal\"] button[class*=\"Close\"],div[class*=\"DivModalClose\"]');if(cl)trigger(cl);" +
+					"      let mu=document.querySelector('[data-e2e=\"video-player-volume\"],[class*=\"volume\"] svg');" +
+					"      if(mu&&(mu.innerHTML.includes('mute')||(mu.className.baseVal&&mu.className.baseVal.includes('mute')))){" +
+					"        let vc=mu.closest('button')||mu.parentElement;if(vc)trigger(vc);" +
+					"      }" +
+					"      let th=document.querySelector('[data-e2e=\"browse-theatre-mode\"]');if(th)trigger(th);" +
+					"    }}," +
+					"    {name:\"instagram\",match:/instagram\\.com/,execute:function(){" +
+					"      for(let b of document.querySelectorAll('button,div,span')){" +
+					"        let t=b.textContent?b.textContent.trim():'';" +
+					"        if(t==='Not Now'||t==='以后再说'||t==='Cancel')trigger(b);" +
+					"      }" +
+					"      let un=document.querySelectorAll('svg[aria-label*=\"Audio\"],svg[aria-label*=\"Mute\"]');" +
+					"      un.forEach(s=>{" +
+					"        let l=s.getAttribute('aria-label');" +
+					"        if(l&&(l.includes('Mute')||l.includes('静音'))){let c=s.closest('button')||s.parentElement;if(c)trigger(c);}" +
+					"      });" +
+					"    }}," +
+					"    {name:\"youtube\",match:/(youtube\\.com|youtu\\.be)/,execute:function(){" +
+					"      let ad=document.querySelector('.ytp-skip-ad-button,.ytp-ad-skip-button,.ytp-skip-button');if(ad)trigger(ad);" +
+					"      let dm=document.querySelectorAll('yt-button-renderer[id=\"dismiss-button\"],[aria-label=\"No thanks\"],[aria-label=\"Dismiss\"],.yt-spec-button-shape-next--text');" +
+					"      dm.forEach(b=>{if(b.textContent&&(b.textContent.includes('No thanks')||b.textContent.includes('Skip')||b.textContent.includes('Dismiss')))trigger(b);});" +
+					"      let fs=document.querySelector('.ytp-fullscreen-button');" +
+					"      if(fs&&fs.getAttribute('aria-label')&&fs.getAttribute('aria-label').includes('full screen'))trigger(fs);" +
+					"    }}," +
+					"    {name:\"facebook\",match:/facebook\\.com/,execute:function(){" +
+					"      let co=document.querySelector('[data-cookiebanner=\"accept_button\"],[data-testid=\"cookie-policy-manage-dialog-accept\"]');if(co)trigger(co);" +
+					"      let cd=document.querySelector('[aria-label=\"Close\"],[aria-label=\"关闭\"],[class*=\"layerCancel\"]');if(cd)trigger(cd);" +
+					"    }}," +
+					"    {name:\"bilibili\",match:/bilibili\\.com/,execute:function(){" +
+					"      let fs=document.querySelector('.bilibili-player-video-btn-fullscreen,.sq-wrap,.m-bilibili-space-fullscreen,.mplayer-fullscreen');" +
+					"      if(fs&&!fs.classList.contains('closed'))trigger(fs);" +
+					"      let pl=document.querySelector('.mplayer-play');if(pl&&pl.classList.contains('play'))trigger(pl);" +
+					"      let ab=document.querySelector('.m-home-float-openapp,.launch-app-btn,.open-app-btn');" +
+					"      if(ab&&ab.parentElement)ab.parentElement.style.display='none';" +
+					"    }}," +
+					"    {name:\"kuaishou\",match:/kuaishou\\.com/,execute:function(){" +
+					"      let fs=document.querySelector('[aria-label*=\"全屏\"],.fullscreen-icon');if(fs)trigger(fs);" +
+					"      let cb=document.querySelector('.login-close,[class*=\"close-btn\"],[aria-label=\"关闭\"]');if(cb)trigger(cb);" +
+					"    }}," +
+					"    {name:\"xiaohongshu\",match:/xiaohongshu\\.com/,execute:function(){" +
+					"      let ov=document.querySelectorAll('[class*=\"app-open\"],[class*=\"download-btn\"],[class*=\"login-box\"]');" +
+					"      ov.forEach(el=>{el.style.display='none';});" +
+					"      let cb=document.querySelector('.close-icon,[class*=\"close\"]');if(cb)trigger(cb);" +
+					"    }}," +
+					"    {name:\"reddit\",match:/reddit\\.com/,execute:function(){" +
+					"      let pb=document.querySelectorAll('.XPromoPopup, [class*=\"bottom-bar\"], [class*=\"Prompt\"]');" +
+					"      pb.forEach(el=>{el.style.display='none';});" +
+					"      let xb=document.querySelector('button[aria-label=\"Close\"], button[aria-label=\"Dismiss\"]');if(xb)trigger(xb);" +
+					"      if(document.body&&window.getComputedStyle(document.body).overflow==='hidden') document.body.style.overflow='auto';" +
+					"    }}," +
+					"    {name:\"x\",match:/(twitter\\.com|x\\.com)/,execute:function(){" +
+					"      let bb=document.querySelector('[data-testid=\"BottomBar\"]');if(bb)bb.style.display='none';" +
+					"      let cb=document.querySelector('[data-testid=\"app-bar-close\"]');if(cb)trigger(cb);" +
+					"    }}," +
+					"    {name:\"pinterest\",match:/pinterest\\.com/,execute:function(){" +
+					"      let wb=document.querySelectorAll('[data-test-id=\"gift-wrap\"], .UnauthBanner, [data-test-id=\"signup-banner\"]');" +
+					"      wb.forEach(el=>{el.style.display='none';});" +
+					"      if(document.body) document.body.style.overflow='auto';" +
+					"    }}," +
+					"    {name:\"twitch\",match:/twitch\\.tv/,execute:function(){" +
+					"      let ma=document.querySelector('[data-a-target=\"player-overlay-mature-accept\"]');if(ma)trigger(ma);" +
+					"      let ap=document.querySelectorAll('.tw-bottom-0, .tw-fixed');" +
+					"      ap.forEach(b=>{if(b.textContent&&b.textContent.includes('App'))b.style.display='none';});" +
+					"    }}," +
+					"    {name:\"weibo\",match:/weibo\\.(com|cn)/,execute:function(){" +
+					"      let oa=document.querySelectorAll('.f-bg-toast, [class*=\"open-app\"], [class*=\"app-btn\"]');" +
+					"      oa.forEach(el=>{el.style.display='none';});" +
+					"    }}," +
+					"    {name:\"snapchat\",match:/snapchat\\.com/,execute:function(){" +
+					"      let ab=document.querySelector('.AppBanner, [class*=\"Banner\"], [class*=\"DownloadApp\"]');" +
+					"      if(ab)ab.style.display='none';" +
+					"      let ub=document.querySelector('[aria-label=\"Unmute\"], .unmute-icon');if(ub)trigger(ub);" +
+					"    }}," +
+					"    {name:\"likee\",match:/likee\\.video/,execute:function(){" +
+					"      let dw=document.querySelector('.download-bar, [class*=\"Download\"], [class*=\"guide\"]');" +
+					"      if(dw)dw.style.display='none';" +
+					"      let cb=document.querySelector('.close-btn, [class*=\"close\"]');if(cb)trigger(cb);" +
+					"    }}," +
+					"    {name:\"moj\",match:/(mojapp\\.in|sharechat\\.com)/,execute:function(){" +
+					"      let login=document.querySelector('.login-modal, [class*=\"LoginOverlay\"]');" +
+					"      if(login)login.style.display='none';" +
+					"      if(document.body) document.body.style.overflow='auto';" +
+					"    }}," +
+					"    {name:\"vk\",match:/vk\\.com/,execute:function(){" +
+					"      let lb=document.querySelector('.UnauthBox, .box_layout, [id*=\"login\"]');" +
+					"      if(lb)lb.style.display='none';" +
+					"      let um=document.querySelector('.ShortsVideo__unmute, [class*=\"unmute\"]');if(um)trigger(um);" +
+					"    }}," +
+					"    {name:\"kwai\",match:/(kwai\\.com|snackvideo\\.com)/,execute:function(){" +
+					"      let ob=document.querySelector('.open-app-bar, [class*=\"banner\"], .login-dialog');" +
+					"      if(ob)ob.style.display='none';" +
+					"    }}" +
+					"  ];" +
+					"  window.__permataActive = registry.find(p=>p.match.test(window.location.hostname));" +
+					"  if (window.__permataActive) {" +
+					"    const run = () => { try { window.__permataActive.execute(); } catch(e){} };" +
+					"    let guard = null;" +
+					"    const obs = new MutationObserver(() => { if(guard) clearTimeout(guard); guard = setTimeout(run, 100); });" +
+					"    if(document.body) obs.observe(document.body, {childList:true, subtree:true});" +
+					"    else window.addEventListener('DOMContentLoaded', () => obs.observe(document.body, {childList:true, subtree:true}));" +
+					"  }" +
+					"}" +
+					"if (window.__permataActive) { try { window.__permataActive.execute(); } catch(e){} }" +
 					"})();";
 			wv.evaluateJavascript(universalPayload, null);
 
@@ -384,25 +420,6 @@ public class KeyEventHandler {
 			touchTarget.dispatchKeyEvent(new KeyEvent(KeyEvent.ACTION_DOWN, backupKey));
 			touchTarget.dispatchKeyEvent(new KeyEvent(KeyEvent.ACTION_UP, backupKey));
 		}
-
-		return true;
-	}
-
-	private static WebView scanFragmentsForWebView(MainActivityDelegate activity) {
-		try {
-			ActivityFragment activeFragment = activity.getActiveFragment();
-			if (activeFragment != null) {
-				String className = activeFragment.getClass().getName();
-				if (className.endsWith("WebBrowserFragment") && !className.endsWith("YoutubeFragment")) {
-					Method getWebViewMethod = activeFragment.getClass().getMethod("getWebView");
-					Object result = getWebViewMethod.invoke(activeFragment);
-					if (result instanceof WebView) return (WebView) result;
-				}
-			}
-		} catch (Exception e) {
-			Log.e(e, "Failed to scan for WebView");
-		}
-		return null;
 	}
 
 	private static void performAction(Action action, MediaSessionCallback cb,
