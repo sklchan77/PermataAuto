@@ -5,6 +5,7 @@ import static android.view.KeyEvent.ACTION_DOWN;
 import static android.view.KeyEvent.ACTION_MULTIPLE;
 import static android.view.KeyEvent.ACTION_UP;
 
+import android.net.Uri;
 import android.view.KeyEvent;
 import android.view.MotionEvent;
 import android.view.View;
@@ -86,6 +87,18 @@ public class KeyEventHandler {
 						targetActivity.post(() -> {
 							WebView webView = scanFragmentsForWebView(activeFragment);
 							if (webView != null) {
+								
+								// Extract Hostname for detailed contextual logging
+								String currentUrl = webView.getUrl();
+								String host = "unknown";
+								if (currentUrl != null) {
+									try {
+										host = Uri.parse(currentUrl).getHost();
+										if (host != null && host.startsWith("www.")) host = host.substring(4);
+									} catch (Exception ignored) {}
+								}
+								final String hostTag = "[Host: " + host + "] ";
+
 								// Dynamically target the FullScreenView if active, otherwise use normal WebView
 								View targetView = webView;
 								try {
@@ -99,23 +112,25 @@ public class KeyEventHandler {
 											View fullScreenView = (View) getFullScreenViewMethod.invoke(chromeClient);
 											if (fullScreenView != null && fullScreenView.getVisibility() == View.VISIBLE) {
 												targetView = fullScreenView;
-												Log.i("Discovery [Layer 3]: Target Layout is FullScreenView.");
+												Log.i(hostTag + "Discovery [Layer 3]: Target Layout is FullScreenView.");
 											} else {
-												Log.i("Discovery [Layer 3]: FullScreen detected but View is hidden/null. Targeting Normal WebView.");
+												Log.i(hostTag + "Discovery [Layer 3]: FullScreen detected but View is hidden/null. Targeting Normal WebView.");
 											}
 										} else {
-											Log.i("Discovery [Layer 3]: Target Layout is Normal WebView.");
+											Log.i(hostTag + "Discovery [Layer 3]: Target Layout is Normal WebView.");
 										}
 									}
 								} catch (Exception e) {
-									Log.e(e, "Discovery [Layer 3]: Reflection for FullScreenView failed, falling back to WebView.");
+									Log.e(e, hostTag + "Discovery [Layer 3]: Reflection for FullScreenView failed, falling back to WebView.");
 								}
 
 								// Trigger the Smart Scroll injection
-								smartScrollWebView(webView, targetView, !isNext, -1f, -1f);
+								// "up" parameter is false when skipping to Next (scrolling down), true when skipping to Prev
+								smartScrollWebView(webView, targetView, !isNext, -1f, -1f, hostTag);
 							}
 						});
 						
+						// Consume event synchronously to prevent the Media Engine from skipping the track
 						return true;
 					}
 				}
@@ -176,7 +191,7 @@ public class KeyEventHandler {
 	 * Smart Scrolling Engine: Executes precise JS overrides and hardware fallback swipes.
 	 * Runs exclusively on the Main UI Thread.
 	 */
-	private static void smartScrollWebView(final WebView wv, final View touchTarget, boolean up, float relativeX, float relativeY) {
+	private static void smartScrollWebView(final WebView wv, final View touchTarget, boolean up, float relativeX, float relativeY, final String hostTag) {
 		if (wv == null || touchTarget == null || !touchTarget.isAttachedToWindow() || touchTarget.getWidth() <= 0 || touchTarget.getHeight() <= 0) {
 			return;
 		}
@@ -185,8 +200,9 @@ public class KeyEventHandler {
 		Long lastClickTimeObj = scrollTimestamps.get(touchTarget);
 		long lastClickTime = (lastClickTimeObj != null) ? lastClickTimeObj : 0;
 		
+		// 3. ANR/Spam Protection: Drop events if fired faster than 250ms (e.g. user holds down steering wheel button)
 		if (now - lastClickTime < 250) {
-			Log.w("Scroll [Anti-Spam]: Key event dropped to prevent ANR.");
+			Log.w(hostTag + "Scroll [Anti-Spam]: Key event dropped to prevent ANR.");
 			return;
 		}
 		scrollTimestamps.put(touchTarget, now); 
@@ -196,7 +212,7 @@ public class KeyEventHandler {
 		if (wv.getSettings().getJavaScriptEnabled()) {
 			// Phase 1: Universal DOM Overrides (18-Site Enterprise Registry)
 			String universalPayload = "(function(){" +
-					"let res = 'Discovery [Layer 2]: Active Registry Override Run';" +
+					"let res = 'Discovery [Layer 2]: JS Registry Miss (No custom formatting applied)'; " +
 					"if (!window.__permataDOMInit) {" +
 					"  window.__permataDOMInit = true;" +
 					"  const trigger = function(el) { if(!el) return; el.dispatchEvent(new MouseEvent('mousedown',{bubbles:true,cancelable:true,view:window})); el.dispatchEvent(new MouseEvent('mouseup',{bubbles:true,cancelable:true,view:window})); el.click(); };" +
@@ -306,20 +322,22 @@ public class KeyEventHandler {
 					"  ];" +
 					"  window.__permataActive = registry.find(p=>p.match.test(window.location.hostname));" +
 					"  if (window.__permataActive) {" +
-					"    res = 'Discovery [Layer 2]: JS Registry Match Success -> ' + window.__permataActive.name;" +
 					"    const run = () => { try { window.__permataActive.execute(); } catch(e){} };" +
 					"    let guard = null;" +
 					"    const obs = new MutationObserver(() => { if(guard) clearTimeout(guard); guard = setTimeout(run, 100); });" +
 					"    if(document.body) obs.observe(document.body, {childList:true, subtree:true});" +
 					"    else window.addEventListener('DOMContentLoaded', () => obs.observe(document.body, {childList:true, subtree:true}));" +
-					"  } else { res = 'Discovery [Layer 2]: JS Registry Miss (Hostname: ' + window.location.hostname + ')'; }" +
+					"  }" +
 					"}" +
-					"if (window.__permataActive) { try { window.__permataActive.execute(); } catch(e){} }" +
+					"if (window.__permataActive) { " +
+					"  res = 'Discovery [Layer 2]: JS Registry Match Success -> ' + window.__permataActive.name;" +
+					"  try { window.__permataActive.execute(); } catch(e){} " +
+					"}" +
 					"return res;" +
 					"})();";
 					
 			wv.evaluateJavascript(universalPayload, value -> {
-				if (value != null && !value.equals("null")) Log.i(value.replace("\"", ""));
+				if (value != null && !value.equals("null")) Log.i(hostTag + value.replace("\"", ""));
 			});
 
 			// Phase 2: Advanced Contextual Scrolling Engine (Bypasses Window Locks)
@@ -385,7 +403,7 @@ public class KeyEventHandler {
 					"})();";
 					
 			wv.evaluateJavascript(advancedJsScript, value -> {
-				if (value != null && !value.equals("null")) Log.i(value.replace("\"", ""));
+				if (value != null && !value.equals("null")) Log.i(hostTag + value.replace("\"", ""));
 			});
 		}
 
@@ -398,7 +416,7 @@ public class KeyEventHandler {
 		final float yEnd = up ? (centerY + span / 2f) : (centerY - span / 2f);
 
 		try {
-			Log.i("Scroll [Method 4]: Executing Hardware Touch Gesture Fallback (Multi-step simulated swipe).");
+			Log.i(hostTag + "Scroll [Method 4]: Executing Hardware Touch Gesture Fallback (Multi-step simulated swipe).");
 			final long startTime = android.os.SystemClock.uptimeMillis();
 			
 			MotionEvent eventDown = MotionEvent.obtain(startTime, startTime, MotionEvent.ACTION_DOWN, actionX, yStart, 0);
@@ -432,14 +450,14 @@ public class KeyEventHandler {
 			}, swipeDuration + 10);
 
 		} catch (Exception e) {
-			Log.e(e, "Scroll [Method 4]: Touch Gesture Failed. Executing KeyEvent PageUp/Down fallback.");
+			Log.e(e, hostTag + "Scroll [Method 4]: Touch Gesture Failed. Executing KeyEvent PageUp/Down fallback.");
 			int backupKey = up ? KeyEvent.KEYCODE_PAGE_UP : KeyEvent.KEYCODE_PAGE_DOWN;
 			touchTarget.dispatchKeyEvent(new KeyEvent(KeyEvent.ACTION_DOWN, backupKey));
 			touchTarget.dispatchKeyEvent(new KeyEvent(KeyEvent.ACTION_UP, backupKey));
 		}
 
 		// Phase 4: Post-Scroll Auto-Formatting (Staggered Polling for Resilience)
-		Log.i("Scroll [Phase 4]: Dispatching Post-Scroll Formatting Polling (2.5s duration).");
+		Log.i(hostTag + "Scroll [Phase 4]: Dispatching Post-Scroll Formatting Polling (2.5s duration).");
 		wv.postDelayed(() -> {
 			if (wv.isAttachedToWindow() && wv.getSettings().getJavaScriptEnabled()) {
 				String enforceFormatPolling = "try { " +
