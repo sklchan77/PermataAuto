@@ -40,20 +40,25 @@ public class KeyEventHandler {
 	// Storing these as static constants prevents the Garbage Collector from causing micro-stutters on IHUs
 	private static final String JS_UNIVERSAL_PAYLOAD = "(function(){" +
 			"let res = 'Discovery [Layer 2]: JS Registry Miss (No custom formatting applied)'; " +
-			"if (!window.__permataDOMInit) {" +
-			"  window.__permataDOMInit = true;" +
-			"  const trigger = function(el) { if(!el) return; " +
-			"    try { el.dispatchEvent(new TouchEvent('touchstart',{bubbles:true,cancelable:true})); el.dispatchEvent(new TouchEvent('touchend',{bubbles:true,cancelable:true})); } catch(e){} " +
-			"    el.dispatchEvent(new MouseEvent('mousedown',{bubbles:true,cancelable:true,view:window})); " +
-			"    el.dispatchEvent(new MouseEvent('mouseup',{bubbles:true,cancelable:true,view:window})); " +
-			"    el.click(); " +
-			"  };" +
-			"  const registry=[" +
+			"const trigger = function(el) { if(!el) return; " +
+			"  const evs = ['pointerdown', 'pointerup', 'mousedown', 'mouseup', 'click'];" +
+			"  evs.forEach(t => { try { el.dispatchEvent(new CustomEvent(t, {bubbles:true, cancelable:true})); } catch(e){} });" +
+			"  try { el.click(); } catch(e){} " +
+			"}; " +
+			"const registry=[" +
 			"    {name:\"douyin\",match:/douyin\\.com/,execute:function(){" +
 			"      let fs=document.querySelector('xg-fullscreen, .xgplayer-fullscreen, [title*=\"全屏\"]');" +
 			"      if(fs && !document.fullscreenElement && !fs.classList.contains('xgplayer-fullscreen-active') && fs.getAttribute('data-state') !== 'full') trigger(fs);" +
 			"      let cl=document.querySelector('xg-clear-screen, .xgplayer-clearscreen, [title*=\"清屏\"]');" +
-			"      if(cl && !cl.classList.contains('xgplayer-clearscreen-active') && cl.getAttribute('data-state') !== 'clear') trigger(cl);" +
+			"      if(cl && !cl.classList.contains('xgplayer-clearscreen-active') && cl.getAttribute('data-state') !== 'clear') {" +
+			"        trigger(cl);" +
+			"        setTimeout(() => {" +
+			"          let container = document.querySelector('.xgplayer-is-clearscreen') || document.querySelector('.xgplayer');" +
+			"          if(!container || !container.classList.contains('xgplayer-is-clearscreen')) {" +
+			"            document.querySelectorAll('.xg-left-bar, .xg-right-bar, .xgplayer-controls, [class*=\"avatar\"], [class*=\"sidebar\"], [class*=\"comment\"]').forEach(el => el.style.opacity = '0');" +
+			"          }" +
+			"        }, 150);" +
+			"      }" +
 			"      let lc=document.querySelector('.dy-account-close, .login-mask-enter-done .close, [class*=\"close-btn\"]');" +
 			"      if(lc) trigger(lc);" +
 			"    }}," +
@@ -119,56 +124,48 @@ public class KeyEventHandler {
 			"      if(document.body) document.body.style.overflow='auto';" +
 			"    }}," +
 			"    {name:\"twitch\",match:/twitch\\.tv/,execute:function(){" +
-			"      let ma=document.querySelector('[data-a-target=\"player-overlay-mature-accept\"]');if(ma)trigger(ma);" +
-			"      let ap=document.querySelectorAll('.tw-bottom-0, .tw-fixed');" +
-			"      ap.forEach(b=>{if(b.textContent&&b.textContent.includes('App'))b.style.display='none';});" +
-			"    }}," +
-			"    {name:\"weibo\",match:/weibo\\.(com|cn)/,execute:function(){" +
-			"      let oa=document.querySelectorAll('.f-bg-toast, [class*=\"open-app\"], [class*=\"app-btn\"]');" +
-			"      oa.forEach(el=>{el.style.display='none';});" +
-			"    }}," +
-			"    {name:\"snapchat\",match:/snapchat\\.com/,execute:function(){" +
-			"      let ab=document.querySelector('.AppBanner, [class*=\"Banner\"], [class*=\"DownloadApp\"]');" +
-			"      if(ab)ab.style.display='none';" +
-			"      let ub=document.querySelector('[aria-label=\"Unmute\"], .unmute-icon');if(ub)trigger(ub);" +
-			"    }}," +
-			"    {name:\"likee\",match:/likee\\.video/,execute:function(){" +
-			"      let dw=document.querySelector('.download-bar, [class*=\"Download\"], [class*=\"guide\"]');" +
-			"      if(dw)dw.style.display='none';" +
-			"      let cb=document.querySelector('.close-btn, [class*=\"close\"]');if(cb)trigger(cb);" +
-			"    }}," +
-			"    {name:\"moj\",match:/(mojapp\\.in|sharechat\\.com)/,execute:function(){" +
-			"      let login=document.querySelector('.login-modal, [class*=\"LoginOverlay\"]');" +
-			"      if(login)login.style.display='none';" +
-			"      if(document.body) document.body.style.overflow='auto';" +
-			"    }}," +
-			"    {name:\"vk\",match:/vk\\.com/,execute:function(){" +
-			"      let lb=document.querySelector('.UnauthBox, .box_layout, [id*=\"login\"]');" +
-			"      if(lb)lb.style.display='none';" +
-			"      let um=document.querySelector('.ShortsVideo__unmute, [class*=\"unmute\"]');if(um)trigger(um);" +
-			"    }}," +
-			"    {name:\"kwai\",match:/(kwai\\.com|snackvideo\\.com)/,execute:function(){" +
-			"      let ob=document.querySelector('.open-app-bar, [class*=\"banner\"], .login-dialog');" +
-			"      if(ob)ob.style.display='none';" +
-			"    }}" +
-			"  ];" +
-			"  window.__permataActive = registry.find(p=>p.match.test(window.location.hostname));" +
-			"  if (window.__permataActive) {" +
-			"    const run = () => { try { window.__permataActive.execute(); } catch(e){} };" +
-			"    let guard = null;" +
-			"    const obs = new MutationObserver(() => { if(guard) clearTimeout(guard); guard = setTimeout(run, 100); });" +
-			"    if(document.body) obs.observe(document.body, {childList:true, subtree:true});" +
-			"    else window.addEventListener('DOMContentLoaded', () => obs.observe(document.body, {childList:true, subtree:true}));" +
-			"  }" +
-			"}" +
-			"if (window.__permataActive) { " +
-			"  res = 'Discovery [Layer 2]: JS Registry Match Success -> ' + window.__permataActive.name;" +
-			"  try { window.__permataActive.execute(); } catch(e){} " +
-			"}" +
-			"return res;" +
-			"})();";
+					"      let ma=document.querySelector('[data-a-target=\"player-overlay-mature-accept\"]');if(ma)trigger(ma);" +
+					"      let ap=document.querySelectorAll('.tw-bottom-0, .tw-fixed');" +
+					"      ap.forEach(b=>{if(b.textContent&&b.textContent.includes('App'))b.style.display='none';});" +
+					"    }}," +
+					"    {name:\"weibo\",match:/weibo\\.(com|cn)/,execute:function(){" +
+					"      let oa=document.querySelectorAll('.f-bg-toast, [class*=\"open-app\"], [class*=\"app-btn\"]');" +
+					"      oa.forEach(el=>{el.style.display='none';});" +
+					"    }}," +
+					"    {name:\"snapchat\",match:/snapchat\\.com/,execute:function(){" +
+					"      let ab=document.querySelector('.AppBanner, [class*=\"Banner\"], [class*=\"DownloadApp\"]');" +
+					"      if(ab)ab.style.display='none';" +
+					"      let ub=document.querySelector('[aria-label=\"Unmute\"], .unmute-icon');if(ub)trigger(ub);" +
+					"    }}," +
+					"    {name:\"likee\",match:/likee\\.video/,execute:function(){" +
+					"      let dw=document.querySelector('.download-bar, [class*=\"Download\"], [class*=\"guide\"]');" +
+					"      if(dw)dw.style.display='none';" +
+					"      let cb=document.querySelector('.close-btn, [class*=\"close\"]');if(cb)trigger(cb);" +
+					"    }}," +
+					"    {name:\"moj\",match:/(mojapp\\.in|sharechat\\.com)/,execute:function(){" +
+					"      let login=document.querySelector('.login-modal, [class*=\"LoginOverlay\"]');" +
+					"      if(login)login.style.display='none';" +
+					"      if(document.body) document.body.style.overflow='auto';" +
+					"    }}," +
+					"    {name:\"vk\",match:/vk\\.com/,execute:function(){" +
+					"      let lb=document.querySelector('.UnauthBox, .box_layout, [id*=\"login\"]');" +
+					"      if(lb)lb.style.display='none';" +
+					"      let um=document.querySelector('.ShortsVideo__unmute, [class*=\"unmute\"]');if(um)trigger(um);" +
+					"    }}," +
+					"    {name:\"kwai\",match:/(kwai\\.com|snackvideo\\.com)/,execute:function(){" +
+					"      let ob=document.querySelector('.open-app-bar, [class*=\"banner\"], .login-dialog');" +
+					"      if(ob)ob.style.display='none';" +
+					"    }}" +
+					"  ];" +
+					"  window.__permataActive = registry.find(p=>p.match.test(window.location.hostname));" +
+					"  if (window.__permataActive) { " +
+					"    res = 'Discovery [Layer 2]: JS Registry Match Success -> ' + window.__permataActive.name;" +
+					"    try { window.__permataActive.execute(); } catch(e){} " +
+					"  }" +
+					"  return res;" +
+					"})();";
 
-	// Polls up to 8 times (4 seconds total) to catch Douyin resetting its UI on slow network buffering
+	// Resilient multi-step polling container - runs only inside the post-scroll window
 	private static final String JS_POLLING_PAYLOAD = "try { " +
 			"  if(window.__permataActive) { " +
 			"    let attempts = 0; " +
@@ -346,7 +343,6 @@ public class KeyEventHandler {
 				if (value != null && !value.equals("null")) Log.i(hostTag + value.replace("\"", ""));
 			});
 
-			// Dynamic string building remains here because it depends on the "up" boolean direction
 			String advancedJsScript = "(function() {" +
 					"  try {" +
 					"    var isDown = " + (!up) + ";" +
