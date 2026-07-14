@@ -420,6 +420,23 @@ public class KeyEventHandler {
 			touchTarget.dispatchKeyEvent(new KeyEvent(KeyEvent.ACTION_DOWN, backupKey));
 			touchTarget.dispatchKeyEvent(new KeyEvent(KeyEvent.ACTION_UP, backupKey));
 		}
+
+		// Phase 4: Post-Scroll Auto-Formatting (Staggered Polling for Resilience)
+		wv.postDelayed(() -> {
+			if (wv.isAttachedToWindow() && wv.getSettings().getJavaScriptEnabled()) {
+				String enforceFormatPolling = "try { " +
+						"  if(window.__permataActive) { " +
+						"    let attempts = 0; " +
+						"    let interval = setInterval(() => { " +
+						"      try { window.__permataActive.execute(); } catch(e){} " +
+						"      attempts++; " +
+						"      if(attempts >= 5) clearInterval(interval); " + // Checks 5 times over 2.5 seconds
+						"    }, 500); " +
+						"  } " +
+						"} catch(e){}";
+				wv.evaluateJavascript(enforceFormatPolling, null);
+			}
+		}, 400); // Start checking much earlier (400ms) to catch fast loads immediately
 	}
 
 	private static void performAction(Action action, MediaSessionCallback cb,
