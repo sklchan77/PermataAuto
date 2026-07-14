@@ -99,23 +99,23 @@ public class KeyEventHandler {
 											View fullScreenView = (View) getFullScreenViewMethod.invoke(chromeClient);
 											if (fullScreenView != null && fullScreenView.getVisibility() == View.VISIBLE) {
 												targetView = fullScreenView;
-												Log.i("Steering Wheel Scroll Intercepted. Targeting FullScreenView. Next: " + isNext);
+												Log.i("Discovery [Layer 3]: Target Layout is FullScreenView.");
+											} else {
+												Log.i("Discovery [Layer 3]: FullScreen detected but View is hidden/null. Targeting Normal WebView.");
 											}
 										} else {
-											Log.i("Steering Wheel Scroll Intercepted. Targeting Normal WebView. Next: " + isNext);
+											Log.i("Discovery [Layer 3]: Target Layout is Normal WebView.");
 										}
 									}
 								} catch (Exception e) {
-									Log.e(e, "Reflection for FullScreenView failed, falling back to WebView.");
+									Log.e(e, "Discovery [Layer 3]: Reflection for FullScreenView failed, falling back to WebView.");
 								}
 
 								// Trigger the Smart Scroll injection
-								// "up" parameter is false when skipping to Next (scrolling down), true when skipping to Prev
 								smartScrollWebView(webView, targetView, !isNext, -1f, -1f);
 							}
 						});
 						
-						// Consume event synchronously to prevent the Media Engine from skipping the track
 						return true;
 					}
 				}
@@ -161,10 +161,14 @@ public class KeyEventHandler {
 		try {
 			Method getWebViewMethod = activeFragment.getClass().getMethod("getWebView");
 			Object result = getWebViewMethod.invoke(activeFragment);
-			if (result instanceof WebView) return (WebView) result;
+			if (result instanceof WebView) {
+				Log.i("Discovery [Layer 1]: Target Fragment (WebBrowserFragment) matched successfully.");
+				return (WebView) result;
+			}
 		} catch (Exception e) {
-			Log.e(e, "Failed to scan for WebView");
+			Log.e(e, "Discovery [Layer 1]: Failed to scan for WebView via reflection.");
 		}
+		Log.w("Discovery [Layer 1]: WebBrowserFragment not found or no WebView returned.");
 		return null;
 	}
 
@@ -181,8 +185,8 @@ public class KeyEventHandler {
 		Long lastClickTimeObj = scrollTimestamps.get(touchTarget);
 		long lastClickTime = (lastClickTimeObj != null) ? lastClickTimeObj : 0;
 		
-		// 3. ANR/Spam Protection: Drop events if fired faster than 250ms (e.g. user holds down steering wheel button)
 		if (now - lastClickTime < 250) {
+			Log.w("Scroll [Anti-Spam]: Key event dropped to prevent ANR.");
 			return;
 		}
 		scrollTimestamps.put(touchTarget, now); 
@@ -192,6 +196,7 @@ public class KeyEventHandler {
 		if (wv.getSettings().getJavaScriptEnabled()) {
 			// Phase 1: Universal DOM Overrides (18-Site Enterprise Registry)
 			String universalPayload = "(function(){" +
+					"let res = 'Discovery [Layer 2]: Active Registry Override Run';" +
 					"if (!window.__permataDOMInit) {" +
 					"  window.__permataDOMInit = true;" +
 					"  const trigger = function(el) { if(!el) return; el.dispatchEvent(new MouseEvent('mousedown',{bubbles:true,cancelable:true,view:window})); el.dispatchEvent(new MouseEvent('mouseup',{bubbles:true,cancelable:true,view:window})); el.click(); };" +
@@ -301,16 +306,21 @@ public class KeyEventHandler {
 					"  ];" +
 					"  window.__permataActive = registry.find(p=>p.match.test(window.location.hostname));" +
 					"  if (window.__permataActive) {" +
+					"    res = 'Discovery [Layer 2]: JS Registry Match Success -> ' + window.__permataActive.name;" +
 					"    const run = () => { try { window.__permataActive.execute(); } catch(e){} };" +
 					"    let guard = null;" +
 					"    const obs = new MutationObserver(() => { if(guard) clearTimeout(guard); guard = setTimeout(run, 100); });" +
 					"    if(document.body) obs.observe(document.body, {childList:true, subtree:true});" +
 					"    else window.addEventListener('DOMContentLoaded', () => obs.observe(document.body, {childList:true, subtree:true}));" +
-					"  }" +
+					"  } else { res = 'Discovery [Layer 2]: JS Registry Miss (Hostname: ' + window.location.hostname + ')'; }" +
 					"}" +
 					"if (window.__permataActive) { try { window.__permataActive.execute(); } catch(e){} }" +
+					"return res;" +
 					"})();";
-			wv.evaluateJavascript(universalPayload, null);
+					
+			wv.evaluateJavascript(universalPayload, value -> {
+				if (value != null && !value.equals("null")) Log.i(value.replace("\"", ""));
+			});
 
 			// Phase 2: Advanced Contextual Scrolling Engine (Bypasses Window Locks)
 			String advancedJsScript = "(function() {" +
@@ -334,7 +344,7 @@ public class KeyEventHandler {
 					"    }" +
 					"    if (targetBtn) {" +
 					"      targetBtn.click();" +
-					"      return;" +
+					"      return 'Scroll [Method 1]: Targeted Elements Programmatic Clicking Success.';" +
 					"    }" +
 					"    var scrollTarget = null;" +
 					"    var elements = document.querySelectorAll('*');" +
@@ -366,12 +376,17 @@ public class KeyEventHandler {
 					"    var keyCode = isDown ? 40 : 38;" +
 					"    var kEvt = new KeyboardEvent('keydown', { key: keyStr, code: keyStr, keyCode: keyCode, window: window, bubbles: true, cancelable: true });" +
 					"    activeNode.dispatchEvent(kEvt);" +
+					"    return 'Scroll [Method 2/3]: Synthesized Virtual Input & Web API Scroll Executed.';" +
 					"  } catch (err) {" +
 					"    var fall = " + (!up) + " ? window.innerHeight : -window.innerHeight;" +
 					"    window.scrollBy(0, fall);" +
+					"    return 'Scroll [Method 3 Fallback]: JS Exception caught, executed global window.scrollBy.';" +
 					"  }" +
 					"})();";
-			wv.evaluateJavascript(advancedJsScript, null);
+					
+			wv.evaluateJavascript(advancedJsScript, value -> {
+				if (value != null && !value.equals("null")) Log.i(value.replace("\"", ""));
+			});
 		}
 
 		// Phase 3: Hardware Fallback Simulated Swipe (For stubborn UIs)
@@ -383,6 +398,7 @@ public class KeyEventHandler {
 		final float yEnd = up ? (centerY + span / 2f) : (centerY - span / 2f);
 
 		try {
+			Log.i("Scroll [Method 4]: Executing Hardware Touch Gesture Fallback (Multi-step simulated swipe).");
 			final long startTime = android.os.SystemClock.uptimeMillis();
 			
 			MotionEvent eventDown = MotionEvent.obtain(startTime, startTime, MotionEvent.ACTION_DOWN, actionX, yStart, 0);
@@ -416,12 +432,14 @@ public class KeyEventHandler {
 			}, swipeDuration + 10);
 
 		} catch (Exception e) {
+			Log.e(e, "Scroll [Method 4]: Touch Gesture Failed. Executing KeyEvent PageUp/Down fallback.");
 			int backupKey = up ? KeyEvent.KEYCODE_PAGE_UP : KeyEvent.KEYCODE_PAGE_DOWN;
 			touchTarget.dispatchKeyEvent(new KeyEvent(KeyEvent.ACTION_DOWN, backupKey));
 			touchTarget.dispatchKeyEvent(new KeyEvent(KeyEvent.ACTION_UP, backupKey));
 		}
 
 		// Phase 4: Post-Scroll Auto-Formatting (Staggered Polling for Resilience)
+		Log.i("Scroll [Phase 4]: Dispatching Post-Scroll Formatting Polling (2.5s duration).");
 		wv.postDelayed(() -> {
 			if (wv.isAttachedToWindow() && wv.getSettings().getJavaScriptEnabled()) {
 				String enforceFormatPolling = "try { " +
@@ -430,13 +448,13 @@ public class KeyEventHandler {
 						"    let interval = setInterval(() => { " +
 						"      try { window.__permataActive.execute(); } catch(e){} " +
 						"      attempts++; " +
-						"      if(attempts >= 5) clearInterval(interval); " + // Checks 5 times over 2.5 seconds
+						"      if(attempts >= 5) clearInterval(interval); " +
 						"    }, 500); " +
 						"  } " +
 						"} catch(e){}";
 				wv.evaluateJavascript(enforceFormatPolling, null);
 			}
-		}, 400); // Start checking much earlier (400ms) to catch fast loads immediately
+		}, 400);
 	}
 
 	private static void performAction(Action action, MediaSessionCallback cb,
