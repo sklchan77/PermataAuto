@@ -46,11 +46,36 @@ public class KeyEventHandler {
 			"}; " +
 			"const registry=[" +
 			"    {name:\"douyin\",match:/douyin\\.com/,execute:function(){" +
-			"      let fs=document.querySelector('xg-fullscreen, .xgplayer-fullscreen, [title*=\"全屏\"]');" +
+			"      let fs=document.querySelector('xg-fullscreen, .xgplayer-fullscreen, [title*=\"全屏\"], [title*=\"Full\"], .xgplayer-control-item[aria-label*=\"全屏\"]');" +
 			"      if(fs && !document.fullscreenElement && !fs.classList.contains('xgplayer-fullscreen-active') && fs.getAttribute('data-state') !== 'full') trigger(fs);" +
-			"      let cl=document.querySelector('xg-clear-screen, .xgplayer-clearscreen, [title*=\"清屏\"], [aria-label*=\"清屏\"]');" +
-			"      if(cl && !cl.classList.contains('xgplayer-clearscreen-active') && cl.getAttribute('data-state') !== 'clear') trigger(cl);" +
-			"      document.querySelectorAll('.xg-right-bar, .xg-left-bar, .video-info-container, .right-container, .bottom-container, [class*=\"sidebar\"], [class*=\"video-info\"], [class*=\"action-bar\"], [class*=\"author-info\"], [class*=\"comment\"]').forEach(el => { el.style.opacity = '0'; el.style.pointerEvents = 'none'; });" +
+			"      " +
+			"      if (!window.__dyTimer) {" +
+			"        window.__dyTimer = setTimeout(() => {" +
+			"          let clearBtn = null;" +
+			"          let controls = document.querySelectorAll('.xgplayer-control-item, .xgplayer-controls div, .xgplayer-controls span');" +
+			"          for (let i = 0; i < controls.length; i++) {" +
+			"              let txt = controls[i].textContent ? controls[i].textContent.trim() : '';" +
+			"              if (txt === 'Clear' || txt === '清屏') {" +
+			"                  clearBtn = controls[i];" +
+			"                  if(clearBtn.parentElement && clearBtn.parentElement.classList.contains('xgplayer-control-item')) {" +
+			"                      clearBtn = clearBtn.parentElement;" +
+			"                  }" +
+			"                  break;" +
+			"              }" +
+			"          }" +
+			"          if (!clearBtn) clearBtn = document.querySelector('xg-clear-screen, .xgplayer-clearscreen, [title*=\"清屏\"], [title*=\"Clear\"], .xg-switch-container');" +
+			"          if (clearBtn) {" +
+			"              let html = clearBtn.innerHTML || '';" +
+			"              let clz = clearBtn.className || '';" +
+			"              if (!html.includes('checked') && !html.includes('active') && !clz.includes('active')) {" +
+			"                  trigger(clearBtn);" +
+			"              }" +
+			"          }" +
+			"          document.querySelectorAll('.xg-right-bar, .xg-left-bar, .video-info-container, .right-container, .bottom-container, [class*=\"sidebar\"], [class*=\"video-info\"], [class*=\"action-bar\"], [class*=\"author-info\"], [class*=\"comment\"]').forEach(el => { el.style.opacity = '0'; el.style.pointerEvents = 'none'; });" +
+			"          window.__dyTimer = null;" +
+			"        }, 5500);" +
+			"      }" +
+			"      " +
 			"      let lc=document.querySelector('.dy-account-close, .login-mask-enter-done .close, [class*=\"close-btn\"]');" +
 			"      if(lc) trigger(lc);" +
 			"    }}," +
@@ -157,17 +182,47 @@ public class KeyEventHandler {
 					"  return res;" +
 					"})();";
 
-	// Resilient multi-step polling container
+	// Resilient multi-step polling container (10 attempts over 5.0 seconds)
 	private static final String JS_POLLING_PAYLOAD = "try { " +
 			"  if(window.__permataActive) { " +
 			"    let attempts = 0; " +
 			"    let interval = setInterval(() => { " +
 			"      try { window.__permataActive.execute(); } catch(e){} " +
 			"      attempts++; " +
-			"      if(attempts >= 8) clearInterval(interval); " +
+			"      if(attempts >= 10) clearInterval(interval); " +
 			"    }, 500); " +
 			"  } " +
 			"} catch(e){}";
+
+	// Diagnostic DOM Probe (Fires exactly at 4.5s)
+	private static final String JS_DIAGNOSTIC_PROBE = "(function() {" +
+			"  try {" +
+			"    var res = '[DIAGNOSTIC PROBE @ 4.5s] ';" +
+			"    var hits = [];" +
+			"    var all = document.querySelectorAll('*');" +
+			"    for (var i = 0; i < all.length; i++) {" +
+			"      var el = all[i];" +
+			"      var txt = '';" +
+			"      if (el.childNodes.length > 0) {" +
+			"         for(var j=0; j<el.childNodes.length; j++) {" +
+			"            if(el.childNodes[j].nodeType === 3) txt += el.childNodes[j].nodeValue;" +
+			"         }" +
+			"      }" +
+			"      txt = txt.trim();" +
+			"      var clz = (typeof el.className === 'string') ? el.className : '';" +
+			"      if (txt === 'Clear' || txt === '清屏' || clz.includes('clearscreen') || clz.includes('clear-screen') || clz.includes('xg-switch') || clz.includes('xgplayer-control')) {" +
+			"        var path = el.tagName.toLowerCase() + (clz ? '.' + clz.replace(/\\s+/g, '.') : '');" +
+			"        var p = el.parentElement;" +
+			"        if (p) {" +
+			"           var pClz = (typeof p.className === 'string') ? p.className : '';" +
+			"           path = p.tagName.toLowerCase() + (pClz ? '.' + pClz.replace(/\\s+/g, '.') : '') + ' > ' + path;" +
+			"        }" +
+			"        hits.push(path + ' [\"' + txt.substring(0, 10) + '\"]');" +
+			"      }" +
+			"    }" +
+			"    return res + (hits.length ? hits.join(' || ') : 'NO MATCHING ELEMENTS FOUND');" +
+			"  } catch(e) { return '[DIAGNOSTIC PROBE] Error: ' + e.message; }" +
+			"})();";
 
 	public static boolean handleKeyEvent(MediaSessionCallback cb, KeyEvent event,
 																			 IntObjectFunction<KeyEvent, Boolean> defaultHandler) {
@@ -449,12 +504,21 @@ public class KeyEventHandler {
 			touchTarget.dispatchKeyEvent(new KeyEvent(KeyEvent.ACTION_UP, backupKey));
 		}
 
-		Log.i(hostTag + "Scroll [Phase 4]: Dispatching Post-Scroll Formatting Polling (4.0s duration).");
+		Log.i(hostTag + "Scroll [Phase 4]: Dispatching Post-Scroll Formatting Polling (5.0s duration).");
 		wv.postDelayed(() -> {
 			if (wv.isAttachedToWindow() && wv.getSettings().getJavaScriptEnabled()) {
 				wv.evaluateJavascript(JS_POLLING_PAYLOAD, null);
 			}
 		}, 400);
+
+		Log.i(hostTag + "Scroll [Phase 5]: Dispatching Diagnostic Probe (4.5s delay).");
+		wv.postDelayed(() -> {
+			if (wv.isAttachedToWindow() && wv.getSettings().getJavaScriptEnabled()) {
+				wv.evaluateJavascript(JS_DIAGNOSTIC_PROBE, value -> {
+					if (value != null && !value.equals("null")) Log.i(hostTag + value.replace("\"", ""));
+				});
+			}
+		}, 4500);
 	}
 
 	private static void performAction(Action action, MediaSessionCallback cb,
