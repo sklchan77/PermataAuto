@@ -37,7 +37,6 @@ public class KeyEventHandler {
 	private static final Map<View, Long> scrollTimestamps = new WeakHashMap<>();
 
 	// === ZERO-ALLOCATION JAVASCRIPT PAYLOADS ===
-	// Storing these as static constants prevents the Garbage Collector from causing micro-stutters on IHUs
 	private static final String JS_UNIVERSAL_PAYLOAD = "(function(){" +
 			"let res = 'Discovery [Layer 2]: JS Registry Miss (No custom formatting applied)'; " +
 			"const trigger = function(el) { if(!el) return; " +
@@ -49,16 +48,9 @@ public class KeyEventHandler {
 			"    {name:\"douyin\",match:/douyin\\.com/,execute:function(){" +
 			"      let fs=document.querySelector('xg-fullscreen, .xgplayer-fullscreen, [title*=\"全屏\"]');" +
 			"      if(fs && !document.fullscreenElement && !fs.classList.contains('xgplayer-fullscreen-active') && fs.getAttribute('data-state') !== 'full') trigger(fs);" +
-			"      let cl=document.querySelector('xg-clear-screen, .xgplayer-clearscreen, [title*=\"清屏\"]');" +
-			"      if(cl && !cl.classList.contains('xgplayer-clearscreen-active') && cl.getAttribute('data-state') !== 'clear') {" +
-			"        trigger(cl);" +
-			"        setTimeout(() => {" +
-			"          let container = document.querySelector('.xgplayer-is-clearscreen') || document.querySelector('.xgplayer');" +
-			"          if(!container || !container.classList.contains('xgplayer-is-clearscreen')) {" +
-			"            document.querySelectorAll('.xg-left-bar, .xg-right-bar, .xgplayer-controls, [class*=\"avatar\"], [class*=\"sidebar\"], [class*=\"comment\"]').forEach(el => el.style.opacity = '0');" +
-			"          }" +
-			"        }, 150);" +
-			"      }" +
+			"      let cl=document.querySelector('xg-clear-screen, .xgplayer-clearscreen, [title*=\"清屏\"], [aria-label*=\"清屏\"]');" +
+			"      if(cl && !cl.classList.contains('xgplayer-clearscreen-active') && cl.getAttribute('data-state') !== 'clear') trigger(cl);" +
+			"      document.querySelectorAll('.xg-right-bar, .xg-left-bar, .video-info-container, .right-container, .bottom-container, [class*=\"sidebar\"], [class*=\"video-info\"], [class*=\"action-bar\"], [class*=\"author-info\"], [class*=\"comment\"]').forEach(el => { el.style.opacity = '0'; el.style.pointerEvents = 'none'; });" +
 			"      let lc=document.querySelector('.dy-account-close, .login-mask-enter-done .close, [class*=\"close-btn\"]');" +
 			"      if(lc) trigger(lc);" +
 			"    }}," +
@@ -165,7 +157,7 @@ public class KeyEventHandler {
 					"  return res;" +
 					"})();";
 
-	// Resilient multi-step polling container - runs only inside the post-scroll window
+	// Resilient multi-step polling container
 	private static final String JS_POLLING_PAYLOAD = "try { " +
 			"  if(window.__permataActive) { " +
 			"    let attempts = 0; " +
