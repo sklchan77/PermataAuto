@@ -77,7 +77,7 @@ public class KeyEventHandler {
 			"}; " +
 			"const registry=[" +
 			"    {name:\"douyin\",match:/douyin\\.com/,execute:function(){" +
-			"      window.__dyLastStatus = 'PENDING: Awaiting 5.5s delay...';" +
+			"      window.__dyFsStatus = 'PENDING'; window.__dyClearStatus = 'PENDING';" +
 			"      " +
 			"      let fs=document.querySelector('xg-fullscreen, .xgplayer-fullscreen, [title*=\"全屏\"], [title*=\"Full\"], .xgplayer-control-item[aria-label*=\"全屏\"]');" +
 			"      if(fs && !document.fullscreenElement && !fs.classList.contains('xgplayer-fullscreen-active') && fs.getAttribute('data-state') !== 'full') trigger(fs);" +
@@ -93,8 +93,16 @@ public class KeyEventHandler {
 			"            if(fsAwake && !document.fullscreenElement && !fsAwake.classList.contains('xgplayer-fullscreen-active') && fsAwake.getAttribute('data-state') !== 'full') {" +
 			"                if (window.AndroidBridge && window.AndroidBridge.executeClick) {" +
 			"                    let rect = fsAwake.getBoundingClientRect();" +
-			"                    if(rect.width > 0 && rect.height > 0) window.AndroidBridge.executeClick(rect.left + (rect.width / 2), rect.top + (rect.height / 2));" +
-			"                } else { trigger(fsAwake); }" +
+			"                    if(rect.width > 0 && rect.height > 0) {" +
+			"                        window.AndroidBridge.executeClick(rect.left + (rect.width / 2), rect.top + (rect.height / 2));" +
+			"                        window.__dyFsStatus = 'SUCCESS (Hardware Tap)';" +
+			"                    }" +
+			"                } else {" +
+			"                    trigger(fsAwake);" +
+			"                    window.__dyFsStatus = 'SUCCESS (JS Click)';" +
+			"                }" +
+			"            } else {" +
+			"                window.__dyFsStatus = 'SKIPPED (Already full or not found)';" +
 			"            }" +
 			"            " +
 			"            let targetSwitch = null;" +
@@ -115,17 +123,17 @@ public class KeyEventHandler {
 			"                        let rect = targetSwitch.getBoundingClientRect();" +
 			"                        if(rect.width > 0 && rect.height > 0) {" +
 			"                            window.AndroidBridge.executeClick(rect.left + (rect.width / 2), rect.top + (rect.height / 2));" +
-			"                            window.__dyLastStatus = 'SUCCESS: Hardware clicks dispatched for formatting.';" +
+			"                            window.__dyClearStatus = 'SUCCESS (Hardware Tap)';" +
 			"                        }" +
 			"                    } else {" +
 			"                        trigger(targetSwitch);" +
-			"                        window.__dyLastStatus = 'SUCCESS: JS click dispatched for formatting.';" +
+			"                        window.__dyClearStatus = 'SUCCESS (JS Click)';" +
 			"                    }" +
 			"                } else {" +
-			"                    window.__dyLastStatus = 'SKIPPED: Clear screen button found but already active.';" +
+			"                    window.__dyClearStatus = 'SKIPPED (Already active)';" +
 			"                }" +
 			"            } else {" +
-			"                window.__dyLastStatus = 'FAILED: Clear screen button NOT FOUND even after 500ms wake-up.';" +
+			"                window.__dyClearStatus = 'FAILED (Not Found)';" +
 			"            }" +
 			"            document.querySelectorAll('.xg-right-bar, .xg-left-bar, .video-info-container, .right-container, .bottom-container, [class*=\"sidebar\"], [class*=\"video-info\"], [class*=\"action-bar\"], [class*=\"author-info\"], [class*=\"comment\"]').forEach(el => { el.style.opacity = '0'; el.style.pointerEvents = 'none'; });" +
 			"            window.__dyTimer = null;" +
@@ -282,7 +290,11 @@ public class KeyEventHandler {
 			"})();";
 
 	// Execution Verification Probe (Phase 6)
-	private static final String JS_VERIFICATION_PROBE = "(function() { return window.__dyLastStatus || 'STANDBY: No execution recorded.'; })();";
+	private static final String JS_VERIFICATION_PROBE = "(function() { " +
+			"  let fsStat = window.__dyFsStatus || 'N/A'; " +
+			"  let clrStat = window.__dyClearStatus || 'N/A'; " +
+			"  return 'FS: ' + fsStat + ' | CLEAR: ' + clrStat; " +
+			"})();";
 
 	public static boolean handleKeyEvent(MediaSessionCallback cb, KeyEvent event,
 																			 IntObjectFunction<KeyEvent, Boolean> defaultHandler) {
