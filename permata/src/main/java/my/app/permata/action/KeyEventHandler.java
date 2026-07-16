@@ -46,33 +46,42 @@ public class KeyEventHandler {
 			"}; " +
 			"const registry=[" +
 			"    {name:\"douyin\",match:/douyin\\.com/,execute:function(){" +
+			"      window.__dyLastStatus = 'PENDING: Awaiting 5.5s delay...';" +
 			"      let fs=document.querySelector('xg-fullscreen, .xgplayer-fullscreen, [title*=\"全屏\"], [title*=\"Full\"], .xgplayer-control-item[aria-label*=\"全屏\"]');" +
 			"      if(fs && !document.fullscreenElement && !fs.classList.contains('xgplayer-fullscreen-active') && fs.getAttribute('data-state') !== 'full') trigger(fs);" +
 			"      " +
 			"      if (!window.__dyTimer) {" +
 			"        window.__dyTimer = setTimeout(() => {" +
-			"          let clearBtn = null;" +
-			"          let controls = document.querySelectorAll('.xgplayer-control-item, .xgplayer-controls div, .xgplayer-controls span');" +
-			"          for (let i = 0; i < controls.length; i++) {" +
-			"              let txt = controls[i].textContent ? controls[i].textContent.trim() : '';" +
-			"              if (txt === 'Clear' || txt === '清屏') {" +
-			"                  clearBtn = controls[i];" +
-			"                  if(clearBtn.parentElement && clearBtn.parentElement.classList.contains('xgplayer-control-item')) {" +
-			"                      clearBtn = clearBtn.parentElement;" +
-			"                  }" +
-			"                  break;" +
-			"              }" +
+			"          let player = document.querySelector('.xgplayer, video, main');" +
+			"          if (player) {" +
+			"             ['mousemove', 'pointermove', 'touchstart', 'mouseover'].forEach(ev => { try { player.dispatchEvent(new Event(ev, {bubbles:true})); } catch(e){} });" +
 			"          }" +
-			"          if (!clearBtn) clearBtn = document.querySelector('xg-clear-screen, .xgplayer-clearscreen, [title*=\"清屏\"], [title*=\"Clear\"], .xg-switch-container');" +
-			"          if (clearBtn) {" +
-			"              let html = clearBtn.innerHTML || '';" +
-			"              let clz = clearBtn.className || '';" +
-			"              if (!html.includes('checked') && !html.includes('active') && !clz.includes('active')) {" +
-			"                  trigger(clearBtn);" +
-			"              }" +
-			"          }" +
-			"          document.querySelectorAll('.xg-right-bar, .xg-left-bar, .video-info-container, .right-container, .bottom-container, [class*=\"sidebar\"], [class*=\"video-info\"], [class*=\"action-bar\"], [class*=\"author-info\"], [class*=\"comment\"]').forEach(el => { el.style.opacity = '0'; el.style.pointerEvents = 'none'; });" +
-			"          window.__dyTimer = null;" +
+			"          setTimeout(() => {" +
+			"            let targetSwitch = null;" +
+			"            let allSpans = document.querySelectorAll('span, div');" +
+			"            for (let i = 0; i < allSpans.length; i++) {" +
+			"                let txt = allSpans[i].textContent ? allSpans[i].textContent.trim() : '';" +
+			"                if (txt === 'Clear' || txt === '清屏') {" +
+			"                    let parent = allSpans[i].closest('.xgplayer-setting-label, .xgplayer-control-item') || allSpans[i].parentElement;" +
+			"                    if (parent) targetSwitch = parent.querySelector('button.xg-switch, .xg-switch') || parent;" +
+			"                    break;" +
+			"                }" +
+			"            }" +
+			"            if (!targetSwitch) targetSwitch = document.querySelector('xg-clear-screen, .xgplayer-clearscreen, [title*=\"清屏\"], [title*=\"Clear\"]');" +
+			"            if (targetSwitch) {" +
+			"                let clz = targetSwitch.className || '';" +
+			"                if (!clz.includes('checked') && !clz.includes('active') && targetSwitch.getAttribute('data-state') !== 'clear') {" +
+			"                    trigger(targetSwitch);" +
+			"                    window.__dyLastStatus = 'SUCCESS: Clear screen button found and clicked. Formatting Done.';" +
+			"                } else {" +
+			"                    window.__dyLastStatus = 'SKIPPED: Clear screen button found but already active. Formatting Done.';" +
+			"                }" +
+			"            } else {" +
+			"                window.__dyLastStatus = 'FAILED: Clear screen button NOT FOUND even after 500ms wake-up. Formatting Done.';" +
+			"            }" +
+			"            document.querySelectorAll('.xg-right-bar, .xg-left-bar, .video-info-container, .right-container, .bottom-container, [class*=\"sidebar\"], [class*=\"video-info\"], [class*=\"action-bar\"], [class*=\"author-info\"], [class*=\"comment\"]').forEach(el => { el.style.opacity = '0'; el.style.pointerEvents = 'none'; });" +
+			"            window.__dyTimer = null;" +
+			"          }, 500);" +
 			"        }, 5500);" +
 			"      }" +
 			"      " +
@@ -194,7 +203,7 @@ public class KeyEventHandler {
 			"  } " +
 			"} catch(e){}";
 
-	// Diagnostic DOM Probe (Fires exactly at 4.5s)
+	// Diagnostic DOM Probe (Phase 5)
 	private static final String JS_DIAGNOSTIC_PROBE = "(function() {" +
 			"  try {" +
 			"    var res = '[DIAGNOSTIC PROBE @ 4.5s] ';" +
@@ -220,9 +229,12 @@ public class KeyEventHandler {
 			"        hits.push(path + ' [\"' + txt.substring(0, 10) + '\"]');" +
 			"      }" +
 			"    }" +
-			"    return res + (hits.length ? hits.join(' || ') : 'NO MATCHING ELEMENTS FOUND');" +
+			"    return res + (hits.length ? hits.join(' || ') : 'CLEAR SCREEN ELEMENTS NOT FOUND (Awaiting Wake-up)');" +
 			"  } catch(e) { return '[DIAGNOSTIC PROBE] Error: ' + e.message; }" +
 			"})();";
+
+	// Execution Verification Probe (Phase 6)
+	private static final String JS_VERIFICATION_PROBE = "(function() { return window.__dyLastStatus || 'STANDBY: No execution recorded.'; })();";
 
 	public static boolean handleKeyEvent(MediaSessionCallback cb, KeyEvent event,
 																			 IntObjectFunction<KeyEvent, Boolean> defaultHandler) {
@@ -519,6 +531,15 @@ public class KeyEventHandler {
 				});
 			}
 		}, 4500);
+
+		Log.i(hostTag + "Scroll [Phase 6]: Dispatching Execution Verification Probe (6.5s delay).");
+		wv.postDelayed(() -> {
+			if (wv.isAttachedToWindow() && wv.getSettings().getJavaScriptEnabled()) {
+				wv.evaluateJavascript(JS_VERIFICATION_PROBE, value -> {
+					if (value != null && !value.equals("null")) Log.i(hostTag + "[EXECUTION STATUS] " + value.replace("\"", ""));
+				});
+			}
+		}, 6500);
 	}
 
 	private static void performAction(Action action, MediaSessionCallback cb,
