@@ -9,6 +9,7 @@ import android.net.Uri;
 import android.view.KeyEvent;
 import android.view.MotionEvent;
 import android.view.View;
+import android.webkit.JavascriptInterface;
 import android.webkit.WebView;
 import android.widget.EditText;
 
@@ -35,6 +36,28 @@ public class KeyEventHandler {
 	
 	// Tracks scroll timestamps to prevent spamming and ANRs
 	private static final Map<View, Long> scrollTimestamps = new WeakHashMap<>();
+
+	// Javascript Bridge for True Hardware Clicks
+	private static class HardwareClickBridge {
+		private final View targetView;
+		public HardwareClickBridge(View view) { this.targetView = view; }
+
+		@JavascriptInterface
+		public void executeClick(float x, float y) {
+			if (targetView == null || !targetView.isAttachedToWindow()) return;
+			targetView.post(() -> {
+				long downTime = uptimeMillis();
+				long eventTime = uptimeMillis() + 100;
+				MotionEvent downEvent = MotionEvent.obtain(downTime, downTime, MotionEvent.ACTION_DOWN, x, y, 0);
+				MotionEvent upEvent = MotionEvent.obtain(downTime, eventTime, MotionEvent.ACTION_UP, x, y, 0);
+				targetView.dispatchTouchEvent(downEvent);
+				targetView.dispatchTouchEvent(upEvent);
+				downEvent.recycle();
+				upEvent.recycle();
+				Log.i("[HardwareBridge] True Hardware Tap executed at X:" + x + " Y:" + y);
+			});
+		}
+	}
 
 	// === ZERO-ALLOCATION JAVASCRIPT PAYLOADS ===
 	private static final String JS_UNIVERSAL_PAYLOAD = "(function(){" +
@@ -71,8 +94,16 @@ public class KeyEventHandler {
 			"            if (targetSwitch) {" +
 			"                let clz = targetSwitch.className || '';" +
 			"                if (!clz.includes('checked') && !clz.includes('active') && targetSwitch.getAttribute('data-state') !== 'clear') {" +
-			"                    trigger(targetSwitch);" +
-			"                    window.__dyLastStatus = 'SUCCESS: Clear screen button found and clicked. Formatting Done.';" +
+			"                    if (window.AndroidBridge && window.AndroidBridge.executeClick) {" +
+			"                        let rect = targetSwitch.getBoundingClientRect();" +
+			"                        let x = rect.left + (rect.width / 2);" +
+			"                        let y = rect.top + (rect.height / 2);" +
+			"                        window.AndroidBridge.executeClick(x, y);" +
+			"                        window.__dyLastStatus = 'SUCCESS: Hardware click dispatched. Formatting Done.';" +
+			"                    } else {" +
+			"                        trigger(targetSwitch);" +
+			"                        window.__dyLastStatus = 'SUCCESS: JS click dispatched. Formatting Done.';" +
+			"                    }" +
 			"                } else {" +
 			"                    window.__dyLastStatus = 'SKIPPED: Clear screen button found but already active. Formatting Done.';" +
 			"                }" +
@@ -203,7 +234,7 @@ public class KeyEventHandler {
 			"  } " +
 			"} catch(e){}";
 
-	// Diagnostic DOM Probe (Phase 5)
+	// Diagnostic DOM Probe
 	private static final String JS_DIAGNOSTIC_PROBE = "(function() {" +
 			"  try {" +
 			"    var res = '[DIAGNOSTIC PROBE @ 4.5s] ';" +
@@ -229,7 +260,7 @@ public class KeyEventHandler {
 			"        hits.push(path + ' [\"' + txt.substring(0, 10) + '\"]');" +
 			"      }" +
 			"    }" +
-			"    return res + (hits.length ? hits.join(' || ') : 'CLEAR SCREEN ELEMENTS NOT FOUND (Awaiting Wake-up)');" +
+			"    return res + (hits.length ? hits.join(' || ') : 'NO MATCHING ELEMENTS FOUND');" +
 			"  } catch(e) { return '[DIAGNOSTIC PROBE] Error: ' + e.message; }" +
 			"})();";
 
@@ -286,6 +317,9 @@ public class KeyEventHandler {
 							WebView webView = scanFragmentsForWebView(activeFragment);
 							if (webView != null) {
 								
+								// Inject bridge for true hardware clicks if not present
+								webView.addJavascriptInterface(new HardwareClickBridge(webView), "AndroidBridge");
+
 								String currentUrl = webView.getUrl();
 								String host = "unknown";
 								if (currentUrl != null) {
