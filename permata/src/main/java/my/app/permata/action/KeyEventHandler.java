@@ -9,7 +9,6 @@ import android.net.Uri;
 import android.view.KeyEvent;
 import android.view.MotionEvent;
 import android.view.View;
-import android.webkit.JavascriptInterface;
 import android.webkit.WebView;
 import android.widget.EditText;
 
@@ -37,50 +36,31 @@ public class KeyEventHandler {
 	// Tracks scroll timestamps to prevent spamming and ANRs
 	private static final Map<View, Long> scrollTimestamps = new WeakHashMap<>();
 
-	// Javascript Bridge for True Hardware Clicks (With 500ms Queueing System)
-	private static class HardwareClickBridge {
-		private final View targetView;
-		private long lastClickTime = 0;
-
-		public HardwareClickBridge(View view) { this.targetView = view; }
-
-		@JavascriptInterface
-		public void executeClick(float x, float y) {
-			if (targetView == null || !targetView.isAttachedToWindow()) return;
-			
-			long now = uptimeMillis();
-			long startOffset = Math.max(0, (lastClickTime + 500) - now);
-			long downTime = now + startOffset;
-			long eventTime = downTime + 100;
-			lastClickTime = eventTime;
-
-			targetView.postDelayed(() -> {
-				if (!targetView.isAttachedToWindow()) return;
-				MotionEvent downEvent = MotionEvent.obtain(downTime, downTime, MotionEvent.ACTION_DOWN, x, y, 0);
-				MotionEvent upEvent = MotionEvent.obtain(downTime, eventTime, MotionEvent.ACTION_UP, x, y, 0);
-				targetView.dispatchTouchEvent(downEvent);
-				targetView.dispatchTouchEvent(upEvent);
-				downEvent.recycle();
-				upEvent.recycle();
-				Log.i("[HardwareBridge] True Hardware Tap executed at X:" + x + " Y:" + y);
-			}, startOffset);
-		}
-	}
-
 	// === ZERO-ALLOCATION JAVASCRIPT PAYLOADS ===
 	private static final String JS_UNIVERSAL_PAYLOAD = "(function(){" +
 			"let res = 'Discovery [Layer 2]: JS Registry Miss (No custom formatting applied)'; " +
-			"const trigger = function(el) { if(!el) return; " +
-			"  const evs = ['pointerdown', 'pointerup', 'mousedown', 'mouseup', 'click'];" +
-			"  evs.forEach(t => { try { el.dispatchEvent(new CustomEvent(t, {bubbles:true, cancelable:true})); } catch(e){} });" +
+			"const forceClick = function(el) { if(!el) return; " +
+			"  try { " +
+			"    let key = Object.keys(el).find(k => k.startsWith('__reactProps') || k.startsWith('__reactEventHandlers') || k.startsWith('__vue')); " +
+			"    if(key && el[key]) { " +
+			"      if(typeof el[key].onClick === 'function') el[key].onClick({bubbles:true, cancelable:true, type:'click', isTrusted:true}); " +
+			"      if(typeof el[key].onClickCapture === 'function') el[key].onClickCapture({bubbles:true, cancelable:true, type:'click', isTrusted:true}); " +
+			"    } " +
+			"  } catch(e) {} " +
+			"  try { " +
+			"    ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'].forEach(t => { " +
+			"      el.dispatchEvent(new MouseEvent(t, {bubbles:true, cancelable:true, view:window, isTrusted:true})); " +
+			"    }); " +
+			"  } catch(e) {} " +
 			"  try { el.click(); } catch(e){} " +
 			"}; " +
+			"const nukeUI = function() { " +
+			"  document.querySelectorAll('.xg-right-bar, .xg-left-bar, .video-info-container, .right-container, .bottom-container, [class*=\"sidebar\"], [class*=\"video-info\"], [class*=\"action-bar\"], [class*=\"author-info\"], [class*=\"comment\"]').forEach(el => { el.style.setProperty('opacity', '0', 'important'); el.style.setProperty('pointer-events', 'none', 'important'); el.style.setProperty('display', 'none', 'important'); }); " +
+			"};" +
 			"const registry=[" +
 			"    {name:\"douyin\",match:/douyin\\.com/,execute:function(){" +
 			"      window.__dyFsStatus = 'PENDING'; window.__dyClearStatus = 'PENDING';" +
-			"      " +
-			"      let fs=document.querySelector('xg-fullscreen, .xgplayer-fullscreen, [title*=\"全屏\"], [title*=\"Full\"], .xgplayer-control-item[aria-label*=\"全屏\"]');" +
-			"      if(fs && !document.fullscreenElement && !fs.classList.contains('xgplayer-fullscreen-active') && fs.getAttribute('data-state') !== 'full') trigger(fs);" +
+			"      window.__permataClickQueue = [];" +
 			"      " +
 			"      if (!window.__dyTimer) {" +
 			"        window.__dyTimer = setTimeout(() => {" +
@@ -89,20 +69,20 @@ public class KeyEventHandler {
 			"             ['mousemove', 'pointermove', 'touchstart', 'mouseover'].forEach(ev => { try { player.dispatchEvent(new Event(ev, {bubbles:true})); } catch(e){} });" +
 			"          }" +
 			"          setTimeout(() => {" +
+			"            let isSysFS = !!(document.fullscreenElement || document.webkitFullscreenElement);" +
 			"            let fsAwake = document.querySelector('xg-fullscreen, .xgplayer-fullscreen, [title*=\"全屏\"], [title*=\"Full\"], .xgplayer-control-item[aria-label*=\"全屏\"]');" +
-			"            if(fsAwake && !document.fullscreenElement && !fsAwake.classList.contains('xgplayer-fullscreen-active') && fsAwake.getAttribute('data-state') !== 'full') {" +
-			"                if (window.AndroidBridge && window.AndroidBridge.executeClick) {" +
-			"                    let rect = fsAwake.getBoundingClientRect();" +
-			"                    if(rect.width > 0 && rect.height > 0) {" +
-			"                        window.AndroidBridge.executeClick(rect.left + (rect.width / 2), rect.top + (rect.height / 2));" +
-			"                        window.__dyFsStatus = 'SUCCESS (Hardware Tap)';" +
-			"                    }" +
+			"            if(fsAwake && !isSysFS) {" +
+			"                let rect = fsAwake.getBoundingClientRect();" +
+			"                if(rect.width > 0 && rect.height > 0) {" +
+			"                    window.__permataClickQueue.push((rect.left + (rect.width / 2)) + ',' + (rect.top + (rect.height / 2)));" +
+			"                    forceClick(fsAwake);" +
+			"                    window.__dyFsStatus = 'QUEUED Hardware + React Forced';" +
 			"                } else {" +
-			"                    trigger(fsAwake);" +
-			"                    window.__dyFsStatus = 'SUCCESS (JS Click)';" +
+			"                    forceClick(fsAwake);" +
+			"                    window.__dyFsStatus = 'SUCCESS (React Forced - No Dimensions)';" +
 			"                }" +
 			"            } else {" +
-			"                window.__dyFsStatus = 'SKIPPED (Already full or not found)';" +
+			"                window.__dyFsStatus = isSysFS ? 'SKIPPED (System verified Fullscreen)' : 'FAILED (Button Not Found)';" +
 			"            }" +
 			"            " +
 			"            let targetSwitch = null;" +
@@ -119,15 +99,14 @@ public class KeyEventHandler {
 			"            if (targetSwitch) {" +
 			"                let clz = targetSwitch.className || '';" +
 			"                if (!clz.includes('checked') && !clz.includes('active') && targetSwitch.getAttribute('data-state') !== 'clear') {" +
-			"                    if (window.AndroidBridge && window.AndroidBridge.executeClick) {" +
-			"                        let rect = targetSwitch.getBoundingClientRect();" +
-			"                        if(rect.width > 0 && rect.height > 0) {" +
-			"                            window.AndroidBridge.executeClick(rect.left + (rect.width / 2), rect.top + (rect.height / 2));" +
-			"                            window.__dyClearStatus = 'SUCCESS (Hardware Tap)';" +
-			"                        }" +
+			"                    let rect = targetSwitch.getBoundingClientRect();" +
+			"                    if(rect.width > 0 && rect.height > 0) {" +
+			"                        window.__permataClickQueue.push((rect.left + (rect.width / 2)) + ',' + (rect.top + (rect.height / 2)));" +
+			"                        forceClick(targetSwitch);" +
+			"                        window.__dyClearStatus = 'QUEUED Hardware + React Forced';" +
 			"                    } else {" +
-			"                        trigger(targetSwitch);" +
-			"                        window.__dyClearStatus = 'SUCCESS (JS Click)';" +
+			"                        forceClick(targetSwitch);" +
+			"                        window.__dyClearStatus = 'SUCCESS (React Forced - No Dimensions)';" +
 			"                    }" +
 			"                } else {" +
 			"                    window.__dyClearStatus = 'SKIPPED (Already active)';" +
@@ -135,70 +114,70 @@ public class KeyEventHandler {
 			"            } else {" +
 			"                window.__dyClearStatus = 'FAILED (Not Found)';" +
 			"            }" +
-			"            document.querySelectorAll('.xg-right-bar, .xg-left-bar, .video-info-container, .right-container, .bottom-container, [class*=\"sidebar\"], [class*=\"video-info\"], [class*=\"action-bar\"], [class*=\"author-info\"], [class*=\"comment\"]').forEach(el => { el.style.opacity = '0'; el.style.pointerEvents = 'none'; });" +
+			"            nukeUI();" +
 			"            window.__dyTimer = null;" +
 			"          }, 500);" +
 			"        }, 5500);" +
 			"      }" +
 			"      " +
 			"      let lc=document.querySelector('.dy-account-close, .login-mask-enter-done .close, [class*=\"close-btn\"]');" +
-			"      if(lc) trigger(lc);" +
+			"      if(lc) forceClick(lc);" +
 			"    }}," +
 			"    {name:\"tiktok\",match:/tiktok\\.com/,execute:function(){" +
-			"      let cl=document.querySelector('[data-e2e=\"login-modal\"] button[class*=\"Close\"],div[class*=\"DivModalClose\"]');if(cl)trigger(cl);" +
+			"      let cl=document.querySelector('[data-e2e=\"login-modal\"] button[class*=\"Close\"],div[class*=\"DivModalClose\"]');if(cl)forceClick(cl);" +
 			"      let mu=document.querySelector('[data-e2e=\"video-player-volume\"],[class*=\"volume\"] svg');" +
 			"      if(mu&&(mu.innerHTML.includes('mute')||(mu.className.baseVal&&mu.className.baseVal.includes('mute')))){" +
-			"        let vc=mu.closest('button')||mu.parentElement;if(vc)trigger(vc);" +
+			"        let vc=mu.closest('button')||mu.parentElement;if(vc)forceClick(vc);" +
 			"      }" +
-			"      let th=document.querySelector('[data-e2e=\"browse-theatre-mode\"]');if(th)trigger(th);" +
+			"      let th=document.querySelector('[data-e2e=\"browse-theatre-mode\"]');if(th)forceClick(th);" +
 			"    }}," +
 			"    {name:\"instagram\",match:/instagram\\.com/,execute:function(){" +
 			"      for(let b of document.querySelectorAll('button,div,span')){" +
 			"        let t=b.textContent?b.textContent.trim():'';" +
-			"        if(t==='Not Now'||t==='以后再说'||t==='Cancel')trigger(b);" +
+			"        if(t==='Not Now'||t==='以后再说'||t==='Cancel')forceClick(b);" +
 			"      }" +
 			"      let un=document.querySelectorAll('svg[aria-label*=\"Audio\"],svg[aria-label*=\"Mute\"]');" +
 			"      un.forEach(s=>{" +
 			"        let l=s.getAttribute('aria-label');" +
-			"        if(l&&(l.includes('Mute')||l.includes('静音'))){let c=s.closest('button')||s.parentElement;if(c)trigger(c);}" +
+			"        if(l&&(l.includes('Mute')||l.includes('静音'))){let c=s.closest('button')||s.parentElement;if(c)forceClick(c);}" +
 			"      });" +
 			"    }}," +
 			"    {name:\"youtube\",match:/(youtube\\.com|youtu\\.be)/,execute:function(){" +
-			"      let ad=document.querySelector('.ytp-skip-ad-button,.ytp-ad-skip-button,.ytp-skip-button');if(ad)trigger(ad);" +
+			"      let ad=document.querySelector('.ytp-skip-ad-button,.ytp-ad-skip-button,.ytp-skip-button');if(ad)forceClick(ad);" +
 			"      let dm=document.querySelectorAll('yt-button-renderer[id=\"dismiss-button\"],[aria-label=\"No thanks\"],[aria-label=\"Dismiss\"],.yt-spec-button-shape-next--text');" +
-			"      dm.forEach(b=>{if(b.textContent&&(b.textContent.includes('No thanks')||b.textContent.includes('Skip')||b.textContent.includes('Dismiss')))trigger(b);});" +
+			"      dm.forEach(b=>{if(b.textContent&&(b.textContent.includes('No thanks')||b.textContent.includes('Skip')||b.textContent.includes('Dismiss')))forceClick(b);});" +
 			"      let fs=document.querySelector('.ytp-fullscreen-button');" +
-			"      if(fs&&fs.getAttribute('aria-label')&&fs.getAttribute('aria-label').includes('full screen'))trigger(fs);" +
+			"      if(fs&&fs.getAttribute('aria-label')&&fs.getAttribute('aria-label').includes('full screen'))forceClick(fs);" +
 			"    }}," +
 			"    {name:\"facebook\",match:/facebook\\.com/,execute:function(){" +
-			"      let co=document.querySelector('[data-cookiebanner=\"accept_button\"],[data-testid=\"cookie-policy-manage-dialog-accept\"]');if(co)trigger(co);" +
-			"      let cd=document.querySelector('[aria-label=\"Close\"],[aria-label=\"关闭\"],[class*=\"layerCancel\"]');if(cd)trigger(cd);" +
+			"      let co=document.querySelector('[data-cookiebanner=\"accept_button\"],[data-testid=\"cookie-policy-manage-dialog-accept\"]');if(co)forceClick(co);" +
+			"      let cd=document.querySelector('[aria-label=\"Close\"],[aria-label=\"关闭\"],[class*=\"layerCancel\"]');if(cd)forceClick(cd);" +
 			"    }}," +
 			"    {name:\"bilibili\",match:/bilibili\\.com/,execute:function(){" +
 			"      let fs=document.querySelector('.bilibili-player-video-btn-fullscreen,.sq-wrap,.m-bilibili-space-fullscreen,.mplayer-fullscreen');" +
-			"      if(fs&&!fs.classList.contains('closed'))trigger(fs);" +
-			"      let pl=document.querySelector('.mplayer-play');if(pl&&pl.classList.contains('play'))trigger(pl);" +
+			"      if(fs&&!fs.classList.contains('closed'))forceClick(fs);" +
+			"      let pl=document.querySelector('.mplayer-play');if(pl&&pl.classList.contains('play'))forceClick(pl);" +
 			"      let ab=document.querySelector('.m-home-float-openapp,.launch-app-btn,.open-app-btn');" +
 			"      if(ab&&ab.parentElement)ab.parentElement.style.display='none';" +
 			"    }}," +
 			"    {name:\"kuaishou\",match:/kuaishou\\.com/,execute:function(){" +
-			"      let fs=document.querySelector('[aria-label*=\"全屏\"],.fullscreen-icon');if(fs)trigger(fs);" +
-			"      let cb=document.querySelector('.login-close,[class*=\"close-btn\"],[aria-label=\"关闭\"]');if(cb)trigger(cb);" +
+			"      let fs=document.querySelector('[aria-label*=\"全屏\"],.fullscreen-icon');if(fs)forceClick(fs);" +
+			"      let cb=document.querySelector('.login-close,[class*=\"close-btn\"],[aria-label=\"关闭\"]');if(cb)forceClick(cb);" +
 			"    }}," +
 			"    {name:\"xiaohongshu\",match:/xiaohongshu\\.com/,execute:function(){" +
 			"      let ov=document.querySelectorAll('[class*=\"app-open\"],[class*=\"download-btn\"],[class*=\"login-box\"]');" +
 			"      ov.forEach(el=>{el.style.display='none';});" +
-			"      let cb=document.querySelector('.close-icon,[class*=\"close\"]');if(cb)trigger(cb);" +
+			"      let cb=document.querySelector('.close-icon,[class*=\"close\"]');if(cb)forceClick(cb);" +
 			"    }}," +
 			"    {name:\"reddit\",match:/reddit\\.com/,execute:function(){" +
 			"      let pb=document.querySelectorAll('.XPromoPopup, [class*=\"bottom-bar\"], [class*=\"Prompt\"]');" +
 			"      pb.forEach(el=>{el.style.display='none';});" +
-			"      let xb=document.querySelector('button[aria-label=\"Close\"], button[aria-label=\"Dismiss\"]');if(xb)trigger(xb);" +
+			"      let xb=document.querySelector('button[aria-label=\"Close\"], button[aria-label=\"Dismiss\"]');if(xb)forceClick(xb);" +
 			"      if(document.body&&window.getComputedStyle(document.body).overflow==='hidden') document.body.style.overflow='auto';" +
 			"    }}," +
 			"    {name:\"x\",match:/(twitter\\.com|x\\.com)/,execute:function(){" +
 			"      let bb=document.querySelector('[data-testid=\"BottomBar\"]');if(bb)bb.style.display='none';" +
-			"      let cb=document.querySelector('[data-testid=\"app-bar-close\"]');if(cb)trigger(cb);" +
+			"      let cb=document.querySelector('[data-testid=\"app-bar-close\"]');if(cb)forceClick(cb);" +
 			"    }}," +
 			"    {name:\"pinterest\",match:/pinterest\\.com/,execute:function(){" +
 			"      let wb=document.querySelectorAll('[data-test-id=\"gift-wrap\"], .UnauthBanner, [data-test-id=\"signup-banner\"]');" +
@@ -206,7 +185,7 @@ public class KeyEventHandler {
 			"      if(document.body) document.body.style.overflow='auto';" +
 			"    }}," +
 			"    {name:\"twitch\",match:/twitch\\.tv/,execute:function(){" +
-					"      let ma=document.querySelector('[data-a-target=\"player-overlay-mature-accept\"]');if(ma)trigger(ma);" +
+					"      let ma=document.querySelector('[data-a-target=\"player-overlay-mature-accept\"]');if(ma)forceClick(ma);" +
 					"      let ap=document.querySelectorAll('.tw-bottom-0, .tw-fixed');" +
 					"      ap.forEach(b=>{if(b.textContent&&b.textContent.includes('App'))b.style.display='none';});" +
 					"    }}," +
@@ -217,12 +196,12 @@ public class KeyEventHandler {
 					"    {name:\"snapchat\",match:/snapchat\\.com/,execute:function(){" +
 					"      let ab=document.querySelector('.AppBanner, [class*=\"Banner\"], [class*=\"DownloadApp\"]');" +
 					"      if(ab)ab.style.display='none';" +
-					"      let ub=document.querySelector('[aria-label=\"Unmute\"], .unmute-icon');if(ub)trigger(ub);" +
+					"      let ub=document.querySelector('[aria-label=\"Unmute\"], .unmute-icon');if(ub)forceClick(ub);" +
 					"    }}," +
 					"    {name:\"likee\",match:/likee\\.video/,execute:function(){" +
 					"      let dw=document.querySelector('.download-bar, [class*=\"Download\"], [class*=\"guide\"]');" +
 					"      if(dw)dw.style.display='none';" +
-					"      let cb=document.querySelector('.close-btn, [class*=\"close\"]');if(cb)trigger(cb);" +
+					"      let cb=document.querySelector('.close-btn, [class*=\"close\"]');if(cb)forceClick(cb);" +
 					"    }}," +
 					"    {name:\"moj\",match:/(mojapp\\.in|sharechat\\.com)/,execute:function(){" +
 					"      let login=document.querySelector('.login-modal, [class*=\"LoginOverlay\"]');" +
@@ -232,7 +211,7 @@ public class KeyEventHandler {
 					"    {name:\"vk\",match:/vk\\.com/,execute:function(){" +
 					"      let lb=document.querySelector('.UnauthBox, .box_layout, [id*=\"login\"]');" +
 					"      if(lb)lb.style.display='none';" +
-					"      let um=document.querySelector('.ShortsVideo__unmute, [class*=\"unmute\"]');if(um)trigger(um);" +
+					"      let um=document.querySelector('.ShortsVideo__unmute, [class*=\"unmute\"]');if(um)forceClick(um);" +
 					"    }}," +
 					"    {name:\"kwai\",match:/(kwai\\.com|snackvideo\\.com)/,execute:function(){" +
 					"      let ob=document.querySelector('.open-app-bar, [class*=\"banner\"], .login-dialog');" +
@@ -289,7 +268,14 @@ public class KeyEventHandler {
 			"  } catch(e) { return '[DIAGNOSTIC PROBE] Error: ' + e.message; }" +
 			"})();";
 
-	// Execution Verification Probe (Phase 6)
+	// Java Coordinate Fetcher Script
+	private static final String JS_COORDINATE_FETCHER = "(function() { " +
+			"  let q = window.__permataClickQueue || []; " +
+			"  window.__permataClickQueue = []; " +
+			"  return q.length ? q.join('|') : 'EMPTY'; " +
+			"})();";
+
+	// Execution Verification Probe
 	private static final String JS_VERIFICATION_PROBE = "(function() { " +
 			"  let fsStat = window.__dyFsStatus || 'N/A'; " +
 			"  let clrStat = window.__dyClearStatus || 'N/A'; " +
@@ -345,9 +331,6 @@ public class KeyEventHandler {
 						targetActivity.post(() -> {
 							WebView webView = scanFragmentsForWebView(activeFragment);
 							if (webView != null) {
-								
-								// Inject bridge for true hardware clicks if not present
-								webView.addJavascriptInterface(new HardwareClickBridge(webView), "AndroidBridge");
 
 								String currentUrl = webView.getUrl();
 								String host = "unknown";
@@ -595,14 +578,54 @@ public class KeyEventHandler {
 			}
 		}, 4500);
 
-		Log.i(hostTag + "Scroll [Phase 6]: Dispatching Execution Verification Probe (6.5s delay).");
+		Log.i(hostTag + "Scroll [Phase 6]: Pulling Hardware Coordinates (6.5s delay).");
+		wv.postDelayed(() -> {
+			if (wv.isAttachedToWindow() && wv.getSettings().getJavaScriptEnabled()) {
+				wv.evaluateJavascript(JS_COORDINATE_FETCHER, value -> {
+					if (value != null && !value.equals("null") && !value.contains("EMPTY")) {
+						String clean = value.replace("\"", "");
+						String[] coords = clean.split("\\|");
+						long clickNow = android.os.SystemClock.uptimeMillis();
+						
+						// The Pixel Density fix for Car IHU screens
+						float density = touchTarget.getContext().getResources().getDisplayMetrics().density;
+						
+						for (int i = 0; i < coords.length; i++) {
+							String[] xy = coords[i].split(",");
+							if (xy.length == 2) {
+								try {
+									float tX = Float.parseFloat(xy[0]) * density;
+									float tY = Float.parseFloat(xy[1]) * density;
+									long downTime = clickNow + (i * 600L);
+									long eventTime = downTime + 100L;
+									
+									touchTarget.postDelayed(() -> {
+										if (touchTarget.isAttachedToWindow()) {
+											MotionEvent downEvent = MotionEvent.obtain(downTime, downTime, MotionEvent.ACTION_DOWN, tX, tY, 0);
+											MotionEvent upEvent = MotionEvent.obtain(downTime, eventTime, MotionEvent.ACTION_UP, tX, tY, 0);
+											touchTarget.dispatchTouchEvent(downEvent);
+											touchTarget.dispatchTouchEvent(upEvent);
+											downEvent.recycle();
+											upEvent.recycle();
+											Log.i(hostTag + "[Hardware Bridge] Executed pulled tap (Density " + density + "x) at X:" + tX + " Y:" + tY);
+										}
+									}, (i * 600L));
+								} catch (Exception ignored) {}
+							}
+						}
+					}
+				});
+			}
+		}, 6500);
+
+		Log.i(hostTag + "Scroll [Phase 7]: Dispatching Execution Verification Probe (8.0s delay).");
 		wv.postDelayed(() -> {
 			if (wv.isAttachedToWindow() && wv.getSettings().getJavaScriptEnabled()) {
 				wv.evaluateJavascript(JS_VERIFICATION_PROBE, value -> {
 					if (value != null && !value.equals("null")) Log.i(hostTag + "[EXECUTION STATUS] " + value.replace("\"", ""));
 				});
 			}
-		}, 6500);
+		}, 8000);
 	}
 
 	private static void performAction(Action action, MediaSessionCallback cb,
