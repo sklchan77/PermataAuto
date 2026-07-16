@@ -36,251 +36,128 @@ public class KeyEventHandler {
 	// Tracks scroll timestamps to prevent spamming and ANRs
 	private static final Map<View, Long> scrollTimestamps = new WeakHashMap<>();
 
-	// === ZERO-ALLOCATION JAVASCRIPT PAYLOADS ===
+	// === THE PERMANENT GLOBAL STYLESHEET INJECTION (18 HOSTS + GESTURE STEALER) ===
 	private static final String JS_UNIVERSAL_PAYLOAD = "(function(){" +
 			"let res = 'Discovery [Layer 2]: JS Registry Miss (No custom formatting applied)'; " +
-			"const forceClick = function(el) { if(!el) return; " +
-			"  try { " +
-			"    let key = Object.keys(el).find(k => k.startsWith('__reactProps') || k.startsWith('__reactEventHandlers') || k.startsWith('__vue')); " +
-			"    if(key && el[key]) { " +
-			"      if(typeof el[key].onClick === 'function') el[key].onClick({bubbles:true, cancelable:true, type:'click', isTrusted:true}); " +
-			"      if(typeof el[key].onClickCapture === 'function') el[key].onClickCapture({bubbles:true, cancelable:true, type:'click', isTrusted:true}); " +
-			"    } " +
-			"  } catch(e) {} " +
-			"  try { " +
-			"    ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'].forEach(t => { " +
-			"      el.dispatchEvent(new MouseEvent(t, {bubbles:true, cancelable:true, view:window, isTrusted:true})); " +
-			"    }); " +
-			"  } catch(e) {} " +
-			"  try { el.click(); } catch(e){} " +
+			"const injectGlobalWipe = function() { " +
+			"  if(!document.getElementById('permata-god-mode-css')) { " +
+			"    const style = document.createElement('style'); " +
+			"    style.id = 'permata-god-mode-css'; " +
+			"    style.innerHTML = ` " +
+			"      xg-controls, .xgplayer-controls, " +
+			"      .xg-right-bar, .xg-left-bar, " +
+			"      .video-info-container, .right-container, " +
+			"      .bottom-container, .xgplayer-bottom, " +
+			"      [class*=\"sidebar\"], [class*=\"video-info\"], " +
+			"      [class*=\"action-bar\"], [class*=\"author-info\"], " +
+			"      [class*=\"comment\"], .account-info, .danmaku-container, " +
+			"      .login-mask-enter-done, .dy-account-close, " +
+			"      [class*=\"bottom-bar\"], [class*=\"Prompt\"], " +
+			"      [class*=\"download-btn\"], [class*=\"app-open\"], " +
+			"      .XPromoPopup, .AppBanner, [class*=\"Banner\"], " +
+			"      .UnauthBox, .box_layout, [id*=\"login\"], " +
+			"      .open-app-bar, .login-dialog { " +
+			"          display: none !important; " +
+			"          opacity: 0 !important; " +
+			"          visibility: hidden !important; " +
+			"          pointer-events: none !important; " +
+			"          height: 0 !important; " +
+			"          width: 0 !important; " +
+			"      } " +
+			"    `; " +
+			"    document.head.appendChild(style); " +
+			"    return 'Global CSS Stylesheet Injected Successfully.'; " +
+			"  } " +
+			"  return 'Global CSS Stylesheet Already Exists.'; " +
 			"}; " +
-			"const nukeUI = function() { " +
-			"  document.querySelectorAll('.xg-right-bar, .xg-left-bar, .video-info-container, .right-container, .bottom-container, [class*=\"sidebar\"], [class*=\"video-info\"], [class*=\"action-bar\"], [class*=\"author-info\"], [class*=\"comment\"]').forEach(el => { el.style.setProperty('opacity', '0', 'important'); el.style.setProperty('pointer-events', 'none', 'important'); el.style.setProperty('display', 'none', 'important'); }); " +
-			"};" +
+			"const attemptFS = function() { " +
+			"  let player = document.querySelector('.xgplayer, video, main'); " +
+			"  if (player && !document.fullscreenElement && !document.webkitFullscreenElement) { " +
+			"      try { player.requestFullscreen(); } catch(e) {} " +
+			"  } " +
+			"}; " +
+			"window.__permataTouchListener = function(e) { " +
+			"  attemptFS(); " +
+			"  window.removeEventListener('touchend', window.__permataTouchListener); " +
+			"  window.removeEventListener('mouseup', window.__permataTouchListener); " +
+			"}; " +
+			"window.addEventListener('touchend', window.__permataTouchListener, {once:true}); " +
+			"window.addEventListener('mouseup', window.__permataTouchListener, {once:true}); " +
 			"const registry=[" +
 			"    {name:\"douyin\",match:/douyin\\.com/,execute:function(){" +
-			"      window.__dyFsStatus = 'PENDING'; window.__dyClearStatus = 'PENDING';" +
-			"      window.__permataClickQueue = [];" +
-			"      " +
-			"      if (!window.__dyTimer) {" +
-			"        window.__dyTimer = setTimeout(() => {" +
-			"          let player = document.querySelector('.xgplayer, video, main');" +
-			"          if (player) {" +
-			"             ['mousemove', 'pointermove', 'touchstart', 'mouseover'].forEach(ev => { try { player.dispatchEvent(new Event(ev, {bubbles:true})); } catch(e){} });" +
-			"          }" +
-			"          setTimeout(() => {" +
-			"            let isSysFS = !!(document.fullscreenElement || document.webkitFullscreenElement);" +
-			"            let fsAwake = document.querySelector('xg-fullscreen, .xgplayer-fullscreen, [title*=\"全屏\"], [title*=\"Full\"], .xgplayer-control-item[aria-label*=\"全屏\"]');" +
-			"            if(fsAwake && !isSysFS) {" +
-			"                let rect = fsAwake.getBoundingClientRect();" +
-			"                if(rect.width > 0 && rect.height > 0) {" +
-			"                    window.__permataClickQueue.push((rect.left + (rect.width / 2)) + ',' + (rect.top + (rect.height / 2)));" +
-			"                    forceClick(fsAwake);" +
-			"                    window.__dyFsStatus = 'QUEUED Hardware + React Forced';" +
-			"                } else {" +
-			"                    forceClick(fsAwake);" +
-			"                    window.__dyFsStatus = 'SUCCESS (React Forced - No Dimensions)';" +
-			"                }" +
-			"            } else {" +
-			"                window.__dyFsStatus = isSysFS ? 'SKIPPED (System verified Fullscreen)' : 'FAILED (Button Not Found)';" +
-			"            }" +
-			"            " +
-			"            let targetSwitch = null;" +
-			"            let allSpans = document.querySelectorAll('span, div');" +
-			"            for (let i = 0; i < allSpans.length; i++) {" +
-			"                let txt = allSpans[i].textContent ? allSpans[i].textContent.trim() : '';" +
-			"                if (txt === 'Clear' || txt === '清屏') {" +
-			"                    let parent = allSpans[i].closest('.xgplayer-setting-label, .xgplayer-control-item') || allSpans[i].parentElement;" +
-			"                    if (parent) targetSwitch = parent.querySelector('button.xg-switch, .xg-switch') || parent;" +
-			"                    break;" +
-			"                }" +
-			"            }" +
-			"            if (!targetSwitch) targetSwitch = document.querySelector('xg-clear-screen, .xgplayer-clearscreen, [title*=\"清屏\"], [title*=\"Clear\"]');" +
-			"            if (targetSwitch) {" +
-			"                let clz = targetSwitch.className || '';" +
-			"                if (!clz.includes('checked') && !clz.includes('active') && targetSwitch.getAttribute('data-state') !== 'clear') {" +
-			"                    let rect = targetSwitch.getBoundingClientRect();" +
-			"                    if(rect.width > 0 && rect.height > 0) {" +
-			"                        window.__permataClickQueue.push((rect.left + (rect.width / 2)) + ',' + (rect.top + (rect.height / 2)));" +
-			"                        forceClick(targetSwitch);" +
-			"                        window.__dyClearStatus = 'QUEUED Hardware + React Forced';" +
-			"                    } else {" +
-			"                        forceClick(targetSwitch);" +
-			"                        window.__dyClearStatus = 'SUCCESS (React Forced - No Dimensions)';" +
-			"                    }" +
-			"                } else {" +
-			"                    window.__dyClearStatus = 'SKIPPED (Already active)';" +
-			"                }" +
-			"            } else {" +
-			"                window.__dyClearStatus = 'FAILED (Not Found)';" +
-			"            }" +
-			"            nukeUI();" +
-			"            window.__dyTimer = null;" +
-			"          }, 500);" +
-			"        }, 5500);" +
-			"      }" +
-			"      " +
-			"      let lc=document.querySelector('.dy-account-close, .login-mask-enter-done .close, [class*=\"close-btn\"]');" +
-			"      if(lc) forceClick(lc);" +
+			"      return 'DOUYIN: ' + injectGlobalWipe(); " +
 			"    }}," +
 			"    {name:\"tiktok\",match:/tiktok\\.com/,execute:function(){" +
-			"      let cl=document.querySelector('[data-e2e=\"login-modal\"] button[class*=\"Close\"],div[class*=\"DivModalClose\"]');if(cl)forceClick(cl);" +
-			"      let mu=document.querySelector('[data-e2e=\"video-player-volume\"],[class*=\"volume\"] svg');" +
-			"      if(mu&&(mu.innerHTML.includes('mute')||(mu.className.baseVal&&mu.className.baseVal.includes('mute')))){" +
-			"        let vc=mu.closest('button')||mu.parentElement;if(vc)forceClick(vc);" +
-			"      }" +
-			"      let th=document.querySelector('[data-e2e=\"browse-theatre-mode\"]');if(th)forceClick(th);" +
+			"      return 'TIKTOK: ' + injectGlobalWipe(); " +
 			"    }}," +
 			"    {name:\"instagram\",match:/instagram\\.com/,execute:function(){" +
-			"      for(let b of document.querySelectorAll('button,div,span')){" +
-			"        let t=b.textContent?b.textContent.trim():'';" +
-			"        if(t==='Not Now'||t==='以后再说'||t==='Cancel')forceClick(b);" +
-			"      }" +
-			"      let un=document.querySelectorAll('svg[aria-label*=\"Audio\"],svg[aria-label*=\"Mute\"]');" +
-			"      un.forEach(s=>{" +
-			"        let l=s.getAttribute('aria-label');" +
-			"        if(l&&(l.includes('Mute')||l.includes('静音'))){let c=s.closest('button')||s.parentElement;if(c)forceClick(c);}" +
-			"      });" +
+			"      return 'INSTAGRAM: ' + injectGlobalWipe(); " +
 			"    }}," +
 			"    {name:\"youtube\",match:/(youtube\\.com|youtu\\.be)/,execute:function(){" +
-			"      let ad=document.querySelector('.ytp-skip-ad-button,.ytp-ad-skip-button,.ytp-skip-button');if(ad)forceClick(ad);" +
+			"      let ad=document.querySelector('.ytp-skip-ad-button,.ytp-ad-skip-button,.ytp-skip-button');if(ad)ad.click();" +
 			"      let dm=document.querySelectorAll('yt-button-renderer[id=\"dismiss-button\"],[aria-label=\"No thanks\"],[aria-label=\"Dismiss\"],.yt-spec-button-shape-next--text');" +
-			"      dm.forEach(b=>{if(b.textContent&&(b.textContent.includes('No thanks')||b.textContent.includes('Skip')||b.textContent.includes('Dismiss')))forceClick(b);});" +
-			"      let fs=document.querySelector('.ytp-fullscreen-button');" +
-			"      if(fs&&fs.getAttribute('aria-label')&&fs.getAttribute('aria-label').includes('full screen'))forceClick(fs);" +
+			"      dm.forEach(b=>{if(b.textContent&&(b.textContent.includes('No thanks')||b.textContent.includes('Skip')||b.textContent.includes('Dismiss')))b.click();});" +
+			"      return 'YOUTUBE: Handled standard media skip.'; " +
 			"    }}," +
 			"    {name:\"facebook\",match:/facebook\\.com/,execute:function(){" +
-			"      let co=document.querySelector('[data-cookiebanner=\"accept_button\"],[data-testid=\"cookie-policy-manage-dialog-accept\"]');if(co)forceClick(co);" +
-			"      let cd=document.querySelector('[aria-label=\"Close\"],[aria-label=\"关闭\"],[class*=\"layerCancel\"]');if(cd)forceClick(cd);" +
+			"      return 'FACEBOOK: ' + injectGlobalWipe(); " +
 			"    }}," +
 			"    {name:\"bilibili\",match:/bilibili\\.com/,execute:function(){" +
-			"      let fs=document.querySelector('.bilibili-player-video-btn-fullscreen,.sq-wrap,.m-bilibili-space-fullscreen,.mplayer-fullscreen');" +
-			"      if(fs&&!fs.classList.contains('closed'))forceClick(fs);" +
-			"      let pl=document.querySelector('.mplayer-play');if(pl&&pl.classList.contains('play'))forceClick(pl);" +
-			"      let ab=document.querySelector('.m-home-float-openapp,.launch-app-btn,.open-app-btn');" +
-			"      if(ab&&ab.parentElement)ab.parentElement.style.display='none';" +
+			"      let pl=document.querySelector('.mplayer-play');if(pl&&pl.classList.contains('play'))pl.click();" +
+			"      return 'BILIBILI: ' + injectGlobalWipe(); " +
 			"    }}," +
 			"    {name:\"kuaishou\",match:/kuaishou\\.com/,execute:function(){" +
-			"      let fs=document.querySelector('[aria-label*=\"全屏\"],.fullscreen-icon');if(fs)forceClick(fs);" +
-			"      let cb=document.querySelector('.login-close,[class*=\"close-btn\"],[aria-label=\"关闭\"]');if(cb)forceClick(cb);" +
+			"      return 'KUAISHOU: ' + injectGlobalWipe(); " +
 			"    }}," +
 			"    {name:\"xiaohongshu\",match:/xiaohongshu\\.com/,execute:function(){" +
-			"      let ov=document.querySelectorAll('[class*=\"app-open\"],[class*=\"download-btn\"],[class*=\"login-box\"]');" +
-			"      ov.forEach(el=>{el.style.display='none';});" +
-			"      let cb=document.querySelector('.close-icon,[class*=\"close\"]');if(cb)forceClick(cb);" +
+			"      return 'XIAOHONGSHU: ' + injectGlobalWipe(); " +
 			"    }}," +
 			"    {name:\"reddit\",match:/reddit\\.com/,execute:function(){" +
-			"      let pb=document.querySelectorAll('.XPromoPopup, [class*=\"bottom-bar\"], [class*=\"Prompt\"]');" +
-			"      pb.forEach(el=>{el.style.display='none';});" +
-			"      let xb=document.querySelector('button[aria-label=\"Close\"], button[aria-label=\"Dismiss\"]');if(xb)forceClick(xb);" +
 			"      if(document.body&&window.getComputedStyle(document.body).overflow==='hidden') document.body.style.overflow='auto';" +
+			"      return 'REDDIT: ' + injectGlobalWipe(); " +
 			"    }}," +
 			"    {name:\"x\",match:/(twitter\\.com|x\\.com)/,execute:function(){" +
-			"      let bb=document.querySelector('[data-testid=\"BottomBar\"]');if(bb)bb.style.display='none';" +
-			"      let cb=document.querySelector('[data-testid=\"app-bar-close\"]');if(cb)forceClick(cb);" +
+			"      return 'X/TWITTER: ' + injectGlobalWipe(); " +
 			"    }}," +
 			"    {name:\"pinterest\",match:/pinterest\\.com/,execute:function(){" +
-			"      let wb=document.querySelectorAll('[data-test-id=\"gift-wrap\"], .UnauthBanner, [data-test-id=\"signup-banner\"]');" +
-			"      wb.forEach(el=>{el.style.display='none';});" +
 			"      if(document.body) document.body.style.overflow='auto';" +
+			"      return 'PINTEREST: ' + injectGlobalWipe(); " +
 			"    }}," +
 			"    {name:\"twitch\",match:/twitch\\.tv/,execute:function(){" +
-					"      let ma=document.querySelector('[data-a-target=\"player-overlay-mature-accept\"]');if(ma)forceClick(ma);" +
-					"      let ap=document.querySelectorAll('.tw-bottom-0, .tw-fixed');" +
-					"      ap.forEach(b=>{if(b.textContent&&b.textContent.includes('App'))b.style.display='none';});" +
-					"    }}," +
-					"    {name:\"weibo\",match:/weibo\\.(com|cn)/,execute:function(){" +
-					"      let oa=document.querySelectorAll('.f-bg-toast, [class*=\"open-app\"], [class*=\"app-btn\"]');" +
-					"      oa.forEach(el=>{el.style.display='none';});" +
-					"    }}," +
-					"    {name:\"snapchat\",match:/snapchat\\.com/,execute:function(){" +
-					"      let ab=document.querySelector('.AppBanner, [class*=\"Banner\"], [class*=\"DownloadApp\"]');" +
-					"      if(ab)ab.style.display='none';" +
-					"      let ub=document.querySelector('[aria-label=\"Unmute\"], .unmute-icon');if(ub)forceClick(ub);" +
-					"    }}," +
-					"    {name:\"likee\",match:/likee\\.video/,execute:function(){" +
-					"      let dw=document.querySelector('.download-bar, [class*=\"Download\"], [class*=\"guide\"]');" +
-					"      if(dw)dw.style.display='none';" +
-					"      let cb=document.querySelector('.close-btn, [class*=\"close\"]');if(cb)forceClick(cb);" +
-					"    }}," +
-					"    {name:\"moj\",match:/(mojapp\\.in|sharechat\\.com)/,execute:function(){" +
-					"      let login=document.querySelector('.login-modal, [class*=\"LoginOverlay\"]');" +
-					"      if(login)login.style.display='none';" +
-					"      if(document.body) document.body.style.overflow='auto';" +
-					"    }}," +
-					"    {name:\"vk\",match:/vk\\.com/,execute:function(){" +
-					"      let lb=document.querySelector('.UnauthBox, .box_layout, [id*=\"login\"]');" +
-					"      if(lb)lb.style.display='none';" +
-					"      let um=document.querySelector('.ShortsVideo__unmute, [class*=\"unmute\"]');if(um)forceClick(um);" +
-					"    }}," +
-					"    {name:\"kwai\",match:/(kwai\\.com|snackvideo\\.com)/,execute:function(){" +
-					"      let ob=document.querySelector('.open-app-bar, [class*=\"banner\"], .login-dialog');" +
-					"      if(ob)ob.style.display='none';" +
-					"    }}" +
-					"  ];" +
-					"  window.__permataActive = registry.find(p=>p.match.test(window.location.hostname));" +
-					"  if (window.__permataActive) { " +
-					"    res = 'Discovery [Layer 2]: JS Registry Match Success -> ' + window.__permataActive.name;" +
-					"    try { window.__permataActive.execute(); } catch(e){} " +
-					"  }" +
-					"  return res;" +
-					"})();";
+			"      return 'TWITCH: ' + injectGlobalWipe(); " +
+			"    }}," +
+			"    {name:\"weibo\",match:/weibo\\.(com|cn)/,execute:function(){" +
+			"      return 'WEIBO: ' + injectGlobalWipe(); " +
+			"    }}," +
+			"    {name:\"snapchat\",match:/snapchat\\.com/,execute:function(){" +
+			"      return 'SNAPCHAT: ' + injectGlobalWipe(); " +
+			"    }}," +
+			"    {name:\"likee\",match:/likee\\.video/,execute:function(){" +
+			"      return 'LIKEE: ' + injectGlobalWipe(); " +
+			"    }}," +
+			"    {name:\"moj\",match:/(mojapp\\.in|sharechat\\.com)/,execute:function(){" +
+			"      if(document.body) document.body.style.overflow='auto';" +
+			"      return 'MOJ: ' + injectGlobalWipe(); " +
+			"    }}," +
+			"    {name:\"vk\",match:/vk\\.com/,execute:function(){" +
+			"      return 'VK: ' + injectGlobalWipe(); " +
+			"    }}," +
+			"    {name:\"kwai\",match:/(kwai\\.com|snackvideo\\.com)/,execute:function(){" +
+			"      return 'KWAI: ' + injectGlobalWipe(); " +
+			"    }}" +
+			"  ];" +
+			"  window.__permataActive = registry.find(p=>p.match.test(window.location.hostname));" +
+			"  if (window.__permataActive) { " +
+			"    res = 'Discovery [Layer 2]: JS Registry Match Success -> ' + window.__permataActive.name; " +
+			"    try { let execRes = window.__permataActive.execute(); res += ' || ' + execRes; } catch(e){} " +
+			"  }" +
+			"  return res + ' || UI Nuked & Gesture Listener Armed';" +
+			"})();";
 
-	// Resilient multi-step polling container (10 attempts over 5.0 seconds)
+	// Resilient polling container
 	private static final String JS_POLLING_PAYLOAD = "try { " +
-			"  if(window.__permataActive) { " +
-			"    let attempts = 0; " +
-			"    let interval = setInterval(() => { " +
-			"      try { window.__permataActive.execute(); } catch(e){} " +
-			"      attempts++; " +
-			"      if(attempts >= 10) clearInterval(interval); " +
-			"    }, 500); " +
-			"  } " +
+			"  if(window.__permataActive) { window.__permataActive.execute(); } " +
 			"} catch(e){}";
-
-	// Diagnostic DOM Probe
-	private static final String JS_DIAGNOSTIC_PROBE = "(function() {" +
-			"  try {" +
-			"    var res = '[DIAGNOSTIC PROBE @ 4.5s] ';" +
-			"    var hits = [];" +
-			"    var all = document.querySelectorAll('*');" +
-			"    for (var i = 0; i < all.length; i++) {" +
-			"      var el = all[i];" +
-			"      var txt = '';" +
-			"      if (el.childNodes.length > 0) {" +
-			"         for(var j=0; j<el.childNodes.length; j++) {" +
-			"            if(el.childNodes[j].nodeType === 3) txt += el.childNodes[j].nodeValue;" +
-			"         }" +
-			"      }" +
-			"      txt = txt.trim();" +
-			"      var clz = (typeof el.className === 'string') ? el.className : '';" +
-			"      if (txt === 'Clear' || txt === '清屏' || clz.includes('clearscreen') || clz.includes('clear-screen') || clz.includes('xg-switch') || clz.includes('xgplayer-control')) {" +
-			"        var path = el.tagName.toLowerCase() + (clz ? '.' + clz.replace(/\\s+/g, '.') : '');" +
-			"        var p = el.parentElement;" +
-			"        if (p) {" +
-			"           var pClz = (typeof p.className === 'string') ? p.className : '';" +
-			"           path = p.tagName.toLowerCase() + (pClz ? '.' + pClz.replace(/\\s+/g, '.') : '') + ' > ' + path;" +
-			"        }" +
-			"        hits.push(path + ' [\"' + txt.substring(0, 10) + '\"]');" +
-			"      }" +
-			"    }" +
-			"    return res + (hits.length ? hits.join(' || ') : 'NO MATCHING ELEMENTS FOUND');" +
-			"  } catch(e) { return '[DIAGNOSTIC PROBE] Error: ' + e.message; }" +
-			"})();";
-
-	// Java Coordinate Fetcher Script
-	private static final String JS_COORDINATE_FETCHER = "(function() { " +
-			"  let q = window.__permataClickQueue || []; " +
-			"  window.__permataClickQueue = []; " +
-			"  return q.length ? q.join('|') : 'EMPTY'; " +
-			"})();";
-
-	// Execution Verification Probe
-	private static final String JS_VERIFICATION_PROBE = "(function() { " +
-			"  let fsStat = window.__dyFsStatus || 'N/A'; " +
-			"  let clrStat = window.__dyClearStatus || 'N/A'; " +
-			"  return 'FS: ' + fsStat + ' | CLEAR: ' + clrStat; " +
-			"})();";
 
 	public static boolean handleKeyEvent(MediaSessionCallback cb, KeyEvent event,
 																			 IntObjectFunction<KeyEvent, Boolean> defaultHandler) {
@@ -295,15 +172,22 @@ public class KeyEventHandler {
 	private static boolean handleKeyEvent(MediaSessionCallback cb,
 																				@Nullable MainActivityDelegate activity, KeyEvent event,
 																				IntObjectFunction<KeyEvent, Boolean> defaultHandler) {
-		Log.i((activity == null) ? "Media: " : "Activity: ", event);
+		
+		Log.i("[ENTRY] [Code Start] KeyEventHandler.handleKeyEvent triggered. KeyCode: " + event.getKeyCode() + ", Action: " + event.getAction());
 
 		if (event.isCanceled()) {
+			Log.i("[CHECK] Status: Event is canceled. [EXIT] Returning to default handler.");
 			worker = null;
 			return defaultHandler.apply(event.getKeyCode(), event);
 		}
 
 		if (worker != null) {
-			if (worker.handle(event)) return true;
+			Log.i("[CHECK] Status: Active worker found. [ACTION] Delegating event to worker.");
+			if (worker.handle(event)) {
+				Log.i("[EXIT] Worker consumed the event.");
+				return true;
+			}
+			Log.i("[ACTION] Worker rejected event. Clearing worker.");
 			worker = null;
 			return false;
 		}
@@ -315,23 +199,30 @@ public class KeyEventHandler {
 		if (targetActivity == null && cb != null) {
 			if (cb.getAssistant() instanceof MainActivityDelegate) {
 				targetActivity = (MainActivityDelegate) cb.getAssistant();
+				Log.i("[CHECK] targetActivity resolved from MediaSessionCallback assistant.");
 			}
 		}
 
 		if (targetActivity != null && event.getAction() == ACTION_DOWN) {
+			Log.i("[CHECK] Condition: targetActivity is valid and action is ACTION_DOWN.");
 			if (code == KeyEvent.KEYCODE_MEDIA_NEXT || code == KeyEvent.KEYCODE_MEDIA_PREVIOUS) {
+				Log.i("[DETECTION] KeyCode matched MEDIA_NEXT or MEDIA_PREVIOUS.");
 				
 				ActivityFragment activeFragment = targetActivity.getActiveFragment();
 				if (activeFragment != null) {
 					String className = activeFragment.getClass().getName();
+					Log.i("[CHECK] Active fragment class name detected: " + className);
+					
 					if (className.endsWith("WebBrowserFragment") && !className.endsWith("YoutubeFragment")) {
-						
+						Log.i("[CHECK] Status: WebBrowserFragment confirmed.");
 						boolean isNext = (code == KeyEvent.KEYCODE_MEDIA_NEXT);
 						
+						Log.i("[ACTION] Posting targetActivity WebBrowser extraction to main thread.");
 						targetActivity.post(() -> {
+							Log.i("[ENTRY] targetActivity.post Runnable executing.");
 							WebView webView = scanFragmentsForWebView(activeFragment);
 							if (webView != null) {
-
+								Log.i("[CHECK] Status: WebView successfully extracted.");
 								String currentUrl = webView.getUrl();
 								String host = "unknown";
 								if (currentUrl != null) {
@@ -341,193 +232,202 @@ public class KeyEventHandler {
 									} catch (Exception ignored) {}
 								}
 								final String hostTag = "[Host: " + host + "] ";
+								Log.i("[DETECTION] Host resolved: " + hostTag);
 
 								View targetView = webView;
 								try {
+									Log.i("[ACTION] Attempting reflection to identify FullScreenView.");
 									Method getChromeClient = webView.getClass().getMethod("getWebChromeClient");
 									Object chromeClient = getChromeClient.invoke(webView);
 									if (chromeClient != null) {
 										Method isFullScreenMethod = chromeClient.getClass().getMethod("isFullScreen");
 										boolean isFullScreen = (Boolean) isFullScreenMethod.invoke(chromeClient);
+										Log.i("[CHECK] Reflection isFullScreen status: " + isFullScreen);
+										
 										if (isFullScreen) {
 											Method getFullScreenViewMethod = chromeClient.getClass().getMethod("getFullScreenView");
 											View fullScreenView = (View) getFullScreenViewMethod.invoke(chromeClient);
 											if (fullScreenView != null && fullScreenView.getVisibility() == View.VISIBLE) {
 												targetView = fullScreenView;
-												Log.i(hostTag + "Discovery [Layer 3]: Target Layout is FullScreenView.");
-											} else {
-												Log.i(hostTag + "Discovery [Layer 3]: FullScreen detected but View is hidden/null. Targeting Normal WebView.");
+												Log.i("[REACTION] " + hostTag + "Discovery: Target Layout locked to FullScreenView.");
 											}
-										} else {
-											Log.i(hostTag + "Discovery [Layer 3]: Target Layout is Normal WebView.");
 										}
 									}
 								} catch (Exception e) {
-									Log.e(e, hostTag + "Discovery [Layer 3]: Reflection for FullScreenView failed, falling back to WebView.");
+									Log.e(e, "[REACTION] " + hostTag + "Discovery: Reflection failed, defaulting to base WebView.");
 								}
 
-								smartScrollWebView(webView, targetView, !isNext, -1f, -1f, hostTag);
+								Log.i("[ACTION] Triggering smartScrollWebView.");
+								smartScrollWebView(webView, targetView, !isNext, hostTag);
+							} else {
+								Log.i("[CHECK] Status: WebView extraction returned null. Aborting intercept.");
 							}
+							Log.i("[EXIT] targetActivity.post Runnable finished.");
 						});
 						
+						Log.i("[EXIT] Returning true. Key event fully intercepted by God Mode logic.");
 						return true;
+					} else {
+						Log.i("[CHECK] Status: Fragment did not match WebBrowserFragment criteria.");
 					}
+				} else {
+					Log.i("[CHECK] Status: activeFragment is null.");
 				}
 			}
 		}
 		// ====================================================
 
 		var k = Key.get(code);
-		if (k == null) return defaultHandler.apply(code, event);
+		if (k == null) {
+			Log.i("[CHECK] Key definition not found. [EXIT] Returning default handler.");
+			return defaultHandler.apply(code, event);
+		}
 
 		if (!k.isMedia() && (targetActivity != null) && (targetActivity.getCurrentFocus() instanceof EditText)) {
+			Log.i("[CHECK] Editing text. [EXIT] Returning default handler.");
 			return defaultHandler.apply(code, event);
 		}
 
 		var dblClickAction = k.getDblClickAction();
-		if (dblClickAction == null) return defaultHandler.apply(code, event);
+		if (dblClickAction == null) {
+			Log.i("[CHECK] No Double Click Action mapped. [EXIT] Returning default handler.");
+			return defaultHandler.apply(code, event);
+		}
 
 		var action = event.getAction();
 		if (action == ACTION_MULTIPLE) {
+			Log.i("[DETECTION] ACTION_MULTIPLE detected.");
 			Log.i(k, " key double click");
 			performAction(dblClickAction, cb, targetActivity, uptimeMillis());
 			return true;
 		}
-		if (action != ACTION_DOWN) return defaultHandler.apply(code, event);
+		
+		if (action != ACTION_DOWN) {
+			Log.i("[CHECK] Action is not ACTION_DOWN. [EXIT] Returning default handler.");
+			return defaultHandler.apply(code, event);
+		}
 
 		var clickAction = k.getClickAction();
-		if (clickAction == null) return defaultHandler.apply(code, event);
+		if (clickAction == null) {
+			Log.i("[CHECK] No Click Action mapped. [EXIT] Returning default handler.");
+			return defaultHandler.apply(code, event);
+		}
+		
 		var longClickAction = k.getLongClickAction();
-		if (longClickAction == null) return defaultHandler.apply(code, event);
+		if (longClickAction == null) {
+			Log.i("[CHECK] No Long Click Action mapped. [EXIT] Returning default handler.");
+			return defaultHandler.apply(code, event);
+		}
 
 		if (((clickAction == dblClickAction) && (clickAction == longClickAction)) ||
 				((dblClickAction == Action.NONE) && (longClickAction == Action.NONE))) {
+			Log.i("[ACTION] Immediate singular click logic triggered.");
 			Log.i(k, " key click");
 			performAction(clickAction, cb, targetActivity, uptimeMillis());
 			return true;
 		}
 
+		Log.i("[ACTION] Spawning new Worker thread to monitor click sequence.");
 		worker = new Worker(cb, targetActivity, k, clickAction, dblClickAction, longClickAction);
+		Log.i("[EXIT] handleKeyEvent completed successfully.");
 		return true;
 	}
 
 	private static WebView scanFragmentsForWebView(ActivityFragment activeFragment) {
+		Log.i("[ENTRY] scanFragmentsForWebView execution started.");
 		try {
 			Method getWebViewMethod = activeFragment.getClass().getMethod("getWebView");
 			Object result = getWebViewMethod.invoke(activeFragment);
 			if (result instanceof WebView) {
-				Log.i("Discovery [Layer 1]: Target Fragment (WebBrowserFragment) matched successfully.");
+				Log.i("[REACTION] Discovery [Layer 1]: Target Fragment (WebBrowserFragment) matched successfully.");
 				return (WebView) result;
 			}
 		} catch (Exception e) {
-			Log.e(e, "Discovery [Layer 1]: Failed to scan for WebView via reflection.");
+			Log.e(e, "[REACTION] Discovery: Failed to scan for WebView.");
 		}
-		Log.w("Discovery [Layer 1]: WebBrowserFragment not found or no WebView returned.");
+		Log.i("[EXIT] scanFragmentsForWebView returned null.");
 		return null;
 	}
 
-	private static void smartScrollWebView(final WebView wv, final View touchTarget, boolean up, float relativeX, float relativeY, final String hostTag) {
+	private static void smartScrollWebView(final WebView wv, final View touchTarget, boolean up, final String hostTag) {
+		Log.i("[ENTRY] smartScrollWebView execution started. Direction Up: " + up);
 		if (wv == null || touchTarget == null || !touchTarget.isAttachedToWindow() || touchTarget.getWidth() <= 0 || touchTarget.getHeight() <= 0) {
+			Log.i("[CHECK] Status: Invalid WebView or touchTarget dimensions. [EXIT] Aborting smart scroll.");
 			return;
 		}
 
 		long now = android.os.SystemClock.uptimeMillis();
-		Long lastClickTimeObj = scrollTimestamps.get(touchTarget);
+		Long lastClickTimeObj = scrollTimestamps.get(wv);
 		long lastClickTime = (lastClickTimeObj != null) ? lastClickTimeObj : 0;
 		
 		if (now - lastClickTime < 250) {
-			Log.w(hostTag + "Scroll [Anti-Spam]: Key event dropped to prevent ANR.");
+			Log.w("[CHECK] " + hostTag + "Scroll [Anti-Spam]: Event dropped (Throttle window < 250ms). [IDLE] Ignored.");
 			return;
 		}
-		scrollTimestamps.put(touchTarget, now); 
-		
+		scrollTimestamps.put(wv, now); 
 		touchTarget.requestFocus();
+		Log.i("[ACTION] Target view focus requested. Evaluating Javascript states...");
 
 		if (wv.getSettings().getJavaScriptEnabled()) {
+			
+			Log.i("[ACTION] Injecting JS_UNIVERSAL_PAYLOAD...");
+			// 1. Instantly Inject the Permanent Global CSS and Fullscreen gesture listener
 			wv.evaluateJavascript(JS_UNIVERSAL_PAYLOAD, value -> {
-				if (value != null && !value.equals("null")) Log.i(hostTag + value.replace("\"", ""));
+				if (value != null && !value.equals("null")) Log.i(hostTag + "[REACTION] [EXECUTION STATUS] " + value.replace("\"", ""));
 			});
 
+			Log.i("[ACTION] Injecting Virtual Scroll JS Script...");
+			// 2. Perform Virtual JS Scroll
 			String advancedJsScript = "(function() {" +
 					"  try {" +
 					"    var isDown = " + (!up) + ";" +
-					"    var ihuWidth = window.innerWidth;" +
-					"    var ihuHeight = window.innerHeight;" +
-					"    var targetBtn = null;" +
-					"    if (isDown) {" +
-					"      targetBtn = document.querySelector('[data-e2e=\"arrow-down\"]') || " +
-					"                  document.querySelector('.xgplayer-playswitch-next') || " +
-					"                  document.querySelector('.slide-down-btn') || " +
-					"                  document.querySelector('[aria-label=\"Next video\"]') || " +
-					"                  document.querySelector('[aria-label=\"Next\"]');" +
-					"    } else {" +
-					"      targetBtn = document.querySelector('[data-e2e=\"arrow-up\"]') || " +
-					"                  document.querySelector('.xgplayer-playswitch-prev') || " +
-					"                  document.querySelector('.slide-up-btn') || " +
-					"                  document.querySelector('[aria-label=\"Previous video\"]') || " +
-					"                  document.querySelector('[aria-label=\"Go back\"]');" +
-					"    }" +
-					"    if (targetBtn) {" +
-					"      targetBtn.click();" +
-					"      return 'Scroll [Method 1]: Targeted Elements Programmatic Clicking Success.';" +
-					"    }" +
-					"    var scrollTarget = null;" +
-					"    var elements = document.querySelectorAll('*');" +
-					"    for (var i = 0; i < elements.length; i++) {" +
-					"      var el = elements[i];" +
-					"      var style = window.getComputedStyle(el);" +
-					"      if ((style.overflowY === 'auto' || style.overflowY === 'scroll' || style.scrollSnapType !== 'none') && el.scrollHeight > el.clientHeight) {" +
-					"        var rect = el.getBoundingClientRect();" +
-					"        if (rect.width > ihuWidth * 0.3 && rect.height > ihuHeight * 0.3) {" +
-					"          scrollTarget = el;" +
-					"          break;" +
-					"        }" +
-					"      }" +
-					"    }" +
-					"    if (!scrollTarget) scrollTarget = document.querySelector('main') || document.body;" +
-					"    var viewHeight = (scrollTarget === document.body) ? ihuHeight : scrollTarget.clientHeight;" +
-					"    var amount = isDown ? (viewHeight * 0.90) : -(viewHeight * 0.90);" +
-					"    var activeNode = document.activeElement || scrollTarget || document.body;" +
-					"    try {" +
-					"      var wheelEvt = new WheelEvent('wheel', { deltaY: amount, bubbles: true, cancelable: true });" +
-					"      activeNode.dispatchEvent(wheelEvt);" +
-					"    } catch(wErr) {}" +
-					"    if (scrollTarget && scrollTarget.scrollBy) {" +
-					"      scrollTarget.scrollBy({ top: amount, behavior: 'smooth' });" +
-					"    } else {" +
-					"      window.scrollBy({ top: amount, behavior: 'smooth' });" +
-					"    }" +
-					"    var keyStr = isDown ? 'ArrowDown' : 'ArrowUp';" +
-					"    var keyCode = isDown ? 40 : 38;" +
-					"    var kEvt = new KeyboardEvent('keydown', { key: keyStr, code: keyStr, keyCode: keyCode, window: window, bubbles: true, cancelable: true });" +
-					"    activeNode.dispatchEvent(kEvt);" +
-					"    return 'Scroll [Method 2/3]: Synthesized Virtual Input & Web API Scroll Executed.';" +
-					"  } catch (err) {" +
-					"    var fall = " + (!up) + " ? window.innerHeight : -window.innerHeight;" +
-					"    window.scrollBy(0, fall);" +
-					"    return 'Scroll [Method 3 Fallback]: JS Exception caught, executed global window.scrollBy.';" +
-					"  }" +
+					"    var targetBtn = isDown ? document.querySelector('.xgplayer-playswitch-next, .slide-down-btn, [aria-label=\"Next video\"]') : document.querySelector('.xgplayer-playswitch-prev, .slide-up-btn, [aria-label=\"Previous video\"]');" +
+					"    if (targetBtn) { targetBtn.click(); return 'Scroll: Programmatic Button Clicked'; }" +
+					"    var amount = isDown ? window.innerHeight * 0.90 : -window.innerHeight * 0.90;" +
+					"    window.scrollBy({ top: amount, behavior: 'smooth' });" +
+					"    return 'Scroll: Virtual Web API Scroll Executed.';" +
+					"  } catch (err) { return 'Scroll Error: ' + err.message; }" +
 					"})();";
 					
 			wv.evaluateJavascript(advancedJsScript, value -> {
-				if (value != null && !value.equals("null")) Log.i(hostTag + value.replace("\"", ""));
+				if (value != null && !value.equals("null")) Log.i(hostTag + "[REACTION] " + value.replace("\"", ""));
 			});
+
+			Log.i("[ACTION] Dispatching Fallback KeyEvent Scroll.");
+			// 3. Fallback KeyEvent Scroll
+			int backupKey = up ? KeyEvent.KEYCODE_PAGE_UP : KeyEvent.KEYCODE_PAGE_DOWN;
+			wv.dispatchKeyEvent(new KeyEvent(KeyEvent.ACTION_DOWN, backupKey));
+			wv.dispatchKeyEvent(new KeyEvent(KeyEvent.ACTION_UP, backupKey));
+
+			Log.i("[ACTION] Queuing JS_POLLING_PAYLOAD to run in 1.5s.");
+			// 4. Double check the CSS override 1.5 seconds later to ensure React didn't rip out our <head> tag
+			wv.postDelayed(() -> {
+				if (wv.isAttachedToWindow()) {
+					Log.i("[ACTION] Executing delayed JS_POLLING_PAYLOAD.");
+					wv.evaluateJavascript(JS_POLLING_PAYLOAD, null);
+				} else {
+					Log.i("[CHECK] Status: WebView detached. [EXIT] Aborting JS_POLLING_PAYLOAD.");
+				}
+			}, 1500);
+		} else {
+			Log.w("[CHECK] Status: JavaScript is disabled on this WebView. Bypassing JS injection.");
 		}
 
-		final float actionX = (relativeX >= 0) ? relativeX : (touchTarget.getWidth() * 0.50f);
-		final float centerY = (relativeY >= 0) ? relativeY : (touchTarget.getHeight() / 2f);
-		
+		// 5. Dispatch the Physical Hardware Swipe (Provides the User Activation Token for Fullscreen)
+		final float actionX = touchTarget.getWidth() * 0.50f;
+		final float centerY = touchTarget.getHeight() / 2f;
 		float span = touchTarget.getHeight() * 0.60f; 
 		final float yStart = up ? (centerY - span / 2f) : (centerY + span / 2f);
 		final float yEnd = up ? (centerY + span / 2f) : (centerY - span / 2f);
 
 		try {
-			Log.i(hostTag + "Scroll [Method 4]: Executing Hardware Touch Gesture Fallback (Multi-step simulated swipe).");
+			Log.i("[ACTION] " + hostTag + "Dispatching Hardware Swipe to fulfill Token Security & Scroll.");
 			final long startTime = android.os.SystemClock.uptimeMillis();
 			
 			MotionEvent eventDown = MotionEvent.obtain(startTime, startTime, MotionEvent.ACTION_DOWN, actionX, yStart, 0);
 			touchTarget.dispatchTouchEvent(eventDown);
 			eventDown.recycle();
+			Log.i("[REACTION] Dispatching ACTION_DOWN at Y: " + yStart);
 
 			final int stepCount = 5;
 			final long swipeDuration = 150; 
@@ -537,102 +437,43 @@ public class KeyEventHandler {
 				final float currentY = yStart + (yEnd - yStart) * fraction;
 				final long moveTime = startTime + (long) (swipeDuration * fraction);
 				
+				final int stepId = i;
 				touchTarget.postDelayed(() -> {
 					if (touchTarget.isAttachedToWindow()) {
 						MotionEvent eventMove = MotionEvent.obtain(startTime, moveTime, MotionEvent.ACTION_MOVE, actionX, currentY, 0);
 						touchTarget.dispatchTouchEvent(eventMove);
 						eventMove.recycle();
+						Log.i("[REACTION] Hardware Swipe Step " + stepId + " Dispatched at Y: " + currentY);
 					}
 				}, (long) (swipeDuration * fraction));
 			}
 
+			// The ACTION_UP event here triggers the JS 'touchend' listener, granting Fullscreen
 			touchTarget.postDelayed(() -> {
 				if (touchTarget.isAttachedToWindow()) {
 					long endTime = startTime + swipeDuration + 10;
 					MotionEvent eventUp = MotionEvent.obtain(startTime, endTime, MotionEvent.ACTION_UP, actionX, yEnd, 0);
 					touchTarget.dispatchTouchEvent(eventUp);
 					eventUp.recycle();
+					Log.i("[REACTION] " + hostTag + "Hardware Swipe Concluded (ACTION_UP). Fullscreen Token Stealer Executed.");
+				} else {
+					Log.i("[CHECK] Status: Target detached before ACTION_UP. Hardware Swipe aborted.");
 				}
 			}, swipeDuration + 10);
 
 		} catch (Exception e) {
-			Log.e(e, hostTag + "Scroll [Method 4]: Touch Gesture Failed. Executing KeyEvent PageUp/Down fallback.");
-			int backupKey = up ? KeyEvent.KEYCODE_PAGE_UP : KeyEvent.KEYCODE_PAGE_DOWN;
-			touchTarget.dispatchKeyEvent(new KeyEvent(KeyEvent.ACTION_DOWN, backupKey));
-			touchTarget.dispatchKeyEvent(new KeyEvent(KeyEvent.ACTION_UP, backupKey));
+			Log.e(e, "[REACTION] " + hostTag + "Hardware swipe failed with Exception.");
 		}
-
-		Log.i(hostTag + "Scroll [Phase 4]: Dispatching Post-Scroll Formatting Polling (5.0s duration).");
-		wv.postDelayed(() -> {
-			if (wv.isAttachedToWindow() && wv.getSettings().getJavaScriptEnabled()) {
-				wv.evaluateJavascript(JS_POLLING_PAYLOAD, null);
-			}
-		}, 400);
-
-		Log.i(hostTag + "Scroll [Phase 5]: Dispatching Diagnostic Probe (4.5s delay).");
-		wv.postDelayed(() -> {
-			if (wv.isAttachedToWindow() && wv.getSettings().getJavaScriptEnabled()) {
-				wv.evaluateJavascript(JS_DIAGNOSTIC_PROBE, value -> {
-					if (value != null && !value.equals("null")) Log.i(hostTag + value.replace("\"", ""));
-				});
-			}
-		}, 4500);
-
-		Log.i(hostTag + "Scroll [Phase 6]: Pulling Hardware Coordinates (6.5s delay).");
-		wv.postDelayed(() -> {
-			if (wv.isAttachedToWindow() && wv.getSettings().getJavaScriptEnabled()) {
-				wv.evaluateJavascript(JS_COORDINATE_FETCHER, value -> {
-					if (value != null && !value.equals("null") && !value.contains("EMPTY")) {
-						String clean = value.replace("\"", "");
-						String[] coords = clean.split("\\|");
-						long clickNow = android.os.SystemClock.uptimeMillis();
-						
-						// The Pixel Density fix for Car IHU screens
-						float density = touchTarget.getContext().getResources().getDisplayMetrics().density;
-						
-						for (int i = 0; i < coords.length; i++) {
-							String[] xy = coords[i].split(",");
-							if (xy.length == 2) {
-								try {
-									float tX = Float.parseFloat(xy[0]) * density;
-									float tY = Float.parseFloat(xy[1]) * density;
-									long downTime = clickNow + (i * 600L);
-									long eventTime = downTime + 100L;
-									
-									touchTarget.postDelayed(() -> {
-										if (touchTarget.isAttachedToWindow()) {
-											MotionEvent downEvent = MotionEvent.obtain(downTime, downTime, MotionEvent.ACTION_DOWN, tX, tY, 0);
-											MotionEvent upEvent = MotionEvent.obtain(downTime, eventTime, MotionEvent.ACTION_UP, tX, tY, 0);
-											touchTarget.dispatchTouchEvent(downEvent);
-											touchTarget.dispatchTouchEvent(upEvent);
-											downEvent.recycle();
-											upEvent.recycle();
-											Log.i(hostTag + "[Hardware Bridge] Executed pulled tap (Density " + density + "x) at X:" + tX + " Y:" + tY);
-										}
-									}, (i * 600L));
-								} catch (Exception ignored) {}
-							}
-						}
-					}
-				});
-			}
-		}, 6500);
-
-		Log.i(hostTag + "Scroll [Phase 7]: Dispatching Execution Verification Probe (8.0s delay).");
-		wv.postDelayed(() -> {
-			if (wv.isAttachedToWindow() && wv.getSettings().getJavaScriptEnabled()) {
-				wv.evaluateJavascript(JS_VERIFICATION_PROBE, value -> {
-					if (value != null && !value.equals("null")) Log.i(hostTag + "[EXECUTION STATUS] " + value.replace("\"", ""));
-				});
-			}
-		}, 8000);
+		Log.i("[EXIT] smartScrollWebView execution complete. Awaiting postDelayed runnables.");
 	}
 
 	private static void performAction(Action action, MediaSessionCallback cb,
 																		@Nullable MainActivityDelegate activity, long timestamp) {
+		Log.i("[ENTRY] performAction execution started.");
 		worker = null;
-		Log.i("Performing action ", action);
+		Log.i("[ACTION] Performing action ", action);
 		action.getHandler().handle(cb, activity, timestamp);
+		Log.i("[EXIT] performAction execution completed.");
 	}
 
 	private static final class Worker implements Runnable {
@@ -650,6 +491,7 @@ public class KeyEventHandler {
 
 		Worker(MediaSessionCallback cb, @Nullable MainActivityDelegate activity, Key key,
 					 Action clickAction, Action dblClickAction, Action longClickAction) {
+			Log.i("[ENTRY] Worker Initialization.");
 			this.cb = cb;
 			this.activity = activity;
 			this.key = key;
@@ -658,12 +500,18 @@ public class KeyEventHandler {
 			this.longClickAction = longClickAction;
 			time = longClickTime = uptimeMillis();
 			sched(DBL_CLICK_INTERVAL);
+			Log.i("[STANDBY] Worker scheduled with DBL_CLICK_INTERVAL. Idling...");
 		}
 
 		@Override
 		public void run() {
-			if (worker != this) return;
+			Log.i("[ENTRY] Worker run() triggered.");
+			if (worker != this) {
+				Log.i("[CHECK] Status: worker instance mismatch. [EXIT] Returning early.");
+				return;
+			}
 			if (up) {
+				Log.i("[CHECK] Status: 'up' flag is true. [ACTION] Triggering clickAction.");
 				Log.i(key, " key click");
 				handle(clickAction);
 				return;
@@ -671,27 +519,39 @@ public class KeyEventHandler {
 
 			long now = uptimeMillis();
 			long diff = now - longClickTime;
+			Log.i("[CHECK] Checking time diff: " + diff + "ms");
 
 			if (diff < LONG_CLICK_INTERVAL) {
+				Log.i("[STANDBY] Time diff insufficient. Rescheduling for " + (LONG_CLICK_INTERVAL - diff) + "ms. Idling...");
 				sched(LONG_CLICK_INTERVAL - diff);
-			} else if (diff > 15000) { // Key UP not received?
+			} else if (diff > 15000) { 
+				Log.i("[CHECK] Status: diff > 15s. Key UP not received. [ACTION] Clearing worker.");
 				worker = null;
 			} else {
 				longClickTime = time;
+				Log.i("[DETECTION] Long click thresholds met.");
 				Log.i(key, " key long click");
+				Log.i("[ACTION] Triggering longClickAction.");
 				handle(longClickAction);
 				worker = this;
 				sched(LONG_CLICK_INTERVAL);
+				Log.i("[STANDBY] Worker rescheduled with LONG_CLICK_INTERVAL. Idling...");
 			}
 		}
 
 		boolean handle(KeyEvent e) {
-			if (e.getKeyCode() != key.getCode()) return false;
+			Log.i("[ENTRY] Worker handle(KeyEvent) triggered.");
+			if (e.getKeyCode() != key.getCode()) {
+				Log.i("[CHECK] KeyCode mismatch. [EXIT] Returning false.");
+				return false;
+			}
 
 			switch (e.getAction()) {
 				case ACTION_DOWN -> {
+					Log.i("[DETECTION] Worker detected ACTION_DOWN.");
 					if (!up) {
 						if ((longClickAction == clickAction) || (longClickAction == Action.NONE)) {
+							Log.i("[ACTION] Conditions met for standard key click inside ACTION_DOWN.");
 							Log.i(key, " key click");
 							handle(clickAction);
 						}
@@ -700,22 +560,29 @@ public class KeyEventHandler {
 				}
 				case ACTION_UP -> {
 					long holdTime = uptimeMillis() - time;
+					Log.i("[DETECTION] Worker detected ACTION_UP. Hold time: " + holdTime + "ms");
 
 					if (holdTime <= DBL_CLICK_INTERVAL) {
 						if (up) {
+							Log.i("[ACTION] Triggering dblClickAction.");
 							Log.i(key, " key double click");
 							handle(dblClickAction);
 						} else if (dblClickAction == clickAction) {
+							Log.i("[ACTION] Triggering clickAction.");
 							Log.i(key, " key click");
 							handle(clickAction);
 						} else {
+							Log.i("[ACTION] Setting 'up' flag to true. Awaiting next phase.");
 							up = true;
 						}
 					} else if (holdTime >= LONG_CLICK_INTERVAL) {
+						Log.i("[CHECK] Hold time exceeds LONG_CLICK_INTERVAL. [ACTION] Clearing worker.");
 						worker = null;
 					} else {
+						Log.i("[ACTION] Clearing worker.");
 						worker = null;
 						if (longClickTime == time) {
+							Log.i("[ACTION] Triggering clickAction based on longClickTime matching initial time.");
 							Log.i(key, " key click");
 							handle(clickAction);
 						}
@@ -724,19 +591,24 @@ public class KeyEventHandler {
 					return true;
 				}
 				case ACTION_MULTIPLE -> {
+					Log.i("[DETECTION] Worker detected ACTION_MULTIPLE.");
+					Log.i("[ACTION] Triggering dblClickAction.");
 					Log.i(key, " key double click");
 					handle(dblClickAction);
 					return true;
 				}
 			}
+			Log.i("[EXIT] Worker handle(KeyEvent) fell through switch. Returning false.");
 			return false;
 		}
 
 		private void handle(Action action) {
+			Log.i("[ACTION] Worker internally delegating to performAction.");
 			performAction(action, cb, activity, time);
 		}
 
 		private void sched(long delay) {
+			Log.i("[IDLE] Worker schedule requested. Delay: " + delay + "ms");
 			var handler = (activity == null) ? cb.getHandler() : activity.getHandler();
 			handler.postDelayed(this, delay);
 		}
