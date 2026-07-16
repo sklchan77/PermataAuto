@@ -37,17 +37,25 @@ public class KeyEventHandler {
 	// Tracks scroll timestamps to prevent spamming and ANRs
 	private static final Map<View, Long> scrollTimestamps = new WeakHashMap<>();
 
-	// Javascript Bridge for True Hardware Clicks
+	// Javascript Bridge for True Hardware Clicks (With 500ms Queueing System)
 	private static class HardwareClickBridge {
 		private final View targetView;
+		private long lastClickTime = 0;
+
 		public HardwareClickBridge(View view) { this.targetView = view; }
 
 		@JavascriptInterface
 		public void executeClick(float x, float y) {
 			if (targetView == null || !targetView.isAttachedToWindow()) return;
-			targetView.post(() -> {
-				long downTime = uptimeMillis();
-				long eventTime = uptimeMillis() + 100;
+			
+			long now = uptimeMillis();
+			long startOffset = Math.max(0, (lastClickTime + 500) - now);
+			long downTime = now + startOffset;
+			long eventTime = downTime + 100;
+			lastClickTime = eventTime;
+
+			targetView.postDelayed(() -> {
+				if (!targetView.isAttachedToWindow()) return;
 				MotionEvent downEvent = MotionEvent.obtain(downTime, downTime, MotionEvent.ACTION_DOWN, x, y, 0);
 				MotionEvent upEvent = MotionEvent.obtain(downTime, eventTime, MotionEvent.ACTION_UP, x, y, 0);
 				targetView.dispatchTouchEvent(downEvent);
@@ -55,7 +63,7 @@ public class KeyEventHandler {
 				downEvent.recycle();
 				upEvent.recycle();
 				Log.i("[HardwareBridge] True Hardware Tap executed at X:" + x + " Y:" + y);
-			});
+			}, startOffset);
 		}
 	}
 
@@ -70,6 +78,7 @@ public class KeyEventHandler {
 			"const registry=[" +
 			"    {name:\"douyin\",match:/douyin\\.com/,execute:function(){" +
 			"      window.__dyLastStatus = 'PENDING: Awaiting 5.5s delay...';" +
+			"      " +
 			"      let fs=document.querySelector('xg-fullscreen, .xgplayer-fullscreen, [title*=\"全屏\"], [title*=\"Full\"], .xgplayer-control-item[aria-label*=\"全屏\"]');" +
 			"      if(fs && !document.fullscreenElement && !fs.classList.contains('xgplayer-fullscreen-active') && fs.getAttribute('data-state') !== 'full') trigger(fs);" +
 			"      " +
@@ -80,6 +89,14 @@ public class KeyEventHandler {
 			"             ['mousemove', 'pointermove', 'touchstart', 'mouseover'].forEach(ev => { try { player.dispatchEvent(new Event(ev, {bubbles:true})); } catch(e){} });" +
 			"          }" +
 			"          setTimeout(() => {" +
+			"            let fsAwake = document.querySelector('xg-fullscreen, .xgplayer-fullscreen, [title*=\"全屏\"], [title*=\"Full\"], .xgplayer-control-item[aria-label*=\"全屏\"]');" +
+			"            if(fsAwake && !document.fullscreenElement && !fsAwake.classList.contains('xgplayer-fullscreen-active') && fsAwake.getAttribute('data-state') !== 'full') {" +
+			"                if (window.AndroidBridge && window.AndroidBridge.executeClick) {" +
+			"                    let rect = fsAwake.getBoundingClientRect();" +
+			"                    if(rect.width > 0 && rect.height > 0) window.AndroidBridge.executeClick(rect.left + (rect.width / 2), rect.top + (rect.height / 2));" +
+			"                } else { trigger(fsAwake); }" +
+			"            }" +
+			"            " +
 			"            let targetSwitch = null;" +
 			"            let allSpans = document.querySelectorAll('span, div');" +
 			"            for (let i = 0; i < allSpans.length; i++) {" +
@@ -96,19 +113,19 @@ public class KeyEventHandler {
 			"                if (!clz.includes('checked') && !clz.includes('active') && targetSwitch.getAttribute('data-state') !== 'clear') {" +
 			"                    if (window.AndroidBridge && window.AndroidBridge.executeClick) {" +
 			"                        let rect = targetSwitch.getBoundingClientRect();" +
-			"                        let x = rect.left + (rect.width / 2);" +
-			"                        let y = rect.top + (rect.height / 2);" +
-			"                        window.AndroidBridge.executeClick(x, y);" +
-			"                        window.__dyLastStatus = 'SUCCESS: Hardware click dispatched. Formatting Done.';" +
+			"                        if(rect.width > 0 && rect.height > 0) {" +
+			"                            window.AndroidBridge.executeClick(rect.left + (rect.width / 2), rect.top + (rect.height / 2));" +
+			"                            window.__dyLastStatus = 'SUCCESS: Hardware clicks dispatched for formatting.';" +
+			"                        }" +
 			"                    } else {" +
 			"                        trigger(targetSwitch);" +
-			"                        window.__dyLastStatus = 'SUCCESS: JS click dispatched. Formatting Done.';" +
+			"                        window.__dyLastStatus = 'SUCCESS: JS click dispatched for formatting.';" +
 			"                    }" +
 			"                } else {" +
-			"                    window.__dyLastStatus = 'SKIPPED: Clear screen button found but already active. Formatting Done.';" +
+			"                    window.__dyLastStatus = 'SKIPPED: Clear screen button found but already active.';" +
 			"                }" +
 			"            } else {" +
-			"                window.__dyLastStatus = 'FAILED: Clear screen button NOT FOUND even after 500ms wake-up. Formatting Done.';" +
+			"                window.__dyLastStatus = 'FAILED: Clear screen button NOT FOUND even after 500ms wake-up.';" +
 			"            }" +
 			"            document.querySelectorAll('.xg-right-bar, .xg-left-bar, .video-info-container, .right-container, .bottom-container, [class*=\"sidebar\"], [class*=\"video-info\"], [class*=\"action-bar\"], [class*=\"author-info\"], [class*=\"comment\"]').forEach(el => { el.style.opacity = '0'; el.style.pointerEvents = 'none'; });" +
 			"            window.__dyTimer = null;" +
