@@ -98,11 +98,11 @@ public class KeyEventHandler {
 			"      return 'DOUYIN: ' + injectGlobalWipe(); " +
 			"    }}," +
 			"    {name:\"tiktok\",match:/tiktok\\.com/,execute:function(){" +
-			"      let ttCss = ` [data-e2e=\"video-author-avatar\"], [data-e2e=\"nav-login\"], [class*=\"DivHeaderContainer\"], [class*=\"DivSideNavContainer\"], [class*=\"DivBottomContainer\"] { display: none !important; pointer-events: none !important; } `; " +
+			"      var ttCss = ' [data-e2e=\"video-author-avatar\"], [data-e2e=\"nav-login\"], [class*=\"DivHeaderContainer\"], [class*=\"DivSideNavContainer\"], [class*=\"DivBottomContainer\"] { display: none !important; pointer-events: none !important; } '; " +
 			"      return 'TIKTOK: ' + injectGlobalWipe() + ' | ' + injectSpecificWipe(ttCss, 'permata-tt-css'); " +
 			"    }}," +
 			"    {name:\"instagram\",match:/instagram\\.com/,execute:function(){" +
-			"      let igCss = ` header, [role=\"navigation\"], [data-visualcompletion=\"ignore-dynamic\"] > div:not([role=\"main\"]) { display: none !important; opacity: 0 !important; pointer-events: none !important; height: 0 !important; } `; " +
+			"      var igCss = ' header, nav, [role=\"navigation\"], [role=\"dialog\"] { display: none !important; pointer-events: none !important; opacity: 0 !important; } body, html { overflow: auto !important; overflow-y: auto !important; touch-action: pan-y !important; overscroll-behavior-y: auto !important; } '; " +
 			"      return 'INSTAGRAM: ' + injectSpecificWipe(igCss, 'permata-ig-css'); " +
 			"    }}," +
 			"    {name:\"youtube\",match:/(youtube\\.com|youtu\\.be)/,execute:function(){" +
@@ -164,7 +164,7 @@ public class KeyEventHandler {
 			"    try { let execRes = window.__permataActive.execute(); res += ' || ' + execRes; } catch(e){} " +
 			"  } else { " +
 			"    res = 'Discovery [Layer 2]: JS Registry Miss -> Executing Common Webpage Fallback'; " +
-			"    let commonCss = ` header, footer, nav, aside, #cookie-notice, .cookie-banner, [id*=\"cookie\"], [class*=\"cookie\"], [id*=\"popup\"], [class*=\"popup\"], .floating-action-button { display: none !important; } `; " +
+			"    var commonCss = ' header, footer, nav, aside, #cookie-notice, .cookie-banner, [id*=\"cookie\"], [class*=\"cookie\"], [id*=\"popup\"], [class*=\"popup\"], .floating-action-button { display: none !important; } '; " +
 			"    try { let execRes = injectSpecificWipe(commonCss, 'permata-common-css'); res += ' || COMMON: ' + execRes; } catch(e){} " +
 			"  } " +
 			"  return res + ' || Script Payload Concluded';" +
@@ -407,9 +407,14 @@ public class KeyEventHandler {
 
 			if (isMediaHost) {
 				Log.i("[ACTION] Media Host Detected: Injecting Multi-Vector Virtual Scroll JS Script...");
-				// Perform Virtual JS Scroll (With Deep TikTok Extra Methods)
+				
+				// IG Specific Override: Defer entirely to Hardware Swipe to prevent snap-scroll fights
 				String advancedJsScript = "(function() {" +
 						"  try {" +
+						"    if (window.location.hostname.indexOf('instagram.com') !== -1) {" +
+						"      if(document.body) { document.body.style.overflow = 'auto'; }" +
+						"      return 'Scroll: JS Scroll Deferred to Java Hardware Swipe for IG Snap-Scroll stability.';" +
+						"    }" +
 						"    var isDown = " + (!up) + ";" +
 						"    var targetBtn = isDown ? document.querySelector('.xgplayer-playswitch-next, .slide-down-btn, [aria-label=\"Next video\"], [data-e2e=\"arrow-down\"]') : document.querySelector('.xgplayer-playswitch-prev, .slide-up-btn, [aria-label=\"Previous video\"], [data-e2e=\"arrow-up\"]');" +
 						"    if (targetBtn) { targetBtn.click(); return 'Scroll: Programmatic Button Clicked'; }" +
