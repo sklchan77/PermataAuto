@@ -39,40 +39,46 @@ public class KeyEventHandler {
 	// === THE PERMANENT GLOBAL STYLESHEET INJECTION & GESTURE STEALER ===
 	private static final String JS_UNIVERSAL_PAYLOAD = "(function(){" +
 			"let res = 'Discovery [Layer 2]: JS Registry Miss (No custom formatting applied)'; " +
-			"const injectGlobalWipe = function(customCss = '', useDefault = true) { " +
+			"const injectGlobalWipe = function() { " +
 			"  if(!document.getElementById('permata-god-mode-css')) { " +
 			"    const style = document.createElement('style'); " +
 			"    style.id = 'permata-god-mode-css'; " +
-			"    let defaultCss = ''; " +
-			"    if(useDefault) { " +
-			"      defaultCss = ` " +
-			"        xg-controls, .xgplayer-controls, " +
-			"        .xg-right-bar, .xg-left-bar, " +
-			"        .video-info-container, .right-container, " +
-			"        .bottom-container, .xgplayer-bottom, " +
-			"        [class*=\"sidebar\"], [class*=\"video-info\"], " +
-			"        [class*=\"action-bar\"], [class*=\"author-info\"], " +
-			"        [class*=\"comment\"], .account-info, .danmaku-container, " +
-			"        .login-mask-enter-done, .dy-account-close, " +
-			"        [class*=\"bottom-bar\"], [class*=\"Prompt\"], " +
-			"        [class*=\"download-btn\"], [class*=\"app-open\"], " +
-			"        .XPromoPopup, .AppBanner, [class*=\"Banner\"], " +
-			"        .UnauthBox, .box_layout, [id*=\"login\"], " +
-			"        .open-app-bar, .login-dialog { " +
-			"            display: none !important; " +
-			"            opacity: 0 !important; " +
-			"            visibility: hidden !important; " +
-			"            pointer-events: none !important; " +
-			"            height: 0 !important; " +
-			"            width: 0 !important; " +
-			"        } " +
-			"      `; " +
-			"    } " +
-			"    style.innerHTML = defaultCss + customCss; " +
+			"    style.innerHTML = ` " +
+			"      xg-controls, .xgplayer-controls, " +
+			"      .xg-right-bar, .xg-left-bar, " +
+			"      .video-info-container, .right-container, " +
+			"      .bottom-container, .xgplayer-bottom, " +
+			"      [class*=\"sidebar\"], [class*=\"video-info\"], " +
+			"      [class*=\"action-bar\"], [class*=\"author-info\"], " +
+			"      [class*=\"comment\"], .account-info, .danmaku-container, " +
+			"      .login-mask-enter-done, .dy-account-close, " +
+			"      [class*=\"bottom-bar\"], [class*=\"Prompt\"], " +
+			"      [class*=\"download-btn\"], [class*=\"app-open\"], " +
+			"      .XPromoPopup, .AppBanner, [class*=\"Banner\"], " +
+			"      .UnauthBox, .box_layout, [id*=\"login\"], " +
+			"      .open-app-bar, .login-dialog { " +
+			"          display: none !important; " +
+			"          opacity: 0 !important; " +
+			"          visibility: hidden !important; " +
+			"          pointer-events: none !important; " +
+			"          height: 0 !important; " +
+			"          width: 0 !important; " +
+			"      } " +
+			"    `; " +
 			"    document.head.appendChild(style); " +
-			"    return 'CSS Stylesheet Injected (Default: ' + useDefault + ').'; " +
+			"    return 'Global CSS Stylesheet Injected Successfully.'; " +
 			"  } " +
-			"  return 'CSS Stylesheet Already Exists.'; " +
+			"  return 'Global CSS Stylesheet Already Exists.'; " +
+			"}; " +
+			"const injectSpecificWipe = function(customCss, id) { " +
+			"  if(!document.getElementById(id)) { " +
+			"    const style = document.createElement('style'); " +
+			"    style.id = id; " +
+			"    style.innerHTML = customCss; " +
+			"    document.head.appendChild(style); " +
+			"    return 'Custom CSS (' + id + ') Injected.'; " +
+			"  } " +
+			"  return 'Custom CSS (' + id + ') Already Exists.'; " +
 			"}; " +
 			"const attemptFS = function() { " +
 			"  let player = document.querySelector('.xgplayer, video, main'); " +
@@ -89,34 +95,15 @@ public class KeyEventHandler {
 			"window.addEventListener('mouseup', window.__permataTouchListener, {once:true}); " +
 			"const registry=[" +
 			"    {name:\"douyin\",match:/douyin\\.com/,execute:function(){" +
-			"      return 'DOUYIN: ' + injectGlobalWipe('', true); " +
+			"      return 'DOUYIN: ' + injectGlobalWipe(); " +
 			"    }}," +
 			"    {name:\"tiktok\",match:/tiktok\\.com/,execute:function(){" +
-			"      let ttCss = ` " +
-			"        [data-e2e=\"video-author-avatar\"], " +
-			"        [data-e2e=\"nav-login\"], " +
-			"        [class*=\"DivHeaderContainer\"], " +
-			"        [class*=\"DivSideNavContainer\"], " +
-			"        [class*=\"DivBottomContainer\"] { " +
-			"            display: none !important; " +
-			"            pointer-events: none !important; " +
-			"        } " +
-			"      `; " +
-			"      return 'TIKTOK: ' + injectGlobalWipe(ttCss, true); " +
+			"      let ttCss = ` [data-e2e=\"video-author-avatar\"], [data-e2e=\"nav-login\"], [class*=\"DivHeaderContainer\"], [class*=\"DivSideNavContainer\"], [class*=\"DivBottomContainer\"] { display: none !important; pointer-events: none !important; } `; " +
+			"      return 'TIKTOK: ' + injectGlobalWipe() + ' | ' + injectSpecificWipe(ttCss, 'permata-tt-css'); " +
 			"    }}," +
 			"    {name:\"instagram\",match:/instagram\\.com/,execute:function(){" +
-			"      let igCss = ` " +
-			"        header, " +
-			"        [role=\"navigation\"], " +
-			"        [data-visualcompletion=\"ignore-dynamic\"] > div:not([role=\"main\"]) { " +
-			"            display: none !important; " +
-			"            opacity: 0 !important; " +
-			"            pointer-events: none !important; " +
-			"            height: 0 !important; " +
-			"        } " +
-			"      `; " +
-			"      // IG MUST Bypass Default Nuke to maintain scrollability " +
-			"      return 'INSTAGRAM: ' + injectGlobalWipe(igCss, false); " +
+			"      let igCss = ` header, [role=\"navigation\"], [data-visualcompletion=\"ignore-dynamic\"] > div:not([role=\"main\"]) { display: none !important; opacity: 0 !important; pointer-events: none !important; height: 0 !important; } `; " +
+			"      return 'INSTAGRAM: ' + injectSpecificWipe(igCss, 'permata-ig-css'); " +
 			"    }}," +
 			"    {name:\"youtube\",match:/(youtube\\.com|youtu\\.be)/,execute:function(){" +
 			"      let ad=document.querySelector('.ytp-skip-ad-button,.ytp-ad-skip-button,.ytp-skip-button');if(ad)ad.click();" +
@@ -125,50 +112,50 @@ public class KeyEventHandler {
 			"      return 'YOUTUBE: Handled standard media skip.'; " +
 			"    }}," +
 			"    {name:\"facebook\",match:/facebook\\.com/,execute:function(){" +
-			"      return 'FACEBOOK: ' + injectGlobalWipe('', true); " +
+			"      return 'FACEBOOK: ' + injectGlobalWipe(); " +
 			"    }}," +
 			"    {name:\"bilibili\",match:/bilibili\\.com/,execute:function(){" +
 			"      let pl=document.querySelector('.mplayer-play');if(pl&&pl.classList.contains('play'))pl.click();" +
-			"      return 'BILIBILI: ' + injectGlobalWipe('', true); " +
+			"      return 'BILIBILI: ' + injectGlobalWipe(); " +
 			"    }}," +
 			"    {name:\"kuaishou\",match:/kuaishou\\.com/,execute:function(){" +
-			"      return 'KUAISHOU: ' + injectGlobalWipe('', true); " +
+			"      return 'KUAISHOU: ' + injectGlobalWipe(); " +
 			"    }}," +
 			"    {name:\"xiaohongshu\",match:/xiaohongshu\\.com/,execute:function(){" +
-			"      return 'XIAOHONGSHU: ' + injectGlobalWipe('', true); " +
+			"      return 'XIAOHONGSHU: ' + injectGlobalWipe(); " +
 			"    }}," +
 			"    {name:\"reddit\",match:/reddit\\.com/,execute:function(){" +
 			"      if(document.body&&window.getComputedStyle(document.body).overflow==='hidden') document.body.style.overflow='auto';" +
-			"      return 'REDDIT: ' + injectGlobalWipe('', true); " +
+			"      return 'REDDIT: ' + injectGlobalWipe(); " +
 			"    }}," +
 			"    {name:\"x\",match:/(twitter\\.com|x\\.com)/,execute:function(){" +
-			"      return 'X/TWITTER: ' + injectGlobalWipe('', true); " +
+			"      return 'X/TWITTER: ' + injectGlobalWipe(); " +
 			"    }}," +
 			"    {name:\"pinterest\",match:/pinterest\\.com/,execute:function(){" +
 			"      if(document.body) document.body.style.overflow='auto';" +
-			"      return 'PINTEREST: ' + injectGlobalWipe('', true); " +
+			"      return 'PINTEREST: ' + injectGlobalWipe(); " +
 			"    }}," +
 			"    {name:\"twitch\",match:/twitch\\.tv/,execute:function(){" +
-			"      return 'TWITCH: ' + injectGlobalWipe('', true); " +
+			"      return 'TWITCH: ' + injectGlobalWipe(); " +
 			"    }}," +
 			"    {name:\"weibo\",match:/weibo\\.(com|cn)/,execute:function(){" +
-			"      return 'WEIBO: ' + injectGlobalWipe('', true); " +
+			"      return 'WEIBO: ' + injectGlobalWipe(); " +
 			"    }}," +
 			"    {name:\"snapchat\",match:/snapchat\\.com/,execute:function(){" +
-			"      return 'SNAPCHAT: ' + injectGlobalWipe('', true); " +
+			"      return 'SNAPCHAT: ' + injectGlobalWipe(); " +
 			"    }}," +
 			"    {name:\"likee\",match:/likee\\.video/,execute:function(){" +
-			"      return 'LIKEE: ' + injectGlobalWipe('', true); " +
+			"      return 'LIKEE: ' + injectGlobalWipe(); " +
 			"    }}," +
 			"    {name:\"moj\",match:/(mojapp\\.in|sharechat\\.com)/,execute:function(){" +
 			"      if(document.body) document.body.style.overflow='auto';" +
-			"      return 'MOJ: ' + injectGlobalWipe('', true); " +
+			"      return 'MOJ: ' + injectGlobalWipe(); " +
 			"    }}," +
 			"    {name:\"vk\",match:/vk\\.com/,execute:function(){" +
-			"      return 'VK: ' + injectGlobalWipe('', true); " +
+			"      return 'VK: ' + injectGlobalWipe(); " +
 			"    }}," +
 			"    {name:\"kwai\",match:/(kwai\\.com|snackvideo\\.com)/,execute:function(){" +
-			"      return 'KWAI: ' + injectGlobalWipe('', true); " +
+			"      return 'KWAI: ' + injectGlobalWipe(); " +
 			"    }}" +
 			"  ];" +
 			"  window.__permataActive = registry.find(p=>p.match.test(window.location.hostname));" +
@@ -177,16 +164,8 @@ public class KeyEventHandler {
 			"    try { let execRes = window.__permataActive.execute(); res += ' || ' + execRes; } catch(e){} " +
 			"  } else { " +
 			"    res = 'Discovery [Layer 2]: JS Registry Miss -> Executing Common Webpage Fallback'; " +
-			"    let commonCss = ` " +
-			"      header, footer, nav, aside, " +
-			"      #cookie-notice, .cookie-banner, " +
-			"      [id*=\"cookie\"], [class*=\"cookie\"], " +
-			"      [id*=\"popup\"], [class*=\"popup\"], " +
-			"      .floating-action-button { " +
-			"          display: none !important; " +
-			"      } " +
-			"    `; " +
-			"    try { let execRes = injectGlobalWipe(commonCss, false); res += ' || COMMON: ' + execRes; } catch(e){} " +
+			"    let commonCss = ` header, footer, nav, aside, #cookie-notice, .cookie-banner, [id*=\"cookie\"], [class*=\"cookie\"], [id*=\"popup\"], [class*=\"popup\"], .floating-action-button { display: none !important; } `; " +
+			"    try { let execRes = injectSpecificWipe(commonCss, 'permata-common-css'); res += ' || COMMON: ' + execRes; } catch(e){} " +
 			"  } " +
 			"  return res + ' || Script Payload Concluded';" +
 			"})();";
