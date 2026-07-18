@@ -88,6 +88,19 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 		MainActivityDelegate.setTheme(this, true);
 		super.onCreate(savedInstanceState);
 		initCarActivity(this);
+
+		// === SURGICAL INJECTION: PULL THE HIJACK TRIGGER ===
+		// Fires an instantaneous intent to forcefully grab Audio Focus upon UI render
+		try {
+			Intent hijackIntent = new Intent(this, my.app.permata.media.service.PermataMediaService.class);
+			hijackIntent.setAction(my.app.permata.media.service.PermataMediaService.ACTION_HIJACK_FOCUS);
+			startService(hijackIntent);
+			Log.i("MainCarActivity: Hijack Intent fired successfully on creation.");
+		} catch (Exception e) {
+			Log.e(e, "MainCarActivity: Failed to fire hijack intent on creation.");
+		}
+		// ===================================================
+
 		PermataMediaServiceConnection s = service;
 
 		if ((s != null) && s.isConnected()) {
