@@ -81,6 +81,7 @@ public class KeyEventHandler {
 			"  return 'Custom CSS (' + id + ') Already Exists.'; " +
 			"}; " +
 			"const attemptFS = function() { " +
+			"  if (window.location.hostname.indexOf('instagram.com') !== -1) return; " + // <-- SURGICAL FIX: IG IGNORES HTML5 FULLSCREEN OVERLAYS
 			"  let player = document.querySelector('.xgplayer, video, main'); " +
 			"  if (player && !document.fullscreenElement && !document.webkitFullscreenElement) { " +
 			"      try { player.requestFullscreen(); } catch(e) {} " +
@@ -267,7 +268,6 @@ public class KeyEventHandler {
 
 								View touchTargetView = webView;
 								
-								// IG TARGET LOCK: Prevent targeting the detached FullScreenView layer which causes the scroll freeze
 								if (isInstagram) {
 									Log.i("[CHECK] Instagram detected. Overriding Reflection layer to enforce immutable WebView target link.");
 								} else {
