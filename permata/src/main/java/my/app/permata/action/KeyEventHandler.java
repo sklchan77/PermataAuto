@@ -36,14 +36,14 @@ public class KeyEventHandler {
 	// Tracks scroll timestamps to prevent spamming and ANRs
 	private static final Map<View, Long> scrollTimestamps = new WeakHashMap<>();
 
-	// === ES5 SAFE: PERMANENT GLOBAL STYLESHEET INJECTION & JS ENFORCER ===
+	// === THE PERMANENT GLOBAL STYLESHEET INJECTION & GESTURE STEALER ===
 	private static final String JS_UNIVERSAL_PAYLOAD = "(function(){" +
-			"var res = 'Discovery [Layer 2]: JS Registry Miss (No custom formatting applied)'; " +
-			"var injectGlobalWipe = function() { " +
+			"let res = 'Discovery [Layer 2]: JS Registry Miss (No custom formatting applied)'; " +
+			"const injectGlobalWipe = function() { " +
 			"  if(!document.getElementById('permata-god-mode-css')) { " +
-			"    var style = document.createElement('style'); " +
+			"    const style = document.createElement('style'); " +
 			"    style.id = 'permata-god-mode-css'; " +
-			"    style.innerHTML = ' " +
+			"    style.innerHTML = ` " +
 			"      xg-controls, .xgplayer-controls, " +
 			"      .xg-right-bar, .xg-left-bar, " +
 			"      .video-info-container, .right-container, " +
@@ -64,15 +64,15 @@ public class KeyEventHandler {
 			"          height: 0 !important; " +
 			"          width: 0 !important; " +
 			"      } " +
-			"    '; " +
+			"    `; " +
 			"    document.head.appendChild(style); " +
 			"    return 'Global CSS Stylesheet Injected Successfully.'; " +
 			"  } " +
 			"  return 'Global CSS Stylesheet Already Exists.'; " +
 			"}; " +
-			"var injectSpecificWipe = function(customCss, id) { " +
+			"const injectSpecificWipe = function(customCss, id) { " +
 			"  if(!document.getElementById(id)) { " +
-			"    var style = document.createElement('style'); " +
+			"    const style = document.createElement('style'); " +
 			"    style.id = id; " +
 			"    style.innerHTML = customCss; " +
 			"    document.head.appendChild(style); " +
@@ -80,22 +80,20 @@ public class KeyEventHandler {
 			"  } " +
 			"  return 'Custom CSS (' + id + ') Already Exists.'; " +
 			"}; " +
-			"window.__attemptFS = function() { " +
-			"  var player = document.querySelector('.xgplayer, video, main'); " +
+			"const attemptFS = function() { " +
+			"  let player = document.querySelector('.xgplayer, video, main'); " +
 			"  if (player && !document.fullscreenElement && !document.webkitFullscreenElement) { " +
 			"      try { player.requestFullscreen(); } catch(e) {} " +
 			"  } " +
 			"}; " +
-			"if (!window.__permataArmed) { " +
-			"  window.addEventListener('touchend', window.__attemptFS, {capture:true}); " +
-			"  window.addEventListener('mouseup', window.__attemptFS, {capture:true}); " +
-			"  window.__permataArmed = true; " +
-			"  setInterval(function(){ " +
-			"    if(window.__permataActive) { window.__permataActive.execute(); } " +
-			"    window.__attemptFS(); " +
-			"  }, 1500); " +
-			"} " +
-			"var registry=[" +
+			"window.__permataTouchListener = function(e) { " +
+			"  attemptFS(); " +
+			"  window.removeEventListener('touchend', window.__permataTouchListener); " +
+			"  window.removeEventListener('mouseup', window.__permataTouchListener); " +
+			"}; " +
+			"window.addEventListener('touchend', window.__permataTouchListener, {once:true}); " +
+			"window.addEventListener('mouseup', window.__permataTouchListener, {once:true}); " +
+			"const registry=[" +
 			"    {name:\"douyin\",match:/douyin\\.com/,execute:function(){" +
 			"      return 'DOUYIN: ' + injectGlobalWipe(); " +
 			"    }}," +
@@ -108,16 +106,16 @@ public class KeyEventHandler {
 			"      return 'INSTAGRAM: ' + injectSpecificWipe(igCss, 'permata-ig-css'); " +
 			"    }}," +
 			"    {name:\"youtube\",match:/(youtube\\.com|youtu\\.be)/,execute:function(){" +
-			"      var ad=document.querySelector('.ytp-skip-ad-button,.ytp-ad-skip-button,.ytp-skip-button');if(ad)ad.click();" +
-			"      var dm=document.querySelectorAll('yt-button-renderer[id=\"dismiss-button\"],[aria-label=\"No thanks\"],[aria-label=\"Dismiss\"],.yt-spec-button-shape-next--text');" +
-			"      for(var i=0; i<dm.length; i++){ var b=dm[i]; if(b.textContent&&(b.textContent.indexOf('No thanks')!==-1||b.textContent.indexOf('Skip')!==-1||b.textContent.indexOf('Dismiss')!==-1)) b.click(); }" +
+			"      let ad=document.querySelector('.ytp-skip-ad-button,.ytp-ad-skip-button,.ytp-skip-button');if(ad)ad.click();" +
+			"      let dm=document.querySelectorAll('yt-button-renderer[id=\"dismiss-button\"],[aria-label=\"No thanks\"],[aria-label=\"Dismiss\"],.yt-spec-button-shape-next--text');" +
+			"      dm.forEach(b=>{if(b.textContent&&(b.textContent.includes('No thanks')||b.textContent.includes('Skip')||b.textContent.includes('Dismiss')))b.click();});" +
 			"      return 'YOUTUBE: Handled standard media skip.'; " +
 			"    }}," +
 			"    {name:\"facebook\",match:/facebook\\.com/,execute:function(){" +
 			"      return 'FACEBOOK: ' + injectGlobalWipe(); " +
 			"    }}," +
 			"    {name:\"bilibili\",match:/bilibili\\.com/,execute:function(){" +
-			"      var pl=document.querySelector('.mplayer-play');if(pl&&pl.classList.contains('play'))pl.click();" +
+			"      let pl=document.querySelector('.mplayer-play');if(pl&&pl.classList.contains('play'))pl.click();" +
 			"      return 'BILIBILI: ' + injectGlobalWipe(); " +
 			"    }}," +
 			"    {name:\"kuaishou\",match:/kuaishou\\.com/,execute:function(){" +
@@ -160,22 +158,22 @@ public class KeyEventHandler {
 			"      return 'KWAI: ' + injectGlobalWipe(); " +
 			"    }}" +
 			"  ];" +
-			"  window.__permataActive = null; " +
-			"  for(var i=0; i<registry.length; i++) { " +
-			"    if(registry[i].match.test(window.location.hostname)) { " +
-			"       window.__permataActive = registry[i]; break; " +
-			"    } " +
-			"  } " +
+			"  window.__permataActive = registry.find(p=>p.match.test(window.location.hostname));" +
 			"  if (window.__permataActive) { " +
 			"    res = 'Discovery [Layer 2]: JS Registry Match Success -> ' + window.__permataActive.name; " +
-			"    try { var execRes = window.__permataActive.execute(); res += ' || ' + execRes; } catch(e){} " +
+			"    try { let execRes = window.__permataActive.execute(); res += ' || ' + execRes; } catch(e){} " +
 			"  } else { " +
 			"    res = 'Discovery [Layer 2]: JS Registry Miss -> Executing Common Webpage Fallback'; " +
 			"    var commonCss = ' header, footer, nav, aside, #cookie-notice, .cookie-banner, [id*=\"cookie\"], [class*=\"cookie\"], [id*=\"popup\"], [class*=\"popup\"], .floating-action-button { display: none !important; } '; " +
-			"    try { var execRes2 = injectSpecificWipe(commonCss, 'permata-common-css'); res += ' || COMMON: ' + execRes2; } catch(e){} " +
+			"    try { let execRes = injectSpecificWipe(commonCss, 'permata-common-css'); res += ' || COMMON: ' + execRes; } catch(e){} " +
 			"  } " +
-			"  return res + ' || Enforcer Interval & Gesture Listener Armed';" +
+			"  return res + ' || Script Payload Concluded';" +
 			"})();";
+
+	// Resilient polling container
+	private static final String JS_POLLING_PAYLOAD = "try { " +
+			"  if(window.__permataActive) { window.__permataActive.execute(); } " +
+			"} catch(e){}";
 
 	public static boolean handleKeyEvent(MediaSessionCallback cb, KeyEvent event,
 																			 IntObjectFunction<KeyEvent, Boolean> defaultHandler) {
@@ -251,6 +249,7 @@ public class KeyEventHandler {
 										if (host != null) {
 											if (host.startsWith("www.")) host = host.substring(4);
 											
+											// Determine if this is one of our targeted media apps
 											String h = host.toLowerCase();
 											isMediaHost = h.contains("douyin") || h.contains("tiktok") || h.contains("instagram") ||
 													h.contains("youtube") || h.contains("youtu") || h.contains("facebook") ||
@@ -391,10 +390,8 @@ public class KeyEventHandler {
 		Long lastClickTimeObj = scrollTimestamps.get(wv);
 		long lastClickTime = (lastClickTimeObj != null) ? lastClickTimeObj : 0;
 		
-		// Increased Anti-Spam Gate to 500ms for Media Hosts to prevent Douyin native 'Long Press Blur' triggers
-		long throttleWindow = isMediaHost ? 500 : 250;
-		if (now - lastClickTime < throttleWindow) {
-			Log.w("[CHECK] " + hostTag + "Scroll [Anti-Spam]: Event dropped (Throttle window < " + throttleWindow + "ms). [IDLE] Ignored.");
+		if (now - lastClickTime < 250) {
+			Log.w("[CHECK] " + hostTag + "Scroll [Anti-Spam]: Event dropped (Throttle window < 250ms). [IDLE] Ignored.");
 			return;
 		}
 		scrollTimestamps.put(wv, now); 
@@ -403,7 +400,7 @@ public class KeyEventHandler {
 
 		if (wv.getSettings().getJavaScriptEnabled()) {
 			
-			Log.i("[ACTION] Injecting ES5 Safe JS_UNIVERSAL_PAYLOAD (with Enforcer)...");
+			Log.i("[ACTION] Injecting JS_UNIVERSAL_PAYLOAD...");
 			wv.evaluateJavascript(JS_UNIVERSAL_PAYLOAD, value -> {
 				if (value != null && !value.equals("null")) Log.i(hostTag + "[REACTION] [EXECUTION STATUS] " + value.replace("\"", ""));
 			});
@@ -442,6 +439,16 @@ public class KeyEventHandler {
 					if (value != null && !value.equals("null")) Log.i(hostTag + "[REACTION] " + value.replace("\"", ""));
 				});
 
+				Log.i("[ACTION] Queuing JS_POLLING_PAYLOAD to run in 1.5s.");
+				wv.postDelayed(() -> {
+					if (wv.isAttachedToWindow()) {
+						Log.i("[ACTION] Executing delayed JS_POLLING_PAYLOAD.");
+						wv.evaluateJavascript(JS_POLLING_PAYLOAD, null);
+					} else {
+						Log.i("[CHECK] Status: WebView detached. [EXIT] Aborting JS_POLLING_PAYLOAD.");
+					}
+				}, 1500);
+
 			} else {
 				Log.i("[ACTION] General Webpage Detected: Injecting Safe Standard Scroll JS Script...");
 				String generalJsScript = "(function() {" +
@@ -466,7 +473,7 @@ public class KeyEventHandler {
 		}
 
 		if (isMediaHost) {
-			// 5. Dispatch the Physical Hardware Swipe (Provides User Activation Token for Fullscreen & bypasses traps)
+			// 5. Dispatch the Physical Hardware Swipe (Provides the User Activation Token for Fullscreen)
 			final float actionX = touchTarget.getWidth() * 0.50f;
 			final float centerY = touchTarget.getHeight() / 2f;
 			float span = touchTarget.getHeight() * 0.60f; 
@@ -474,55 +481,45 @@ public class KeyEventHandler {
 			final float yEnd = up ? (centerY + span / 2f) : (centerY - span / 2f);
 
 			try {
-				Log.i("[ACTION] " + hostTag + "Dispatching Wake-Up Tap & Hardware Swipe to fulfill Token Security.");
+				Log.i("[ACTION] " + hostTag + "Dispatching Hardware Swipe to fulfill Token Security & Media Scroll.");
 				final long startTime = android.os.SystemClock.uptimeMillis();
 				
-				// The WAKE-UP TAP: A 10ms micro-click at (10, 10) to instantly secure Chromium's Fullscreen Interaction Token if returning from IHU menus
-				MotionEvent wakeDown = MotionEvent.obtain(startTime, startTime, MotionEvent.ACTION_DOWN, 10f, 10f, 0);
-				touchTarget.dispatchTouchEvent(wakeDown);
-				wakeDown.recycle();
-				MotionEvent wakeUp = MotionEvent.obtain(startTime, startTime + 10, MotionEvent.ACTION_UP, 10f, 10f, 0);
-				touchTarget.dispatchTouchEvent(wakeUp);
-				wakeUp.recycle();
-				
-				// The SCROLL SWIPE: Sped up from 150ms to 80ms to guarantee Douyin's "Long Press Blur" listener is never triggered
-				final long swipeStartTime = startTime + 20;
-				MotionEvent eventDown = MotionEvent.obtain(swipeStartTime, swipeStartTime, MotionEvent.ACTION_DOWN, actionX, yStart, 0);
+				MotionEvent eventDown = MotionEvent.obtain(startTime, startTime, MotionEvent.ACTION_DOWN, actionX, yStart, 0);
 				touchTarget.dispatchTouchEvent(eventDown);
 				eventDown.recycle();
-				Log.i("[REACTION] Dispatching Wake Tap, then Swipe ACTION_DOWN at Y: " + yStart);
+				Log.i("[REACTION] Dispatching ACTION_DOWN at Y: " + yStart);
 
 				final int stepCount = 5;
-				final long swipeDuration = 80; 
+				final long swipeDuration = 150; 
 				
 				for (int i = 1; i <= stepCount; i++) {
 					final float fraction = (float) i / stepCount;
 					final float currentY = yStart + (yEnd - yStart) * fraction;
-					final long moveTime = swipeStartTime + (long) (swipeDuration * fraction);
+					final long moveTime = startTime + (long) (swipeDuration * fraction);
 					
 					final int stepId = i;
 					touchTarget.postDelayed(() -> {
 						if (touchTarget.isAttachedToWindow()) {
-							MotionEvent eventMove = MotionEvent.obtain(swipeStartTime, moveTime, MotionEvent.ACTION_MOVE, actionX, currentY, 0);
+							MotionEvent eventMove = MotionEvent.obtain(startTime, moveTime, MotionEvent.ACTION_MOVE, actionX, currentY, 0);
 							touchTarget.dispatchTouchEvent(eventMove);
 							eventMove.recycle();
 							Log.i("[REACTION] Hardware Swipe Step " + stepId + " Dispatched at Y: " + currentY);
 						}
-					}, (long) (swipeDuration * fraction) + 20);
+					}, (long) (swipeDuration * fraction));
 				}
 
-				// The ACTION_UP event here triggers the JS 'touchend' listener, executing the armed attemptFS()
+				// The ACTION_UP event here triggers the JS 'touchend' listener, granting Fullscreen
 				touchTarget.postDelayed(() -> {
 					if (touchTarget.isAttachedToWindow()) {
-						long endTime = swipeStartTime + swipeDuration + 10;
-						MotionEvent eventUp = MotionEvent.obtain(swipeStartTime, endTime, MotionEvent.ACTION_UP, actionX, yEnd, 0);
+						long endTime = startTime + swipeDuration + 10;
+						MotionEvent eventUp = MotionEvent.obtain(startTime, endTime, MotionEvent.ACTION_UP, actionX, yEnd, 0);
 						touchTarget.dispatchTouchEvent(eventUp);
 						eventUp.recycle();
 						Log.i("[REACTION] " + hostTag + "Hardware Swipe Concluded (ACTION_UP). Fullscreen Token Stealer Executed.");
 					} else {
 						Log.i("[CHECK] Status: Target detached before ACTION_UP. Hardware Swipe aborted.");
 					}
-				}, swipeDuration + 30);
+				}, swipeDuration + 10);
 
 			} catch (Exception e) {
 				Log.e(e, "[REACTION] " + hostTag + "Hardware swipe failed with Exception.");
