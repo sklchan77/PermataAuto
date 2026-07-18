@@ -102,8 +102,7 @@ public class KeyEventHandler {
 			"      return 'TIKTOK: ' + injectGlobalWipe() + ' | ' + injectSpecificWipe(ttCss, 'permata-tt-css'); " +
 			"    }}," +
 			"    {name:\"instagram\",match:/instagram\\.com/,execute:function(){" +
-			"      var igCss = ' header, nav, [role=\"navigation\"], [role=\"dialog\"], [class*=\"x1qjc9v5\"], div._a9-z, div._a9_1 { display: none !important; pointer-events: none !important; opacity: 0 !important; visibility: hidden !important; height: 0 !important; } body, html, div, section, main { overflow: auto !important; overflow-y: auto !important; touch-action: pan-y !important; overscroll-behavior-y: auto !important; } '; " +
-			"      try { var traps = document.querySelectorAll('[role=\"dialog\"], div._a9-z'); for(var i=0; i<traps.length; i++) { traps[i].remove(); } } catch(e){} " +
+			"      var igCss = ' header, nav, [role=\"navigation\"] { display: none !important; pointer-events: none !important; opacity: 0 !important; visibility: hidden !important; } body, html { overflow: auto !important; touch-action: pan-y !important; } '; " +
 			"      return 'INSTAGRAM: ' + injectSpecificWipe(igCss, 'permata-ig-css'); " +
 			"    }}," +
 			"    {name:\"youtube\",match:/(youtube\\.com|youtu\\.be)/,execute:function(){" +
@@ -268,7 +267,7 @@ public class KeyEventHandler {
 
 								View touchTargetView = webView;
 								
-								// CRITICAL PATCH: Override Reflection for Instagram to strictly hit the base WebView
+								// IG TARGET LOCK: Prevent targeting the detached FullScreenView layer which causes the scroll freeze
 								if (isInstagram) {
 									Log.i("[CHECK] Instagram detected. Overriding Reflection layer to enforce immutable WebView target link.");
 								} else {
