@@ -64,12 +64,12 @@ import my.app.utils.app.App;
 import my.app.utils.log.Log;
 import my.app.utils.ui.UiUtils;
 
-
 /**
  * @author sklchan77
  */
 public class PermataMediaService extends MediaBrowserServiceCompat {
 	public static final String ACTION_MEDIA_SERVICE = "my.app.permata.action.MediaService";
+	public static final String ACTION_HIJACK_FOCUS = "my.app.permata.action.HIJACK_FOCUS"; // SURGICAL INJECTION: Hijack Intent
 	public static final String INTENT_ATTR_NOTIF_COLOR = "my.app.permata.notif.color";
 	public static final String DEFAULT_NOTIF_COLOR = "#3D2562";
 	private static final String CONTENT_STYLE_SUPPORTED =
@@ -156,11 +156,48 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 		Log.d("PermataMediaService destroyed");
 	}
 
+	// === SURGICAL INJECTION: ACTION_HIJACK_FOCUS Interceptor ===
 	@Override
 	public int onStartCommand(Intent intent, int flags, int startId) {
+		if (intent != null && ACTION_HIJACK_FOCUS.equals(intent.getAction())) {
+			hijackCarAudioAndSteering();
+		}
 		MediaButtonReceiver.handleIntent(session, intent);
 		return super.onStartCommand(intent, flags, startId);
 	}
+	
+	private void hijackCarAudioAndSteering() {
+		try {
+			android.media.AudioManager audioManager = (android.media.AudioManager) getSystemService(Context.AUDIO_SERVICE);
+			if (audioManager != null) {
+				// Forcefully steal audio focus from the car's native radio or background apps
+				audioManager.requestAudioFocus(
+						focusChange -> {}, 
+						android.media.AudioManager.STREAM_MUSIC, 
+						android.media.AudioManager.AUDIOFOCUS_GAIN
+				);
+			}
+
+			// Force the Media Session to Active so steering wheel buttons route to Permata
+			if (session != null) {
+				session.setActive(true);
+				
+				// Set a "Fake" playing state so the car IHU thinks media is actively ready for input
+				PlaybackStateCompat.Builder stateBuilder = new PlaybackStateCompat.Builder()
+						.setActions(PlaybackStateCompat.ACTION_PLAY | 
+									PlaybackStateCompat.ACTION_PAUSE | 
+									PlaybackStateCompat.ACTION_SKIP_TO_NEXT | 
+									PlaybackStateCompat.ACTION_SKIP_TO_PREVIOUS)
+						.setState(PlaybackStateCompat.STATE_PAUSED, 0, 1.0f);
+					
+				session.setPlaybackState(stateBuilder.build());
+				Log.i("PermataMediaService: Audio Focus & Steering Buttons successfully hijacked.");
+			}
+		} catch (Exception e) {
+			Log.e(e, "PermataMediaService: Failed to execute audio hijack.");
+		}
+	}
+	// ============================================================
 
 	@Override
 	public IBinder onBind(Intent intent) {
