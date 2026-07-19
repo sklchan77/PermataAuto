@@ -133,6 +133,18 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 	public void onResume() {
 		super.onResume();
 		getActivityDelegate().onSuccess(MainActivityDelegate::onActivityResume);
+		
+		// === SURGICAL INJECTION: RECLAIM HIJACK ON RESUME ===
+		// Forces the car to hand back steering wheel control every time the app is foregrounded
+		try {
+			Intent hijackIntent = new Intent(this, my.app.permata.media.service.PermataMediaService.class);
+			hijackIntent.setAction(my.app.permata.media.service.PermataMediaService.ACTION_HIJACK_FOCUS);
+			startService(hijackIntent);
+			Log.i("MainCarActivity: Hijack Intent fired successfully on resume.");
+		} catch (Exception e) {
+			Log.e(e, "MainCarActivity: Failed to fire hijack intent on resume.");
+		}
+		// ====================================================
 	}
 
 	@Override
