@@ -80,15 +80,28 @@ public class KeyEventHandler {
 			"  } " +
 			"  return 'Custom CSS (' + id + ') Already Exists.'; " +
 			"}; " +
-			"const attemptFS = function() { " +
-			"  if (window.location.hostname.indexOf('instagram.com') !== -1) return; " + // <-- SURGICAL FIX: IG IGNORES HTML5 FULLSCREEN OVERLAYS
+			"window.__attemptFS = function() { " +
+			"  if (window.location.hostname.indexOf('instagram.com') !== -1) return; " +
 			"  let player = document.querySelector('.xgplayer, video, main'); " +
 			"  if (player && !document.fullscreenElement && !document.webkitFullscreenElement) { " +
 			"      try { player.requestFullscreen(); } catch(e) {} " +
 			"  } " +
 			"}; " +
+			"window.__enforceFS = function() { " +
+			"  if (window.location.hostname.indexOf('instagram.com') !== -1) return; " +
+			"  let attempts = 0; " +
+			"  let iv = setInterval(function() { " +
+			"      let player = document.querySelector('.xgplayer, video, main'); " +
+			"      if (player && !document.fullscreenElement && !document.webkitFullscreenElement) { " +
+			"          try { player.requestFullscreen(); } catch(e) {} " +
+			"      } else if (document.fullscreenElement || document.webkitFullscreenElement) { " +
+			"          clearInterval(iv); " +
+			"      } " +
+			"      if (++attempts > 10) clearInterval(iv); " + // Abort after 5 seconds to prevent memory loops
+			"  }, 500); " +
+			"}; " +
 			"window.__permataTouchListener = function(e) { " +
-			"  attemptFS(); " +
+			"  window.__attemptFS(); " +
 			"  window.removeEventListener('touchend', window.__permataTouchListener); " +
 			"  window.removeEventListener('mouseup', window.__permataTouchListener); " +
 			"}; " +
@@ -295,7 +308,7 @@ public class KeyEventHandler {
 								}
 
 								Log.i("[ACTION] Triggering smartScrollWebView.");
-								smartScrollWebView(webView, touchTargetView, !isNext, hostTag, isMediaHost);
+								smartScrollWebView(webView, touchTargetView, !isNext, hostTag, isMediaHost, isInstagram);
 							} else {
 								Log.i("[CHECK] Status: WebView extraction returned null. Aborting intercept.");
 							}
@@ -386,7 +399,7 @@ public class KeyEventHandler {
 		return null;
 	}
 
-	private static void smartScrollWebView(final WebView wv, final View touchTarget, boolean up, final String hostTag, boolean isMediaHost) {
+	private static void smartScrollWebView(final WebView wv, final View touchTarget, boolean up, final String hostTag, boolean isMediaHost, boolean isInstagram) {
 		Log.i("[ENTRY] smartScrollWebView execution started. Direction Up: " + up + " | isMediaHost: " + isMediaHost);
 		if (wv == null || touchTarget == null || !touchTarget.isAttachedToWindow() || touchTarget.getWidth() <= 0 || touchTarget.getHeight() <= 0) {
 			Log.i("[CHECK] Status: Invalid WebView or touchTarget dimensions. [EXIT] Aborting smart scroll.");
@@ -412,16 +425,15 @@ public class KeyEventHandler {
 				if (value != null && !value.equals("null")) Log.i(hostTag + "[REACTION] [EXECUTION STATUS] " + value.replace("\"", ""));
 			});
 
-			if (isMediaHost) {
-				Log.i("[ACTION] Media Host Detected: Injecting Multi-Vector Virtual Scroll JS Script...");
+			if (isMediaHost && !isInstagram) {
 				
-				// IG Specific Override: Defer entirely to Hardware Swipe to prevent snap-scroll fights
+				// === SURGICAL FIX: BEGINNING STATE FULLSCREEN CHECK ===
+				Log.i("[ACTION] Media Host Detected: Dispatcing Beginning-State Fullscreen Check...");
+				wv.evaluateJavascript("if(typeof window.__attemptFS === 'function') window.__attemptFS();", null);
+				
+				Log.i("[ACTION] Injecting Multi-Vector Virtual Scroll JS Script...");
 				String advancedJsScript = "(function() {" +
 						"  try {" +
-						"    if (window.location.hostname.indexOf('instagram.com') !== -1) {" +
-						"      if(document.body) { document.body.style.overflow = 'auto'; }" +
-						"      return 'Scroll: JS Scroll Deferred to Java Hardware Swipe for IG Snap-Scroll stability.';" +
-						"    }" +
 						"    var isDown = " + (!up) + ";" +
 						"    var targetBtn = isDown ? document.querySelector('.xgplayer-playswitch-next, .slide-down-btn, [aria-label=\"Next video\"], [data-e2e=\"arrow-down\"]') : document.querySelector('.xgplayer-playswitch-prev, .slide-up-btn, [aria-label=\"Previous video\"], [data-e2e=\"arrow-up\"]');" +
 						"    if (targetBtn) { targetBtn.click(); return 'Scroll: Programmatic Button Clicked'; }" +
@@ -449,13 +461,26 @@ public class KeyEventHandler {
 				Log.i("[ACTION] Queuing JS_POLLING_PAYLOAD to run in 1.5s.");
 				wv.postDelayed(() -> {
 					if (wv.isAttachedToWindow()) {
-						Log.i("[ACTION] Executing delayed JS_POLLING_PAYLOAD.");
 						wv.evaluateJavascript(JS_POLLING_PAYLOAD, null);
-					} else {
-						Log.i("[CHECK] Status: WebView detached. [EXIT] Aborting JS_POLLING_PAYLOAD.");
 					}
 				}, 1500);
 
+			} else if (isInstagram) {
+				Log.i("[ACTION] Instagram Detected: Bypassing hardware swipe, using generic JS Scroll Engine.");
+				String igJsScript = "(function() {" +
+						"  try {" +
+						"    var isDown = " + (!up) + ";" +
+						"    var amount = isDown ? window.innerHeight * 0.85 : -window.innerHeight * 0.85;" +
+						"    window.scrollBy({ top: amount, behavior: 'smooth' });" +
+						"    var activeNode = document.activeElement || document.body;" +
+						"    try { var wheelEvt = new WheelEvent('wheel', { deltaY: amount, bubbles: true, cancelable: true }); activeNode.dispatchEvent(wheelEvt); } catch(wErr) {}" +
+						"    try { var keyStr = isDown ? 'ArrowDown' : 'ArrowUp'; var keyCode = isDown ? 40 : 38; var kEvt = new KeyboardEvent('keydown', { key: keyStr, code: keyStr, keyCode: keyCode, which: keyCode, bubbles: true, cancelable: true }); activeNode.dispatchEvent(kEvt); } catch(kErr) {}" +
+						"    return 'Scroll: IG Specific JS Scroll Executed.';" +
+						"  } catch (err) { return 'Scroll Error: ' + err.message; }" +
+						"})();";
+				wv.evaluateJavascript(igJsScript, value -> {
+					if (value != null && !value.equals("null")) Log.i(hostTag + "[REACTION] " + value.replace("\"", ""));
+				});
 			} else {
 				Log.i("[ACTION] General Webpage Detected: Injecting Safe Standard Scroll JS Script...");
 				String generalJsScript = "(function() {" +
@@ -479,8 +504,7 @@ public class KeyEventHandler {
 			Log.w("[CHECK] Status: JavaScript is disabled on this WebView. Bypassing JS injection.");
 		}
 
-		if (isMediaHost) {
-			// 5. Dispatch the Physical Hardware Swipe (Provides the User Activation Token for Fullscreen)
+		if (isMediaHost && !isInstagram) {
 			final float actionX = touchTarget.getWidth() * 0.50f;
 			final float centerY = touchTarget.getHeight() / 2f;
 			float span = touchTarget.getHeight() * 0.60f; 
@@ -515,7 +539,6 @@ public class KeyEventHandler {
 					}, (long) (swipeDuration * fraction));
 				}
 
-				// The ACTION_UP event here triggers the JS 'touchend' listener, granting Fullscreen
 				touchTarget.postDelayed(() -> {
 					if (touchTarget.isAttachedToWindow()) {
 						long endTime = startTime + swipeDuration + 10;
@@ -523,6 +546,11 @@ public class KeyEventHandler {
 						touchTarget.dispatchTouchEvent(eventUp);
 						eventUp.recycle();
 						Log.i("[REACTION] " + hostTag + "Hardware Swipe Concluded (ACTION_UP). Fullscreen Token Stealer Executed.");
+						
+						// === SURGICAL FIX: END STATE FULLSCREEN VALIDATION LOOP ===
+						Log.i(hostTag + "[ACTION] Post-Swipe Fullscreen Enforcer Loop Activated.");
+						wv.evaluateJavascript("if(typeof window.__enforceFS === 'function') window.__enforceFS();", null);
+						
 					} else {
 						Log.i("[CHECK] Status: Target detached before ACTION_UP. Hardware Swipe aborted.");
 					}
@@ -531,6 +559,8 @@ public class KeyEventHandler {
 			} catch (Exception e) {
 				Log.e(e, "[REACTION] " + hostTag + "Hardware swipe failed with Exception.");
 			}
+		} else if (isInstagram) {
+			Log.i("[CHECK] Status: Instagram Detected. [EXIT] Bypassing hardware swipe to prevent phantom clicks on the Reel overlay.");
 		} else {
 			Log.i("[CHECK] Status: General Webpage Detected. [EXIT] Bypassing hardware swipe to prevent accidental clicks.");
 		}
