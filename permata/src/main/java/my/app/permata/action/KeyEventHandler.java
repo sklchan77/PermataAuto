@@ -36,7 +36,7 @@ public class KeyEventHandler {
 	// Tracks scroll timestamps to prevent spamming and ANRs
 	private static final Map<View, Long> scrollTimestamps = new WeakHashMap<>();
 
-	// === THE PERMANENT GLOBAL STYLESHEET INJECTION & GESTURE STEALER ===
+	// === THE PERMANENT GLOBAL STYLESHEET INJECTION & UNIVERSAL MEDIA CAPTURER ===
 	private static final String JS_UNIVERSAL_PAYLOAD = "(function(){" +
 			"let res = 'Discovery [Layer 2]: JS Registry Miss (No custom formatting applied)'; " +
 			"const injectGlobalWipe = function() { " +
@@ -97,7 +97,7 @@ public class KeyEventHandler {
 			"      } else if (document.fullscreenElement || document.webkitFullscreenElement) { " +
 			"          clearInterval(iv); " +
 			"      } " +
-			"      if (++attempts > 10) clearInterval(iv); " + // Abort after 5 seconds to prevent memory loops
+			"      if (++attempts > 10) clearInterval(iv); " +
 			"  }, 500); " +
 			"}; " +
 			"window.__permataTouchListener = function(e) { " +
@@ -107,6 +107,23 @@ public class KeyEventHandler {
 			"}; " +
 			"window.addEventListener('touchend', window.__permataTouchListener, {once:true}); " +
 			"window.addEventListener('mouseup', window.__permataTouchListener, {once:true}); " +
+			"if (!window.__permataMediaCapturerBound) { " +
+			"  window.__permataMediaCapturerBound = true; " +
+			"  document.addEventListener('play', function(e) { " +
+			"    if (e.target && (e.target.tagName === 'VIDEO' || e.target.tagName === 'AUDIO')) { " +
+			"      if (window.AndroidMediaBridge && window.AndroidMediaBridge.onMediaPlay) { " +
+			"        window.AndroidMediaBridge.onMediaPlay(); " +
+			"      } " +
+			"    } " +
+			"  }, true); " +
+			"  document.addEventListener('pause', function(e) { " +
+			"    if (e.target && (e.target.tagName === 'VIDEO' || e.target.tagName === 'AUDIO')) { " +
+			"      if (window.AndroidMediaBridge && window.AndroidMediaBridge.onMediaPause) { " +
+			"        window.AndroidMediaBridge.onMediaPause(); " +
+			"      } " +
+			"    } " +
+			"  }, true); " +
+			"} " +
 			"const registry=[" +
 			"    {name:\"douyin\",match:/douyin\\.com/,execute:function(){" +
 			"      return 'DOUYIN: ' + injectGlobalWipe(); " +
