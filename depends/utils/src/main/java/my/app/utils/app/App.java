@@ -75,7 +75,7 @@ public class App extends android.app.Application {
 	}
 
 	public int getLogRotateThreshold() {
-		return 2 * 1024 * 1024;
+		return 1024 * 1024;
 	}
 
 	public HandlerExecutor getHandler() {
