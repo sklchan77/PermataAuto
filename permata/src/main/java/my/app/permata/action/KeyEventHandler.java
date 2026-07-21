@@ -274,7 +274,7 @@ public class KeyEventHandler {
 								String host = "unknown";
 								boolean isMediaHost = false;
 								boolean isInstagram = false;
-								boolean isDouyin = false;
+								boolean isSnapFeedHost = false;
 								
 								if (currentUrl != null) {
 									try {
@@ -284,19 +284,24 @@ public class KeyEventHandler {
 											
 											String h = host.toLowerCase();
 											isInstagram = h.contains("instagram.com");
-											isDouyin = h.contains("douyin");
-											isMediaHost = isInstagram || isDouyin || h.contains("tiktok") ||
+											
+											// IDENTIFY HIGH-RISK DOUBLE SCROLL PLATFORMS
+											isSnapFeedHost = h.contains("douyin") || h.contains("tiktok") ||
 													h.contains("youtube") || h.contains("youtu") || h.contains("facebook") ||
-													h.contains("bilibili") || h.contains("kuaishou") || h.contains("xiaohongshu") ||
-													h.contains("reddit") || h.contains("twitter") || h.contains("x.com") ||
-													h.contains("pinterest") || h.contains("twitch") || h.contains("weibo") ||
-													h.contains("snapchat") || h.contains("likee") || h.contains("mojapp") ||
-													h.contains("sharechat") || h.contains("vk") || h.contains("kwai") || h.contains("snackvideo");
+													h.contains("kuaishou") || h.contains("xiaohongshu") ||
+													h.contains("likee") || h.contains("kwai") || h.contains("snackvideo") ||
+													h.contains("mojapp") || h.contains("sharechat");
+													
+											// IDENTIFY GENERAL MEDIA PLATFORMS (INCLUDING FEED HOSTS)
+											isMediaHost = isInstagram || isSnapFeedHost || h.contains("bilibili") || 
+													h.contains("reddit") || h.contains("twitter") || h.contains("x.com") || 
+													h.contains("pinterest") || h.contains("twitch") || h.contains("weibo") || 
+													h.contains("snapchat") || h.contains("vk");
 										}
 									} catch (Exception ignored) {}
 								}
 								final String hostTag = "[Host: " + host + "] ";
-								Log.i("[DETECTION] " + hostTag + "Resolved. isMediaHost: " + isMediaHost + " | isDouyin: " + isDouyin);
+								Log.i("[DETECTION] " + hostTag + "Resolved. isMediaHost: " + isMediaHost + " | isSnapFeedHost: " + isSnapFeedHost);
 
 								View touchTargetView = webView;
 								
@@ -327,7 +332,7 @@ public class KeyEventHandler {
 								}
 
 								Log.i("[ACTION] Triggering smartScrollWebView.");
-								smartScrollWebView(webView, touchTargetView, !isNext, hostTag, isMediaHost, isInstagram, isDouyin);
+								smartScrollWebView(webView, touchTargetView, !isNext, hostTag, isMediaHost, isInstagram, isSnapFeedHost);
 							} else {
 								Log.i("[CHECK] Status: WebView extraction returned null. Aborting intercept.");
 							}
@@ -418,8 +423,8 @@ public class KeyEventHandler {
 		return null;
 	}
 
-	private static void smartScrollWebView(final WebView wv, final View touchTarget, boolean up, final String hostTag, boolean isMediaHost, boolean isInstagram, boolean isDouyin) {
-		Log.i("[ENTRY] smartScrollWebView execution started. Direction Up: " + up + " | isMediaHost: " + isMediaHost + " | isDouyin: " + isDouyin);
+	private static void smartScrollWebView(final WebView wv, final View touchTarget, boolean up, final String hostTag, boolean isMediaHost, boolean isInstagram, boolean isSnapFeedHost) {
+		Log.i("[ENTRY] smartScrollWebView execution started. Direction Up: " + up + " | isMediaHost: " + isMediaHost + " | isSnapFeedHost: " + isSnapFeedHost);
 		if (wv == null || touchTarget == null || !touchTarget.isAttachedToWindow() || touchTarget.getWidth() <= 0 || touchTarget.getHeight() <= 0) {
 			Log.i("[CHECK] Status: Invalid WebView or touchTarget dimensions. [EXIT] Aborting smart scroll.");
 			return;
@@ -450,8 +455,8 @@ public class KeyEventHandler {
 				Log.i("[ACTION] Media Host Detected: Dispatching Beginning-State Fullscreen Check...");
 				wv.evaluateJavascript("if(typeof window.__attemptFS === 'function') window.__attemptFS();", null);
 				
-				// === SURGICAL FIX: BYPASS JS SCROLL FOR DOUYIN ===
-				if (!isDouyin) {
+				// === SURGICAL FIX: BYPASS JS SCROLL FOR ALL SNAP-FEED HOSTS ===
+				if (!isSnapFeedHost) {
 					Log.i("[ACTION] Injecting Multi-Vector Virtual Scroll JS Script...");
 					String advancedJsScript = "(function() {" +
 							"  try {" +
@@ -479,7 +484,7 @@ public class KeyEventHandler {
 						if (value != null && !value.equals("null")) Log.i(hostTag + "[REACTION] " + value.replace("\"", ""));
 					});
 				} else {
-					Log.i(hostTag + "[ACTION] Douyin Detected: Bypassing JS Virtual Scroll engine. Relying exclusively on God Mode Hardware Swipe.");
+					Log.i(hostTag + "[ACTION] Snap-Feed Host Detected: Bypassing JS Virtual Scroll engine. Relying exclusively on God Mode Hardware Swipe.");
 				}
 
 				Log.i("[ACTION] Queuing JS_POLLING_PAYLOAD to run in 1.5s.");
