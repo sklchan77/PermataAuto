@@ -274,6 +274,7 @@ public class KeyEventHandler {
 								String host = "unknown";
 								boolean isMediaHost = false;
 								boolean isInstagram = false;
+								boolean isDouyin = false;
 								
 								if (currentUrl != null) {
 									try {
@@ -283,7 +284,8 @@ public class KeyEventHandler {
 											
 											String h = host.toLowerCase();
 											isInstagram = h.contains("instagram.com");
-											isMediaHost = isInstagram || h.contains("douyin") || h.contains("tiktok") ||
+											isDouyin = h.contains("douyin");
+											isMediaHost = isInstagram || isDouyin || h.contains("tiktok") ||
 													h.contains("youtube") || h.contains("youtu") || h.contains("facebook") ||
 													h.contains("bilibili") || h.contains("kuaishou") || h.contains("xiaohongshu") ||
 													h.contains("reddit") || h.contains("twitter") || h.contains("x.com") ||
@@ -294,7 +296,7 @@ public class KeyEventHandler {
 									} catch (Exception ignored) {}
 								}
 								final String hostTag = "[Host: " + host + "] ";
-								Log.i("[DETECTION] " + hostTag + "Resolved. isMediaHost: " + isMediaHost);
+								Log.i("[DETECTION] " + hostTag + "Resolved. isMediaHost: " + isMediaHost + " | isDouyin: " + isDouyin);
 
 								View touchTargetView = webView;
 								
@@ -325,7 +327,7 @@ public class KeyEventHandler {
 								}
 
 								Log.i("[ACTION] Triggering smartScrollWebView.");
-								smartScrollWebView(webView, touchTargetView, !isNext, hostTag, isMediaHost, isInstagram);
+								smartScrollWebView(webView, touchTargetView, !isNext, hostTag, isMediaHost, isInstagram, isDouyin);
 							} else {
 								Log.i("[CHECK] Status: WebView extraction returned null. Aborting intercept.");
 							}
@@ -416,8 +418,8 @@ public class KeyEventHandler {
 		return null;
 	}
 
-	private static void smartScrollWebView(final WebView wv, final View touchTarget, boolean up, final String hostTag, boolean isMediaHost, boolean isInstagram) {
-		Log.i("[ENTRY] smartScrollWebView execution started. Direction Up: " + up + " | isMediaHost: " + isMediaHost);
+	private static void smartScrollWebView(final WebView wv, final View touchTarget, boolean up, final String hostTag, boolean isMediaHost, boolean isInstagram, boolean isDouyin) {
+		Log.i("[ENTRY] smartScrollWebView execution started. Direction Up: " + up + " | isMediaHost: " + isMediaHost + " | isDouyin: " + isDouyin);
 		if (wv == null || touchTarget == null || !touchTarget.isAttachedToWindow() || touchTarget.getWidth() <= 0 || touchTarget.getHeight() <= 0) {
 			Log.i("[CHECK] Status: Invalid WebView or touchTarget dimensions. [EXIT] Aborting smart scroll.");
 			return;
@@ -445,35 +447,40 @@ public class KeyEventHandler {
 			if (isMediaHost && !isInstagram) {
 				
 				// === SURGICAL FIX: BEGINNING STATE FULLSCREEN CHECK ===
-				Log.i("[ACTION] Media Host Detected: Dispatcing Beginning-State Fullscreen Check...");
+				Log.i("[ACTION] Media Host Detected: Dispatching Beginning-State Fullscreen Check...");
 				wv.evaluateJavascript("if(typeof window.__attemptFS === 'function') window.__attemptFS();", null);
 				
-				Log.i("[ACTION] Injecting Multi-Vector Virtual Scroll JS Script...");
-				String advancedJsScript = "(function() {" +
-						"  try {" +
-						"    var isDown = " + (!up) + ";" +
-						"    var targetBtn = isDown ? document.querySelector('.xgplayer-playswitch-next, .slide-down-btn, [aria-label=\"Next video\"], [data-e2e=\"arrow-down\"]') : document.querySelector('.xgplayer-playswitch-prev, .slide-up-btn, [aria-label=\"Previous video\"], [data-e2e=\"arrow-up\"]');" +
-						"    if (targetBtn) { targetBtn.click(); return 'Scroll: Programmatic Button Clicked'; }" +
-						"    var amount = isDown ? window.innerHeight * 0.90 : -window.innerHeight * 0.90;" +
-						"    window.scrollBy({ top: amount, behavior: 'smooth' });" +
-						"    var activeNode = document.activeElement || document.body;" +
-						"    try {" +
-						"      var wheelEvt = new WheelEvent('wheel', { deltaY: amount, bubbles: true, cancelable: true });" +
-						"      activeNode.dispatchEvent(wheelEvt);" +
-						"    } catch(wErr) {}" +
-						"    try {" +
-						"      var keyStr = isDown ? 'ArrowDown' : 'ArrowUp';" +
-						"      var keyCode = isDown ? 40 : 38;" +
-						"      var kEvt = new KeyboardEvent('keydown', { key: keyStr, code: keyStr, keyCode: keyCode, which: keyCode, bubbles: true, cancelable: true });" +
-						"      activeNode.dispatchEvent(kEvt);" +
-						"    } catch(kErr) {}" +
-						"    return 'Scroll: Virtual Web API & Force Event Scroll Executed.';" +
-						"  } catch (err) { return 'Scroll Error: ' + err.message; }" +
-						"})();";
-						
-				wv.evaluateJavascript(advancedJsScript, value -> {
-					if (value != null && !value.equals("null")) Log.i(hostTag + "[REACTION] " + value.replace("\"", ""));
-				});
+				// === SURGICAL FIX: BYPASS JS SCROLL FOR DOUYIN ===
+				if (!isDouyin) {
+					Log.i("[ACTION] Injecting Multi-Vector Virtual Scroll JS Script...");
+					String advancedJsScript = "(function() {" +
+							"  try {" +
+							"    var isDown = " + (!up) + ";" +
+							"    var targetBtn = isDown ? document.querySelector('.xgplayer-playswitch-next, .slide-down-btn, [aria-label=\"Next video\"], [data-e2e=\"arrow-down\"]') : document.querySelector('.xgplayer-playswitch-prev, .slide-up-btn, [aria-label=\"Previous video\"], [data-e2e=\"arrow-up\"]');" +
+							"    if (targetBtn) { targetBtn.click(); return 'Scroll: Programmatic Button Clicked'; }" +
+							"    var amount = isDown ? window.innerHeight * 0.90 : -window.innerHeight * 0.90;" +
+							"    window.scrollBy({ top: amount, behavior: 'smooth' });" +
+							"    var activeNode = document.activeElement || document.body;" +
+							"    try {" +
+							"      var wheelEvt = new WheelEvent('wheel', { deltaY: amount, bubbles: true, cancelable: true });" +
+							"      activeNode.dispatchEvent(wheelEvt);" +
+							"    } catch(wErr) {}" +
+							"    try {" +
+							"      var keyStr = isDown ? 'ArrowDown' : 'ArrowUp';" +
+							"      var keyCode = isDown ? 40 : 38;" +
+							"      var kEvt = new KeyboardEvent('keydown', { key: keyStr, code: keyStr, keyCode: keyCode, which: keyCode, bubbles: true, cancelable: true });" +
+							"      activeNode.dispatchEvent(kEvt);" +
+							"    } catch(kErr) {}" +
+							"    return 'Scroll: Virtual Web API & Force Event Scroll Executed.';" +
+							"  } catch (err) { return 'Scroll Error: ' + err.message; }" +
+							"})();";
+							
+					wv.evaluateJavascript(advancedJsScript, value -> {
+						if (value != null && !value.equals("null")) Log.i(hostTag + "[REACTION] " + value.replace("\"", ""));
+					});
+				} else {
+					Log.i(hostTag + "[ACTION] Douyin Detected: Bypassing JS Virtual Scroll engine. Relying exclusively on God Mode Hardware Swipe.");
+				}
 
 				Log.i("[ACTION] Queuing JS_POLLING_PAYLOAD to run in 1.5s.");
 				wv.postDelayed(() -> {
