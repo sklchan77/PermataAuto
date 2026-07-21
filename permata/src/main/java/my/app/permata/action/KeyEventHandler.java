@@ -36,49 +36,37 @@ public class KeyEventHandler {
 	// Tracks scroll timestamps to prevent spamming and ANRs
 	private static final Map<View, Long> scrollTimestamps = new WeakHashMap<>();
 
-	// === THE PERMANENT GLOBAL STYLESHEET INJECTION & UNIVERSAL MEDIA CAPTURER ===
+	// === THE SHRINK-WRAPPED GLOBAL STYLESHEET & UNIVERSAL MEDIA CAPTURER ===
 	private static final String JS_UNIVERSAL_PAYLOAD = "(function(){" +
-			"let res = 'Discovery [Layer 2]: JS Registry Miss (No custom formatting applied)'; " +
+			"let res = 'Discovery [Layer 2]: JS Registry Miss'; " +
 			"const injectGlobalWipe = function() { " +
 			"  if(!document.getElementById('permata-god-mode-css')) { " +
 			"    const style = document.createElement('style'); " +
 			"    style.id = 'permata-god-mode-css'; " +
 			"    style.innerHTML = ` " +
-			"      xg-controls, .xgplayer-controls, " +
-			"      .xg-right-bar, .xg-left-bar, " +
-			"      .video-info-container, .right-container, " +
-			"      .bottom-container, .xgplayer-bottom, " +
-			"      [class*=\"sidebar\"], [class*=\"video-info\"], " +
-			"      [class*=\"action-bar\"], [class*=\"author-info\"], " +
-			"      [class*=\"comment\"], .account-info, .danmaku-container, " +
-			"      .login-mask-enter-done, .dy-account-close, " +
-			"      [class*=\"bottom-bar\"], [class*=\"Prompt\"], " +
-			"      [class*=\"download-btn\"], [class*=\"app-open\"], " +
-			"      .XPromoPopup, .AppBanner, [class*=\"Banner\"], " +
-			"      .UnauthBox, .box_layout, [id*=\"login\"], " +
-			"      .open-app-bar, .login-dialog { " +
+			"      [class*=\"login\" i], [id*=\"login\" i], [class*=\"unauth\" i], " +
+			"      [class*=\"app-open\" i], [class*=\"download\" i], [class*=\"promo\" i], " +
+			"      [class*=\"banner\" i], [class*=\"popup\" i], [class*=\"sidebar\" i], " +
+			"      [class*=\"overlay\" i], [class*=\"bottom\" i], [class*=\"action-bar\" i], " +
+			"      [class*=\"comment\" i], [class*=\"account\" i], [class*=\"danmaku\" i], " +
+			"      xg-controls, [class*=\"xgplayer-controls\"] { " +
 			"          display: none !important; " +
 			"          opacity: 0 !important; " +
 			"          visibility: hidden !important; " +
 			"          pointer-events: none !important; " +
-			"          height: 0 !important; " +
-			"          width: 0 !important; " +
 			"      } " +
 			"    `; " +
 			"    document.head.appendChild(style); " +
-			"    return 'Global CSS Stylesheet Injected Successfully.'; " +
-			"  } " +
-			"  return 'Global CSS Stylesheet Already Exists.'; " +
+			"    return 'Universal Wildcard CSS Injected.'; " +
+			"  } return 'Universal Wildcard CSS Exists.'; " +
 			"}; " +
 			"const injectSpecificWipe = function(customCss, id) { " +
 			"  if(!document.getElementById(id)) { " +
 			"    const style = document.createElement('style'); " +
-			"    style.id = id; " +
-			"    style.innerHTML = customCss; " +
+			"    style.id = id; style.innerHTML = customCss; " +
 			"    document.head.appendChild(style); " +
 			"    return 'Custom CSS (' + id + ') Injected.'; " +
-			"  } " +
-			"  return 'Custom CSS (' + id + ') Already Exists.'; " +
+			"  } return 'Custom CSS (' + id + ') Exists.'; " +
 			"}; " +
 			"window.__attemptFS = function() { " +
 			"  if (window.location.hostname.indexOf('instagram.com') !== -1) return; " +
@@ -111,27 +99,16 @@ public class KeyEventHandler {
 			"  window.__permataMediaCapturerBound = true; " +
 			"  document.addEventListener('play', function(e) { " +
 			"    if (e.target && (e.target.tagName === 'VIDEO' || e.target.tagName === 'AUDIO')) { " +
-			"      if (window.AndroidMediaBridge && window.AndroidMediaBridge.onMediaPlay) { " +
-			"        window.AndroidMediaBridge.onMediaPlay(); " +
-			"      } " +
+			"      if (window.AndroidMediaBridge && window.AndroidMediaBridge.onMediaPlay) window.AndroidMediaBridge.onMediaPlay(); " +
 			"    } " +
 			"  }, true); " +
 			"  document.addEventListener('pause', function(e) { " +
 			"    if (e.target && (e.target.tagName === 'VIDEO' || e.target.tagName === 'AUDIO')) { " +
-			"      if (window.AndroidMediaBridge && window.AndroidMediaBridge.onMediaPause) { " +
-			"        window.AndroidMediaBridge.onMediaPause(); " +
-			"      } " +
+			"      if (window.AndroidMediaBridge && window.AndroidMediaBridge.onMediaPause) window.AndroidMediaBridge.onMediaPause(); " +
 			"    } " +
 			"  }, true); " +
 			"} " +
 			"const registry=[" +
-			"    {name:\"douyin\",match:/douyin\\.com/,execute:function(){" +
-			"      return 'DOUYIN: ' + injectGlobalWipe(); " +
-			"    }}," +
-			"    {name:\"tiktok\",match:/tiktok\\.com/,execute:function(){" +
-			"      var ttCss = ' [data-e2e=\"video-author-avatar\"], [data-e2e=\"nav-login\"], [class*=\"DivHeaderContainer\"], [class*=\"DivSideNavContainer\"], [class*=\"DivBottomContainer\"] { display: none !important; pointer-events: none !important; } '; " +
-			"      return 'TIKTOK: ' + injectGlobalWipe() + ' | ' + injectSpecificWipe(ttCss, 'permata-tt-css'); " +
-			"    }}," +
 			"    {name:\"instagram\",match:/instagram\\.com/,execute:function(){" +
 			"      var igCss = ' header, nav, [role=\"navigation\"] { display: none !important; pointer-events: none !important; opacity: 0 !important; visibility: hidden !important; } body, html { overflow: auto !important; touch-action: pan-y !important; } '; " +
 			"      return 'INSTAGRAM: ' + injectSpecificWipe(igCss, 'permata-ig-css'); " +
@@ -140,65 +117,30 @@ public class KeyEventHandler {
 			"      let ad=document.querySelector('.ytp-skip-ad-button,.ytp-ad-skip-button,.ytp-skip-button');if(ad)ad.click();" +
 			"      let dm=document.querySelectorAll('yt-button-renderer[id=\"dismiss-button\"],[aria-label=\"No thanks\"],[aria-label=\"Dismiss\"],.yt-spec-button-shape-next--text');" +
 			"      dm.forEach(b=>{if(b.textContent&&(b.textContent.includes('No thanks')||b.textContent.includes('Skip')||b.textContent.includes('Dismiss')))b.click();});" +
-			"      return 'YOUTUBE: Handled standard media skip.'; " +
-			"    }}," +
-			"    {name:\"facebook\",match:/facebook\\.com/,execute:function(){" +
-			"      return 'FACEBOOK: ' + injectGlobalWipe(); " +
+			"      return 'YOUTUBE: ' + injectGlobalWipe(); " +
 			"    }}," +
 			"    {name:\"bilibili\",match:/bilibili\\.com/,execute:function(){" +
 			"      let pl=document.querySelector('.mplayer-play');if(pl&&pl.classList.contains('play'))pl.click();" +
 			"      return 'BILIBILI: ' + injectGlobalWipe(); " +
 			"    }}," +
-			"    {name:\"kuaishou\",match:/kuaishou\\.com/,execute:function(){" +
-			"      return 'KUAISHOU: ' + injectGlobalWipe(); " +
-			"    }}," +
-			"    {name:\"xiaohongshu\",match:/xiaohongshu\\.com/,execute:function(){" +
-			"      return 'XIAOHONGSHU: ' + injectGlobalWipe(); " +
-			"    }}," +
 			"    {name:\"reddit\",match:/reddit\\.com/,execute:function(){" +
 			"      if(document.body&&window.getComputedStyle(document.body).overflow==='hidden') document.body.style.overflow='auto';" +
 			"      return 'REDDIT: ' + injectGlobalWipe(); " +
 			"    }}," +
-			"    {name:\"x\",match:/(twitter\\.com|x\\.com)/,execute:function(){" +
-			"      return 'X/TWITTER: ' + injectGlobalWipe(); " +
-			"    }}," +
-			"    {name:\"pinterest\",match:/pinterest\\.com/,execute:function(){" +
-			"      if(document.body) document.body.style.overflow='auto';" +
-			"      return 'PINTEREST: ' + injectGlobalWipe(); " +
-			"    }}," +
-			"    {name:\"twitch\",match:/twitch\\.tv/,execute:function(){" +
-			"      return 'TWITCH: ' + injectGlobalWipe(); " +
-			"    }}," +
-			"    {name:\"weibo\",match:/weibo\\.(com|cn)/,execute:function(){" +
-			"      return 'WEIBO: ' + injectGlobalWipe(); " +
-			"    }}," +
-			"    {name:\"snapchat\",match:/snapchat\\.com/,execute:function(){" +
-			"      return 'SNAPCHAT: ' + injectGlobalWipe(); " +
-			"    }}," +
-			"    {name:\"likee\",match:/likee\\.video/,execute:function(){" +
-			"      return 'LIKEE: ' + injectGlobalWipe(); " +
-			"    }}," +
 			"    {name:\"moj\",match:/(mojapp\\.in|sharechat\\.com)/,execute:function(){" +
 			"      if(document.body) document.body.style.overflow='auto';" +
 			"      return 'MOJ: ' + injectGlobalWipe(); " +
-			"    }}," +
-			"    {name:\"vk\",match:/vk\\.com/,execute:function(){" +
-			"      return 'VK: ' + injectGlobalWipe(); " +
-			"    }}," +
-			"    {name:\"kwai\",match:/(kwai\\.com|snackvideo\\.com)/,execute:function(){" +
-			"      return 'KWAI: ' + injectGlobalWipe(); " +
 			"    }}" +
 			"  ];" +
 			"  window.__permataActive = registry.find(p=>p.match.test(window.location.hostname));" +
 			"  if (window.__permataActive) { " +
-			"    res = 'Discovery [Layer 2]: JS Registry Match Success -> ' + window.__permataActive.name; " +
-			"    try { let execRes = window.__permataActive.execute(); res += ' || ' + execRes; } catch(e){} " +
+			"    res = 'Discovery [Layer 2]: Match -> ' + window.__permataActive.name; " +
+			"    try { res += ' || ' + window.__permataActive.execute(); } catch(e){} " +
 			"  } else { " +
-			"    res = 'Discovery [Layer 2]: JS Registry Miss -> Executing Common Webpage Fallback'; " +
-			"    var commonCss = ' header, footer, nav, aside, #cookie-notice, .cookie-banner, [id*=\"cookie\"], [class*=\"cookie\"], [id*=\"popup\"], [class*=\"popup\"], .floating-action-button { display: none !important; } '; " +
-			"    try { let execRes = injectSpecificWipe(commonCss, 'permata-common-css'); res += ' || COMMON: ' + execRes; } catch(e){} " +
+			"    res = 'Discovery [Layer 2]: Generic Host'; " +
+			"    try { res += ' || COMMON: ' + injectGlobalWipe(); } catch(e){} " +
 			"  } " +
-			"  return res + ' || Script Payload Concluded';" +
+			"  return res;" +
 			"})();";
 
 	// Resilient polling container
@@ -223,18 +165,12 @@ public class KeyEventHandler {
 		Log.i("[ENTRY] [Code Start] KeyEventHandler.handleKeyEvent triggered. KeyCode: " + event.getKeyCode() + ", Action: " + event.getAction());
 
 		if (event.isCanceled()) {
-			Log.i("[CHECK] Status: Event is canceled. [EXIT] Returning to default handler.");
 			worker = null;
 			return defaultHandler.apply(event.getKeyCode(), event);
 		}
 
 		if (worker != null) {
-			Log.i("[CHECK] Status: Active worker found. [ACTION] Delegating event to worker.");
-			if (worker.handle(event)) {
-				Log.i("[EXIT] Worker consumed the event.");
-				return true;
-			}
-			Log.i("[ACTION] Worker rejected event. Clearing worker.");
+			if (worker.handle(event)) return true;
 			worker = null;
 			return false;
 		}
@@ -246,30 +182,22 @@ public class KeyEventHandler {
 		if (targetActivity == null && cb != null) {
 			if (cb.getAssistant() instanceof MainActivityDelegate) {
 				targetActivity = (MainActivityDelegate) cb.getAssistant();
-				Log.i("[CHECK] targetActivity resolved from MediaSessionCallback assistant.");
 			}
 		}
 
 		if (targetActivity != null && event.getAction() == ACTION_DOWN) {
-			Log.i("[CHECK] Condition: targetActivity is valid and action is ACTION_DOWN.");
 			if (code == KeyEvent.KEYCODE_MEDIA_NEXT || code == KeyEvent.KEYCODE_MEDIA_PREVIOUS) {
-				Log.i("[DETECTION] KeyCode matched MEDIA_NEXT or MEDIA_PREVIOUS.");
 				
 				ActivityFragment activeFragment = targetActivity.getActiveFragment();
 				if (activeFragment != null) {
 					String className = activeFragment.getClass().getName();
-					Log.i("[CHECK] Active fragment class name detected: " + className);
 					
 					if (className.endsWith("WebBrowserFragment") && !className.endsWith("YoutubeFragment")) {
-						Log.i("[CHECK] Status: WebBrowserFragment confirmed.");
 						boolean isNext = (code == KeyEvent.KEYCODE_MEDIA_NEXT);
 						
-						Log.i("[ACTION] Posting targetActivity WebBrowser extraction to main thread.");
 						targetActivity.post(() -> {
-							Log.i("[ENTRY] targetActivity.post Runnable executing.");
 							WebView webView = scanFragmentsForWebView(activeFragment);
 							if (webView != null) {
-								Log.i("[CHECK] Status: WebView successfully extracted.");
 								String currentUrl = webView.getUrl();
 								String host = "unknown";
 								boolean isMediaHost = false;
@@ -306,163 +234,118 @@ public class KeyEventHandler {
 								View touchTargetView = webView;
 								
 								if (isInstagram) {
-									Log.i("[CHECK] Instagram detected. Overriding Reflection layer to enforce immutable WebView target link.");
+									Log.i("[CHECK] Instagram detected. Overriding Reflection layer.");
 								} else {
 									try {
-										Log.i("[ACTION] Attempting reflection to identify FullScreenView.");
 										Method getChromeClient = webView.getClass().getMethod("getWebChromeClient");
 										Object chromeClient = getChromeClient.invoke(webView);
 										if (chromeClient != null) {
 											Method isFullScreenMethod = chromeClient.getClass().getMethod("isFullScreen");
 											boolean isFullScreen = (Boolean) isFullScreenMethod.invoke(chromeClient);
-											Log.i("[CHECK] Reflection isFullScreen status: " + isFullScreen);
 											
 											if (isFullScreen) {
 												Method getFullScreenViewMethod = chromeClient.getClass().getMethod("getFullScreenView");
 												View fullScreenView = (View) getFullScreenViewMethod.invoke(chromeClient);
 												if (fullScreenView != null && fullScreenView.getVisibility() == View.VISIBLE) {
 													touchTargetView = fullScreenView;
-													Log.i("[REACTION] " + hostTag + "Discovery: Target Layout locked to FullScreenView.");
+													Log.i("[REACTION] " + hostTag + "Target Layout locked to FullScreenView.");
 												}
 											}
 										}
 									} catch (Exception e) {
-										Log.e(e, "[REACTION] " + hostTag + "Discovery: Reflection failed, defaulting to base WebView.");
+										Log.e(e, "[REACTION] " + hostTag + "Reflection failed, defaulting to base WebView.");
 									}
 								}
 
-								Log.i("[ACTION] Triggering smartScrollWebView.");
 								smartScrollWebView(webView, touchTargetView, !isNext, hostTag, isMediaHost, isInstagram, isSnapFeedHost);
-							} else {
-								Log.i("[CHECK] Status: WebView extraction returned null. Aborting intercept.");
 							}
-							Log.i("[EXIT] targetActivity.post Runnable finished.");
 						});
 						
-						Log.i("[EXIT] Returning true. Key event fully intercepted by God Mode logic.");
 						return true;
-					} else {
-						Log.i("[CHECK] Status: Fragment did not match WebBrowserFragment criteria.");
 					}
-				} else {
-					Log.i("[CHECK] Status: activeFragment is null.");
 				}
 			}
 		}
 		// ====================================================
 
 		var k = Key.get(code);
-		if (k == null) {
-			Log.i("[CHECK] Key definition not found. [EXIT] Returning default handler.");
-			return defaultHandler.apply(code, event);
-		}
+		if (k == null) return defaultHandler.apply(code, event);
 
 		if (!k.isMedia() && (targetActivity != null) && (targetActivity.getCurrentFocus() instanceof EditText)) {
-			Log.i("[CHECK] Editing text. [EXIT] Returning default handler.");
 			return defaultHandler.apply(code, event);
 		}
 
 		var dblClickAction = k.getDblClickAction();
-		if (dblClickAction == null) {
-			Log.i("[CHECK] No Double Click Action mapped. [EXIT] Returning default handler.");
-			return defaultHandler.apply(code, event);
-		}
+		if (dblClickAction == null) return defaultHandler.apply(code, event);
 
 		var action = event.getAction();
 		if (action == ACTION_MULTIPLE) {
-			Log.i("[DETECTION] ACTION_MULTIPLE detected.");
-			Log.i(k, " key double click");
 			performAction(dblClickAction, cb, targetActivity, uptimeMillis());
 			return true;
 		}
 		
-		if (action != ACTION_DOWN) {
-			Log.i("[CHECK] Action is not ACTION_DOWN. [EXIT] Returning default handler.");
-			return defaultHandler.apply(code, event);
-		}
+		if (action != ACTION_DOWN) return defaultHandler.apply(code, event);
 
 		var clickAction = k.getClickAction();
-		if (clickAction == null) {
-			Log.i("[CHECK] No Click Action mapped. [EXIT] Returning default handler.");
-			return defaultHandler.apply(code, event);
-		}
+		if (clickAction == null) return defaultHandler.apply(code, event);
 		
 		var longClickAction = k.getLongClickAction();
-		if (longClickAction == null) {
-			Log.i("[CHECK] No Long Click Action mapped. [EXIT] Returning default handler.");
-			return defaultHandler.apply(code, event);
-		}
+		if (longClickAction == null) return defaultHandler.apply(code, event);
 
 		if (((clickAction == dblClickAction) && (clickAction == longClickAction)) ||
 				((dblClickAction == Action.NONE) && (longClickAction == Action.NONE))) {
-			Log.i("[ACTION] Immediate singular click logic triggered.");
-			Log.i(k, " key click");
 			performAction(clickAction, cb, targetActivity, uptimeMillis());
 			return true;
 		}
 
-		Log.i("[ACTION] Spawning new Worker thread to monitor click sequence.");
 		worker = new Worker(cb, targetActivity, k, clickAction, dblClickAction, longClickAction);
-		Log.i("[EXIT] handleKeyEvent completed successfully.");
 		return true;
 	}
 
 	private static WebView scanFragmentsForWebView(ActivityFragment activeFragment) {
-		Log.i("[ENTRY] scanFragmentsForWebView execution started.");
 		try {
 			Method getWebViewMethod = activeFragment.getClass().getMethod("getWebView");
 			Object result = getWebViewMethod.invoke(activeFragment);
-			if (result instanceof WebView) {
-				Log.i("[REACTION] Discovery [Layer 1]: Target Fragment (WebBrowserFragment) matched successfully.");
-				return (WebView) result;
-			}
+			if (result instanceof WebView) return (WebView) result;
 		} catch (Exception e) {
 			Log.e(e, "[REACTION] Discovery: Failed to scan for WebView.");
 		}
-		Log.i("[EXIT] scanFragmentsForWebView returned null.");
 		return null;
 	}
 
 	private static void smartScrollWebView(final WebView wv, final View touchTarget, boolean up, final String hostTag, boolean isMediaHost, boolean isInstagram, boolean isSnapFeedHost) {
-		Log.i("[ENTRY] smartScrollWebView execution started. Direction Up: " + up + " | isMediaHost: " + isMediaHost + " | isSnapFeedHost: " + isSnapFeedHost);
-		if (wv == null || touchTarget == null || !touchTarget.isAttachedToWindow() || touchTarget.getWidth() <= 0 || touchTarget.getHeight() <= 0) {
-			Log.i("[CHECK] Status: Invalid WebView or touchTarget dimensions. [EXIT] Aborting smart scroll.");
-			return;
-		}
+		if (wv == null || touchTarget == null || !touchTarget.isAttachedToWindow() || touchTarget.getWidth() <= 0 || touchTarget.getHeight() <= 0) return;
 
 		long now = android.os.SystemClock.uptimeMillis();
 		Long lastClickTimeObj = scrollTimestamps.get(wv);
 		long lastClickTime = (lastClickTimeObj != null) ? lastClickTimeObj : 0;
 		
 		if (now - lastClickTime < 250) {
-			Log.w("[CHECK] " + hostTag + "Scroll [Anti-Spam]: Event dropped (Throttle window < 250ms). [IDLE] Ignored.");
+			Log.w("[CHECK] " + hostTag + "Scroll [Anti-Spam]: Event dropped (Throttle window < 250ms).");
 			return;
 		}
 		scrollTimestamps.put(wv, now); 
 		touchTarget.requestFocus();
-		Log.i("[ACTION] Target view focus requested. Evaluating Javascript states...");
 
 		if (wv.getSettings().getJavaScriptEnabled()) {
 			
-			Log.i("[ACTION] Injecting JS_UNIVERSAL_PAYLOAD...");
 			wv.evaluateJavascript(JS_UNIVERSAL_PAYLOAD, value -> {
-				if (value != null && !value.equals("null")) Log.i(hostTag + "[REACTION] [EXECUTION STATUS] " + value.replace("\"", ""));
+				if (value != null && !value.equals("null")) Log.i(hostTag + "[REACTION] " + value.replace("\"", ""));
 			});
 
 			if (isMediaHost && !isInstagram) {
 				
-				// === SURGICAL FIX: BEGINNING STATE FULLSCREEN CHECK ===
-				Log.i("[ACTION] Media Host Detected: Dispatching Beginning-State Fullscreen Check...");
 				wv.evaluateJavascript("if(typeof window.__attemptFS === 'function') window.__attemptFS();", null);
 				
-				// === SURGICAL FIX: BYPASS JS SCROLL FOR ALL SNAP-FEED HOSTS ===
 				if (!isSnapFeedHost) {
-					Log.i("[ACTION] Injecting Multi-Vector Virtual Scroll JS Script...");
+					Log.i("[ACTION] Injecting Wildcard Virtual Scroll JS Script...");
 					String advancedJsScript = "(function() {" +
 							"  try {" +
 							"    var isDown = " + (!up) + ";" +
-							"    var targetBtn = isDown ? document.querySelector('.xgplayer-playswitch-next, .slide-down-btn, [aria-label=\"Next video\"], [data-e2e=\"arrow-down\"]') : document.querySelector('.xgplayer-playswitch-prev, .slide-up-btn, [aria-label=\"Previous video\"], [data-e2e=\"arrow-up\"]');" +
-							"    if (targetBtn) { targetBtn.click(); return 'Scroll: Programmatic Button Clicked'; }" +
+							"    var targetBtn = isDown ? " +
+							"        document.querySelector('[class*=\"next\" i], [class*=\"down\" i], [aria-label*=\"next\" i]') : " +
+							"        document.querySelector('[class*=\"prev\" i], [class*=\"up\" i], [aria-label*=\"prev\" i]');" +
+							"    if (targetBtn) { targetBtn.click(); return 'Scroll: Wildcard Button Clicked'; }" +
 							"    var amount = isDown ? window.innerHeight * 0.90 : -window.innerHeight * 0.90;" +
 							"    window.scrollBy({ top: amount, behavior: 'smooth' });" +
 							"    var activeNode = document.activeElement || document.body;" +
@@ -484,18 +367,14 @@ public class KeyEventHandler {
 						if (value != null && !value.equals("null")) Log.i(hostTag + "[REACTION] " + value.replace("\"", ""));
 					});
 				} else {
-					Log.i(hostTag + "[ACTION] Snap-Feed Host Detected: Bypassing JS Virtual Scroll engine. Relying exclusively on God Mode Hardware Swipe.");
+					Log.i(hostTag + "[ACTION] Snap-Feed Host Detected: Bypassing JS Virtual Scroll. Using God Mode Swipe.");
 				}
 
-				Log.i("[ACTION] Queuing JS_POLLING_PAYLOAD to run in 1.5s.");
 				wv.postDelayed(() -> {
-					if (wv.isAttachedToWindow()) {
-						wv.evaluateJavascript(JS_POLLING_PAYLOAD, null);
-					}
+					if (wv.isAttachedToWindow()) wv.evaluateJavascript(JS_POLLING_PAYLOAD, null);
 				}, 1500);
 
 			} else if (isInstagram) {
-				Log.i("[ACTION] Instagram Detected: Bypassing hardware swipe, using generic JS Scroll Engine.");
 				String igJsScript = "(function() {" +
 						"  try {" +
 						"    var isDown = " + (!up) + ";" +
@@ -511,7 +390,6 @@ public class KeyEventHandler {
 					if (value != null && !value.equals("null")) Log.i(hostTag + "[REACTION] " + value.replace("\"", ""));
 				});
 			} else {
-				Log.i("[ACTION] General Webpage Detected: Injecting Safe Standard Scroll JS Script...");
 				String generalJsScript = "(function() {" +
 						"  try {" +
 						"    var amount = " + (!up) + " ? window.innerHeight * 0.85 : -window.innerHeight * 0.85;" +
@@ -524,13 +402,10 @@ public class KeyEventHandler {
 				});
 			}
 
-			Log.i("[ACTION] Dispatching Fallback KeyEvent Scroll.");
 			int backupKey = up ? KeyEvent.KEYCODE_PAGE_UP : KeyEvent.KEYCODE_PAGE_DOWN;
 			wv.dispatchKeyEvent(new KeyEvent(KeyEvent.ACTION_DOWN, backupKey));
 			wv.dispatchKeyEvent(new KeyEvent(KeyEvent.ACTION_UP, backupKey));
 
-		} else {
-			Log.w("[CHECK] Status: JavaScript is disabled on this WebView. Bypassing JS injection.");
 		}
 
 		// === THE HUMANIZED BIOMETRIC GOD-MODE SWIPE ENGINE ===
@@ -542,76 +417,53 @@ public class KeyEventHandler {
 			final float yEnd = up ? (centerY + span / 2f) : (centerY - span / 2f);
 
 			try {
-				Log.i("[ACTION] " + hostTag + "Dispatching Humanized Hardware Swipe to fulfill Token Security.");
 				final long startTime = android.os.SystemClock.uptimeMillis();
 				
-				// 1. Initial Touch (ACTION_DOWN)
 				MotionEvent eventDown = MotionEvent.obtain(startTime, startTime, MotionEvent.ACTION_DOWN, actionX, yStart, 0);
 				touchTarget.dispatchTouchEvent(eventDown);
 				eventDown.recycle();
-				Log.i("[REACTION] Dispatching ACTION_DOWN at Y: " + yStart);
 
-				// 2. Humanized Biometric Drag Loop (12 Steps, 200ms, Ease-Out Cubic)
 				final int stepCount = 12;
 				final long swipeDuration = 200; 
 				
 				for (int i = 1; i <= stepCount; i++) {
 					final float linearT = (float) i / stepCount;
-					
-					// Ease-Out Cubic interpolation: starts fast, slows down smoothly
 					final float easeOutT = 1f - (float) Math.pow(1f - linearT, 3);
 					
 					final float currentY = yStart + (yEnd - yStart) * easeOutT;
 					final long moveTime = startTime + (long) (swipeDuration * linearT);
 					
-					final int stepId = i;
 					touchTarget.postDelayed(() -> {
 						if (touchTarget.isAttachedToWindow()) {
 							MotionEvent eventMove = MotionEvent.obtain(startTime, moveTime, MotionEvent.ACTION_MOVE, actionX, currentY, 0);
 							touchTarget.dispatchTouchEvent(eventMove);
 							eventMove.recycle();
-							Log.i("[REACTION] Hardware Swipe Step " + stepId + " Dispatched at Y: " + currentY);
 						}
 					}, (long) (swipeDuration * linearT));
 				}
 
-				// 3. Release Touch and Enforce Fullscreen (ACTION_UP)
 				touchTarget.postDelayed(() -> {
 					if (touchTarget.isAttachedToWindow()) {
 						long endTime = startTime + swipeDuration + 10;
 						MotionEvent eventUp = MotionEvent.obtain(startTime, endTime, MotionEvent.ACTION_UP, actionX, yEnd, 0);
 						touchTarget.dispatchTouchEvent(eventUp);
 						eventUp.recycle();
-						Log.i("[REACTION] " + hostTag + "Hardware Swipe Concluded (ACTION_UP). Fullscreen Token Stealer Executed.");
+						Log.i("[REACTION] " + hostTag + "Hardware Swipe Concluded (ACTION_UP).");
 						
-						// === SURGICAL FIX: END STATE FULLSCREEN VALIDATION LOOP ===
-						Log.i(hostTag + "[ACTION] Post-Swipe Fullscreen Enforcer Loop Activated.");
 						wv.evaluateJavascript("if(typeof window.__enforceFS === 'function') window.__enforceFS();", null);
-						
-					} else {
-						Log.i("[CHECK] Status: Target detached before ACTION_UP. Hardware Swipe aborted.");
 					}
 				}, swipeDuration + 10);
 
 			} catch (Exception e) {
 				Log.e(e, "[REACTION] " + hostTag + "Hardware swipe failed with Exception.");
 			}
-		} else if (isInstagram) {
-			Log.i("[CHECK] Status: Instagram Detected. [EXIT] Bypassing hardware swipe to prevent phantom clicks on the Reel overlay.");
-		} else {
-			Log.i("[CHECK] Status: General Webpage Detected. [EXIT] Bypassing hardware swipe to prevent accidental clicks.");
 		}
-		
-		Log.i("[EXIT] smartScrollWebView execution complete. Awaiting postDelayed runnables.");
 	}
 
 	private static void performAction(Action action, MediaSessionCallback cb,
 																		@Nullable MainActivityDelegate activity, long timestamp) {
-		Log.i("[ENTRY] performAction execution started.");
 		worker = null;
-		Log.i("[ACTION] Performing action ", action);
 		action.getHandler().handle(cb, activity, timestamp);
-		Log.i("[EXIT] performAction execution completed.");
 	}
 
 	private static final class Worker implements Runnable {
@@ -626,10 +478,8 @@ public class KeyEventHandler {
 		private long longClickTime;
 		private boolean up;
 
-
 		Worker(MediaSessionCallback cb, @Nullable MainActivityDelegate activity, Key key,
 					 Action clickAction, Action dblClickAction, Action longClickAction) {
-			Log.i("[ENTRY] Worker Initialization.");
 			this.cb = cb;
 			this.activity = activity;
 			this.key = key;
@@ -638,59 +488,38 @@ public class KeyEventHandler {
 			this.longClickAction = longClickAction;
 			time = longClickTime = uptimeMillis();
 			sched(DBL_CLICK_INTERVAL);
-			Log.i("[STANDBY] Worker scheduled with DBL_CLICK_INTERVAL. Idling...");
 		}
 
 		@Override
 		public void run() {
-			Log.i("[ENTRY] Worker run() triggered.");
-			if (worker != this) {
-				Log.i("[CHECK] Status: worker instance mismatch. [EXIT] Returning early.");
-				return;
-			}
+			if (worker != this) return;
 			if (up) {
-				Log.i("[CHECK] Status: 'up' flag is true. [ACTION] Triggering clickAction.");
-				Log.i(key, " key click");
 				handle(clickAction);
 				return;
 			}
 
 			long now = uptimeMillis();
 			long diff = now - longClickTime;
-			Log.i("[CHECK] Checking time diff: " + diff + "ms");
 
 			if (diff < LONG_CLICK_INTERVAL) {
-				Log.i("[STANDBY] Time diff insufficient. Rescheduling for " + (LONG_CLICK_INTERVAL - diff) + "ms. Idling...");
 				sched(LONG_CLICK_INTERVAL - diff);
 			} else if (diff > 15000) { 
-				Log.i("[CHECK] Status: diff > 15s. Key UP not received. [ACTION] Clearing worker.");
 				worker = null;
 			} else {
 				longClickTime = time;
-				Log.i("[DETECTION] Long click thresholds met.");
-				Log.i(key, " key long click");
-				Log.i("[ACTION] Triggering longClickAction.");
 				handle(longClickAction);
 				worker = this;
 				sched(LONG_CLICK_INTERVAL);
-				Log.i("[STANDBY] Worker rescheduled with LONG_CLICK_INTERVAL. Idling...");
 			}
 		}
 
 		boolean handle(KeyEvent e) {
-			Log.i("[ENTRY] Worker handle(KeyEvent) triggered.");
-			if (e.getKeyCode() != key.getCode()) {
-				Log.i("[CHECK] KeyCode mismatch. [EXIT] Returning false.");
-				return false;
-			}
+			if (e.getKeyCode() != key.getCode()) return false;
 
 			switch (e.getAction()) {
 				case ACTION_DOWN -> {
-					Log.i("[DETECTION] Worker detected ACTION_DOWN.");
 					if (!up) {
 						if ((longClickAction == clickAction) || (longClickAction == Action.NONE)) {
-							Log.i("[ACTION] Conditions met for standard key click inside ACTION_DOWN.");
-							Log.i(key, " key click");
 							handle(clickAction);
 						}
 					}
@@ -698,55 +527,38 @@ public class KeyEventHandler {
 				}
 				case ACTION_UP -> {
 					long holdTime = uptimeMillis() - time;
-					Log.i("[DETECTION] Worker detected ACTION_UP. Hold time: " + holdTime + "ms");
 
 					if (holdTime <= DBL_CLICK_INTERVAL) {
 						if (up) {
-							Log.i("[ACTION] Triggering dblClickAction.");
-							Log.i(key, " key double click");
 							handle(dblClickAction);
 						} else if (dblClickAction == clickAction) {
-							Log.i("[ACTION] Triggering clickAction.");
-							Log.i(key, " key click");
 							handle(clickAction);
 						} else {
-							Log.i("[ACTION] Setting 'up' flag to true. Awaiting next phase.");
 							up = true;
 						}
 					} else if (holdTime >= LONG_CLICK_INTERVAL) {
-						Log.i("[CHECK] Hold time exceeds LONG_CLICK_INTERVAL. [ACTION] Clearing worker.");
 						worker = null;
 					} else {
-						Log.i("[ACTION] Clearing worker.");
 						worker = null;
 						if (longClickTime == time) {
-							Log.i("[ACTION] Triggering clickAction based on longClickTime matching initial time.");
-							Log.i(key, " key click");
 							handle(clickAction);
 						}
 					}
-
 					return true;
 				}
 				case ACTION_MULTIPLE -> {
-					Log.i("[DETECTION] Worker detected ACTION_MULTIPLE.");
-					Log.i("[ACTION] Triggering dblClickAction.");
-					Log.i(key, " key double click");
 					handle(dblClickAction);
 					return true;
 				}
 			}
-			Log.i("[EXIT] Worker handle(KeyEvent) fell through switch. Returning false.");
 			return false;
 		}
 
 		private void handle(Action action) {
-			Log.i("[ACTION] Worker internally delegating to performAction.");
 			performAction(action, cb, activity, time);
 		}
 
 		private void sched(long delay) {
-			Log.i("[IDLE] Worker schedule requested. Delay: " + delay + "ms");
 			var handler = (activity == null) ? cb.getHandler() : activity.getHandler();
 			handler.postDelayed(this, delay);
 		}
