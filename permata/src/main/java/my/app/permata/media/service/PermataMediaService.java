@@ -75,6 +75,9 @@ import my.app.utils.ui.UiUtils;
 public class PermataMediaService extends MediaBrowserServiceCompat {
 	public static final String ACTION_MEDIA_SERVICE = "my.app.permata.action.MediaService";
 	public static final String ACTION_HIJACK_FOCUS = "my.app.permata.action.HIJACK_FOCUS"; // SURGICAL INJECTION: Hijack Intent
+	public static final String ACTION_WEB_MEDIA_PLAYING = "my.app.permata.action.WEB_MEDIA_PLAYING"; // SURGICAL INJECTION: Universal Play
+	public static final String ACTION_WEB_MEDIA_PAUSED = "my.app.permata.action.WEB_MEDIA_PAUSED"; // SURGICAL INJECTION: Universal Pause
+	
 	public static final String INTENT_ATTR_NOTIF_COLOR = "my.app.permata.notif.color";
 	public static final String DEFAULT_NOTIF_COLOR = "#3D2562";
 	private static final String CONTENT_STYLE_SUPPORTED =
@@ -176,11 +179,18 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 		Log.d("PermataMediaService destroyed");
 	}
 
-	// === SURGICAL INJECTION: ACTION_HIJACK_FOCUS Interceptor ===
+	// === SURGICAL INJECTION: INTENT INTERCEPTOR ===
 	@Override
 	public int onStartCommand(Intent intent, int flags, int startId) {
-		if (intent != null && ACTION_HIJACK_FOCUS.equals(intent.getAction())) {
-			hijackCarAudioAndSteering();
+		if (intent != null) {
+			String action = intent.getAction();
+			if (ACTION_HIJACK_FOCUS.equals(action)) {
+				hijackCarAudioAndSteering();
+			} else if (ACTION_WEB_MEDIA_PLAYING.equals(action)) {
+				onWebMediaPlaying();
+			} else if (ACTION_WEB_MEDIA_PAUSED.equals(action)) {
+				onWebMediaPaused();
+			}
 		}
 		MediaButtonReceiver.handleIntent(session, intent);
 		return super.onStartCommand(intent, flags, startId);
@@ -196,7 +206,7 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 		}
 	}
 
-	public void onWebMediaPlaying() {
+	private void onWebMediaPlaying() {
 		Log.i("PermataMediaService: Web media is actively playing.");
 		startSilentAudioAnchor();
 		if (session != null) {
@@ -205,7 +215,7 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 		}
 	}
 
-	public void onWebMediaPaused() {
+	private void onWebMediaPaused() {
 		Log.i("PermataMediaService: Web media is paused.");
 		if (session != null) {
 			updatePlaybackState(STATE_PAUSED);
@@ -520,10 +530,6 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 	public final class ServiceBinder extends Binder {
 		public MediaSessionCallback getMediaSessionCallback() {
 			return callback;
-		}
-		
-		public PermataMediaService getService() {
-			return PermataMediaService.this;
 		}
 	}
 }
