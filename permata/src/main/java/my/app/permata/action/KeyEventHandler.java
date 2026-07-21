@@ -33,40 +33,51 @@ public class KeyEventHandler {
 
 	private static Worker worker;
 	
-	// Tracks scroll timestamps to prevent spamming and ANRs
 	private static final Map<View, Long> scrollTimestamps = new WeakHashMap<>();
 
-	// === THE SHRINK-WRAPPED GLOBAL STYLESHEET & UNIVERSAL MEDIA CAPTURER ===
+	// === RESTORED: EXACT, SAFE CSS TARGETING TO PREVENT VIDEO BLURRING ===
 	private static final String JS_UNIVERSAL_PAYLOAD = "(function(){" +
-			"let res = 'Discovery [Layer 2]: JS Registry Miss'; " +
+			"let res = 'Discovery [Layer 2]: JS Registry Miss (No custom formatting applied)'; " +
 			"const injectGlobalWipe = function() { " +
 			"  if(!document.getElementById('permata-god-mode-css')) { " +
 			"    const style = document.createElement('style'); " +
 			"    style.id = 'permata-god-mode-css'; " +
 			"    style.innerHTML = ` " +
-			"      [class*=\"login\" i], [id*=\"login\" i], [class*=\"unauth\" i], " +
-			"      [class*=\"app-open\" i], [class*=\"download\" i], [class*=\"promo\" i], " +
-			"      [class*=\"banner\" i], [class*=\"popup\" i], [class*=\"sidebar\" i], " +
-			"      [class*=\"overlay\" i], [class*=\"bottom\" i], [class*=\"action-bar\" i], " +
-			"      [class*=\"comment\" i], [class*=\"account\" i], [class*=\"danmaku\" i], " +
-			"      xg-controls, [class*=\"xgplayer-controls\"] { " +
+			"      xg-controls, .xgplayer-controls, " +
+			"      .xg-right-bar, .xg-left-bar, " +
+			"      .video-info-container, .right-container, " +
+			"      .bottom-container, .xgplayer-bottom, " +
+			"      [class*=\"sidebar\"], [class*=\"video-info\"], " +
+			"      [class*=\"action-bar\"], [class*=\"author-info\"], " +
+			"      [class*=\"comment\"], .account-info, .danmaku-container, " +
+			"      .login-mask-enter-done, .dy-account-close, " +
+			"      [class*=\"bottom-bar\"], [class*=\"Prompt\"], " +
+			"      [class*=\"download-btn\"], [class*=\"app-open\"], " +
+			"      .XPromoPopup, .AppBanner, [class*=\"Banner\"], " +
+			"      .UnauthBox, .box_layout, [id*=\"login\"], " +
+			"      .open-app-bar, .login-dialog { " +
 			"          display: none !important; " +
 			"          opacity: 0 !important; " +
 			"          visibility: hidden !important; " +
 			"          pointer-events: none !important; " +
+			"          height: 0 !important; " +
+			"          width: 0 !important; " +
 			"      } " +
 			"    `; " +
 			"    document.head.appendChild(style); " +
-			"    return 'Universal Wildcard CSS Injected.'; " +
-			"  } return 'Universal Wildcard CSS Exists.'; " +
+			"    return 'Global CSS Stylesheet Injected Successfully.'; " +
+			"  } " +
+			"  return 'Global CSS Stylesheet Already Exists.'; " +
 			"}; " +
 			"const injectSpecificWipe = function(customCss, id) { " +
 			"  if(!document.getElementById(id)) { " +
 			"    const style = document.createElement('style'); " +
-			"    style.id = id; style.innerHTML = customCss; " +
+			"    style.id = id; " +
+			"    style.innerHTML = customCss; " +
 			"    document.head.appendChild(style); " +
 			"    return 'Custom CSS (' + id + ') Injected.'; " +
-			"  } return 'Custom CSS (' + id + ') Exists.'; " +
+			"  } " +
+			"  return 'Custom CSS (' + id + ') Already Exists.'; " +
 			"}; " +
 			"window.__attemptFS = function() { " +
 			"  if (window.location.hostname.indexOf('instagram.com') !== -1) return; " +
@@ -99,16 +110,27 @@ public class KeyEventHandler {
 			"  window.__permataMediaCapturerBound = true; " +
 			"  document.addEventListener('play', function(e) { " +
 			"    if (e.target && (e.target.tagName === 'VIDEO' || e.target.tagName === 'AUDIO')) { " +
-			"      if (window.AndroidMediaBridge && window.AndroidMediaBridge.onMediaPlay) window.AndroidMediaBridge.onMediaPlay(); " +
+			"      if (window.AndroidMediaBridge && window.AndroidMediaBridge.onMediaPlay) { " +
+			"        window.AndroidMediaBridge.onMediaPlay(); " +
+			"      } " +
 			"    } " +
 			"  }, true); " +
 			"  document.addEventListener('pause', function(e) { " +
 			"    if (e.target && (e.target.tagName === 'VIDEO' || e.target.tagName === 'AUDIO')) { " +
-			"      if (window.AndroidMediaBridge && window.AndroidMediaBridge.onMediaPause) window.AndroidMediaBridge.onMediaPause(); " +
+			"      if (window.AndroidMediaBridge && window.AndroidMediaBridge.onMediaPause) { " +
+			"        window.AndroidMediaBridge.onMediaPause(); " +
+			"      } " +
 			"    } " +
 			"  }, true); " +
 			"} " +
 			"const registry=[" +
+			"    {name:\"douyin\",match:/douyin\\.com/,execute:function(){" +
+			"      return 'DOUYIN: ' + injectGlobalWipe(); " +
+			"    }}," +
+			"    {name:\"tiktok\",match:/tiktok\\.com/,execute:function(){" +
+			"      var ttCss = ' [data-e2e=\"video-author-avatar\"], [data-e2e=\"nav-login\"], [class*=\"DivHeaderContainer\"], [class*=\"DivSideNavContainer\"], [class*=\"DivBottomContainer\"] { display: none !important; pointer-events: none !important; } '; " +
+			"      return 'TIKTOK: ' + injectGlobalWipe() + ' | ' + injectSpecificWipe(ttCss, 'permata-tt-css'); " +
+			"    }}," +
 			"    {name:\"instagram\",match:/instagram\\.com/,execute:function(){" +
 			"      var igCss = ' header, nav, [role=\"navigation\"] { display: none !important; pointer-events: none !important; opacity: 0 !important; visibility: hidden !important; } body, html { overflow: auto !important; touch-action: pan-y !important; } '; " +
 			"      return 'INSTAGRAM: ' + injectSpecificWipe(igCss, 'permata-ig-css'); " +
@@ -117,7 +139,7 @@ public class KeyEventHandler {
 			"      let ad=document.querySelector('.ytp-skip-ad-button,.ytp-ad-skip-button,.ytp-skip-button');if(ad)ad.click();" +
 			"      let dm=document.querySelectorAll('yt-button-renderer[id=\"dismiss-button\"],[aria-label=\"No thanks\"],[aria-label=\"Dismiss\"],.yt-spec-button-shape-next--text');" +
 			"      dm.forEach(b=>{if(b.textContent&&(b.textContent.includes('No thanks')||b.textContent.includes('Skip')||b.textContent.includes('Dismiss')))b.click();});" +
-			"      return 'YOUTUBE: ' + injectGlobalWipe(); " +
+			"      return 'YOUTUBE: Handled standard media skip.'; " +
 			"    }}," +
 			"    {name:\"bilibili\",match:/bilibili\\.com/,execute:function(){" +
 			"      let pl=document.querySelector('.mplayer-play');if(pl&&pl.classList.contains('play'))pl.click();" +
@@ -138,7 +160,8 @@ public class KeyEventHandler {
 			"    try { res += ' || ' + window.__permataActive.execute(); } catch(e){} " +
 			"  } else { " +
 			"    res = 'Discovery [Layer 2]: Generic Host'; " +
-			"    try { res += ' || COMMON: ' + injectGlobalWipe(); } catch(e){} " +
+			"    var commonCss = ' header, footer, nav, aside, #cookie-notice, .cookie-banner, [id*=\"cookie\"], [class*=\"cookie\"], [id*=\"popup\"], [class*=\"popup\"], .floating-action-button { display: none !important; } '; " +
+			"    try { let execRes = injectSpecificWipe(commonCss, 'permata-common-css'); res += ' || COMMON: ' + execRes; } catch(e){} " +
 			"  } " +
 			"  return res;" +
 			"})();";
@@ -177,7 +200,6 @@ public class KeyEventHandler {
 
 		var code = event.getKeyCode();
 
-		// === CAR IHU TARGET RESOLUTION & SCROLL INJECTION ===
 		MainActivityDelegate targetActivity = activity;
 		if (targetActivity == null && cb != null) {
 			if (cb.getAssistant() instanceof MainActivityDelegate) {
@@ -220,7 +242,7 @@ public class KeyEventHandler {
 													h.contains("likee") || h.contains("kwai") || h.contains("snackvideo") ||
 													h.contains("mojapp") || h.contains("sharechat");
 													
-											// IDENTIFY GENERAL MEDIA PLATFORMS (INCLUDING FEED HOSTS)
+											// IDENTIFY GENERAL MEDIA PLATFORMS
 											isMediaHost = isInstagram || isSnapFeedHost || h.contains("bilibili") || 
 													h.contains("reddit") || h.contains("twitter") || h.contains("x.com") || 
 													h.contains("pinterest") || h.contains("twitch") || h.contains("weibo") || 
@@ -266,7 +288,6 @@ public class KeyEventHandler {
 				}
 			}
 		}
-		// ====================================================
 
 		var k = Key.get(code);
 		if (k == null) return defaultHandler.apply(code, event);
@@ -338,14 +359,12 @@ public class KeyEventHandler {
 				wv.evaluateJavascript("if(typeof window.__attemptFS === 'function') window.__attemptFS();", null);
 				
 				if (!isSnapFeedHost) {
-					Log.i("[ACTION] Injecting Wildcard Virtual Scroll JS Script...");
+					Log.i("[ACTION] Injecting Virtual Scroll JS Script...");
 					String advancedJsScript = "(function() {" +
 							"  try {" +
 							"    var isDown = " + (!up) + ";" +
-							"    var targetBtn = isDown ? " +
-							"        document.querySelector('[class*=\"next\" i], [class*=\"down\" i], [aria-label*=\"next\" i]') : " +
-							"        document.querySelector('[class*=\"prev\" i], [class*=\"up\" i], [aria-label*=\"prev\" i]');" +
-							"    if (targetBtn) { targetBtn.click(); return 'Scroll: Wildcard Button Clicked'; }" +
+							"    var targetBtn = isDown ? document.querySelector('.xgplayer-playswitch-next, .slide-down-btn, [aria-label=\"Next video\"], [data-e2e=\"arrow-down\"]') : document.querySelector('.xgplayer-playswitch-prev, .slide-up-btn, [aria-label=\"Previous video\"], [data-e2e=\"arrow-up\"]');" +
+							"    if (targetBtn) { targetBtn.click(); return 'Scroll: Programmatic Button Clicked'; }" +
 							"    var amount = isDown ? window.innerHeight * 0.90 : -window.innerHeight * 0.90;" +
 							"    window.scrollBy({ top: amount, behavior: 'smooth' });" +
 							"    var activeNode = document.activeElement || document.body;" +
@@ -405,14 +424,15 @@ public class KeyEventHandler {
 			int backupKey = up ? KeyEvent.KEYCODE_PAGE_UP : KeyEvent.KEYCODE_PAGE_DOWN;
 			wv.dispatchKeyEvent(new KeyEvent(KeyEvent.ACTION_DOWN, backupKey));
 			wv.dispatchKeyEvent(new KeyEvent(KeyEvent.ACTION_UP, backupKey));
-
 		}
 
-		// === THE HUMANIZED BIOMETRIC GOD-MODE SWIPE ENGINE ===
+		// === THE HIGH-VELOCITY FLING ALGORITHM (Fixes TikTok Bounce-Back) ===
 		if (isMediaHost && !isInstagram) {
 			final float actionX = touchTarget.getWidth() * 0.50f;
 			final float centerY = touchTarget.getHeight() / 2f;
-			float span = touchTarget.getHeight() * 0.60f; 
+			
+			// Increased span to 75% for a larger, more definitive flick
+			float span = touchTarget.getHeight() * 0.75f; 
 			final float yStart = up ? (centerY - span / 2f) : (centerY + span / 2f);
 			final float yEnd = up ? (centerY + span / 2f) : (centerY - span / 2f);
 
@@ -423,14 +443,14 @@ public class KeyEventHandler {
 				touchTarget.dispatchTouchEvent(eventDown);
 				eventDown.recycle();
 
-				final int stepCount = 12;
-				final long swipeDuration = 200; 
+				// Reduced duration to 120ms with pure Linear interpolation for HIGH exit velocity
+				final int stepCount = 10;
+				final long swipeDuration = 120; 
 				
 				for (int i = 1; i <= stepCount; i++) {
 					final float linearT = (float) i / stepCount;
-					final float easeOutT = 1f - (float) Math.pow(1f - linearT, 3);
 					
-					final float currentY = yStart + (yEnd - yStart) * easeOutT;
+					final float currentY = yStart + (yEnd - yStart) * linearT;
 					final long moveTime = startTime + (long) (swipeDuration * linearT);
 					
 					touchTarget.postDelayed(() -> {
