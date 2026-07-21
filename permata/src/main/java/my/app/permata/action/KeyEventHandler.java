@@ -533,6 +533,7 @@ public class KeyEventHandler {
 			Log.w("[CHECK] Status: JavaScript is disabled on this WebView. Bypassing JS injection.");
 		}
 
+		// === THE HUMANIZED BIOMETRIC GOD-MODE SWIPE ENGINE ===
 		if (isMediaHost && !isInstagram) {
 			final float actionX = touchTarget.getWidth() * 0.50f;
 			final float centerY = touchTarget.getHeight() / 2f;
@@ -541,21 +542,27 @@ public class KeyEventHandler {
 			final float yEnd = up ? (centerY + span / 2f) : (centerY - span / 2f);
 
 			try {
-				Log.i("[ACTION] " + hostTag + "Dispatching Hardware Swipe to fulfill Token Security & Media Scroll.");
+				Log.i("[ACTION] " + hostTag + "Dispatching Humanized Hardware Swipe to fulfill Token Security.");
 				final long startTime = android.os.SystemClock.uptimeMillis();
 				
+				// 1. Initial Touch (ACTION_DOWN)
 				MotionEvent eventDown = MotionEvent.obtain(startTime, startTime, MotionEvent.ACTION_DOWN, actionX, yStart, 0);
 				touchTarget.dispatchTouchEvent(eventDown);
 				eventDown.recycle();
 				Log.i("[REACTION] Dispatching ACTION_DOWN at Y: " + yStart);
 
-				final int stepCount = 5;
-				final long swipeDuration = 150; 
+				// 2. Humanized Biometric Drag Loop (12 Steps, 200ms, Ease-Out Cubic)
+				final int stepCount = 12;
+				final long swipeDuration = 200; 
 				
 				for (int i = 1; i <= stepCount; i++) {
-					final float fraction = (float) i / stepCount;
-					final float currentY = yStart + (yEnd - yStart) * fraction;
-					final long moveTime = startTime + (long) (swipeDuration * fraction);
+					final float linearT = (float) i / stepCount;
+					
+					// Ease-Out Cubic interpolation: starts fast, slows down smoothly
+					final float easeOutT = 1f - (float) Math.pow(1f - linearT, 3);
+					
+					final float currentY = yStart + (yEnd - yStart) * easeOutT;
+					final long moveTime = startTime + (long) (swipeDuration * linearT);
 					
 					final int stepId = i;
 					touchTarget.postDelayed(() -> {
@@ -565,9 +572,10 @@ public class KeyEventHandler {
 							eventMove.recycle();
 							Log.i("[REACTION] Hardware Swipe Step " + stepId + " Dispatched at Y: " + currentY);
 						}
-					}, (long) (swipeDuration * fraction));
+					}, (long) (swipeDuration * linearT));
 				}
 
+				// 3. Release Touch and Enforce Fullscreen (ACTION_UP)
 				touchTarget.postDelayed(() -> {
 					if (touchTarget.isAttachedToWindow()) {
 						long endTime = startTime + swipeDuration + 10;
