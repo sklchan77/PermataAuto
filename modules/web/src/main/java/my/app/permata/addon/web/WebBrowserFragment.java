@@ -71,6 +71,11 @@ public class WebBrowserFragment extends MainActivityFragment
 		Context ctx = view.getContext();
 		PermataWebView webView = view.findViewById(R.id.browserWebView);
 		ViewGroup fullScreenView = view.findViewById(R.id.browserFullScreenView);
+		
+		// === SURGICAL INJECTION: ATTACH UNIVERSAL MEDIA BRIDGE ===
+		webView.addJavascriptInterface(new UniversalMediaBridge(ctx), "AndroidMediaBridge");
+		// ===========================================================
+
 		PermataWebClient webClient = new PermataWebClient();
 		PermataChromeClient chromeClient = new PermataChromeClient(webView, fullScreenView);
 		webView.init(addon, webClient, chromeClient);
