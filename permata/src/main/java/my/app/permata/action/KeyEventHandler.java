@@ -35,7 +35,7 @@ public class KeyEventHandler {
 	
 	private static final Map<View, Long> scrollTimestamps = new WeakHashMap<>();
 
-	// === RESTORED: EXACT, SAFE CSS TARGETING TO PREVENT VIDEO BLURRING ===
+	// === RESTORED: EXACT, SAFE CSS TARGETING WITH SURGICAL UN-BLUR INJECTED ===
 	private static final String JS_UNIVERSAL_PAYLOAD = "(function(){" +
 			"let res = 'Discovery [Layer 2]: JS Registry Miss (No custom formatting applied)'; " +
 			"const injectGlobalWipe = function() { " +
@@ -125,7 +125,8 @@ public class KeyEventHandler {
 			"} " +
 			"const registry=[" +
 			"    {name:\"douyin\",match:/douyin\\.com/,execute:function(){" +
-			"      return 'DOUYIN: ' + injectGlobalWipe(); " +
+			"      var dyCss = ' * { filter: none !important; backdrop-filter: none !important; } video, xgplayer, .xgplayer { opacity: 1 !important; visibility: visible !important; display: block !important; } '; " +
+			"      return 'DOUYIN: ' + injectGlobalWipe() + ' | ' + injectSpecificWipe(dyCss, 'permata-dy-css'); " +
 			"    }}," +
 			"    {name:\"tiktok\",match:/tiktok\\.com/,execute:function(){" +
 			"      var ttCss = ' [data-e2e=\"video-author-avatar\"], [data-e2e=\"nav-login\"], [class*=\"DivHeaderContainer\"], [class*=\"DivSideNavContainer\"], [class*=\"DivBottomContainer\"] { display: none !important; pointer-events: none !important; } '; " +
