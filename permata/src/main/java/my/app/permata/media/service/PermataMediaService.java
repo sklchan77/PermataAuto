@@ -24,6 +24,9 @@ import android.content.res.Configuration;
 import android.content.res.Resources;
 import android.graphics.Bitmap;
 import android.graphics.Color;
+import android.media.AudioFormat;
+import android.media.AudioManager;
+import android.media.AudioTrack;
 import android.os.Binder;
 import android.os.Bundle;
 import android.os.IBinder;
@@ -47,6 +50,8 @@ import androidx.media.app.NotificationCompat.MediaStyle;
 import androidx.media.session.MediaButtonReceiver;
 
 import java.util.List;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 
 import my.app.permata.BuildConfig;
@@ -111,6 +116,12 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 	private Bitmap defaultAudioIcon;
 	private Bitmap defaultVideoIcon;
 
+	// === SURGICAL INJECTION: SILENT AUDIO ANCHOR & LOCKING FIELDS ===
+	private AudioTrack silentAudioTrack;
+	private volatile boolean isSilentTrackRunning = false;
+	private final ScheduledExecutorService audioExecutor = Executors.newSingleThreadScheduledExecutor();
+	// ================================================================
+
 	public MediaLib getLib() {
 		return lib;
 	}
@@ -126,7 +137,14 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 				PlaybackControlPrefs.create(PermataApplication.get().getDefaultSharedPreferences()),
 				PermataApplication.get().getHandler());
 		callback.onPrepare();
+		
+		// === SURGICAL INJECTION: ENABLE NATIVE MEDIA CONTROLS & BIND CALLBACK ===
+		session.setFlags(
+				MediaSessionCompat.FLAG_HANDLES_MEDIA_BUTTONS |
+				MediaSessionCompat.FLAG_HANDLES_TRANSPORT_CONTROLS
+		);
 		session.setCallback(callback);
+		// =========================================================================
 
 		Intent mediaButtonIntent =
 				new Intent(Intent.ACTION_MEDIA_BUTTON, null, ctx, MediaButtonReceiver.class);
@@ -143,6 +161,8 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 
 	@Override
 	public void onDestroy() {
+		stopSilentAudioAnchor();
+		audioExecutor.shutdownNow();
 		for (PermataAddon a : AddonManager.get().getAddons()) {
 			if (a instanceof PermataMediaServiceAddon)
 				((PermataMediaServiceAddon) a).onServiceDestroy(callback);
@@ -166,36 +186,125 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 		return super.onStartCommand(intent, flags, startId);
 	}
 	
+	public static void requestFocusAndAnchor(Context context) {
+		try {
+			Intent hijackIntent = new Intent(context, PermataMediaService.class);
+			hijackIntent.setAction(ACTION_HIJACK_FOCUS);
+			context.startService(hijackIntent);
+		} catch (Exception e) {
+			Log.e(e, "PermataMediaService: Failed static requestFocusAndAnchor.");
+		}
+	}
+
+	public void onWebMediaPlaying() {
+		Log.i("PermataMediaService: Web media is actively playing.");
+		startSilentAudioAnchor();
+		if (session != null) {
+			session.setActive(true);
+			updatePlaybackState(STATE_PLAYING);
+		}
+	}
+
+	public void onWebMediaPaused() {
+		Log.i("PermataMediaService: Web media is paused.");
+		if (session != null) {
+			updatePlaybackState(STATE_PAUSED);
+		}
+	}
+
 	private void hijackCarAudioAndSteering() {
 		try {
-			android.media.AudioManager audioManager = (android.media.AudioManager) getSystemService(Context.AUDIO_SERVICE);
+			AudioManager audioManager = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
 			if (audioManager != null) {
-				// Forcefully steal audio focus from the car's native radio or background apps
 				audioManager.requestAudioFocus(
-						focusChange -> {}, 
-						android.media.AudioManager.STREAM_MUSIC, 
-						android.media.AudioManager.AUDIOFOCUS_GAIN
+						focusChange -> {
+							if (focusChange == AudioManager.AUDIOFOCUS_LOSS) {
+								stopSilentAudioAnchor();
+							}
+						}, 
+						AudioManager.STREAM_MUSIC, 
+						AudioManager.AUDIOFOCUS_GAIN
 				);
 			}
 
-			// Force the Media Session to Active so steering wheel buttons route to Permata
+			startSilentAudioAnchor();
+
 			if (session != null) {
 				session.setActive(true);
-				
-				// Set a "Fake" playing state so the car IHU thinks media is actively ready for input
-				PlaybackStateCompat.Builder stateBuilder = new PlaybackStateCompat.Builder()
-						.setActions(PlaybackStateCompat.ACTION_PLAY | 
-									PlaybackStateCompat.ACTION_PAUSE | 
-									PlaybackStateCompat.ACTION_SKIP_TO_NEXT | 
-									PlaybackStateCompat.ACTION_SKIP_TO_PREVIOUS)
-						.setState(PlaybackStateCompat.STATE_PAUSED, 0, 1.0f);
-					
-				session.setPlaybackState(stateBuilder.build());
+				updatePlaybackState(STATE_PLAYING);
 				Log.i("PermataMediaService: Audio Focus & Steering Buttons successfully hijacked.");
 			}
 		} catch (Exception e) {
 			Log.e(e, "PermataMediaService: Failed to execute audio hijack.");
 		}
+	}
+
+	private synchronized void startSilentAudioAnchor() {
+		if (isSilentTrackRunning) return;
+		try {
+			int sampleRate = 44100;
+			int minBufferSize = AudioTrack.getMinBufferSize(
+					sampleRate,
+					AudioFormat.CHANNEL_OUT_STEREO,
+					AudioFormat.ENCODING_PCM_16BIT
+			);
+
+			silentAudioTrack = new AudioTrack(
+					AudioManager.STREAM_MUSIC,
+					sampleRate,
+					AudioFormat.CHANNEL_OUT_STEREO,
+					AudioFormat.ENCODING_PCM_16BIT,
+					Math.max(minBufferSize, 2048),
+					AudioTrack.MODE_STREAM
+			);
+
+			byte[] silentBuffer = new byte[Math.max(minBufferSize, 2048)];
+			silentAudioTrack.play();
+			isSilentTrackRunning = true;
+
+			audioExecutor.execute(() -> {
+				while (isSilentTrackRunning && silentAudioTrack != null) {
+					try {
+						silentAudioTrack.write(silentBuffer, 0, silentBuffer.length);
+						Thread.sleep(100);
+					} catch (InterruptedException ie) {
+						Thread.currentThread().interrupt();
+						break;
+					} catch (Exception e) {
+						Log.e(e, "Error in silent audio write loop");
+						break;
+					}
+				}
+			});
+
+			Log.i("PermataMediaService: Silent Audio Anchor active. AudioFocus permanently locked.");
+		} catch (Exception e) {
+			Log.e(e, "PermataMediaService: Failed to start Silent Audio Anchor.");
+		}
+	}
+
+	private synchronized void stopSilentAudioAnchor() {
+		isSilentTrackRunning = false;
+		if (silentAudioTrack != null) {
+			try {
+				silentAudioTrack.stop();
+				silentAudioTrack.release();
+			} catch (Exception ignored) {}
+			silentAudioTrack = null;
+			Log.i("PermataMediaService: Silent Audio Anchor stopped.");
+		}
+	}
+
+	private void updatePlaybackState(int state) {
+		if (session == null) return;
+		PlaybackStateCompat.Builder stateBuilder = new PlaybackStateCompat.Builder()
+				.setActions(PlaybackStateCompat.ACTION_PLAY |
+							PlaybackStateCompat.ACTION_PAUSE |
+							PlaybackStateCompat.ACTION_SKIP_TO_NEXT |
+							PlaybackStateCompat.ACTION_SKIP_TO_PREVIOUS |
+							PlaybackStateCompat.ACTION_STOP)
+				.setState(state, PlaybackStateCompat.PLAYBACK_POSITION_UNKNOWN, 1.0f);
+		session.setPlaybackState(stateBuilder.build());
 	}
 	// ============================================================
 
@@ -411,6 +520,10 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 	public final class ServiceBinder extends Binder {
 		public MediaSessionCallback getMediaSessionCallback() {
 			return callback;
+		}
+		
+		public PermataMediaService getService() {
+			return PermataMediaService.this;
 		}
 	}
 }
