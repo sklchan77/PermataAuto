@@ -436,7 +436,7 @@ public class KeyEventHandler {
 			final float centerY = touchTarget.getHeight() / 2f;
 			
 			// Increased span to 75% for a larger, more definitive flick
-			float span = touchTarget.getHeight() * 0.75f; 
+			float span = touchTarget.getHeight() * 0.65f; 
 			final float yStart = up ? (centerY - span / 2f) : (centerY + span / 2f);
 			final float yEnd = up ? (centerY + span / 2f) : (centerY - span / 2f);
 
