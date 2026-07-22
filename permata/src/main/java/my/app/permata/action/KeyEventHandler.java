@@ -35,7 +35,7 @@ public class KeyEventHandler {
 	
 	private static final Map<View, Long> scrollTimestamps = new WeakHashMap<>();
 
-	// === RESTORED: EXACT, SAFE CSS TARGETING WITH SURGICAL UN-BLUR INJECTED ===
+	// === RESTORED & UPGRADED: CSS VIEWPORT FULLSCREEN ENFORCEMENT ===
 	private static final String JS_UNIVERSAL_PAYLOAD = "(function(){" +
 			"let res = 'Discovery [Layer 2]: JS Registry Miss (No custom formatting applied)'; " +
 			"const injectGlobalWipe = function() { " +
@@ -125,7 +125,7 @@ public class KeyEventHandler {
 			"} " +
 			"const registry=[" +
 			"    {name:\"douyin\",match:/douyin\\.com/,execute:function(){" +
-			"      var dyCss = ' * { filter: none !important; backdrop-filter: none !important; } video, xgplayer, .xgplayer { opacity: 1 !important; visibility: visible !important; display: block !important; } '; " +
+			"      var dyCss = ' * { filter: none !important; backdrop-filter: none !important; } video, xgplayer, .xgplayer { opacity: 1 !important; visibility: visible !important; display: block !important; position: fixed !important; top: 0 !important; left: 0 !important; width: 100vw !important; height: 100vh !important; z-index: 999999 !important; object-fit: contain !important; } '; " +
 			"      return 'DOUYIN: ' + injectGlobalWipe() + ' | ' + injectSpecificWipe(dyCss, 'permata-dy-css'); " +
 			"    }}," +
 			"    {name:\"tiktok\",match:/tiktok\\.com/,execute:function(){" +
@@ -422,12 +422,15 @@ public class KeyEventHandler {
 				});
 			}
 
-			int backupKey = up ? KeyEvent.KEYCODE_PAGE_UP : KeyEvent.KEYCODE_PAGE_DOWN;
-			wv.dispatchKeyEvent(new KeyEvent(KeyEvent.ACTION_DOWN, backupKey));
-			wv.dispatchKeyEvent(new KeyEvent(KeyEvent.ACTION_UP, backupKey));
+			// === SURGICAL FIX: Prevent Double-Trigger on Snap Feeds ===
+			if (!isSnapFeedHost) {
+				int backupKey = up ? KeyEvent.KEYCODE_PAGE_UP : KeyEvent.KEYCODE_PAGE_DOWN;
+				wv.dispatchKeyEvent(new KeyEvent(KeyEvent.ACTION_DOWN, backupKey));
+				wv.dispatchKeyEvent(new KeyEvent(KeyEvent.ACTION_UP, backupKey));
+			}
 		}
 
-		// === THE HIGH-VELOCITY FLING ALGORITHM (Fixes TikTok/Douyin First-Scroll Fullscreen Glitch) ===
+		// === THE HIGH-VELOCITY FLING ALGORITHM (Pure Gestural Swipe Engine) ===
 		if (isMediaHost && !isInstagram) {
 			final float actionX = touchTarget.getWidth() * 0.50f;
 			final float centerY = touchTarget.getHeight() / 2f;
@@ -438,45 +441,21 @@ public class KeyEventHandler {
 			final float yEnd = up ? (centerY + span / 2f) : (centerY - span / 2f);
 
 			try {
-				final long baseTime = android.os.SystemClock.uptimeMillis();
+				final long startTime = android.os.SystemClock.uptimeMillis();
 				
-				// --- PHANTOM WAKE-UP TAP ---
-				// Dispatches a rapid 0-pixel tap to the exact center of the screen to satisfy 
-				// Chromium's gesture security policy, allowing the Fullscreen API to unlock on 1st scroll.
-				MotionEvent tapDown = MotionEvent.obtain(baseTime, baseTime, MotionEvent.ACTION_DOWN, actionX, centerY, 0);
-				touchTarget.dispatchTouchEvent(tapDown);
-				tapDown.recycle();
+				MotionEvent eventDown = MotionEvent.obtain(startTime, startTime, MotionEvent.ACTION_DOWN, actionX, yStart, 0);
+				touchTarget.dispatchTouchEvent(eventDown);
+				eventDown.recycle();
 
-				MotionEvent tapUp = MotionEvent.obtain(baseTime, baseTime + 10, MotionEvent.ACTION_UP, actionX, centerY, 0);
-				touchTarget.dispatchTouchEvent(tapUp);
-				tapUp.recycle();
-				// ---------------------------------
-
-				// Shift the start time of the actual scroll fling forward by 50ms 
-				// to give Chromium's UI thread time to register the Phantom Tap state.
-				final long startTime = baseTime + 50; 
-				
-				// 1. ACTION_DOWN Event (The Swipe Begins)
-				touchTarget.postDelayed(() -> {
-					if (touchTarget.isAttachedToWindow()) {
-						MotionEvent eventDown = MotionEvent.obtain(startTime, startTime, MotionEvent.ACTION_DOWN, actionX, yStart, 0);
-						touchTarget.dispatchTouchEvent(eventDown);
-						eventDown.recycle();
-					}
-				}, 50);
-
-				// Reduced duration to 120ms with pure Linear interpolation for HIGH exit velocity
+				// 120ms duration with pure Linear interpolation for HIGH exit velocity
 				final int stepCount = 10;
 				final long swipeDuration = 120; 
 				
-				// 2. Linear 10-step ACTION_MOVE Loop over 120ms
 				for (int i = 1; i <= stepCount; i++) {
 					final float linearT = (float) i / stepCount;
 					
 					final float currentY = yStart + (yEnd - yStart) * linearT;
 					final long moveTime = startTime + (long) (swipeDuration * linearT);
-					
-					final long executionDelay = 50 + (long) (swipeDuration * linearT);
 					
 					touchTarget.postDelayed(() -> {
 						if (touchTarget.isAttachedToWindow()) {
@@ -484,10 +463,9 @@ public class KeyEventHandler {
 							touchTarget.dispatchTouchEvent(eventMove);
 							eventMove.recycle();
 						}
-					}, executionDelay);
+					}, (long) (swipeDuration * linearT));
 				}
 
-				// 3. ACTION_UP Event Concludes Fling
 				touchTarget.postDelayed(() -> {
 					if (touchTarget.isAttachedToWindow()) {
 						long endTime = startTime + swipeDuration + 10;
@@ -498,7 +476,7 @@ public class KeyEventHandler {
 						
 						wv.evaluateJavascript("if(typeof window.__enforceFS === 'function') window.__enforceFS();", null);
 					}
-				}, 50 + swipeDuration + 10);
+				}, swipeDuration + 10);
 
 			} catch (Exception e) {
 				Log.e(e, "[REACTION] " + hostTag + "Hardware swipe failed with Exception.");
