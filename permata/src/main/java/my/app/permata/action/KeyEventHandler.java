@@ -427,7 +427,7 @@ public class KeyEventHandler {
 			wv.dispatchKeyEvent(new KeyEvent(KeyEvent.ACTION_UP, backupKey));
 		}
 
-		// === THE HIGH-VELOCITY FLING ALGORITHM (Fixes TikTok Bounce-Back) ===
+		// === THE HIGH-VELOCITY FLING ALGORITHM (Fixes TikTok/Douyin First-Scroll Fullscreen Glitch) ===
 		if (isMediaHost && !isInstagram) {
 			final float actionX = touchTarget.getWidth() * 0.50f;
 			final float centerY = touchTarget.getHeight() / 2f;
@@ -438,21 +438,45 @@ public class KeyEventHandler {
 			final float yEnd = up ? (centerY + span / 2f) : (centerY - span / 2f);
 
 			try {
-				final long startTime = android.os.SystemClock.uptimeMillis();
+				final long baseTime = android.os.SystemClock.uptimeMillis();
 				
-				MotionEvent eventDown = MotionEvent.obtain(startTime, startTime, MotionEvent.ACTION_DOWN, actionX, yStart, 0);
-				touchTarget.dispatchTouchEvent(eventDown);
-				eventDown.recycle();
+				// --- PHANTOM WAKE-UP TAP ---
+				// Dispatches a rapid 0-pixel tap to the exact center of the screen to satisfy 
+				// Chromium's gesture security policy, allowing the Fullscreen API to unlock on 1st scroll.
+				MotionEvent tapDown = MotionEvent.obtain(baseTime, baseTime, MotionEvent.ACTION_DOWN, actionX, centerY, 0);
+				touchTarget.dispatchTouchEvent(tapDown);
+				tapDown.recycle();
+
+				MotionEvent tapUp = MotionEvent.obtain(baseTime, baseTime + 10, MotionEvent.ACTION_UP, actionX, centerY, 0);
+				touchTarget.dispatchTouchEvent(tapUp);
+				tapUp.recycle();
+				// ---------------------------------
+
+				// Shift the start time of the actual scroll fling forward by 50ms 
+				// to give Chromium's UI thread time to register the Phantom Tap state.
+				final long startTime = baseTime + 50; 
+				
+				// 1. ACTION_DOWN Event (The Swipe Begins)
+				touchTarget.postDelayed(() -> {
+					if (touchTarget.isAttachedToWindow()) {
+						MotionEvent eventDown = MotionEvent.obtain(startTime, startTime, MotionEvent.ACTION_DOWN, actionX, yStart, 0);
+						touchTarget.dispatchTouchEvent(eventDown);
+						eventDown.recycle();
+					}
+				}, 50);
 
 				// Reduced duration to 120ms with pure Linear interpolation for HIGH exit velocity
 				final int stepCount = 10;
 				final long swipeDuration = 120; 
 				
+				// 2. Linear 10-step ACTION_MOVE Loop over 120ms
 				for (int i = 1; i <= stepCount; i++) {
 					final float linearT = (float) i / stepCount;
 					
 					final float currentY = yStart + (yEnd - yStart) * linearT;
 					final long moveTime = startTime + (long) (swipeDuration * linearT);
+					
+					final long executionDelay = 50 + (long) (swipeDuration * linearT);
 					
 					touchTarget.postDelayed(() -> {
 						if (touchTarget.isAttachedToWindow()) {
@@ -460,9 +484,10 @@ public class KeyEventHandler {
 							touchTarget.dispatchTouchEvent(eventMove);
 							eventMove.recycle();
 						}
-					}, (long) (swipeDuration * linearT));
+					}, executionDelay);
 				}
 
+				// 3. ACTION_UP Event Concludes Fling
 				touchTarget.postDelayed(() -> {
 					if (touchTarget.isAttachedToWindow()) {
 						long endTime = startTime + swipeDuration + 10;
@@ -473,7 +498,7 @@ public class KeyEventHandler {
 						
 						wv.evaluateJavascript("if(typeof window.__enforceFS === 'function') window.__enforceFS();", null);
 					}
-				}, swipeDuration + 10);
+				}, 50 + swipeDuration + 10);
 
 			} catch (Exception e) {
 				Log.e(e, "[REACTION] " + hostTag + "Hardware swipe failed with Exception.");
