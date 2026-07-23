@@ -35,7 +35,7 @@ public class KeyEventHandler {
 	
 	private static final Map<View, Long> scrollTimestamps = new WeakHashMap<>();
 
-	// === RESTORED: Removed aggressive CSS stretching for Douyin to fix blur ===
+	// === UPGRADED: INSTANT 1ST-PRESS DOUYIN & UNIVERSAL FULLSCREEN PAYLOAD ===
 	private static final String JS_UNIVERSAL_PAYLOAD = "(function(){" +
 			"let res = 'Discovery [Layer 2]: JS Registry Miss (No custom formatting applied)'; " +
 			"const injectGlobalWipe = function() { " +
@@ -81,31 +81,15 @@ public class KeyEventHandler {
 			"}; " +
 			"window.__attemptFS = function() { " +
 			"  if (window.location.hostname.indexOf('instagram.com') !== -1) return; " +
-			"  let player = document.querySelector('.xgplayer, video, main'); " +
-			"  if (player && !document.fullscreenElement && !document.webkitFullscreenElement) { " +
+			"  if (document.fullscreenElement || document.webkitFullscreenElement) return; " +
+			"  let fsBtn = document.querySelector('.xgplayer-fullscreen, .xg-fullscreen, .xgplayer-pagefull, [class*=\"fullscreen\"]'); " +
+			"  if (fsBtn) { try { fsBtn.click(); return; } catch(e){} } " +
+			"  let player = document.querySelector('.xgplayer, video'); " +
+			"  if (player) { " +
 			"      try { player.requestFullscreen(); } catch(e) {} " +
+			"      try { player.dispatchEvent(new MouseEvent('dblclick', { bubbles: true, cancelable: true, view: window })); } catch(e){} " +
 			"  } " +
 			"}; " +
-			"window.__enforceFS = function() { " +
-			"  if (window.location.hostname.indexOf('instagram.com') !== -1) return; " +
-			"  let attempts = 0; " +
-			"  let iv = setInterval(function() { " +
-			"      let player = document.querySelector('.xgplayer, video, main'); " +
-			"      if (player && !document.fullscreenElement && !document.webkitFullscreenElement) { " +
-			"          try { player.requestFullscreen(); } catch(e) {} " +
-			"      } else if (document.fullscreenElement || document.webkitFullscreenElement) { " +
-			"          clearInterval(iv); " +
-			"      } " +
-			"      if (++attempts > 10) clearInterval(iv); " +
-			"  }, 500); " +
-			"}; " +
-			"window.__permataTouchListener = function(e) { " +
-			"  window.__attemptFS(); " +
-			"  window.removeEventListener('touchend', window.__permataTouchListener); " +
-			"  window.removeEventListener('mouseup', window.__permataTouchListener); " +
-			"}; " +
-			"window.addEventListener('touchend', window.__permataTouchListener, {once:true}); " +
-			"window.addEventListener('mouseup', window.__permataTouchListener, {once:true}); " +
 			"if (!window.__permataMediaCapturerBound) { " +
 			"  window.__permataMediaCapturerBound = true; " +
 			"  document.addEventListener('play', function(e) { " +
@@ -125,7 +109,9 @@ public class KeyEventHandler {
 			"} " +
 			"const registry=[" +
 			"    {name:\"douyin\",match:/douyin\\.com/,execute:function(){" +
-			"      return 'DOUYIN: ' + injectGlobalWipe(); " +
+			"      let dyWipe = injectGlobalWipe(); " +
+			"      if (typeof window.__attemptFS === 'function') window.__attemptFS(); " +
+			"      return 'DOUYIN 1st-Press FS Triggered | ' + dyWipe; " +
 			"    }}," +
 			"    {name:\"tiktok\",match:/tiktok\\.com/,execute:function(){" +
 			"      var ttCss = ' [data-e2e=\"video-author-avatar\"], [data-e2e=\"nav-login\"], [class*=\"DivHeaderContainer\"], [class*=\"DivSideNavContainer\"], [class*=\"DivBottomContainer\"] { display: none !important; pointer-events: none !important; } '; " +
@@ -166,7 +152,6 @@ public class KeyEventHandler {
 			"  return res;" +
 			"})();";
 
-	// Resilient polling container
 	private static final String JS_POLLING_PAYLOAD = "try { " +
 			"  if(window.__permataActive) { window.__permataActive.execute(); } " +
 			"} catch(e){}";
@@ -235,14 +220,12 @@ public class KeyEventHandler {
 											String h = host.toLowerCase();
 											isInstagram = h.contains("instagram.com");
 											
-											// IDENTIFY HIGH-RISK DOUBLE SCROLL PLATFORMS
 											isSnapFeedHost = h.contains("douyin") || h.contains("tiktok") ||
 													h.contains("youtube") || h.contains("youtu") || h.contains("facebook") ||
 													h.contains("kuaishou") || h.contains("xiaohongshu") ||
 													h.contains("likee") || h.contains("kwai") || h.contains("snackvideo") ||
 													h.contains("mojapp") || h.contains("sharechat");
 													
-											// IDENTIFY GENERAL MEDIA PLATFORMS
 											isMediaHost = isInstagram || isSnapFeedHost || h.contains("bilibili") || 
 													h.contains("reddit") || h.contains("twitter") || h.contains("x.com") || 
 													h.contains("pinterest") || h.contains("twitch") || h.contains("weibo") || 
@@ -355,9 +338,6 @@ public class KeyEventHandler {
 			});
 
 			if (isMediaHost && !isInstagram) {
-				
-				wv.evaluateJavascript("if(typeof window.__attemptFS === 'function') window.__attemptFS();", null);
-				
 				if (!isSnapFeedHost) {
 					Log.i("[ACTION] Injecting Virtual Scroll JS Script...");
 					String advancedJsScript = "(function() {" +
@@ -421,7 +401,6 @@ public class KeyEventHandler {
 				});
 			}
 
-			// === SURGICAL FIX: Prevent Double-Trigger on Snap Feeds ===
 			if (!isSnapFeedHost) {
 				int backupKey = up ? KeyEvent.KEYCODE_PAGE_UP : KeyEvent.KEYCODE_PAGE_DOWN;
 				wv.dispatchKeyEvent(new KeyEvent(KeyEvent.ACTION_DOWN, backupKey));
@@ -434,7 +413,6 @@ public class KeyEventHandler {
 			final float actionX = touchTarget.getWidth() * 0.50f;
 			final float centerY = touchTarget.getHeight() / 2f;
 			
-			// Increased span to 75% for a larger, more definitive flick
 			float span = touchTarget.getHeight() * 0.65f; 
 			final float yStart = up ? (centerY - span / 2f) : (centerY + span / 2f);
 			final float yEnd = up ? (centerY + span / 2f) : (centerY - span / 2f);
@@ -446,7 +424,9 @@ public class KeyEventHandler {
 				touchTarget.dispatchTouchEvent(eventDown);
 				eventDown.recycle();
 
-				// 120ms duration with pure Linear interpolation for HIGH exit velocity
+				// === CRITICAL FIX: Trigger Fullscreen Execution IMMEDIATELY during active ACTION_DOWN gesture window ===
+				wv.evaluateJavascript("if(typeof window.__attemptFS === 'function') window.__attemptFS();", null);
+
 				final int stepCount = 10;
 				final long swipeDuration = 120; 
 				
@@ -472,8 +452,6 @@ public class KeyEventHandler {
 						touchTarget.dispatchTouchEvent(eventUp);
 						eventUp.recycle();
 						Log.i("[REACTION] " + hostTag + "Hardware Swipe Concluded (ACTION_UP).");
-						
-						wv.evaluateJavascript("if(typeof window.__enforceFS === 'function') window.__enforceFS();", null);
 					}
 				}, swipeDuration + 10);
 
