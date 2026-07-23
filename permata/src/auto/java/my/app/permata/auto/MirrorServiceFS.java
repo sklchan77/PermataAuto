@@ -42,9 +42,26 @@ public class MirrorServiceFS extends CarAppService {
 
 	@Override
 	public void onDestroy() {
-		md.release();
-		md = null;
+		if (md != null) {
+			md.release();
+			md = null;
+		}
 		super.onDestroy();
+	}
+
+	// NEW SWIPE-AWAY KILL SWITCH
+	@Override
+	public void onTaskRemoved(Intent rootIntent) {
+		super.onTaskRemoved(rootIntent);
+		Log.i("App swiped away from Recents. Killing MirrorServiceFS.");
+		
+		if (md != null) {
+			md.release();
+			md = null;
+		}
+		sc = null;
+		
+		stopSelf();
 	}
 
 	@NonNull
