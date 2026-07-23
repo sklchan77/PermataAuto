@@ -72,9 +72,7 @@ public class WebBrowserFragment extends MainActivityFragment
 		PermataWebView webView = view.findViewById(R.id.browserWebView);
 		ViewGroup fullScreenView = view.findViewById(R.id.browserFullScreenView);
 		
-		// === SURGICAL INJECTION: ATTACH UNIVERSAL MEDIA BRIDGE ===
 		webView.addJavascriptInterface(new UniversalMediaBridge(ctx), "AndroidMediaBridge");
-		// ===========================================================
 
 		PermataWebClient webClient = new PermataWebClient();
 		PermataChromeClient chromeClient = new PermataChromeClient(webView, fullScreenView);
@@ -86,6 +84,16 @@ public class WebBrowserFragment extends MainActivityFragment
 	@Override
 	public void onDestroyView() {
 		MainActivityDelegate.getActivityDelegate(requireContext()).onSuccess(this::unregisterListeners);
+		
+		// === THE FROZEN WEBVIEW ASSASSIN ===
+		PermataWebView v = getWebView();
+		if (v != null) {
+			Log.i("Destroying PermataWebView to clear deadlocked Chromium memory.");
+			v.loadUrl("about:blank");
+			v.clearHistory();
+			v.destroy();
+		}
+		
 		super.onDestroyView();
 	}
 
@@ -124,8 +132,6 @@ public class WebBrowserFragment extends MainActivityFragment
 		if (!BuildConfig.AUTO || !fullScreenOnResume) return;
 		PermataWebView v = getWebView();
 		if (v == null) return;
-		// Calling here onResume makes the video to not get freezed
-		// when you switch to another app and go back to Permata
 		v.onResume();
 		MainActivityDelegate.getActivityDelegate(getContext()).onSuccess(a -> a.post(() -> {
 			PermataChromeClient chrome = v.getWebChromeClient();
