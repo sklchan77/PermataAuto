@@ -52,6 +52,7 @@ import androidx.media.session.MediaButtonReceiver;
 import java.util.List;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 
 import my.app.permata.BuildConfig;
@@ -123,6 +124,7 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 	private AudioTrack silentAudioTrack;
 	private volatile boolean isSilentTrackRunning = false;
 	private final ScheduledExecutorService audioExecutor = Executors.newSingleThreadScheduledExecutor();
+	private ScheduledFuture<?> audioTaskFuture;
 
 	public MediaLib getLib() {
 		return lib;
@@ -285,26 +287,17 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 			silentAudioTrack.play();
 			isSilentTrackRunning = true;
 
-			audioExecutor.execute(() -> {
-				while (isSilentTrackRunning) {
+			// Non-blocking scheduled interval instead of Thread.sleep()
+			audioTaskFuture = audioExecutor.scheduleAtFixedRate(() -> {
+				AudioTrack track = silentAudioTrack;
+				if (track != null && isSilentTrackRunning) {
 					try {
-						// Capture local reference to prevent NPE during teardown
-						AudioTrack track = silentAudioTrack;
-						if (track != null && isSilentTrackRunning) {
-							track.write(silentBuffer, 0, silentBuffer.length);
-						} else {
-							break;
-						}
-						Thread.sleep(100);
-					} catch (InterruptedException ie) {
-						Thread.currentThread().interrupt();
-						break;
+						track.write(silentBuffer, 0, silentBuffer.length);
 					} catch (Exception e) {
 						Log.e(e, "Error in silent audio write loop");
-						break;
 					}
 				}
-			});
+			}, 0, 100, TimeUnit.MILLISECONDS);
 
 			Log.i("PermataMediaService: Silent Audio Anchor active. AudioFocus permanently locked.");
 		} catch (Exception e) {
@@ -314,6 +307,10 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 
 	private synchronized void stopSilentAudioAnchor() {
 		isSilentTrackRunning = false;
+		if (audioTaskFuture != null) {
+			audioTaskFuture.cancel(false);
+			audioTaskFuture = null;
+		}
 		if (silentAudioTrack != null) {
 			try {
 				silentAudioTrack.stop();
@@ -495,10 +492,10 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 		if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
 			NotificationChannel channel = new NotificationChannel(
 					NOTIF_CHANNEL_ID,
-					"Permata Media", // FIXED: Hardcoded string to avoid resource errors
+					"Permata Media",
 					NotificationManager.IMPORTANCE_LOW
 			);
-			channel.setDescription("Media Playback Controls"); // FIXED
+			channel.setDescription("Media Playback Controls");
 			channel.setShowBadge(false);
 			NotificationManager notificationManager = getSystemService(NotificationManager.class);
 			if (notificationManager != null) {
@@ -543,7 +540,6 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 			return PermataMediaService.this;
 		}
 
-		// FIXED: Restored this method so PermataMediaServiceConnection can find it
 		public MediaSessionCallback getMediaSessionCallback() {
 			return callback;
 		}
