@@ -77,4 +77,13 @@ public class Su {
 			}
 		});
 	}
+
+	// KILL SWITCH FOR THREAD POOL ZOMBIE
+	public void shutdown() {
+		Log.i("Shutting down Su thread pool.");
+		if (executor != null && !executor.isShutdown()) {
+			executor.shutdownNow(); 
+		}
+		su = null;
+	}
 }
