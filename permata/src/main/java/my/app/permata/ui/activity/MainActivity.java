@@ -95,9 +95,8 @@ public class MainActivity extends SplitCompatActivityBase
 
 	@Override
 	public void finish() {
-		PermataMediaServiceConnection s = service;
-		service = null;
-		if (s != null) s.disconnect();
+		// Removed the old blind disconnect. 
+		// Teardown is now intelligently evaluated in onDestroy().
 		super.finish();
 	}
 
@@ -117,7 +116,44 @@ public class MainActivity extends SplitCompatActivityBase
 
 	@Override
 	protected void onDestroy() {
+		Log.i("MainActivity is being destroyed. Running Golden Gate checks...");
 		AddonManager.get().removeBroadcastListener(this);
+
+		// === THE GOLDEN GATE: GUARD CHECK ===
+		boolean isAutoConnected = false;
+		boolean isPlaying = false;
+
+		try {
+			isAutoConnected = PermataApplication.get().isConnectedToAuto();
+			MainActivityDelegate delegate = MainActivityDelegate.get(this);
+			if (delegate != null && delegate.getMediaSessionCallback() != null) {
+				isPlaying = delegate.getMediaSessionCallback().isPlaying();
+			}
+		} catch (Exception e) {
+			Log.w(e, "Exception while checking Golden Gate status.");
+		}
+
+		if (isAutoConnected || isPlaying) {
+			Log.i("Golden Gate: Android Auto active or Media playing. Preserving background service bridge.");
+			// Intentionally leave the static `service` connection alive so car projection and background audio aren't interrupted.
+		} else {
+			Log.i("Golden Gate: App is truly idle. Executing full Service teardown.");
+			PermataMediaServiceConnection s = service;
+			service = null;
+			if (s != null) {
+				s.disconnect();
+			}
+		}
+
+		// Purge delayed UI tasks to prevent activity memory leaks
+		try {
+			if (PermataApplication.get() != null && PermataApplication.get().getHandler() != null) {
+				PermataApplication.get().getHandler().removeCallbacksAndMessages(this);
+			}
+		} catch (Exception e) {
+			Log.e(e, "Failed to clear global handler callbacks.");
+		}
+
 		super.onDestroy();
 	}
 
@@ -268,8 +304,7 @@ public class MainActivity extends SplitCompatActivityBase
 				dir.mkdirs();
 				if ((tmp = createTempFile(dir)) == null) {
 					App.get()
-							.run(() -> showAlert(this, "Update failed - unable to create a temporary " + "file"
-							));
+							.run(() -> showAlert(this, "Update failed - unable to create a temporary file"));
 					return completedVoid();
 				}
 			}
