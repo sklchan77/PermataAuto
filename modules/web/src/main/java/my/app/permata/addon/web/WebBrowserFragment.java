@@ -85,14 +85,22 @@ public class WebBrowserFragment extends MainActivityFragment
 	public void onDestroyView() {
 		MainActivityDelegate.getActivityDelegate(requireContext()).onSuccess(this::unregisterListeners);
 		
-		// === THE FROZEN WEBVIEW ASSASSIN ===
+		// === SAFE WEBVIEW ASSASSIN: DETACH BEFORE DESTROY ===
 		PermataWebView v = getWebView();
 		if (v != null) {
-			Log.i("Destroying PermataWebView to clear deadlocked Chromium memory.");
+			Log.i("Safely detaching and destroying PermataWebView to prevent render thread freeze.");
 			v.loadUrl("about:blank");
+			v.stopLoading();
 			v.clearHistory();
+			
+			// Detach from parent view hierarchy to prevent Chromium C++ deadlock
+			if (v.getParent() instanceof ViewGroup parent) {
+				parent.removeView(v);
+			}
+			v.removeAllViews();
 			v.destroy();
 		}
+		// ====================================================
 		
 		super.onDestroyView();
 	}
