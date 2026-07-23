@@ -21,13 +21,15 @@ public class MediaServiceStarter extends BroadcastReceiver {
 				c.disconnect();
 			}).onFailure(Log::e);
 		} else if (BluetoothDevice.ACTION_ACL_DISCONNECTED.equals(action)) {
-			// NEW DISCONNECT CLEANUP LOGIC
 			Log.i("Disconnected from bluetooth. Tearing down zombie mirror and projection.");
 			MirrorDisplay.close();
 			ProjectionService.stop();
 			if (MirrorServiceFS.sc != null) {
 				MirrorServiceFS.sc = null;
 			}
+			
+			// Kill the root thread pool zombie
+			Su.get().onSuccess(su -> su.shutdown());
 		}
 	}
 }
