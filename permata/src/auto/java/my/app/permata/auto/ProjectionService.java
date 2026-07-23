@@ -132,11 +132,16 @@ public class ProjectionService extends Service {
 			promise = null;
 		}
 	}
-	
-	// NEW SWIPE-AWAY KILL SWITCH
+
 	@Override
 	public void onTaskRemoved(Intent rootIntent) {
 		super.onTaskRemoved(rootIntent);
+
+		if (PermataApplication.get().isConnectedToAuto()) {
+			Log.i("App swiped away, but Android Auto is ACTIVE. Ignoring shutdown.");
+			return;
+		}
+
 		Log.i("App swiped away from Recents. Killing ProjectionService.");
 		stop();
 		stopSelf();
