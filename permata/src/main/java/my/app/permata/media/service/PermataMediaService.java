@@ -74,9 +74,9 @@ import my.app.utils.ui.UiUtils;
  */
 public class PermataMediaService extends MediaBrowserServiceCompat {
 	public static final String ACTION_MEDIA_SERVICE = "my.app.permata.action.MediaService";
-	public static final String ACTION_HIJACK_FOCUS = "my.app.permata.action.HIJACK_FOCUS"; // SURGICAL INJECTION: Hijack Intent
-	public static final String ACTION_WEB_MEDIA_PLAYING = "my.app.permata.action.WEB_MEDIA_PLAYING"; // SURGICAL INJECTION: Universal Play
-	public static final String ACTION_WEB_MEDIA_PAUSED = "my.app.permata.action.WEB_MEDIA_PAUSED"; // SURGICAL INJECTION: Universal Pause
+	public static final String ACTION_HIJACK_FOCUS = "my.app.permata.action.HIJACK_FOCUS"; 
+	public static final String ACTION_WEB_MEDIA_PLAYING = "my.app.permata.action.WEB_MEDIA_PLAYING"; 
+	public static final String ACTION_WEB_MEDIA_PAUSED = "my.app.permata.action.WEB_MEDIA_PAUSED"; 
 	
 	public static final String INTENT_ATTR_NOTIF_COLOR = "my.app.permata.notif.color";
 	public static final String DEFAULT_NOTIF_COLOR = "#3D2562";
@@ -100,14 +100,15 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 			"android.media.browse.SEARCH_SUPPORTED";
 	private static final int NOTIF_ID = 1;
 	private static final String NOTIF_CHANNEL_ID = "Permata";
+	
 	private DefaultMediaLib lib;
 	private MediaSessionCompat session;
 	MediaSessionCallback callback;
-
 	private BroadcastReceiver intentReceiver;
 	private int notifColor;
 	private PendingIntent notifContentIntent;
 	private MediaStyle notifStyle;
+	
 	private Action actionPrev;
 	private Action actionRw;
 	private Action actionPlay;
@@ -285,9 +286,15 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 			isSilentTrackRunning = true;
 
 			audioExecutor.execute(() -> {
-				while (isSilentTrackRunning && silentAudioTrack != null) {
+				while (isSilentTrackRunning) {
 					try {
-						silentAudioTrack.write(silentBuffer, 0, silentBuffer.length);
+						// Capture local reference to prevent NPE during teardown
+						AudioTrack track = silentAudioTrack;
+						if (track != null && isSilentTrackRunning) {
+							track.write(silentBuffer, 0, silentBuffer.length);
+						} else {
+							break;
+						}
 						Thread.sleep(100);
 					} catch (InterruptedException ie) {
 						Thread.currentThread().interrupt();
@@ -478,42 +485,36 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 		actionFf = new Action(R.drawable.ff, getString(R.string.fast_forward), pi(INTENT_FF));
 		actionNext = new Action(R.drawable.next, getString(R.string.next), pi(INTENT_NEXT));
 		actionFavAdd =
-				new Action(R.drawable.favorite, getString(R.string.favorites_add),
-						pi(INTENT_FAVORITE_ADD));
-		actionFavRm = new Action(R.drawable.favorite_filled, getString(R.string.favorites_remove),
-				pi(INTENT_FAVORITE_REMOVE));
+				new Action(R.drawable.favorite, getString(R.string.favorites_add), pi(INTENT_FAVORITE_ADD));
+		actionFavRm =
+				new Action(R.drawable.favorite, getString(R.string.favorites_remove), pi(INTENT_FAVORITE_REMOVE));
+		notifStyle = new MediaStyle()
+				.setMediaSession(session.getSessionToken())
+				.setShowActionsInCompactView(0, 2, 4);
 
-		notifStyle = new MediaStyle().setShowActionsInCompactView(0, 2, 4).setShowCancelButton(true)
-				.setCancelButtonIntent(MediaButtonReceiver.buildMediaButtonPendingIntent(this,
-						PlaybackStateCompat.ACTION_STOP)).setMediaSession(session.getSessionToken());
-
-		NotificationChannel nc =
-				new NotificationChannel(NOTIF_CHANNEL_ID, getString(R.string.media_service_name),
-						NotificationManager.IMPORTANCE_LOW);
-		NotificationManager nmgr =
-				(NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
-		if (nmgr != null) nmgr.createNotificationChannel(nc);
-
+		if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+			NotificationChannel channel = new NotificationChannel(
+					NOTIF_CHANNEL_ID,
+					getString(R.string.notification_channel_name),
+					NotificationManager.IMPORTANCE_LOW
+			);
+			channel.setDescription(getString(R.string.notification_channel_description));
+			channel.setShowBadge(false);
+			NotificationManager notificationManager = getSystemService(NotificationManager.class);
+			if (notificationManager != null) {
+				notificationManager.createNotificationChannel(channel);
+			}
+		}
+		
 		intentReceiver = new BroadcastReceiver() {
 			@Override
 			public void onReceive(Context context, Intent intent) {
-				String action = intent.getAction();
-				if (action == null) return;
-
-				switch (action) {
-					case INTENT_PREV -> callback.onSkipToPrevious();
-					case INTENT_RW -> callback.onRewind();
-					case INTENT_STOP -> callback.onStop();
-					case INTENT_PLAY -> callback.onPlay();
-					case INTENT_PAUSE -> callback.onPause();
-					case INTENT_FF -> callback.onFastForward();
-					case INTENT_NEXT -> callback.onSkipToNext();
-					case INTENT_FAVORITE_ADD -> callback.favoriteAddRemove(true);
-					case INTENT_FAVORITE_REMOVE -> callback.favoriteAddRemove(false);
+				if (intent != null && intent.getAction() != null) {
+					callback.onCustomAction(intent.getAction(), intent.getExtras());
 				}
 			}
 		};
-
+		
 		IntentFilter filter = new IntentFilter();
 		filter.addAction(INTENT_PREV);
 		filter.addAction(INTENT_RW);
@@ -524,23 +525,22 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 		filter.addAction(INTENT_NEXT);
 		filter.addAction(INTENT_FAVORITE_ADD);
 		filter.addAction(INTENT_FAVORITE_REMOVE);
-
-		try {
-			ContextCompat.registerReceiver(this, intentReceiver, filter,
-					ContextCompat.RECEIVER_NOT_EXPORTED);
-		} catch (Exception ex) {
-			Log.e(ex, "Failed to register notification receiver");
+		
+		if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+			registerReceiver(intentReceiver, filter, Context.RECEIVER_NOT_EXPORTED);
+		} else {
+			registerReceiver(intentReceiver, filter);
 		}
 	}
 
 	private PendingIntent pi(String action) {
-		Intent intent = new Intent(action);
-		return PendingIntent.getBroadcast(this, 1, intent, FLAG_IMMUTABLE);
+		Intent intent = new Intent(action).setPackage(getPackageName());
+		return PendingIntent.getBroadcast(this, 0, intent, FLAG_IMMUTABLE | FLAG_UPDATE_CURRENT);
 	}
 
-	public final class ServiceBinder extends Binder {
-		public MediaSessionCallback getMediaSessionCallback() {
-			return callback;
+	class ServiceBinder extends Binder {
+		PermataMediaService getService() {
+			return PermataMediaService.this;
 		}
 	}
 }
