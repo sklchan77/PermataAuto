@@ -67,23 +67,31 @@ public class Su {
 	}
 
 	public void exec(String cmd) {
-		executor.execute(() -> {
-			try {
-				Log.d("executing: ", cmd);
-				pw.println(cmd);
-				pw.flush();
-			} catch (Exception err) {
-				Log.e(err, "Failed to execute command as root: ", cmd);
+		synchronized (Su.class) {
+			if (executor == null || executor.isShutdown() || executor.isTerminated()) {
+				Log.w("Attempted to execute root command on shut down Su executor: ", cmd);
+				return;
 			}
-		});
+			executor.execute(() -> {
+				try {
+					Log.d("executing: ", cmd);
+					pw.println(cmd);
+					pw.flush();
+				} catch (Exception err) {
+					Log.e(err, "Failed to execute command as root: ", cmd);
+				}
+			});
+		}
 	}
 
-	// KILL SWITCH FOR THREAD POOL ZOMBIE
+	// THREAD-SAFE KILL SWITCH FOR THREAD POOL ZOMBIE
 	public void shutdown() {
-		Log.i("Shutting down Su thread pool.");
-		if (executor != null && !executor.isShutdown()) {
-			executor.shutdownNow(); 
+		synchronized (Su.class) {
+			Log.i("Shutting down Su thread pool.");
+			if (executor != null && !executor.isShutdown()) {
+				executor.shutdownNow(); 
+			}
+			su = null;
 		}
-		su = null;
 	}
 }
