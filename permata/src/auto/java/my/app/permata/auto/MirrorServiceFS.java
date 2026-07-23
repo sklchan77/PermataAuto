@@ -49,10 +49,16 @@ public class MirrorServiceFS extends CarAppService {
 		super.onDestroy();
 	}
 
-	// NEW SWIPE-AWAY KILL SWITCH
 	@Override
 	public void onTaskRemoved(Intent rootIntent) {
 		super.onTaskRemoved(rootIntent);
+
+		// GUARD CHECK: Do not kill if actively projecting to the Car Head Unit!
+		if (PermataApplication.get().isConnectedToAuto()) {
+			Log.i("App swiped away, but Android Auto is ACTIVE. Ignoring shutdown.");
+			return;
+		}
+
 		Log.i("App swiped away from Recents. Killing MirrorServiceFS.");
 		
 		if (md != null) {
