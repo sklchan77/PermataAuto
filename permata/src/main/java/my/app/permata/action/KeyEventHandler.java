@@ -35,7 +35,7 @@ public class KeyEventHandler {
 	
 	private static final Map<View, Long> scrollTimestamps = new WeakHashMap<>();
 
-	// === UPGRADED: INSTANT 1ST-PRESS DOUYIN & UNIVERSAL FULLSCREEN PAYLOAD ===
+	// === RESTORED: Window Touch Listener re-added for organic screen taps ===
 	private static final String JS_UNIVERSAL_PAYLOAD = "(function(){" +
 			"let res = 'Discovery [Layer 2]: JS Registry Miss (No custom formatting applied)'; " +
 			"const injectGlobalWipe = function() { " +
@@ -90,6 +90,13 @@ public class KeyEventHandler {
 			"      try { player.dispatchEvent(new MouseEvent('dblclick', { bubbles: true, cancelable: true, view: window })); } catch(e){} " +
 			"  } " +
 			"}; " +
+			"window.__permataTouchListener = function(e) { " +
+			"  window.__attemptFS(); " +
+			"  window.removeEventListener('touchend', window.__permataTouchListener); " +
+			"  window.removeEventListener('mouseup', window.__permataTouchListener); " +
+			"}; " +
+			"window.addEventListener('touchend', window.__permataTouchListener, {once:true}); " +
+			"window.addEventListener('mouseup', window.__permataTouchListener, {once:true}); " +
 			"if (!window.__permataMediaCapturerBound) { " +
 			"  window.__permataMediaCapturerBound = true; " +
 			"  document.addEventListener('play', function(e) { " +
@@ -424,7 +431,6 @@ public class KeyEventHandler {
 				touchTarget.dispatchTouchEvent(eventDown);
 				eventDown.recycle();
 
-				// === CRITICAL FIX: Trigger Fullscreen Execution IMMEDIATELY during active ACTION_DOWN gesture window ===
 				wv.evaluateJavascript("if(typeof window.__attemptFS === 'function') window.__attemptFS();", null);
 
 				final int stepCount = 10;
