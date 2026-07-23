@@ -35,7 +35,7 @@ public class KeyEventHandler {
 	
 	private static final Map<View, Long> scrollTimestamps = new WeakHashMap<>();
 
-	// === RESTORED & UPGRADED: CSS VIEWPORT FULLSCREEN ENFORCEMENT ===
+	// === RESTORED: Removed aggressive CSS stretching for Douyin to fix blur ===
 	private static final String JS_UNIVERSAL_PAYLOAD = "(function(){" +
 			"let res = 'Discovery [Layer 2]: JS Registry Miss (No custom formatting applied)'; " +
 			"const injectGlobalWipe = function() { " +
@@ -125,8 +125,7 @@ public class KeyEventHandler {
 			"} " +
 			"const registry=[" +
 			"    {name:\"douyin\",match:/douyin\\.com/,execute:function(){" +
-			"      var dyCss = ' * { filter: none !important; backdrop-filter: none !important; } video, xgplayer, .xgplayer { opacity: 1 !important; visibility: visible !important; display: block !important; position: fixed !important; top: 0 !important; left: 0 !important; width: 100vw !important; height: 100vh !important; z-index: 999999 !important; object-fit: contain !important; } '; " +
-			"      return 'DOUYIN: ' + injectGlobalWipe() + ' | ' + injectSpecificWipe(dyCss, 'permata-dy-css'); " +
+			"      return 'DOUYIN: ' + injectGlobalWipe(); " +
 			"    }}," +
 			"    {name:\"tiktok\",match:/tiktok\\.com/,execute:function(){" +
 			"      var ttCss = ' [data-e2e=\"video-author-avatar\"], [data-e2e=\"nav-login\"], [class*=\"DivHeaderContainer\"], [class*=\"DivSideNavContainer\"], [class*=\"DivBottomContainer\"] { display: none !important; pointer-events: none !important; } '; " +
