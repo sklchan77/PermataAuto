@@ -135,7 +135,6 @@
             android:exported="false">
             <intent-filter>
                 <action android:name="android.bluetooth.device.action.ACL_CONNECTED" />
-                <!-- NEW DISCONNECT HOOK ADDED BELOW -->
                 <action android:name="android.bluetooth.device.action.ACL_DISCONNECTED" />
             </intent-filter>
         </receiver>
