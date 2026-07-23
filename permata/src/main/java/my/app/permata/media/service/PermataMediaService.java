@@ -495,10 +495,10 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 		if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
 			NotificationChannel channel = new NotificationChannel(
 					NOTIF_CHANNEL_ID,
-					getString(R.string.notification_channel_name),
+					"Permata Media", // FIXED: Hardcoded string to avoid resource errors
 					NotificationManager.IMPORTANCE_LOW
 			);
-			channel.setDescription(getString(R.string.notification_channel_description));
+			channel.setDescription("Media Playback Controls"); // FIXED
 			channel.setShowBadge(false);
 			NotificationManager notificationManager = getSystemService(NotificationManager.class);
 			if (notificationManager != null) {
@@ -538,9 +538,14 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 		return PendingIntent.getBroadcast(this, 0, intent, FLAG_IMMUTABLE | FLAG_UPDATE_CURRENT);
 	}
 
-	class ServiceBinder extends Binder {
-		PermataMediaService getService() {
+	public class ServiceBinder extends Binder {
+		public PermataMediaService getService() {
 			return PermataMediaService.this;
+		}
+
+		// FIXED: Restored this method so PermataMediaServiceConnection can find it
+		public MediaSessionCallback getMediaSessionCallback() {
+			return callback;
 		}
 	}
 }
