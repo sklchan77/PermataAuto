@@ -119,11 +119,9 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 	private Bitmap defaultAudioIcon;
 	private Bitmap defaultVideoIcon;
 
-	// === SURGICAL INJECTION: SILENT AUDIO ANCHOR & LOCKING FIELDS ===
 	private AudioTrack silentAudioTrack;
 	private volatile boolean isSilentTrackRunning = false;
 	private final ScheduledExecutorService audioExecutor = Executors.newSingleThreadScheduledExecutor();
-	// ================================================================
 
 	public MediaLib getLib() {
 		return lib;
@@ -141,13 +139,11 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 				PermataApplication.get().getHandler());
 		callback.onPrepare();
 		
-		// === SURGICAL INJECTION: ENABLE NATIVE MEDIA CONTROLS & BIND CALLBACK ===
 		session.setFlags(
 				MediaSessionCompat.FLAG_HANDLES_MEDIA_BUTTONS |
 				MediaSessionCompat.FLAG_HANDLES_TRANSPORT_CONTROLS
 		);
 		session.setCallback(callback);
-		// =========================================================================
 
 		Intent mediaButtonIntent =
 				new Intent(Intent.ACTION_MEDIA_BUTTON, null, ctx, MediaButtonReceiver.class);
@@ -179,7 +175,23 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 		Log.d("PermataMediaService destroyed");
 	}
 
-	// === SURGICAL INJECTION: INTENT INTERCEPTOR ===
+	@Override
+	public void onTaskRemoved(Intent rootIntent) {
+		super.onTaskRemoved(rootIntent);
+
+		boolean isPlaying = callback != null && callback.isPlaying();
+		boolean isAutoConnected = PermataApplication.get().isConnectedToAuto();
+
+		if (isPlaying || isAutoConnected) {
+			Log.i("App swiped away, but Media is playing or Auto is connected. Ignoring shutdown.");
+			return;
+		}
+
+		Log.i("App swiped away from Recents. Killing PermataMediaService (Zombie #2).");
+		stopSilentAudioAnchor(); 
+		stopSelf();
+	}
+
 	@Override
 	public int onStartCommand(Intent intent, int flags, int startId) {
 		if (intent != null) {
@@ -316,7 +328,6 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 				.setState(state, PlaybackStateCompat.PLAYBACK_POSITION_UNKNOWN, 1.0f);
 		session.setPlaybackState(stateBuilder.build());
 	}
-	// ============================================================
 
 	@Override
 	public IBinder onBind(Intent intent) {
