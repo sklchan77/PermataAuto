@@ -35,7 +35,6 @@ public class KeyEventHandler {
 	
 	private static final Map<View, Long> scrollTimestamps = new WeakHashMap<>();
 
-	// === RESTORED: Window Touch Listener re-added for organic screen taps ===
 	private static final String JS_UNIVERSAL_PAYLOAD = "(function(){" +
 			"let res = 'Discovery [Layer 2]: JS Registry Miss (No custom formatting applied)'; " +
 			"const injectGlobalWipe = function() { " +
@@ -82,13 +81,13 @@ public class KeyEventHandler {
 			"window.__attemptFS = function() { " +
 			"  if (window.location.hostname.indexOf('instagram.com') !== -1) return; " +
 			"  if (document.fullscreenElement || document.webkitFullscreenElement) return; " +
-			"  let fsBtn = document.querySelector('.xgplayer-fullscreen, .xg-fullscreen, .xgplayer-pagefull, [class*=\"fullscreen\"], .css-1vvdg2q'); " +
-			"  if (fsBtn) { try { fsBtn.click(); return; } catch(e){} } " +
-			"  let player = document.querySelector('.xgplayer, video'); " +
-			"  if (player) { " +
-			"      try { player.requestFullscreen(); } catch(e) {} " +
-			"      try { player.dispatchEvent(new MouseEvent('dblclick', { bubbles: true, cancelable: true, view: window })); } catch(e){} " +
+			"  let vid = document.querySelector('video'); " +
+			"  if (vid) { " +
+			"      try { if (vid.webkitEnterFullscreen) { vid.webkitEnterFullscreen(); return; } } catch(e) {} " +
+			"      try { vid.requestFullscreen(); } catch(e) {} " +
 			"  } " +
+			"  let fsBtn = document.querySelector('.xgplayer-fullscreen, .xg-fullscreen, .xgplayer-pagefull, [class*=\"fullscreen\"], .css-1vvdg2q'); " +
+			"  if (fsBtn) { try { fsBtn.click(); } catch(e){} } " +
 			"}; " +
 			"window.__permataTouchListener = function(e) { " +
 			"  window.__attemptFS(); " +
@@ -382,12 +381,13 @@ public class KeyEventHandler {
 						"  try {" +
 						"    var isDown = " + (!up) + ";" +
 						"    var amount = isDown ? window.innerHeight * 0.85 : -window.innerHeight * 0.85;" +
-						"    var scroller = document.querySelector('main') || document.documentElement || document.body;" +
-						"    scroller.scrollBy({ top: amount, behavior: 'smooth' });" +
+						"    var containers = [document.documentElement, document.body, document.querySelector('main'), document.querySelector('main[role=\"main\"]') ? document.querySelector('main[role=\"main\"]').parentElement : null, document.querySelector('article')];" +
+						"    containers.forEach(function(c) { if(c) { try { c.scrollBy({ top: amount, behavior: 'smooth' }); } catch(e){} } });" +
+						"    window.scrollBy({ top: amount, behavior: 'smooth' });" +
 						"    var activeNode = document.activeElement || document.body;" +
 						"    try { var wheelEvt = new WheelEvent('wheel', { deltaY: amount, bubbles: true, cancelable: true }); activeNode.dispatchEvent(wheelEvt); } catch(wErr) {}" +
 						"    try { var keyStr = isDown ? 'ArrowDown' : 'ArrowUp'; var keyCode = isDown ? 40 : 38; var kEvt = new KeyboardEvent('keydown', { key: keyStr, code: keyStr, keyCode: keyCode, which: keyCode, bubbles: true, cancelable: true }); activeNode.dispatchEvent(kEvt); } catch(kErr) {}" +
-						"    return 'Scroll: IG Specific JS Scroll Executed on ' + scroller.tagName;" +
+						"    return 'Scroll: IG Specific JS Scroll Executed on multiple containers.';" +
 						"  } catch (err) { return 'Scroll Error: ' + err.message; }" +
 						"})();";
 				wv.evaluateJavascript(igJsScript, value -> {
