@@ -82,7 +82,7 @@ public class KeyEventHandler {
 			"window.__attemptFS = function() { " +
 			"  if (window.location.hostname.indexOf('instagram.com') !== -1) return; " +
 			"  if (document.fullscreenElement || document.webkitFullscreenElement) return; " +
-			"  let fsBtn = document.querySelector('.xgplayer-fullscreen, .xg-fullscreen, .xgplayer-pagefull, [class*=\"fullscreen\"]'); " +
+			"  let fsBtn = document.querySelector('.xgplayer-fullscreen, .xg-fullscreen, .xgplayer-pagefull, [class*=\"fullscreen\"], .css-1vvdg2q'); " +
 			"  if (fsBtn) { try { fsBtn.click(); return; } catch(e){} } " +
 			"  let player = document.querySelector('.xgplayer, video'); " +
 			"  if (player) { " +
@@ -92,11 +92,9 @@ public class KeyEventHandler {
 			"}; " +
 			"window.__permataTouchListener = function(e) { " +
 			"  window.__attemptFS(); " +
-			"  window.removeEventListener('touchend', window.__permataTouchListener); " +
-			"  window.removeEventListener('mouseup', window.__permataTouchListener); " +
 			"}; " +
-			"window.addEventListener('touchend', window.__permataTouchListener, {once:true}); " +
-			"window.addEventListener('mouseup', window.__permataTouchListener, {once:true}); " +
+			"window.addEventListener('touchend', window.__permataTouchListener); " +
+			"window.addEventListener('mouseup', window.__permataTouchListener); " +
 			"if (!window.__permataMediaCapturerBound) { " +
 			"  window.__permataMediaCapturerBound = true; " +
 			"  document.addEventListener('play', function(e) { " +
@@ -118,7 +116,7 @@ public class KeyEventHandler {
 			"    {name:\"douyin\",match:/douyin\\.com/,execute:function(){" +
 			"      let dyWipe = injectGlobalWipe(); " +
 			"      if (typeof window.__attemptFS === 'function') window.__attemptFS(); " +
-			"      return 'DOUYIN 1st-Press FS Triggered | ' + dyWipe; " +
+			"      return 'DOUYIN FS Attempted | ' + dyWipe; " +
 			"    }}," +
 			"    {name:\"tiktok\",match:/tiktok\\.com/,execute:function(){" +
 			"      var ttCss = ' [data-e2e=\"video-author-avatar\"], [data-e2e=\"nav-login\"], [class*=\"DivHeaderContainer\"], [class*=\"DivSideNavContainer\"], [class*=\"DivBottomContainer\"] { display: none !important; pointer-events: none !important; } '; " +
@@ -227,8 +225,7 @@ public class KeyEventHandler {
 											String h = host.toLowerCase();
 											isInstagram = h.contains("instagram.com");
 											
-											isSnapFeedHost = h.contains("douyin") || h.contains("tiktok") ||
-													h.contains("youtube") || h.contains("youtu") || h.contains("facebook") ||
+											isSnapFeedHost = h.contains("youtube") || h.contains("youtu") || h.contains("facebook") ||
 													h.contains("kuaishou") || h.contains("xiaohongshu") ||
 													h.contains("likee") || h.contains("kwai") || h.contains("snackvideo") ||
 													h.contains("mojapp") || h.contains("sharechat");
@@ -236,7 +233,7 @@ public class KeyEventHandler {
 											isMediaHost = isInstagram || isSnapFeedHost || h.contains("bilibili") || 
 													h.contains("reddit") || h.contains("twitter") || h.contains("x.com") || 
 													h.contains("pinterest") || h.contains("twitch") || h.contains("weibo") || 
-													h.contains("snapchat") || h.contains("vk");
+													h.contains("snapchat") || h.contains("vk") || h.contains("douyin") || h.contains("tiktok");
 										}
 									} catch (Exception ignored) {}
 								}
@@ -385,11 +382,12 @@ public class KeyEventHandler {
 						"  try {" +
 						"    var isDown = " + (!up) + ";" +
 						"    var amount = isDown ? window.innerHeight * 0.85 : -window.innerHeight * 0.85;" +
-						"    window.scrollBy({ top: amount, behavior: 'smooth' });" +
+						"    var scroller = document.querySelector('main') || document.documentElement || document.body;" +
+						"    scroller.scrollBy({ top: amount, behavior: 'smooth' });" +
 						"    var activeNode = document.activeElement || document.body;" +
 						"    try { var wheelEvt = new WheelEvent('wheel', { deltaY: amount, bubbles: true, cancelable: true }); activeNode.dispatchEvent(wheelEvt); } catch(wErr) {}" +
 						"    try { var keyStr = isDown ? 'ArrowDown' : 'ArrowUp'; var keyCode = isDown ? 40 : 38; var kEvt = new KeyboardEvent('keydown', { key: keyStr, code: keyStr, keyCode: keyCode, which: keyCode, bubbles: true, cancelable: true }); activeNode.dispatchEvent(kEvt); } catch(kErr) {}" +
-						"    return 'Scroll: IG Specific JS Scroll Executed.';" +
+						"    return 'Scroll: IG Specific JS Scroll Executed on ' + scroller.tagName;" +
 						"  } catch (err) { return 'Scroll Error: ' + err.message; }" +
 						"})();";
 				wv.evaluateJavascript(igJsScript, value -> {
