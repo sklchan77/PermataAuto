@@ -214,6 +214,7 @@ public class KeyEventHandler {
 								boolean isMediaHost = false;
 								boolean isInstagram = false;
 								boolean isSnapFeedHost = false;
+								boolean isTikTok = false;
 								
 								if (currentUrl != null) {
 									try {
@@ -223,7 +224,9 @@ public class KeyEventHandler {
 											
 											String h = host.toLowerCase();
 											isInstagram = h.contains("instagram.com");
+											isTikTok = h.contains("tiktok");
 											
+											// Note: Douyin deliberately left out of isSnapFeedHost so it falls through to get the Hardware Fling Swipe
 											isSnapFeedHost = h.contains("youtube") || h.contains("youtu") || h.contains("facebook") ||
 													h.contains("kuaishou") || h.contains("xiaohongshu") ||
 													h.contains("likee") || h.contains("kwai") || h.contains("snackvideo") ||
@@ -232,12 +235,12 @@ public class KeyEventHandler {
 											isMediaHost = isInstagram || isSnapFeedHost || h.contains("bilibili") || 
 													h.contains("reddit") || h.contains("twitter") || h.contains("x.com") || 
 													h.contains("pinterest") || h.contains("twitch") || h.contains("weibo") || 
-													h.contains("snapchat") || h.contains("vk") || h.contains("douyin") || h.contains("tiktok");
+													h.contains("snapchat") || h.contains("vk") || h.contains("douyin") || isTikTok;
 										}
 									} catch (Exception ignored) {}
 								}
 								final String hostTag = "[Host: " + host + "] ";
-								Log.i("[DETECTION] " + hostTag + "Resolved. isMediaHost: " + isMediaHost + " | isSnapFeedHost: " + isSnapFeedHost);
+								Log.i("[DETECTION] " + hostTag + "Resolved. isMediaHost: " + isMediaHost + " | isSnapFeedHost: " + isSnapFeedHost + " | isTikTok: " + isTikTok);
 
 								View touchTargetView = webView;
 								
@@ -265,7 +268,7 @@ public class KeyEventHandler {
 									}
 								}
 
-								smartScrollWebView(webView, touchTargetView, !isNext, hostTag, isMediaHost, isInstagram, isSnapFeedHost);
+								smartScrollWebView(webView, touchTargetView, !isNext, hostTag, isMediaHost, isInstagram, isSnapFeedHost, isTikTok);
 							}
 						});
 						
@@ -320,7 +323,7 @@ public class KeyEventHandler {
 		return null;
 	}
 
-	private static void smartScrollWebView(final WebView wv, final View touchTarget, boolean up, final String hostTag, boolean isMediaHost, boolean isInstagram, boolean isSnapFeedHost) {
+	private static void smartScrollWebView(final WebView wv, final View touchTarget, boolean up, final String hostTag, boolean isMediaHost, boolean isInstagram, boolean isSnapFeedHost, boolean isTikTok) {
 		if (wv == null || touchTarget == null || !touchTarget.isAttachedToWindow() || touchTarget.getWidth() <= 0 || touchTarget.getHeight() <= 0) return;
 
 		long now = android.os.SystemClock.uptimeMillis();
@@ -340,13 +343,29 @@ public class KeyEventHandler {
 				if (value != null && !value.equals("null")) Log.i(hostTag + "[REACTION] " + value.replace("\"", ""));
 			});
 
-			if (isMediaHost && !isInstagram) {
+			if (isTikTok) {
+				Log.i(hostTag + "[ACTION] TikTok Exclusive Detected: Using Native DOM Pagination.");
+				String ttJsScript = "(function() {" +
+						"  try {" +
+						"    var isDown = " + (!up) + ";" +
+						"    var targetBtn = isDown ? document.querySelector('[data-e2e=\"arrow-down\"]') : document.querySelector('[data-e2e=\"arrow-up\"]');" +
+						"    if (targetBtn) { targetBtn.click(); return 'Scroll: TikTok Native Button Clicked'; }" +
+						"    var amount = isDown ? window.innerHeight * 0.90 : -window.innerHeight * 0.90;" +
+						"    window.scrollBy({ top: amount, behavior: 'smooth' });" +
+						"    return 'Scroll: TikTok Window Fallback Executed.';" +
+						"  } catch (err) { return 'Scroll Error: ' + err.message; }" +
+						"})();";
+				wv.evaluateJavascript(ttJsScript, value -> {
+					if (value != null && !value.equals("null")) Log.i(hostTag + "[REACTION] " + value.replace("\"", ""));
+				});
+			} else if (isMediaHost && !isInstagram) {
+				// Lock in Douyin and other standard media hosts
 				if (!isSnapFeedHost) {
 					Log.i("[ACTION] Injecting Virtual Scroll JS Script...");
 					String advancedJsScript = "(function() {" +
 							"  try {" +
 							"    var isDown = " + (!up) + ";" +
-							"    var targetBtn = isDown ? document.querySelector('.xgplayer-playswitch-next, .slide-down-btn, [aria-label=\"Next video\"], [data-e2e=\"arrow-down\"]') : document.querySelector('.xgplayer-playswitch-prev, .slide-up-btn, [aria-label=\"Previous video\"], [data-e2e=\"arrow-up\"]');" +
+							"    var targetBtn = isDown ? document.querySelector('.xgplayer-playswitch-next, .slide-down-btn, [aria-label=\"Next video\"]') : document.querySelector('.xgplayer-playswitch-prev, .slide-up-btn, [aria-label=\"Previous video\"]');" +
 							"    if (targetBtn) { targetBtn.click(); return 'Scroll: Programmatic Button Clicked'; }" +
 							"    var amount = isDown ? window.innerHeight * 0.90 : -window.innerHeight * 0.90;" +
 							"    window.scrollBy({ top: amount, behavior: 'smooth' });" +
@@ -377,6 +396,7 @@ public class KeyEventHandler {
 				}, 1500);
 
 			} else if (isInstagram) {
+				// Lock in Instagram
 				String igJsScript = "(function() {" +
 						"  try {" +
 						"    var isDown = " + (!up) + ";" +
@@ -406,7 +426,7 @@ public class KeyEventHandler {
 				});
 			}
 
-			if (!isSnapFeedHost) {
+			if (!isSnapFeedHost && !isTikTok) {
 				int backupKey = up ? KeyEvent.KEYCODE_PAGE_UP : KeyEvent.KEYCODE_PAGE_DOWN;
 				wv.dispatchKeyEvent(new KeyEvent(KeyEvent.ACTION_DOWN, backupKey));
 				wv.dispatchKeyEvent(new KeyEvent(KeyEvent.ACTION_UP, backupKey));
@@ -414,7 +434,8 @@ public class KeyEventHandler {
 		}
 
 		// === THE HIGH-VELOCITY FLING ALGORITHM (Pure Gestural Swipe Engine) ===
-		if (isMediaHost && !isInstagram) {
+		// Bypassed exclusively for TikTok and Instagram to prevent jitter/zoom bugs
+		if (isMediaHost && !isInstagram && !isTikTok) {
 			final float actionX = touchTarget.getWidth() * 0.50f;
 			final float centerY = touchTarget.getHeight() / 2f;
 			
