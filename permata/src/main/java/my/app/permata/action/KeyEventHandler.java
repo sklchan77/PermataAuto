@@ -16,6 +16,7 @@ import android.widget.EditText;
 import androidx.annotation.Nullable;
 
 import java.lang.reflect.Method;
+import java.util.Collections;
 import java.util.Map;
 import java.util.WeakHashMap;
 
@@ -34,7 +35,8 @@ public class KeyEventHandler {
 
 	private static Worker worker;
 	
-	private static final Map<View, Long> scrollTimestamps = new WeakHashMap<>();
+	// Enterprise Hardening: Synchronized map prevents ConcurrentModificationException across threads
+	private static final Map<View, Long> scrollTimestamps = Collections.synchronizedMap(new WeakHashMap<>());
 
 	private static final String JS_UNIVERSAL_PAYLOAD = "(function(){" +
 			"let res = 'Discovery [Layer 2]: JS Registry Miss (No custom formatting applied)'; " +
@@ -203,105 +205,103 @@ public class KeyEventHandler {
 		if (targetActivity != null && event.getAction() == ACTION_DOWN) {
 			if (code == KeyEvent.KEYCODE_MEDIA_NEXT || code == KeyEvent.KEYCODE_MEDIA_PREVIOUS) {
 				boolean isNext = (code == KeyEvent.KEYCODE_MEDIA_NEXT);
-				WebView resolvedWebView = null;
-				boolean isExplicitWebFragment = false;
-
-				// 1. Check if the App strictly declares the WebBrowser as the active fragment
+				
 				ActivityFragment activeFragment = targetActivity.getActiveFragment();
 				if (activeFragment != null) {
 					String className = activeFragment.getClass().getName();
+					
+					// Pre-qualification check ensures we only hijack if the intent is to browse the web
 					if (className.endsWith("WebBrowserFragment") && !className.endsWith("YoutubeFragment")) {
-						resolvedWebView = scanFragmentsForWebView(activeFragment);
-						isExplicitWebFragment = true;
-					}
-				}
-
-				// 2. Fallback: Scan the Window DecorView for any visible WebViews (Android Auto Fragment fixes)
-				if (resolvedWebView == null || !resolvedWebView.isShown()) {
-					resolvedWebView = findTopVisibleWebView(targetActivity);
-				}
-
-				// 3. Focus Verification: Ensure we only hijack if the user is ACTUALLY interacting with it
-				if (resolvedWebView != null && resolvedWebView.isShown()) {
-					boolean hasTouchFocus = resolvedWebView.hasFocus();
-					// If the WebView takes up more than 50% of the screen, we consider it the primary active view
-					boolean isFullScreenSize = false;
-					if (targetActivity.getWindow() != null && targetActivity.getWindow().getDecorView() != null) {
-						int screenHeight = targetActivity.getWindow().getDecorView().getHeight();
-						if (screenHeight > 0) {
-							isFullScreenSize = resolvedWebView.getHeight() > (screenHeight * 0.5);
-						}
-					}
-
-					if (isExplicitWebFragment || hasTouchFocus || isFullScreenSize) {
-						// User Interaction Confirmed. Hijack steering wheel.
-						final WebView finalWv = resolvedWebView;
 						
+						// Enterprise Hardening: All View Hierarchy access is posted safely to the Main UI Thread
 						targetActivity.post(() -> {
-							String currentUrl = finalWv.getUrl();
-							String host = "unknown";
-							boolean isMediaHost = false;
-							boolean isInstagram = false;
-							boolean isSnapFeedHost = false;
-							boolean isTikTok = false;
-							
-							if (currentUrl != null) {
-								try {
-									host = Uri.parse(currentUrl).getHost();
-									if (host != null) {
-										if (host.startsWith("www.")) host = host.substring(4);
-										
-										String h = host.toLowerCase();
-										isInstagram = h.contains("instagram.com");
-										isTikTok = h.contains("tiktok");
-										
-										isSnapFeedHost = h.contains("youtube") || h.contains("youtu") || h.contains("facebook") ||
-												h.contains("kuaishou") || h.contains("xiaohongshu") ||
-												h.contains("likee") || h.contains("kwai") || h.contains("snackvideo") ||
-												h.contains("mojapp") || h.contains("sharechat");
-												
-										isMediaHost = isInstagram || isSnapFeedHost || h.contains("bilibili") || 
-												h.contains("reddit") || h.contains("twitter") || h.contains("x.com") || 
-												h.contains("pinterest") || h.contains("twitch") || h.contains("weibo") || 
-												h.contains("snapchat") || h.contains("vk") || h.contains("douyin") || isTikTok;
-									}
-								} catch (Exception ignored) {}
-							}
-							final String hostTag = "[Host: " + host + "] ";
-							Log.i("[DETECTION] " + hostTag + "Resolved. isMediaHost: " + isMediaHost + " | isSnapFeedHost: " + isSnapFeedHost + " | isTikTok: " + isTikTok);
+							WebView resolvedWebView = scanFragmentsForWebView(activeFragment);
+							boolean isExplicitWebFragment = (resolvedWebView != null);
 
-							View touchTargetView = finalWv;
-							
-							if (isInstagram) {
-								Log.i("[CHECK] Instagram detected. Overriding Reflection layer.");
-							} else {
-								try {
-									Method getChromeClient = finalWv.getClass().getMethod("getWebChromeClient");
-									Object chromeClient = getChromeClient.invoke(finalWv);
-									if (chromeClient != null) {
-										Method isFullScreenMethod = chromeClient.getClass().getMethod("isFullScreen");
-										boolean isFullScreen = (Boolean) isFullScreenMethod.invoke(chromeClient);
-										
-										if (isFullScreen) {
-											Method getFullScreenViewMethod = chromeClient.getClass().getMethod("getFullScreenView");
-											View fullScreenView = (View) getFullScreenViewMethod.invoke(chromeClient);
-											if (fullScreenView != null && fullScreenView.getVisibility() == View.VISIBLE) {
-												touchTargetView = fullScreenView;
-												Log.i("[REACTION] " + hostTag + "Target Layout locked to FullScreenView.");
+							// Fallback: Scan the Window DecorView for any visible WebViews (Android Auto Fragment fixes)
+							if (resolvedWebView == null || !resolvedWebView.isShown()) {
+								resolvedWebView = findTopVisibleWebView(targetActivity);
+							}
+
+							// Focus Verification: Ensure we only hijack if the user is ACTUALLY interacting with it
+							if (resolvedWebView != null && resolvedWebView.isShown()) {
+								boolean hasTouchFocus = resolvedWebView.hasFocus();
+								boolean isFullScreenSize = false;
+								
+								if (targetActivity.getWindow() != null && targetActivity.getWindow().getDecorView() != null) {
+									int screenHeight = targetActivity.getWindow().getDecorView().getHeight();
+									if (screenHeight > 0) {
+										isFullScreenSize = resolvedWebView.getHeight() > (screenHeight * 0.5);
+									}
+								}
+
+								if (isExplicitWebFragment || hasTouchFocus || isFullScreenSize) {
+									String currentUrl = resolvedWebView.getUrl();
+									String host = "unknown";
+									boolean isMediaHost = false;
+									boolean isInstagram = false;
+									boolean isSnapFeedHost = false;
+									boolean isTikTok = false;
+									
+									if (currentUrl != null) {
+										try {
+											host = Uri.parse(currentUrl).getHost();
+											if (host != null) {
+												if (host.startsWith("www.")) host = host.substring(4);
+												
+												String h = host.toLowerCase();
+												isInstagram = h.contains("instagram.com");
+												isTikTok = h.contains("tiktok");
+												
+												isSnapFeedHost = h.contains("youtube") || h.contains("youtu") || h.contains("facebook") ||
+														h.contains("kuaishou") || h.contains("xiaohongshu") ||
+														h.contains("likee") || h.contains("kwai") || h.contains("snackvideo") ||
+														h.contains("mojapp") || h.contains("sharechat");
+														
+												isMediaHost = isInstagram || isSnapFeedHost || h.contains("bilibili") || 
+														h.contains("reddit") || h.contains("twitter") || h.contains("x.com") || 
+														h.contains("pinterest") || h.contains("twitch") || h.contains("weibo") || 
+														h.contains("snapchat") || h.contains("vk") || h.contains("douyin") || isTikTok;
 											}
+										} catch (Exception ignored) {}
+									}
+									final String hostTag = "[Host: " + host + "] ";
+									Log.i("[DETECTION] " + hostTag + "Resolved. isMediaHost: " + isMediaHost + " | isSnapFeedHost: " + isSnapFeedHost + " | isTikTok: " + isTikTok);
+
+									View touchTargetView = resolvedWebView;
+									
+									if (isInstagram) {
+										Log.i("[CHECK] Instagram detected. Overriding Reflection layer.");
+									} else {
+										try {
+											Method getChromeClient = resolvedWebView.getClass().getMethod("getWebChromeClient");
+											Object chromeClient = getChromeClient.invoke(resolvedWebView);
+											if (chromeClient != null) {
+												Method isFullScreenMethod = chromeClient.getClass().getMethod("isFullScreen");
+												boolean isFullScreen = (Boolean) isFullScreenMethod.invoke(chromeClient);
+												
+												if (isFullScreen) {
+													Method getFullScreenViewMethod = chromeClient.getClass().getMethod("getFullScreenView");
+													View fullScreenView = (View) getFullScreenViewMethod.invoke(chromeClient);
+													if (fullScreenView != null && fullScreenView.getVisibility() == View.VISIBLE) {
+														touchTargetView = fullScreenView;
+														Log.i("[REACTION] " + hostTag + "Target Layout locked to FullScreenView.");
+													}
+												}
+											}
+										} catch (Exception e) {
+											Log.e(e, "[REACTION] " + hostTag + "Reflection failed, defaulting to base WebView.");
 										}
 									}
-								} catch (Exception e) {
-									Log.e(e, "[REACTION] " + hostTag + "Reflection failed, defaulting to base WebView.");
+
+									smartScrollWebView(resolvedWebView, touchTargetView, !isNext, hostTag, isMediaHost, isInstagram, isSnapFeedHost, isTikTok);
+								} else {
+									Log.i("[DETECTION] WebBrowser is hidden or out of focus. Allowing default media propagation.");
 								}
 							}
-
-							smartScrollWebView(finalWv, touchTargetView, !isNext, hostTag, isMediaHost, isInstagram, isSnapFeedHost, isTikTok);
 						});
 						
-						return true; // Hijack successful
-					} else {
-						Log.i("[DETECTION] WebBrowser is hidden or out of focus. Releasing steering wheel back to Media Player/IPTV.");
+						return true; // We consume the event immediately to protect the UI Thread
 					}
 				}
 			}
@@ -378,8 +378,8 @@ public class KeyEventHandler {
 		if (wv == null || touchTarget == null || !touchTarget.isAttachedToWindow() || touchTarget.getWidth() <= 0 || touchTarget.getHeight() <= 0) return;
 
 		long now = android.os.SystemClock.uptimeMillis();
-		Long lastClickTimeObj = scrollTimestamps.get(wv);
-		long lastClickTime = (lastClickTimeObj != null) ? lastClickTimeObj : 0;
+		Long lastClickTime = scrollTimestamps.get(wv);
+		if (lastClickTime == null) lastClickTime = 0L;
 		
 		if (now - lastClickTime < 250) {
 			Log.w("[CHECK] " + hostTag + "Scroll [Anti-Spam]: Event dropped (Throttle window < 250ms).");
