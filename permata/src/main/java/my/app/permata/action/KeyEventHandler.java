@@ -9,6 +9,7 @@ import android.net.Uri;
 import android.view.KeyEvent;
 import android.view.MotionEvent;
 import android.view.View;
+import android.view.ViewGroup;
 import android.webkit.WebView;
 import android.widget.EditText;
 
@@ -90,10 +91,12 @@ public class KeyEventHandler {
 			"  if (fsBtn) { try { fsBtn.click(); } catch(e){} } " +
 			"}; " +
 			"window.__permataTouchListener = function(e) { " +
+			"  try { window.focus(); } catch(err) {} " +
 			"  window.__attemptFS(); " +
 			"}; " +
-			"window.addEventListener('touchend', window.__permataTouchListener); " +
-			"window.addEventListener('mouseup', window.__permataTouchListener); " +
+			"window.addEventListener('touchstart', window.__permataTouchListener, {passive: true}); " +
+			"window.addEventListener('touchend', window.__permataTouchListener, {passive: true}); " +
+			"window.addEventListener('mouseup', window.__permataTouchListener, {passive: true}); " +
 			"if (!window.__permataMediaCapturerBound) { " +
 			"  window.__permataMediaCapturerBound = true; " +
 			"  document.addEventListener('play', function(e) { " +
@@ -196,82 +199,109 @@ public class KeyEventHandler {
 			}
 		}
 
-		// Strictly bound to WebBrowserFragment. Returns control to default handler for Media Player/IPTV
+		// === DYNAMIC FOCUS GATEKEEPER ===
 		if (targetActivity != null && event.getAction() == ACTION_DOWN) {
 			if (code == KeyEvent.KEYCODE_MEDIA_NEXT || code == KeyEvent.KEYCODE_MEDIA_PREVIOUS) {
-				
+				boolean isNext = (code == KeyEvent.KEYCODE_MEDIA_NEXT);
+				WebView resolvedWebView = null;
+				boolean isExplicitWebFragment = false;
+
+				// 1. Check if the App strictly declares the WebBrowser as the active fragment
 				ActivityFragment activeFragment = targetActivity.getActiveFragment();
 				if (activeFragment != null) {
 					String className = activeFragment.getClass().getName();
-					
 					if (className.endsWith("WebBrowserFragment") && !className.endsWith("YoutubeFragment")) {
-						boolean isNext = (code == KeyEvent.KEYCODE_MEDIA_NEXT);
+						resolvedWebView = scanFragmentsForWebView(activeFragment);
+						isExplicitWebFragment = true;
+					}
+				}
+
+				// 2. Fallback: Scan the Window DecorView for any visible WebViews (Android Auto Fragment fixes)
+				if (resolvedWebView == null || !resolvedWebView.isShown()) {
+					resolvedWebView = findTopVisibleWebView(targetActivity);
+				}
+
+				// 3. Focus Verification: Ensure we only hijack if the user is ACTUALLY interacting with it
+				if (resolvedWebView != null && resolvedWebView.isShown()) {
+					boolean hasTouchFocus = resolvedWebView.hasFocus();
+					// If the WebView takes up more than 50% of the screen, we consider it the primary active view
+					boolean isFullScreenSize = false;
+					if (targetActivity.getWindow() != null && targetActivity.getWindow().getDecorView() != null) {
+						int screenHeight = targetActivity.getWindow().getDecorView().getHeight();
+						if (screenHeight > 0) {
+							isFullScreenSize = resolvedWebView.getHeight() > (screenHeight * 0.5);
+						}
+					}
+
+					if (isExplicitWebFragment || hasTouchFocus || isFullScreenSize) {
+						// User Interaction Confirmed. Hijack steering wheel.
+						final WebView finalWv = resolvedWebView;
 						
 						targetActivity.post(() -> {
-							WebView webView = scanFragmentsForWebView(activeFragment);
-							if (webView != null && webView.isAttachedToWindow() && webView.getVisibility() == View.VISIBLE) {
-								String currentUrl = webView.getUrl();
-								String host = "unknown";
-								boolean isMediaHost = false;
-								boolean isInstagram = false;
-								boolean isSnapFeedHost = false;
-								
-								if (currentUrl != null) {
-									try {
-										host = Uri.parse(currentUrl).getHost();
-										if (host != null) {
-											if (host.startsWith("www.")) host = host.substring(4);
-											
-											String h = host.toLowerCase();
-											isInstagram = h.contains("instagram.com");
-											
-											// TikTok is added here to bypass JS scroll and strictly use Hardware Swipe
-											isSnapFeedHost = h.contains("youtube") || h.contains("youtu") || h.contains("facebook") ||
-													h.contains("kuaishou") || h.contains("xiaohongshu") ||
-													h.contains("likee") || h.contains("kwai") || h.contains("snackvideo") ||
-													h.contains("mojapp") || h.contains("sharechat") || h.contains("tiktok");
-													
-											isMediaHost = isInstagram || isSnapFeedHost || h.contains("bilibili") || 
-													h.contains("reddit") || h.contains("twitter") || h.contains("x.com") || 
-													h.contains("pinterest") || h.contains("twitch") || h.contains("weibo") || 
-													h.contains("snapchat") || h.contains("vk") || h.contains("douyin");
-										}
-									} catch (Exception ignored) {}
-								}
-								final String hostTag = "[Host: " + host + "] ";
-								Log.i("[DETECTION] " + hostTag + "Resolved. isMediaHost: " + isMediaHost + " | isSnapFeedHost: " + isSnapFeedHost);
+							String currentUrl = finalWv.getUrl();
+							String host = "unknown";
+							boolean isMediaHost = false;
+							boolean isInstagram = false;
+							boolean isSnapFeedHost = false;
+							boolean isTikTok = false;
+							
+							if (currentUrl != null) {
+								try {
+									host = Uri.parse(currentUrl).getHost();
+									if (host != null) {
+										if (host.startsWith("www.")) host = host.substring(4);
+										
+										String h = host.toLowerCase();
+										isInstagram = h.contains("instagram.com");
+										isTikTok = h.contains("tiktok");
+										
+										isSnapFeedHost = h.contains("youtube") || h.contains("youtu") || h.contains("facebook") ||
+												h.contains("kuaishou") || h.contains("xiaohongshu") ||
+												h.contains("likee") || h.contains("kwai") || h.contains("snackvideo") ||
+												h.contains("mojapp") || h.contains("sharechat");
+												
+										isMediaHost = isInstagram || isSnapFeedHost || h.contains("bilibili") || 
+												h.contains("reddit") || h.contains("twitter") || h.contains("x.com") || 
+												h.contains("pinterest") || h.contains("twitch") || h.contains("weibo") || 
+												h.contains("snapchat") || h.contains("vk") || h.contains("douyin") || isTikTok;
+									}
+								} catch (Exception ignored) {}
+							}
+							final String hostTag = "[Host: " + host + "] ";
+							Log.i("[DETECTION] " + hostTag + "Resolved. isMediaHost: " + isMediaHost + " | isSnapFeedHost: " + isSnapFeedHost + " | isTikTok: " + isTikTok);
 
-								View touchTargetView = webView;
-								
-								if (isInstagram) {
-									Log.i("[CHECK] Instagram detected. Overriding Reflection layer.");
-								} else {
-									try {
-										Method getChromeClient = webView.getClass().getMethod("getWebChromeClient");
-										Object chromeClient = getChromeClient.invoke(webView);
-										if (chromeClient != null) {
-											Method isFullScreenMethod = chromeClient.getClass().getMethod("isFullScreen");
-											boolean isFullScreen = (Boolean) isFullScreenMethod.invoke(chromeClient);
-											
-											if (isFullScreen) {
-												Method getFullScreenViewMethod = chromeClient.getClass().getMethod("getFullScreenView");
-												View fullScreenView = (View) getFullScreenViewMethod.invoke(chromeClient);
-												if (fullScreenView != null && fullScreenView.getVisibility() == View.VISIBLE) {
-													touchTargetView = fullScreenView;
-													Log.i("[REACTION] " + hostTag + "Target Layout locked to FullScreenView.");
-												}
+							View touchTargetView = finalWv;
+							
+							if (isInstagram) {
+								Log.i("[CHECK] Instagram detected. Overriding Reflection layer.");
+							} else {
+								try {
+									Method getChromeClient = finalWv.getClass().getMethod("getWebChromeClient");
+									Object chromeClient = getChromeClient.invoke(finalWv);
+									if (chromeClient != null) {
+										Method isFullScreenMethod = chromeClient.getClass().getMethod("isFullScreen");
+										boolean isFullScreen = (Boolean) isFullScreenMethod.invoke(chromeClient);
+										
+										if (isFullScreen) {
+											Method getFullScreenViewMethod = chromeClient.getClass().getMethod("getFullScreenView");
+											View fullScreenView = (View) getFullScreenViewMethod.invoke(chromeClient);
+											if (fullScreenView != null && fullScreenView.getVisibility() == View.VISIBLE) {
+												touchTargetView = fullScreenView;
+												Log.i("[REACTION] " + hostTag + "Target Layout locked to FullScreenView.");
 											}
 										}
-									} catch (Exception e) {
-										Log.e(e, "[REACTION] " + hostTag + "Reflection failed, defaulting to base WebView.");
 									}
+								} catch (Exception e) {
+									Log.e(e, "[REACTION] " + hostTag + "Reflection failed, defaulting to base WebView.");
 								}
-
-								smartScrollWebView(webView, touchTargetView, !isNext, hostTag, isMediaHost, isInstagram, isSnapFeedHost);
 							}
+
+							smartScrollWebView(finalWv, touchTargetView, !isNext, hostTag, isMediaHost, isInstagram, isSnapFeedHost, isTikTok);
 						});
 						
-						return true;
+						return true; // Hijack successful
+					} else {
+						Log.i("[DETECTION] WebBrowser is hidden or out of focus. Releasing steering wheel back to Media Player/IPTV.");
 					}
 				}
 			}
@@ -322,7 +352,29 @@ public class KeyEventHandler {
 		return null;
 	}
 
-	private static void smartScrollWebView(final WebView wv, final View touchTarget, boolean up, final String hostTag, boolean isMediaHost, boolean isInstagram, boolean isSnapFeedHost) {
+	private static WebView findTopVisibleWebView(MainActivityDelegate activity) {
+		if (activity == null || activity.getWindow() == null) return null;
+		View decorView = activity.getWindow().getDecorView();
+		return findWebViewRecursively(decorView);
+	}
+
+	private static WebView findWebViewRecursively(View view) {
+		if (view instanceof WebView && view.isShown() && view.getVisibility() == View.VISIBLE && view.getWidth() > 0) {
+			if (view.getAlpha() > 0.1f) {
+				return (WebView) view;
+			}
+		}
+		if (view instanceof ViewGroup) {
+			ViewGroup vg = (ViewGroup) view;
+			for (int i = vg.getChildCount() - 1; i >= 0; i--) { 
+				WebView res = findWebViewRecursively(vg.getChildAt(i));
+				if (res != null) return res;
+			}
+		}
+		return null;
+	}
+
+	private static void smartScrollWebView(final WebView wv, final View touchTarget, boolean up, final String hostTag, boolean isMediaHost, boolean isInstagram, boolean isSnapFeedHost, boolean isTikTok) {
 		if (wv == null || touchTarget == null || !touchTarget.isAttachedToWindow() || touchTarget.getWidth() <= 0 || touchTarget.getHeight() <= 0) return;
 
 		long now = android.os.SystemClock.uptimeMillis();
@@ -342,8 +394,11 @@ public class KeyEventHandler {
 				if (value != null && !value.equals("null")) Log.i(hostTag + "[REACTION] " + value.replace("\"", ""));
 			});
 
-			if (isMediaHost && !isInstagram) {
-				// Douyin gets the advanced JS scroll fallback; TikTok bypasses it here
+			if (isTikTok) {
+				// TikTok exclusively relies on the High-Velocity Hardware Swipe to prevent the Zoom glitch.
+				Log.i(hostTag + "[ACTION] TikTok Exclusive Detected: Bypassing JS Scroll entirely. Relying purely on Hardware Swipe.");
+			} else if (isMediaHost && !isInstagram) {
+				// Lock in Douyin and other standard media hosts
 				if (!isSnapFeedHost) {
 					Log.i("[ACTION] Injecting Virtual Scroll JS Script...");
 					String advancedJsScript = "(function() {" +
@@ -380,6 +435,7 @@ public class KeyEventHandler {
 				}, 1500);
 
 			} else if (isInstagram) {
+				// Lock in Instagram
 				String igJsScript = "(function() {" +
 						"  try {" +
 						"    var isDown = " + (!up) + ";" +
@@ -409,7 +465,7 @@ public class KeyEventHandler {
 				});
 			}
 
-			if (!isSnapFeedHost) {
+			if (!isSnapFeedHost && !isTikTok) {
 				int backupKey = up ? KeyEvent.KEYCODE_PAGE_UP : KeyEvent.KEYCODE_PAGE_DOWN;
 				wv.dispatchKeyEvent(new KeyEvent(KeyEvent.ACTION_DOWN, backupKey));
 				wv.dispatchKeyEvent(new KeyEvent(KeyEvent.ACTION_UP, backupKey));
@@ -417,6 +473,7 @@ public class KeyEventHandler {
 		}
 
 		// === THE HIGH-VELOCITY FLING ALGORITHM (Pure Gestural Swipe Engine) ===
+		// TikTok gets this block exclusively to prevent glitching. Douyin gets both. Instagram is bypassed.
 		if (isMediaHost && !isInstagram) {
 			final float actionX = touchTarget.getWidth() * 0.50f;
 			final float centerY = touchTarget.getHeight() / 2f;
