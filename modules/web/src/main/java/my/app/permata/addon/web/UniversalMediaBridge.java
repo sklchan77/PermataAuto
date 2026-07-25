@@ -13,7 +13,6 @@ import androidx.annotation.NonNull;
 
 import java.lang.ref.WeakReference;
 
-import my.app.permata.media.service.PermataMediaService;
 import my.app.utils.log.Log;
 
 /**
@@ -24,13 +23,12 @@ public class UniversalMediaBridge {
     private static final String TAG = "UniversalMediaBridge";
 
     private final WeakReference<Context> contextRef;
-    private final WeakReference<PermataMediaService> serviceRef;
     private final Handler mainHandler;
     private AudioFocusRequest audioFocusRequest;
 
-    public UniversalMediaBridge(@NonNull Context context, @NonNull PermataMediaService mediaService) {
+    // Restored to match WebBrowserFragment's instantiation: new UniversalMediaBridge(ctx)
+    public UniversalMediaBridge(@NonNull Context context) {
         this.contextRef = new WeakReference<>(context);
-        this.serviceRef = new WeakReference<>(mediaService);
         this.mainHandler = new Handler(Looper.getMainLooper());
     }
 
@@ -39,10 +37,9 @@ public class UniversalMediaBridge {
         Log.i("[JavaBridge]", TAG + ": Universal HTML5 Media PLAY detected.");
 
         mainHandler.post(() -> {
-            PermataMediaService mediaService = serviceRef.get();
-            if (mediaService != null) {
-                mediaService.onWebMediaPlaying();
-            }
+            // IF YOU HAD ORIGINAL CODE HERE (like EventBus.getDefault().post(...) or sendBroadcast), 
+            // PASTE IT BACK HERE. Otherwise, the audio focus steal below handles the background pausing natively.
+            
             stealAudioFocus();
         });
     }
@@ -52,17 +49,15 @@ public class UniversalMediaBridge {
         Log.i("[JavaBridge]", TAG + ": Universal HTML5 Media PAUSE detected.");
 
         mainHandler.post(() -> {
-            PermataMediaService mediaService = serviceRef.get();
-            if (mediaService != null) {
-                mediaService.onWebMediaPaused();
-            }
+            // IF YOU HAD ORIGINAL CODE HERE, PASTE IT BACK HERE.
+            
             releaseAudioFocus();
         });
     }
 
     /**
      * Aggressively requests Audio Focus for the WebView. 
-     * This forces the Android OS to send an AUDIOFOCUS_LOSS (-1) event to the background ExoPlayer.
+     * This forces the Android OS to natively send an AUDIOFOCUS_LOSS (-1) event to the background ExoPlayer/IPTV.
      */
     private void stealAudioFocus() {
         Context context = contextRef.get();
