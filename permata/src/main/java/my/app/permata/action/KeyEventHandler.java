@@ -196,84 +196,104 @@ public class KeyEventHandler {
 			}
 		}
 
-		if (targetActivity != null && event.getAction() == ACTION_DOWN) {
+		// === GLOBAL WEBVIEW HIJACK: Intercepts steering wheel even if Media Player is active ===
+		if (event.getAction() == ACTION_DOWN) {
 			if (code == KeyEvent.KEYCODE_MEDIA_NEXT || code == KeyEvent.KEYCODE_MEDIA_PREVIOUS) {
-				
-				ActivityFragment activeFragment = targetActivity.getActiveFragment();
-				if (activeFragment != null) {
-					String className = activeFragment.getClass().getName();
-					
-					if (className.endsWith("WebBrowserFragment") && !className.endsWith("YoutubeFragment")) {
-						boolean isNext = (code == KeyEvent.KEYCODE_MEDIA_NEXT);
-						
-						targetActivity.post(() -> {
-							WebView webView = scanFragmentsForWebView(activeFragment);
-							if (webView != null) {
-								String currentUrl = webView.getUrl();
-								String host = "unknown";
-								boolean isMediaHost = false;
-								boolean isInstagram = false;
-								boolean isSnapFeedHost = false;
-								boolean isTikTok = false;
-								
-								if (currentUrl != null) {
-									try {
-										host = Uri.parse(currentUrl).getHost();
-										if (host != null) {
-											if (host.startsWith("www.")) host = host.substring(4);
-											
-											String h = host.toLowerCase();
-											isInstagram = h.contains("instagram.com");
-											isTikTok = h.contains("tiktok");
-											
-											// Note: Douyin deliberately left out of isSnapFeedHost so it falls through to get the Hardware Fling Swipe
-											isSnapFeedHost = h.contains("youtube") || h.contains("youtu") || h.contains("facebook") ||
-													h.contains("kuaishou") || h.contains("xiaohongshu") ||
-													h.contains("likee") || h.contains("kwai") || h.contains("snackvideo") ||
-													h.contains("mojapp") || h.contains("sharechat");
-													
-											isMediaHost = isInstagram || isSnapFeedHost || h.contains("bilibili") || 
-													h.contains("reddit") || h.contains("twitter") || h.contains("x.com") || 
-													h.contains("pinterest") || h.contains("twitch") || h.contains("weibo") || 
-													h.contains("snapchat") || h.contains("vk") || h.contains("douyin") || isTikTok;
-										}
-									} catch (Exception ignored) {}
-								}
-								final String hostTag = "[Host: " + host + "] ";
-								Log.i("[DETECTION] " + hostTag + "Resolved. isMediaHost: " + isMediaHost + " | isSnapFeedHost: " + isSnapFeedHost + " | isTikTok: " + isTikTok);
+				boolean isNext = (code == KeyEvent.KEYCODE_MEDIA_NEXT);
+				WebView resolvedWebView = null;
 
-								View touchTargetView = webView;
-								
-								if (isInstagram) {
-									Log.i("[CHECK] Instagram detected. Overriding Reflection layer.");
-								} else {
-									try {
-										Method getChromeClient = webView.getClass().getMethod("getWebChromeClient");
-										Object chromeClient = getChromeClient.invoke(webView);
-										if (chromeClient != null) {
-											Method isFullScreenMethod = chromeClient.getClass().getMethod("isFullScreen");
-											boolean isFullScreen = (Boolean) isFullScreenMethod.invoke(chromeClient);
+				// 1. Standard Scan (via Activity Fragment)
+				if (targetActivity != null) {
+					ActivityFragment activeFragment = targetActivity.getActiveFragment();
+					if (activeFragment != null) {
+						String className = activeFragment.getClass().getName();
+						if (className.endsWith("WebBrowserFragment") && !className.endsWith("YoutubeFragment")) {
+							resolvedWebView = scanFragmentsForWebView(activeFragment);
+						}
+					}
+				}
+
+				// 2. Global Scan (Bypasses background media holding the session)
+				if (resolvedWebView == null || !resolvedWebView.isAttachedToWindow() || resolvedWebView.getVisibility() != View.VISIBLE) {
+					resolvedWebView = findActiveWebViewGlobally();
+					if (resolvedWebView != null) {
+						Log.i("[DETECTION] Global Override Activated: Steering wheel isolated to active WebView, overriding background media.");
+					}
+				}
+
+				// If a valid WebView is currently on screen, process web scrolling immediately
+				if (resolvedWebView != null) {
+					final WebView finalWv = resolvedWebView;
+					
+					Runnable webAction = () -> {
+						String currentUrl = finalWv.getUrl();
+						String host = "unknown";
+						boolean isMediaHost = false;
+						boolean isInstagram = false;
+						boolean isSnapFeedHost = false;
+						boolean isTikTok = false;
+						
+						if (currentUrl != null) {
+							try {
+								host = Uri.parse(currentUrl).getHost();
+								if (host != null) {
+									if (host.startsWith("www.")) host = host.substring(4);
+									
+									String h = host.toLowerCase();
+									isInstagram = h.contains("instagram.com");
+									isTikTok = h.contains("tiktok");
+									
+									isSnapFeedHost = h.contains("youtube") || h.contains("youtu") || h.contains("facebook") ||
+											h.contains("kuaishou") || h.contains("xiaohongshu") ||
+											h.contains("likee") || h.contains("kwai") || h.contains("snackvideo") ||
+											h.contains("mojapp") || h.contains("sharechat");
 											
-											if (isFullScreen) {
-												Method getFullScreenViewMethod = chromeClient.getClass().getMethod("getFullScreenView");
-												View fullScreenView = (View) getFullScreenViewMethod.invoke(chromeClient);
-												if (fullScreenView != null && fullScreenView.getVisibility() == View.VISIBLE) {
-													touchTargetView = fullScreenView;
-													Log.i("[REACTION] " + hostTag + "Target Layout locked to FullScreenView.");
-												}
-											}
+									isMediaHost = isInstagram || isSnapFeedHost || h.contains("bilibili") || 
+											h.contains("reddit") || h.contains("twitter") || h.contains("x.com") || 
+											h.contains("pinterest") || h.contains("twitch") || h.contains("weibo") || 
+											h.contains("snapchat") || h.contains("vk") || h.contains("douyin") || isTikTok;
+								}
+							} catch (Exception ignored) {}
+						}
+						final String hostTag = "[Host: " + host + "] ";
+						Log.i("[DETECTION] " + hostTag + "Resolved. isMediaHost: " + isMediaHost + " | isSnapFeedHost: " + isSnapFeedHost + " | isTikTok: " + isTikTok);
+
+						View touchTargetView = finalWv;
+						
+						if (isInstagram) {
+							Log.i("[CHECK] Instagram detected. Overriding Reflection layer.");
+						} else {
+							try {
+								Method getChromeClient = finalWv.getClass().getMethod("getWebChromeClient");
+								Object chromeClient = getChromeClient.invoke(finalWv);
+								if (chromeClient != null) {
+									Method isFullScreenMethod = chromeClient.getClass().getMethod("isFullScreen");
+									boolean isFullScreen = (Boolean) isFullScreenMethod.invoke(chromeClient);
+									
+									if (isFullScreen) {
+										Method getFullScreenViewMethod = chromeClient.getClass().getMethod("getFullScreenView");
+										View fullScreenView = (View) getFullScreenViewMethod.invoke(chromeClient);
+										if (fullScreenView != null && fullScreenView.getVisibility() == View.VISIBLE) {
+											touchTargetView = fullScreenView;
+											Log.i("[REACTION] " + hostTag + "Target Layout locked to FullScreenView.");
 										}
-									} catch (Exception e) {
-										Log.e(e, "[REACTION] " + hostTag + "Reflection failed, defaulting to base WebView.");
 									}
 								}
-
-								smartScrollWebView(webView, touchTargetView, !isNext, hostTag, isMediaHost, isInstagram, isSnapFeedHost, isTikTok);
+							} catch (Exception e) {
+								Log.e(e, "[REACTION] " + hostTag + "Reflection failed, defaulting to base WebView.");
 							}
-						});
-						
-						return true;
+						}
+
+						smartScrollWebView(finalWv, touchTargetView, !isNext, hostTag, isMediaHost, isInstagram, isSnapFeedHost, isTikTok);
+					};
+					
+					if (targetActivity != null) {
+						targetActivity.post(webAction);
+					} else {
+						finalWv.post(webAction);
 					}
+					
+					return true;
 				}
 			}
 		}
@@ -484,6 +504,54 @@ public class KeyEventHandler {
 				Log.e(e, "[REACTION] " + hostTag + "Hardware swipe failed with Exception.");
 			}
 		}
+	}
+
+	// === NEW: Global Fallback Scanner ===
+	// Uses raw WindowManager reflection to find an active WebView anywhere on screen.
+	// This safely bypasses cases where a background media player hijacked the MainActivity fragment scope.
+	private static WebView findActiveWebViewGlobally() {
+		try {
+			Class<?> wmgClass = Class.forName("android.view.WindowManagerGlobal");
+			Object wmg = wmgClass.getMethod("getInstance").invoke(null);
+			java.lang.reflect.Field viewsField = wmgClass.getDeclaredField("mViews");
+			viewsField.setAccessible(true);
+			Object viewsObj = viewsField.get(wmg);
+			
+			java.util.List<View> views = null;
+			if (viewsObj instanceof java.util.List) {
+				//noinspection unchecked
+				views = (java.util.List<View>) viewsObj;
+			} else if (viewsObj instanceof View[]) {
+				views = java.util.Arrays.asList((View[]) viewsObj);
+			}
+			
+			if (views != null) {
+				// Iterate backwards to hit top-most (visible) windows first
+				for (int i = views.size() - 1; i >= 0; i--) {
+					View root = views.get(i);
+					WebView wv = scanViewTreeForWebView(root);
+					// Ensure the WebView has actual content/URL to ignore empty background/ad wrappers
+					if (wv != null && wv.isAttachedToWindow() && wv.getVisibility() == View.VISIBLE && wv.getWidth() > 0 && wv.getUrl() != null) {
+						return wv;
+					}
+				}
+			}
+		} catch (Exception e) {
+			Log.e(e, "[REACTION] Global WebView scan via WindowManager failed.");
+		}
+		return null;
+	}
+
+	private static WebView scanViewTreeForWebView(View view) {
+		if (view instanceof WebView) return (WebView) view;
+		if (view instanceof android.view.ViewGroup) {
+			android.view.ViewGroup vg = (android.view.ViewGroup) view;
+			for (int i = 0; i < vg.getChildCount(); i++) {
+				WebView res = scanViewTreeForWebView(vg.getChildAt(i));
+				if (res != null) return res;
+			}
+		}
+		return null;
 	}
 
 	private static void performAction(Action action, MediaSessionCallback cb,
