@@ -72,7 +72,7 @@ public class WebBrowserFragment extends MainActivityFragment
 		PermataWebView webView = view.findViewById(R.id.browserWebView);
 		ViewGroup fullScreenView = view.findViewById(R.id.browserFullScreenView);
 		
-		webView.addJavascriptInterface(new UniversalMediaBridge(ctx), "AndroidMediaBridge");
+		webView.addJavascriptInterface(new UniversalMediaBridge(ctx, webView), "AndroidMediaBridge");
 
 		PermataWebClient webClient = new PermataWebClient();
 		PermataChromeClient chromeClient = new PermataChromeClient(webView, fullScreenView);
