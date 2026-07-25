@@ -15,6 +15,7 @@ import android.widget.EditText;
 
 import androidx.annotation.Nullable;
 
+import java.lang.ref.WeakReference;
 import java.lang.reflect.Method;
 import java.util.Collections;
 import java.util.Map;
@@ -504,7 +505,8 @@ public class KeyEventHandler {
 					final long moveTime = startTime + (long) (swipeDuration * linearT);
 					
 					touchTarget.postDelayed(() -> {
-						if (touchTarget.isAttachedToWindow()) {
+						// Enterprise Hardening: Added getVisibility check to drop ghost swipes if user minimized app mid-fling
+						if (touchTarget.isAttachedToWindow() && touchTarget.getVisibility() == View.VISIBLE) {
 							MotionEvent eventMove = MotionEvent.obtain(startTime, moveTime, MotionEvent.ACTION_MOVE, actionX, currentY, 0);
 							touchTarget.dispatchTouchEvent(eventMove);
 							eventMove.recycle();
@@ -513,7 +515,7 @@ public class KeyEventHandler {
 				}
 
 				touchTarget.postDelayed(() -> {
-					if (touchTarget.isAttachedToWindow()) {
+					if (touchTarget.isAttachedToWindow() && touchTarget.getVisibility() == View.VISIBLE) {
 						long endTime = startTime + swipeDuration + 10;
 						MotionEvent eventUp = MotionEvent.obtain(startTime, endTime, MotionEvent.ACTION_UP, actionX, yEnd, 0);
 						touchTarget.dispatchTouchEvent(eventUp);
@@ -536,8 +538,8 @@ public class KeyEventHandler {
 
 	private static final class Worker implements Runnable {
 		private final MediaSessionCallback cb;
-		@Nullable
-		private final MainActivityDelegate activity;
+		// Enterprise Hardening: WeakReference prevents Activity context leak on 15s hold timeout
+		private final WeakReference<MainActivityDelegate> activityRef;
 		private final Key key;
 		private final Action clickAction;
 		private final Action dblClickAction;
@@ -549,7 +551,7 @@ public class KeyEventHandler {
 		Worker(MediaSessionCallback cb, @Nullable MainActivityDelegate activity, Key key,
 					 Action clickAction, Action dblClickAction, Action longClickAction) {
 			this.cb = cb;
-			this.activity = activity;
+			this.activityRef = new WeakReference<>(activity);
 			this.key = key;
 			this.clickAction = clickAction;
 			this.dblClickAction = dblClickAction;
@@ -623,10 +625,12 @@ public class KeyEventHandler {
 		}
 
 		private void handle(Action action) {
+			MainActivityDelegate activity = activityRef.get();
 			performAction(action, cb, activity, time);
 		}
 
 		private void sched(long delay) {
+			MainActivityDelegate activity = activityRef.get();
 			var handler = (activity == null) ? cb.getHandler() : activity.getHandler();
 			handler.postDelayed(this, delay);
 		}
