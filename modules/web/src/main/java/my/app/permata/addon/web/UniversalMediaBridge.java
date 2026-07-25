@@ -11,27 +11,27 @@ import android.webkit.JavascriptInterface;
 
 import androidx.annotation.NonNull;
 
+import java.lang.ref.WeakReference;
+
 import my.app.permata.media.service.PermataMediaService;
 import my.app.utils.log.Log;
 
 /**
  * Javascript Bridge for WebView Media interactions.
+ * Enterprise Hardened: WeakReferences prevent Chromium engine memory leaks.
  */
 public class UniversalMediaBridge {
     private static final String TAG = "UniversalMediaBridge";
 
-    private final Context context;
-    private final PermataMediaService mediaService;
+    private final WeakReference<Context> contextRef;
+    private final WeakReference<PermataMediaService> serviceRef;
     private final Handler mainHandler;
-    private AudioManager audioManager;
     private AudioFocusRequest audioFocusRequest;
 
-    // NOTE: Adjust this constructor if your architecture passes MainActivityDelegate or another interface instead of PermataMediaService directly.
     public UniversalMediaBridge(@NonNull Context context, @NonNull PermataMediaService mediaService) {
-        this.context = context;
-        this.mediaService = mediaService;
+        this.contextRef = new WeakReference<>(context);
+        this.serviceRef = new WeakReference<>(mediaService);
         this.mainHandler = new Handler(Looper.getMainLooper());
-        this.audioManager = (AudioManager) context.getSystemService(Context.AUDIO_SERVICE);
     }
 
     @JavascriptInterface
@@ -39,12 +39,10 @@ public class UniversalMediaBridge {
         Log.i("[JavaBridge]", TAG + ": Universal HTML5 Media PLAY detected.");
 
         mainHandler.post(() -> {
-            // 1. Notify the PermataMediaService state (Your existing behavior)
+            PermataMediaService mediaService = serviceRef.get();
             if (mediaService != null) {
                 mediaService.onWebMediaPlaying();
             }
-
-            // 2. THE FIX: Forcefully steal Audio Focus from IPTV/ExoPlayer
             stealAudioFocus();
         });
     }
@@ -54,12 +52,10 @@ public class UniversalMediaBridge {
         Log.i("[JavaBridge]", TAG + ": Universal HTML5 Media PAUSE detected.");
 
         mainHandler.post(() -> {
-            // 1. Notify the PermataMediaService state (Your existing behavior)
+            PermataMediaService mediaService = serviceRef.get();
             if (mediaService != null) {
                 mediaService.onWebMediaPaused();
             }
-
-            // 2. THE FIX: Release Audio Focus so the steering wheel can control other media again
             releaseAudioFocus();
         });
     }
@@ -69,6 +65,10 @@ public class UniversalMediaBridge {
      * This forces the Android OS to send an AUDIOFOCUS_LOSS (-1) event to the background ExoPlayer.
      */
     private void stealAudioFocus() {
+        Context context = contextRef.get();
+        if (context == null) return;
+
+        AudioManager audioManager = (AudioManager) context.getSystemService(Context.AUDIO_SERVICE);
         if (audioManager == null) return;
 
         Log.i("[JavaBridge]", TAG + ": Requesting Audio Focus for WebMedia to pause background players.");
@@ -102,6 +102,10 @@ public class UniversalMediaBridge {
      * Abandons the Audio Focus request so background services can resume if requested.
      */
     private void releaseAudioFocus() {
+        Context context = contextRef.get();
+        if (context == null) return;
+
+        AudioManager audioManager = (AudioManager) context.getSystemService(Context.AUDIO_SERVICE);
         if (audioManager == null) return;
 
         Log.i("[JavaBridge]", TAG + ": Releasing Audio Focus.");
