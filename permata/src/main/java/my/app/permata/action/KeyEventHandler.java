@@ -201,12 +201,15 @@ public class KeyEventHandler {
 			}
 		}
 
+		// FIX: Create a guaranteed effectively final reference for use inside lambda expressions
+		final MainActivityDelegate finalTargetActivity = targetActivity;
+
 		// === DYNAMIC FOCUS GATEKEEPER ===
-		if (targetActivity != null && event.getAction() == ACTION_DOWN) {
+		if (finalTargetActivity != null && event.getAction() == ACTION_DOWN) {
 			if (code == KeyEvent.KEYCODE_MEDIA_NEXT || code == KeyEvent.KEYCODE_MEDIA_PREVIOUS) {
 				boolean isNext = (code == KeyEvent.KEYCODE_MEDIA_NEXT);
 				
-				ActivityFragment activeFragment = targetActivity.getActiveFragment();
+				ActivityFragment activeFragment = finalTargetActivity.getActiveFragment();
 				if (activeFragment != null) {
 					String className = activeFragment.getClass().getName();
 					
@@ -214,13 +217,13 @@ public class KeyEventHandler {
 					if (className.endsWith("WebBrowserFragment") && !className.endsWith("YoutubeFragment")) {
 						
 						// Enterprise Hardening: All View Hierarchy access is posted safely to the Main UI Thread
-						targetActivity.post(() -> {
+						finalTargetActivity.post(() -> {
 							WebView resolvedWebView = scanFragmentsForWebView(activeFragment);
 							boolean isExplicitWebFragment = (resolvedWebView != null);
 
 							// Fallback: Scan the Window DecorView for any visible WebViews (Android Auto Fragment fixes)
 							if (resolvedWebView == null || !resolvedWebView.isShown()) {
-								resolvedWebView = findTopVisibleWebView(targetActivity);
+								resolvedWebView = findTopVisibleWebView(finalTargetActivity);
 							}
 
 							// Focus Verification: Ensure we only hijack if the user is ACTUALLY interacting with it
@@ -228,8 +231,8 @@ public class KeyEventHandler {
 								boolean hasTouchFocus = resolvedWebView.hasFocus();
 								boolean isFullScreenSize = false;
 								
-								if (targetActivity.getWindow() != null && targetActivity.getWindow().getDecorView() != null) {
-									int screenHeight = targetActivity.getWindow().getDecorView().getHeight();
+								if (finalTargetActivity.getWindow() != null && finalTargetActivity.getWindow().getDecorView() != null) {
+									int screenHeight = finalTargetActivity.getWindow().getDecorView().getHeight();
 									if (screenHeight > 0) {
 										isFullScreenSize = resolvedWebView.getHeight() > (screenHeight * 0.5);
 									}
@@ -310,7 +313,7 @@ public class KeyEventHandler {
 		var k = Key.get(code);
 		if (k == null) return defaultHandler.apply(code, event);
 
-		if (!k.isMedia() && (targetActivity != null) && (targetActivity.getCurrentFocus() instanceof EditText)) {
+		if (!k.isMedia() && (finalTargetActivity != null) && (finalTargetActivity.getCurrentFocus() instanceof EditText)) {
 			return defaultHandler.apply(code, event);
 		}
 
@@ -319,7 +322,7 @@ public class KeyEventHandler {
 
 		var action = event.getAction();
 		if (action == ACTION_MULTIPLE) {
-			performAction(dblClickAction, cb, targetActivity, uptimeMillis());
+			performAction(dblClickAction, cb, finalTargetActivity, uptimeMillis());
 			return true;
 		}
 		
@@ -333,11 +336,11 @@ public class KeyEventHandler {
 
 		if (((clickAction == dblClickAction) && (clickAction == longClickAction)) ||
 				((dblClickAction == Action.NONE) && (longClickAction == Action.NONE))) {
-			performAction(clickAction, cb, targetActivity, uptimeMillis());
+			performAction(clickAction, cb, finalTargetActivity, uptimeMillis());
 			return true;
 		}
 
-		worker = new Worker(cb, targetActivity, k, clickAction, dblClickAction, longClickAction);
+		worker = new Worker(cb, finalTargetActivity, k, clickAction, dblClickAction, longClickAction);
 		return true;
 	}
 
