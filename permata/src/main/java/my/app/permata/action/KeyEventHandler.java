@@ -83,19 +83,20 @@ public class KeyEventHandler {
 			"  return 'Custom CSS (' + id + ') Already Exists.'; " +
 			"}; " +
 			"window.__attemptFS = function() { " +
-			"  if (window.location.hostname.indexOf('instagram.com') !== -1) return; " +
+			"  let h = window.location.hostname; " +
+			"  if (h.indexOf('instagram.com') !== -1 || h.indexOf('tiktok.com') !== -1) return; " +
 			"  if (document.fullscreenElement || document.webkitFullscreenElement) return; " +
+			"  let fsBtn = document.querySelector('.xgplayer-fullscreen, .xg-fullscreen, .xgplayer-pagefull'); " +
+			"  if (fsBtn) { try { fsBtn.click(); return; } catch(e){} } " +
+			"  if (h.indexOf('douyin.com') !== -1) return; " + // Protect Douyin from native webkit fullscreen extraction
 			"  let vid = document.querySelector('video'); " +
 			"  if (vid) { " +
 			"      try { if (vid.webkitEnterFullscreen) { vid.webkitEnterFullscreen(); return; } } catch(e) {} " +
 			"      try { vid.requestFullscreen(); } catch(e) {} " +
 			"  } " +
-			"  let fsBtn = document.querySelector('.xgplayer-fullscreen, .xg-fullscreen, .xgplayer-pagefull, [class*=\"fullscreen\"], .css-1vvdg2q'); " +
-			"  if (fsBtn) { try { fsBtn.click(); } catch(e){} } " +
 			"}; " +
 			"window.__permataTouchListener = function(e) { " +
-			"  try { window.focus(); } catch(err) {} " +
-			"  window.__attemptFS(); " +
+			"  try { window.focus(); } catch(err) {} " + // Stripped __attemptFS() to stop UI Event Spam pausing Douyin
 			"}; " +
 			"window.addEventListener('touchstart', window.__permataTouchListener, {passive: true}); " +
 			"window.addEventListener('touchend', window.__permataTouchListener, {passive: true}); " +
@@ -399,7 +400,6 @@ public class KeyEventHandler {
 			});
 
 			if (isTikTok) {
-				// FIX: Removed Arrow Key injection to prevent Double-Scroll. 
 				// TikTok exclusively relies on the 25% Left-Gutter Hardware Swipe.
 				Log.i(hostTag + "[ACTION] TikTok Exclusive Detected: Bypassing JS Scroll entirely. Relying purely on Left-Gutter Hardware Swipe.");
 			} else if (isMediaHost && !isInstagram) {
@@ -479,7 +479,7 @@ public class KeyEventHandler {
 
 		// === THE HIGH-VELOCITY FLING ALGORITHM (Pure Gestural Swipe Engine) ===
 		if (isMediaHost && !isInstagram) {
-			// FIX: Use 25% X position (Left Gutter) to prevent hitting video player play/pause touch overlays
+			// 25% X position (Left Gutter) to prevent hitting video player play/pause touch overlays
 			final float actionX = touchTarget.getWidth() * 0.25f;
 			final float centerY = touchTarget.getHeight() / 2f;
 			
@@ -494,8 +494,6 @@ public class KeyEventHandler {
 				touchTarget.dispatchTouchEvent(eventDown);
 				eventDown.recycle();
 
-				wv.evaluateJavascript("if(typeof window.__attemptFS === 'function') window.__attemptFS();", null);
-
 				final int stepCount = 10;
 				final long swipeDuration = 120; 
 				
@@ -506,7 +504,6 @@ public class KeyEventHandler {
 					final long moveTime = startTime + (long) (swipeDuration * linearT);
 					
 					touchTarget.postDelayed(() -> {
-						// Enterprise Hardening: Added getVisibility check to drop ghost swipes if user minimized app mid-fling
 						if (touchTarget.isAttachedToWindow() && touchTarget.getVisibility() == View.VISIBLE) {
 							MotionEvent eventMove = MotionEvent.obtain(startTime, moveTime, MotionEvent.ACTION_MOVE, actionX, currentY, 0);
 							touchTarget.dispatchTouchEvent(eventMove);
@@ -539,7 +536,6 @@ public class KeyEventHandler {
 
 	private static final class Worker implements Runnable {
 		private final MediaSessionCallback cb;
-		// Enterprise Hardening: WeakReference prevents Activity context leak on 15s hold timeout
 		private final WeakReference<MainActivityDelegate> activityRef;
 		private final Key key;
 		private final Action clickAction;
