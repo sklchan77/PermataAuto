@@ -399,21 +399,9 @@ public class KeyEventHandler {
 			});
 
 			if (isTikTok) {
-				// FIX: Dispatch native DOM Arrow keys for TikTok's web feed manager
-				Log.i(hostTag + "[ACTION] TikTok Exclusive Detected: Executing Arrow Key Navigation & Left-Gutter Swipe.");
-				String ttJsScript = "(function() {" +
-						"  try {" +
-						"    var isDown = " + (!up) + ";" +
-						"    var keyStr = isDown ? 'ArrowDown' : 'ArrowUp';" +
-						"    var keyCode = isDown ? 40 : 38;" +
-						"    var kEvt = new KeyboardEvent('keydown', { key: keyStr, code: keyStr, keyCode: keyCode, which: keyCode, bubbles: true, cancelable: true });" +
-						"    (document.activeElement || document.body || window).dispatchEvent(kEvt);" +
-						"    return 'Scroll: TikTok Virtual Arrow Key Dispatched';" +
-						"  } catch (err) { return 'Scroll Error: ' + err.message; }" +
-						"})();";
-				wv.evaluateJavascript(ttJsScript, value -> {
-					if (value != null && !value.equals("null")) Log.i(hostTag + "[REACTION] " + value.replace("\"", ""));
-				});
+				// FIX: Removed Arrow Key injection to prevent Double-Scroll. 
+				// TikTok exclusively relies on the 25% Left-Gutter Hardware Swipe.
+				Log.i(hostTag + "[ACTION] TikTok Exclusive Detected: Bypassing JS Scroll entirely. Relying purely on Left-Gutter Hardware Swipe.");
 			} else if (isMediaHost && !isInstagram) {
 				// Lock in Douyin and other standard media hosts
 				if (!isSnapFeedHost) {
