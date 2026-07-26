@@ -18,9 +18,7 @@ import my.app.utils.log.Log;
 
 /**
  * Javascript Bridge for WebView Media interactions.
- * Enterprise Hardened: 
- * 1. WeakReferences prevent Chromium engine memory leaks.
- * 2. Two-way Audio Focus listener ensures Web videos pause when native media takes over.
+ * Enterprise Hardened: WeakReferences prevent Chromium engine memory leaks.
  */
 public class UniversalMediaBridge {
     private static final String TAG = "UniversalMediaBridge";
@@ -39,14 +37,12 @@ public class UniversalMediaBridge {
     @JavascriptInterface
     public void onMediaPlay() {
         Log.i("[JavaBridge]", TAG + ": Universal HTML5 Media PLAY detected.");
-
         mainHandler.post(this::stealAudioFocus);
     }
 
     @JavascriptInterface
     public void onMediaPause() {
         Log.i("[JavaBridge]", TAG + ": Universal HTML5 Media PAUSE detected.");
-
         mainHandler.post(this::releaseAudioFocus);
     }
 
@@ -74,7 +70,7 @@ public class UniversalMediaBridge {
                     .setAcceptsDelayedFocusGain(false)
                     .setOnAudioFocusChangeListener(focusChange -> {
                         Log.i("[JavaBridge]", TAG + ": WebMedia AudioFocus state changed to: " + focusChange);
-                        handleAudioFocusLoss(focusChange);
+                        // FIX: Aggressive JS Pause removed here to prevent Douyin/TikTok auto-play ping-pong lockups.
                     })
                     .build();
 
@@ -84,24 +80,11 @@ public class UniversalMediaBridge {
             int result = audioManager.requestAudioFocus(
                     focusChange -> {
                         Log.i("[JavaBridge]", TAG + ": WebMedia AudioFocus state changed to: " + focusChange);
-                        handleAudioFocusLoss(focusChange);
+                        // FIX: Aggressive JS Pause removed here to prevent Douyin/TikTok auto-play ping-pong lockups.
                     },
                     AudioManager.STREAM_MUSIC,
                     AudioManager.AUDIOFOCUS_GAIN
             );
-        }
-    }
-    
-    private void handleAudioFocusLoss(int focusChange) {
-        if (focusChange == AudioManager.AUDIOFOCUS_LOSS || focusChange == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT) {
-            // A phone call or other media took over! Pause the web video!
-            mainHandler.post(() -> {
-                WebView wv = webViewRef.get();
-                if (wv != null) {
-                    wv.evaluateJavascript("document.querySelectorAll('video, audio').forEach(v => v.pause());", null);
-                    Log.i("[JavaBridge]", TAG + ": Forced HTML5 Web Video to pause due to AudioFocus loss.");
-                }
-            });
         }
     }
 
