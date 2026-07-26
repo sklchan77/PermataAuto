@@ -71,7 +71,7 @@ public class KeyEventHandler {
 			"    return 'Global CSS Stylesheet Injected Successfully.'; " +
 			"  } " +
 			"  return 'Global CSS Stylesheet Already Exists.'; " +
-			"}; " +
+			"  }; " +
 			"const injectSpecificWipe = function(customCss, id) { " +
 			"  if(!document.getElementById(id)) { " +
 			"    const style = document.createElement('style'); " +
@@ -84,11 +84,10 @@ public class KeyEventHandler {
 			"}; " +
 			"window.__attemptFS = function() { " +
 			"  let h = window.location.hostname; " +
-			"  if (h.indexOf('instagram.com') !== -1 || h.indexOf('tiktok.com') !== -1) return; " +
+			"  if (h.indexOf('instagram') !== -1 || h.indexOf('tiktok') !== -1 || h.indexOf('douyin') !== -1 || h.indexOf('youtube') !== -1 || h.indexOf('facebook') !== -1 || h.indexOf('kuaishou') !== -1) return; " +
 			"  if (document.fullscreenElement || document.webkitFullscreenElement) return; " +
-			"  let fsBtn = document.querySelector('.xgplayer-fullscreen, .xg-fullscreen, .xgplayer-pagefull'); " +
+			"  let fsBtn = document.querySelector('.xgplayer-fullscreen, .xg-fullscreen, .xgplayer-pagefull, [class*=\"fullscreen\"], .css-1vvdg2q'); " +
 			"  if (fsBtn) { try { fsBtn.click(); return; } catch(e){} } " +
-			"  if (h.indexOf('douyin.com') !== -1) return; " + // Protect Douyin from native webkit fullscreen extraction
 			"  let vid = document.querySelector('video'); " +
 			"  if (vid) { " +
 			"      try { if (vid.webkitEnterFullscreen) { vid.webkitEnterFullscreen(); return; } } catch(e) {} " +
@@ -96,7 +95,7 @@ public class KeyEventHandler {
 			"  } " +
 			"}; " +
 			"window.__permataTouchListener = function(e) { " +
-			"  try { window.focus(); } catch(err) {} " + // Stripped __attemptFS() to stop UI Event Spam pausing Douyin
+			"  try { window.focus(); } catch(err) {} " +
 			"}; " +
 			"window.addEventListener('touchstart', window.__permataTouchListener, {passive: true}); " +
 			"window.addEventListener('touchend', window.__permataTouchListener, {passive: true}); " +
@@ -203,7 +202,6 @@ public class KeyEventHandler {
 			}
 		}
 
-		// FIX: Create a guaranteed effectively final reference for use inside lambda expressions
 		final MainActivityDelegate finalTargetActivity = targetActivity;
 
 		// === DYNAMIC FOCUS GATEKEEPER ===
@@ -215,20 +213,16 @@ public class KeyEventHandler {
 				if (activeFragment != null) {
 					String className = activeFragment.getClass().getName();
 					
-					// Pre-qualification check ensures we only hijack if the intent is to browse the web
 					if (className.endsWith("WebBrowserFragment") && !className.endsWith("YoutubeFragment")) {
 						
-						// Enterprise Hardening: All View Hierarchy access is posted safely to the Main UI Thread
 						finalTargetActivity.post(() -> {
 							WebView resolvedWebView = scanFragmentsForWebView(activeFragment);
 							boolean isExplicitWebFragment = (resolvedWebView != null);
 
-							// Fallback: Scan the Window DecorView for any visible WebViews (Android Auto Fragment fixes)
 							if (resolvedWebView == null || !resolvedWebView.isShown()) {
 								resolvedWebView = findTopVisibleWebView(finalTargetActivity);
 							}
 
-							// Focus Verification: Ensure we only hijack if the user is ACTUALLY interacting with it
 							if (resolvedWebView != null && resolvedWebView.isShown()) {
 								boolean hasTouchFocus = resolvedWebView.hasFocus();
 								boolean isFullScreenSize = false;
@@ -258,15 +252,16 @@ public class KeyEventHandler {
 												isInstagram = h.contains("instagram.com");
 												isTikTok = h.contains("tiktok");
 												
+												// Both TikTok and Douyin isolated to pure hardware swipe logic
 												isSnapFeedHost = h.contains("youtube") || h.contains("youtu") || h.contains("facebook") ||
 														h.contains("kuaishou") || h.contains("xiaohongshu") ||
 														h.contains("likee") || h.contains("kwai") || h.contains("snackvideo") ||
-														h.contains("mojapp") || h.contains("sharechat");
+														h.contains("mojapp") || h.contains("sharechat") || h.contains("douyin");
 														
 												isMediaHost = isInstagram || isSnapFeedHost || h.contains("bilibili") || 
 														h.contains("reddit") || h.contains("twitter") || h.contains("x.com") || 
 														h.contains("pinterest") || h.contains("twitch") || h.contains("weibo") || 
-														h.contains("snapchat") || h.contains("vk") || h.contains("douyin") || isTikTok;
+														h.contains("snapchat") || h.contains("vk") || isTikTok;
 											}
 										} catch (Exception ignored) {}
 									}
@@ -286,11 +281,18 @@ public class KeyEventHandler {
 												boolean isFullScreen = (Boolean) isFullScreenMethod.invoke(chromeClient);
 												
 												if (isFullScreen) {
-													Method getFullScreenViewMethod = chromeClient.getClass().getMethod("getFullScreenView");
-													View fullScreenView = (View) getFullScreenViewMethod.invoke(chromeClient);
-													if (fullScreenView != null && fullScreenView.getVisibility() == View.VISIBLE) {
-														touchTargetView = fullScreenView;
-														Log.i("[REACTION] " + hostTag + "Target Layout locked to FullScreenView.");
+													if (isTikTok || isSnapFeedHost) {
+														Method hideMethod = chromeClient.getClass().getMethod("onHideCustomView");
+														hideMethod.invoke(chromeClient);
+														Log.i("[REACTION] " + hostTag + "Forced exit from FullScreenView. Feed apps cannot scroll in fullscreen.");
+														touchTargetView = resolvedWebView;
+													} else {
+														Method getFullScreenViewMethod = chromeClient.getClass().getMethod("getFullScreenView");
+														View fullScreenView = (View) getFullScreenViewMethod.invoke(chromeClient);
+														if (fullScreenView != null && fullScreenView.getVisibility() == View.VISIBLE) {
+															touchTargetView = fullScreenView;
+															Log.i("[REACTION] " + hostTag + "Target Layout locked to FullScreenView.");
+														}
 													}
 												}
 											}
@@ -306,7 +308,7 @@ public class KeyEventHandler {
 							}
 						});
 						
-						return true; // We consume the event immediately to protect the UI Thread
+						return true; 
 					}
 				}
 			}
@@ -399,48 +401,41 @@ public class KeyEventHandler {
 				if (value != null && !value.equals("null")) Log.i(hostTag + "[REACTION] " + value.replace("\"", ""));
 			});
 
-			if (isTikTok) {
-				// TikTok exclusively relies on the 25% Left-Gutter Hardware Swipe.
-				Log.i(hostTag + "[ACTION] TikTok Exclusive Detected: Bypassing JS Scroll entirely. Relying purely on Left-Gutter Hardware Swipe.");
+			if (isTikTok || isSnapFeedHost) {
+				Log.i(hostTag + "[ACTION] Swipe-based Feed Detected: Bypassing JS Scroll entirely. Relying purely on Left-Gutter Hardware Swipe.");
 			} else if (isMediaHost && !isInstagram) {
-				// Lock in Douyin and other standard media hosts
-				if (!isSnapFeedHost) {
-					Log.i("[ACTION] Injecting Virtual Scroll JS Script...");
-					String advancedJsScript = "(function() {" +
-							"  try {" +
-							"    var isDown = " + (!up) + ";" +
-							"    var targetBtn = isDown ? document.querySelector('.xgplayer-playswitch-next, .slide-down-btn, [aria-label=\"Next video\"]') : document.querySelector('.xgplayer-playswitch-prev, .slide-up-btn, [aria-label=\"Previous video\"]');" +
-							"    if (targetBtn) { targetBtn.click(); return 'Scroll: Programmatic Button Clicked'; }" +
-							"    var amount = isDown ? window.innerHeight * 0.90 : -window.innerHeight * 0.90;" +
-							"    window.scrollBy({ top: amount, behavior: 'smooth' });" +
-							"    var activeNode = document.activeElement || document.body;" +
-							"    try {" +
-							"      var wheelEvt = new WheelEvent('wheel', { deltaY: amount, bubbles: true, cancelable: true });" +
-							"      activeNode.dispatchEvent(wheelEvt);" +
-							"    } catch(wErr) {}" +
-							"    try {" +
-							"      var keyStr = isDown ? 'ArrowDown' : 'ArrowUp';" +
-							"      var keyCode = isDown ? 40 : 38;" +
-							"      var kEvt = new KeyboardEvent('keydown', { key: keyStr, code: keyStr, keyCode: keyCode, which: keyCode, bubbles: true, cancelable: true });" +
-							"      activeNode.dispatchEvent(kEvt);" +
-							"    } catch(kErr) {}" +
-							"    return 'Scroll: Virtual Web API & Force Event Scroll Executed.';" +
-							"  } catch (err) { return 'Scroll Error: ' + err.message; }" +
-							"})();";
-							
-					wv.evaluateJavascript(advancedJsScript, value -> {
-						if (value != null && !value.equals("null")) Log.i(hostTag + "[REACTION] " + value.replace("\"", ""));
-					});
-				} else {
-					Log.i(hostTag + "[ACTION] Snap-Feed Host Detected: Bypassing JS Virtual Scroll. Using God Mode Swipe.");
-				}
+				Log.i("[ACTION] Injecting Virtual Scroll JS Script...");
+				String advancedJsScript = "(function() {" +
+						"  try {" +
+						"    var isDown = " + (!up) + ";" +
+						"    var targetBtn = isDown ? document.querySelector('.xgplayer-playswitch-next, .slide-down-btn, [aria-label=\"Next video\"]') : document.querySelector('.xgplayer-playswitch-prev, .slide-up-btn, [aria-label=\"Previous video\"]');" +
+						"    if (targetBtn) { targetBtn.click(); return 'Scroll: Programmatic Button Clicked'; }" +
+						"    var amount = isDown ? window.innerHeight * 0.90 : -window.innerHeight * 0.90;" +
+						"    window.scrollBy({ top: amount, behavior: 'smooth' });" +
+						"    var activeNode = document.activeElement || document.body;" +
+						"    try {" +
+						"      var wheelEvt = new WheelEvent('wheel', { deltaY: amount, bubbles: true, cancelable: true });" +
+						"      activeNode.dispatchEvent(wheelEvt);" +
+						"    } catch(wErr) {}" +
+						"    try {" +
+						"      var keyStr = isDown ? 'ArrowDown' : 'ArrowUp';" +
+						"      var keyCode = isDown ? 40 : 38;" +
+						"      var kEvt = new KeyboardEvent('keydown', { key: keyStr, code: keyStr, keyCode: keyCode, which: keyCode, bubbles: true, cancelable: true });" +
+						"      activeNode.dispatchEvent(kEvt);" +
+						"    } catch(kErr) {}" +
+						"    return 'Scroll: Virtual Web API & Force Event Scroll Executed.';" +
+						"  } catch (err) { return 'Scroll Error: ' + err.message; }" +
+						"})();";
+						
+				wv.evaluateJavascript(advancedJsScript, value -> {
+					if (value != null && !value.equals("null")) Log.i(hostTag + "[REACTION] " + value.replace("\"", ""));
+				});
 
 				wv.postDelayed(() -> {
 					if (wv.isAttachedToWindow()) wv.evaluateJavascript(JS_POLLING_PAYLOAD, null);
 				}, 1500);
 
 			} else if (isInstagram) {
-				// Lock in Instagram
 				String igJsScript = "(function() {" +
 						"  try {" +
 						"    var isDown = " + (!up) + ";" +
@@ -479,11 +474,10 @@ public class KeyEventHandler {
 
 		// === THE HIGH-VELOCITY FLING ALGORITHM (Pure Gestural Swipe Engine) ===
 		if (isMediaHost && !isInstagram) {
-			// 25% X position (Left Gutter) to prevent hitting video player play/pause touch overlays
-			final float actionX = touchTarget.getWidth() * 0.25f;
+			final float actionX = touchTarget.getWidth() * 0.10f; // 10% Left Gutter
 			final float centerY = touchTarget.getHeight() / 2f;
 			
-			float span = touchTarget.getHeight() * 0.65f; 
+			float span = touchTarget.getHeight() * 0.50f; // Safe Zone limit
 			final float yStart = up ? (centerY - span / 2f) : (centerY + span / 2f);
 			final float yEnd = up ? (centerY + span / 2f) : (centerY - span / 2f);
 
@@ -494,8 +488,9 @@ public class KeyEventHandler {
 				touchTarget.dispatchTouchEvent(eventDown);
 				eventDown.recycle();
 
-				final int stepCount = 10;
-				final long swipeDuration = 120; 
+				// Smooth 66 FPS Gesture Injection to force Drag detection over Tap detection
+				final int stepCount = 20; 
+				final long swipeDuration = 300; 
 				
 				for (int i = 1; i <= stepCount; i++) {
 					final float linearT = (float) i / stepCount;
@@ -518,7 +513,7 @@ public class KeyEventHandler {
 						MotionEvent eventUp = MotionEvent.obtain(startTime, endTime, MotionEvent.ACTION_UP, actionX, yEnd, 0);
 						touchTarget.dispatchTouchEvent(eventUp);
 						eventUp.recycle();
-						Log.i("[REACTION] " + hostTag + "Hardware Swipe Concluded (ACTION_UP).");
+						Log.i("[REACTION] " + hostTag + "Hardware Swipe Concluded (ACTION_UP). Duration: " + swipeDuration + "ms | Steps: " + stepCount);
 					}
 				}, swipeDuration + 10);
 
