@@ -399,8 +399,21 @@ public class KeyEventHandler {
 			});
 
 			if (isTikTok) {
-				// TikTok exclusively relies on the High-Velocity Hardware Swipe to prevent the Zoom glitch.
-				Log.i(hostTag + "[ACTION] TikTok Exclusive Detected: Bypassing JS Scroll entirely. Relying purely on Hardware Swipe.");
+				// FIX: Dispatch native DOM Arrow keys for TikTok's web feed manager
+				Log.i(hostTag + "[ACTION] TikTok Exclusive Detected: Executing Arrow Key Navigation & Left-Gutter Swipe.");
+				String ttJsScript = "(function() {" +
+						"  try {" +
+						"    var isDown = " + (!up) + ";" +
+						"    var keyStr = isDown ? 'ArrowDown' : 'ArrowUp';" +
+						"    var keyCode = isDown ? 40 : 38;" +
+						"    var kEvt = new KeyboardEvent('keydown', { key: keyStr, code: keyStr, keyCode: keyCode, which: keyCode, bubbles: true, cancelable: true });" +
+						"    (document.activeElement || document.body || window).dispatchEvent(kEvt);" +
+						"    return 'Scroll: TikTok Virtual Arrow Key Dispatched';" +
+						"  } catch (err) { return 'Scroll Error: ' + err.message; }" +
+						"})();";
+				wv.evaluateJavascript(ttJsScript, value -> {
+					if (value != null && !value.equals("null")) Log.i(hostTag + "[REACTION] " + value.replace("\"", ""));
+				});
 			} else if (isMediaHost && !isInstagram) {
 				// Lock in Douyin and other standard media hosts
 				if (!isSnapFeedHost) {
@@ -477,9 +490,9 @@ public class KeyEventHandler {
 		}
 
 		// === THE HIGH-VELOCITY FLING ALGORITHM (Pure Gestural Swipe Engine) ===
-		// TikTok gets this block exclusively to prevent glitching. Douyin gets both. Instagram is bypassed.
 		if (isMediaHost && !isInstagram) {
-			final float actionX = touchTarget.getWidth() * 0.50f;
+			// FIX: Use 25% X position (Left Gutter) to prevent hitting video player play/pause touch overlays
+			final float actionX = touchTarget.getWidth() * 0.25f;
 			final float centerY = touchTarget.getHeight() / 2f;
 			
 			float span = touchTarget.getHeight() * 0.65f; 
