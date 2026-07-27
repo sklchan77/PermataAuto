@@ -84,21 +84,18 @@ public class KeyEventHandler {
 			"}; " +
 			"window.__attemptFS = function() { " +
 			"  let h = window.location.hostname; " +
-			"  if (h.indexOf('instagram') !== -1 || h.indexOf('tiktok') !== -1) return; " +
+			"  if (h.indexOf('instagram') !== -1 || h.indexOf('tiktok') !== -1 || h.indexOf('douyin') !== -1) return; " +
 			"  if (document.fullscreenElement || document.webkitFullscreenElement) return; " +
 			"  let vid = document.querySelector('video'); " +
 			"  if (vid) { " +
 			"      try { if (vid.webkitEnterFullscreen) { vid.webkitEnterFullscreen(); return; } } catch(e) {} " +
 			"      try { vid.requestFullscreen(); } catch(e) {} " +
 			"  } " +
-			"  // UNDETECTED FULLSCREEN METHOD (Commented out for easy restoration) " +
-			"  // let fsBtn = document.querySelector('.xgplayer-fullscreen, .xg-fullscreen, .xgplayer-pagefull, [class*=\"fullscreen\"], .css-1vvdg2q'); " +
-			"  // if (fsBtn) { try { fsBtn.click(); } catch(e){} } " +
 			"}; " +
 			"window.__permataTouchListener = function(e) { " +
 			"  try { window.focus(); } catch(err) {} " +
 			"  let h = window.location.hostname; " +
-			"  if (h.indexOf('tiktok') === -1 && h.indexOf('instagram') === -1) { " +
+			"  if (h.indexOf('tiktok') === -1 && h.indexOf('instagram') === -1 && h.indexOf('douyin') === -1) { " +
 			"    window.__attemptFS(); " + 
 			"  } " +
 			"}; " +
@@ -125,8 +122,10 @@ public class KeyEventHandler {
 			"const registry=[" +
 			"    {name:\"douyin\",match:/douyin\\.com/,execute:function(){" +
 			"      let dyWipe = injectGlobalWipe(); " +
-			"      if (typeof window.__attemptFS === 'function') window.__attemptFS(); " +
-			"      return 'DOUYIN FS Attempted | ' + dyWipe; " +
+			"      /* DISABLED: Fullscreen methods removed for Douyin as they were confirmed useless" +
+			"      // if (typeof window.__attemptFS === 'function') window.__attemptFS(); " +
+			"      */" +
+			"      return 'DOUYIN FS Attempt Disabled | ' + dyWipe; " +
 			"    }}," +
 			"    {name:\"tiktok\",match:/tiktok\\.com/,execute:function(){" +
 			"      var ttCss = ' [data-e2e=\"video-author-avatar\"], [data-e2e=\"nav-login\"], [class*=\"DivHeaderContainer\"], [class*=\"DivSideNavContainer\"], [class*=\"DivBottomContainer\"] { display: none !important; pointer-events: none !important; } '; " +
@@ -245,6 +244,7 @@ public class KeyEventHandler {
 									boolean isInstagram = false;
 									boolean isSnapFeedHost = false;
 									boolean isTikTok = false;
+									boolean isDouyin = false;
 									
 									if (currentUrl != null) {
 										try {
@@ -253,8 +253,9 @@ public class KeyEventHandler {
 												if (host.startsWith("www.")) host = host.substring(4);
 												
 												String h = host.toLowerCase();
-												isInstagram = h.contains("instagram.com");
+												isInstagram = h.contains("instagram"); // Updated to match "instagram" globally
 												isTikTok = h.contains("tiktok");
+												isDouyin = h.contains("douyin");
 												
 												isSnapFeedHost = h.contains("youtube") || h.contains("youtu") || h.contains("facebook") ||
 														h.contains("kuaishou") || h.contains("xiaohongshu") ||
@@ -264,7 +265,7 @@ public class KeyEventHandler {
 												isMediaHost = isInstagram || isSnapFeedHost || h.contains("bilibili") || 
 														h.contains("reddit") || h.contains("twitter") || h.contains("x.com") || 
 														h.contains("pinterest") || h.contains("twitch") || h.contains("weibo") || 
-														h.contains("snapchat") || h.contains("vk") || h.contains("douyin") || isTikTok;
+														h.contains("snapchat") || h.contains("vk") || isDouyin || isTikTok;
 											}
 										} catch (Exception ignored) {}
 									}
@@ -273,8 +274,9 @@ public class KeyEventHandler {
 
 									View touchTargetView = resolvedWebView;
 									
-									if (isInstagram || isTikTok) {
-										Log.i("[CHECK] " + (isTikTok ? "TikTok" : "Instagram") + " detected. Bypassing Fullscreen Reflection layer.");
+									if (isInstagram || isTikTok || isDouyin) {
+										String appName = isTikTok ? "TikTok" : (isDouyin ? "Douyin" : "Instagram");
+										Log.i("[CHECK] " + appName + " detected. Bypassing Fullscreen Reflection layer.");
 									} else {
 										try {
 											Method getChromeClient = resolvedWebView.getClass().getMethod("getWebChromeClient");
@@ -404,42 +406,19 @@ public class KeyEventHandler {
 				if (value != null && !value.equals("null")) Log.i(hostTag + "[REACTION] " + value.replace("\"", ""));
 			});
 
-			if (isTikTok || isSnapFeedHost) {
+			if (isTikTok || isSnapFeedHost || hostTag.toLowerCase().contains("douyin")) {
 				Log.i(hostTag + "[ACTION] Swipe-based Feed Detected: Bypassing JS Scroll entirely. Relying purely on Left-Gutter Hardware Swipe.");
 			} else if (isMediaHost && !isInstagram) {
-				/* DISABLED: Virtual Scroll JS Script commented out to eliminate redundant/duplicate scroll commands.
-				Log.i("[ACTION] Injecting Virtual Scroll JS Script...");
-				String advancedJsScript = "(function() {" +
+				String generalJsScript = "(function() {" +
 						"  try {" +
-						"    var isDown = " + (!up) + ";" +
-						"    // UNDETECTED SCROLL METHOD (Commented out for easy restoration)" +
-						"    // var targetBtn = isDown ? document.querySelector('.xgplayer-playswitch-next, .slide-down-btn, [aria-label=\"Next video\"]') : document.querySelector('.xgplayer-playswitch-prev, .slide-up-btn, [aria-label=\"Previous video\"]');" +
-						"    // if (targetBtn) { targetBtn.click(); return 'Scroll: Programmatic Button Clicked'; }" +
-						"    var amount = isDown ? window.innerHeight * 0.90 : -window.innerHeight * 0.90;" +
+						"    var amount = " + (!up) + " ? window.innerHeight * 0.85 : -window.innerHeight * 0.85;" +
 						"    window.scrollBy({ top: amount, behavior: 'smooth' });" +
-						"    var activeNode = document.activeElement || document.body;" +
-						"    try {" +
-						"      var wheelEvt = new WheelEvent('wheel', { deltaY: amount, bubbles: true, cancelable: true });" +
-						"      activeNode.dispatchEvent(wheelEvt);" +
-						"    } catch(wErr) {}" +
-						"    try {" +
-						"      var keyStr = isDown ? 'ArrowDown' : 'ArrowUp';" +
-						"      var keyCode = isDown ? 40 : 38;" +
-						"      var kEvt = new KeyboardEvent('keydown', { key: keyStr, code: keyStr, keyCode: keyCode, which: keyCode, bubbles: true, cancelable: true });" +
-						"      activeNode.dispatchEvent(kEvt);" +
-						"    } catch(kErr) {}" +
-						"    return 'Scroll: Virtual Web API & Force Event Scroll Executed.';" +
+						"    return 'Scroll: General Webpage Smooth Scroll Executed.';" +
 						"  } catch (err) { return 'Scroll Error: ' + err.message; }" +
 						"})();";
-						
-				wv.evaluateJavascript(advancedJsScript, value -> {
+				wv.evaluateJavascript(generalJsScript, value -> {
 					if (value != null && !value.equals("null")) Log.i(hostTag + "[REACTION] " + value.replace("\"", ""));
 				});
-
-				wv.postDelayed(() -> {
-					if (wv.isAttachedToWindow()) wv.evaluateJavascript(JS_POLLING_PAYLOAD, null);
-				}, 1500);
-				*/
 
 			} else if (isInstagram) {
 				String igJsScript = "(function() {" +
@@ -476,22 +455,15 @@ public class KeyEventHandler {
 					int backupKey = up ? KeyEvent.KEYCODE_PAGE_UP : KeyEvent.KEYCODE_PAGE_DOWN;
 					wv.dispatchKeyEvent(new KeyEvent(KeyEvent.ACTION_DOWN, backupKey));
 					wv.dispatchKeyEvent(new KeyEvent(KeyEvent.ACTION_UP, backupKey));
-				} else {
-					// UNDETECTED SCROLL METHOD (Commented out for easy restoration)
-					/* 
-					int backupKey = up ? KeyEvent.KEYCODE_PAGE_UP : KeyEvent.KEYCODE_PAGE_DOWN;
-					wv.dispatchKeyEvent(new KeyEvent(KeyEvent.ACTION_DOWN, backupKey));
-					wv.dispatchKeyEvent(new KeyEvent(KeyEvent.ACTION_UP, backupKey));
-					*/
-				}
+				} 
 			}
 		}
 
 		if (isMediaHost && !isInstagram) {
-			final float actionX = touchTarget.getWidth() * 0.20f; // UPDATED: 20% Left Gutter
+			final float actionX = touchTarget.getWidth() * 0.20f; 
 			final float centerY = touchTarget.getHeight() / 2f;
 			
-			float span = touchTarget.getHeight() * 0.70f; // UPDATED: 70% Safety Span
+			float span = touchTarget.getHeight() * 0.70f; 
 			final float yStart = up ? (centerY - span / 2f) : (centerY + span / 2f);
 			final float yEnd = up ? (centerY + span / 2f) : (centerY - span / 2f);
 
