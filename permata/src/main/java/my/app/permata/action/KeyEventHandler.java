@@ -91,8 +91,9 @@ public class KeyEventHandler {
 			"      try { if (vid.webkitEnterFullscreen) { vid.webkitEnterFullscreen(); return; } } catch(e) {} " +
 			"      try { vid.requestFullscreen(); } catch(e) {} " +
 			"  } " +
-			"  let fsBtn = document.querySelector('.xgplayer-fullscreen, .xg-fullscreen, .xgplayer-pagefull, [class*=\"fullscreen\"], .css-1vvdg2q'); " +
-			"  if (fsBtn) { try { fsBtn.click(); } catch(e){} } " +
+			"  // UNDETECTED FULLSCREEN METHOD (Commented out for easy restoration) " +
+			"  // let fsBtn = document.querySelector('.xgplayer-fullscreen, .xg-fullscreen, .xgplayer-pagefull, [class*=\"fullscreen\"], .css-1vvdg2q'); " +
+			"  // if (fsBtn) { try { fsBtn.click(); } catch(e){} } " +
 			"}; " +
 			"window.__permataTouchListener = function(e) { " +
 			"  try { window.focus(); } catch(err) {} " +
@@ -406,12 +407,14 @@ public class KeyEventHandler {
 			if (isTikTok || isSnapFeedHost) {
 				Log.i(hostTag + "[ACTION] Swipe-based Feed Detected: Bypassing JS Scroll entirely. Relying purely on Left-Gutter Hardware Swipe.");
 			} else if (isMediaHost && !isInstagram) {
+				/* DISABLED: Virtual Scroll JS Script commented out to eliminate redundant/duplicate scroll commands.
 				Log.i("[ACTION] Injecting Virtual Scroll JS Script...");
 				String advancedJsScript = "(function() {" +
 						"  try {" +
 						"    var isDown = " + (!up) + ";" +
-						"    var targetBtn = isDown ? document.querySelector('.xgplayer-playswitch-next, .slide-down-btn, [aria-label=\"Next video\"]') : document.querySelector('.xgplayer-playswitch-prev, .slide-up-btn, [aria-label=\"Previous video\"]');" +
-						"    if (targetBtn) { targetBtn.click(); return 'Scroll: Programmatic Button Clicked'; }" +
+						"    // UNDETECTED SCROLL METHOD (Commented out for easy restoration)" +
+						"    // var targetBtn = isDown ? document.querySelector('.xgplayer-playswitch-next, .slide-down-btn, [aria-label=\"Next video\"]') : document.querySelector('.xgplayer-playswitch-prev, .slide-up-btn, [aria-label=\"Previous video\"]');" +
+						"    // if (targetBtn) { targetBtn.click(); return 'Scroll: Programmatic Button Clicked'; }" +
 						"    var amount = isDown ? window.innerHeight * 0.90 : -window.innerHeight * 0.90;" +
 						"    window.scrollBy({ top: amount, behavior: 'smooth' });" +
 						"    var activeNode = document.activeElement || document.body;" +
@@ -436,6 +439,7 @@ public class KeyEventHandler {
 				wv.postDelayed(() -> {
 					if (wv.isAttachedToWindow()) wv.evaluateJavascript(JS_POLLING_PAYLOAD, null);
 				}, 1500);
+				*/
 
 			} else if (isInstagram) {
 				String igJsScript = "(function() {" +
@@ -468,19 +472,26 @@ public class KeyEventHandler {
 			}
 
 			if (!isSnapFeedHost && !isTikTok) {
-				int backupKey = up ? KeyEvent.KEYCODE_PAGE_UP : KeyEvent.KEYCODE_PAGE_DOWN;
-				wv.dispatchKeyEvent(new KeyEvent(KeyEvent.ACTION_DOWN, backupKey));
-				wv.dispatchKeyEvent(new KeyEvent(KeyEvent.ACTION_UP, backupKey));
+				if (!hostTag.toLowerCase().contains("douyin")) {
+					int backupKey = up ? KeyEvent.KEYCODE_PAGE_UP : KeyEvent.KEYCODE_PAGE_DOWN;
+					wv.dispatchKeyEvent(new KeyEvent(KeyEvent.ACTION_DOWN, backupKey));
+					wv.dispatchKeyEvent(new KeyEvent(KeyEvent.ACTION_UP, backupKey));
+				} else {
+					// UNDETECTED SCROLL METHOD (Commented out for easy restoration)
+					/* 
+					int backupKey = up ? KeyEvent.KEYCODE_PAGE_UP : KeyEvent.KEYCODE_PAGE_DOWN;
+					wv.dispatchKeyEvent(new KeyEvent(KeyEvent.ACTION_DOWN, backupKey));
+					wv.dispatchKeyEvent(new KeyEvent(KeyEvent.ACTION_UP, backupKey));
+					*/
+				}
 			}
 		}
 
 		if (isMediaHost && !isInstagram) {
-			// RESTORED: 15% Left Gutter to safely avoid the Android edge-swipe gesture area
-			final float actionX = touchTarget.getWidth() * 0.15f; 
+			final float actionX = touchTarget.getWidth() * 0.20f; // UPDATED: 20% Left Gutter
 			final float centerY = touchTarget.getHeight() / 2f;
 			
-			// RESTORED: 50% Safety Span (Tested Working on TikTok without pausing)
-			float span = touchTarget.getHeight() * 0.50f; 
+			float span = touchTarget.getHeight() * 0.70f; // UPDATED: 70% Safety Span
 			final float yStart = up ? (centerY - span / 2f) : (centerY + span / 2f);
 			final float yEnd = up ? (centerY + span / 2f) : (centerY - span / 2f);
 
@@ -491,7 +502,6 @@ public class KeyEventHandler {
 				touchTarget.dispatchTouchEvent(eventDown);
 				eventDown.recycle();
 
-				// RESTORED: 10 Steps over 120ms (The verified Fling velocity)
 				final int stepCount = 10; 
 				final long swipeDuration = 120; 
 				
