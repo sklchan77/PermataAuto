@@ -84,21 +84,20 @@ public class KeyEventHandler {
 			"}; " +
 			"window.__attemptFS = function() { " +
 			"  let h = window.location.hostname; " +
-			"  if (h.indexOf('instagram') !== -1 || h.indexOf('tiktok') !== -1 || h.indexOf('youtube') !== -1 || h.indexOf('facebook') !== -1 || h.indexOf('kuaishou') !== -1) return; " +
+			"  if (h.indexOf('instagram') !== -1 || h.indexOf('tiktok') !== -1) return; " +
 			"  if (document.fullscreenElement || document.webkitFullscreenElement) return; " +
-			"  let fsBtn = document.querySelector('.xgplayer-fullscreen, .xg-fullscreen, .xgplayer-pagefull, [class*=\"fullscreen\"], .css-1vvdg2q'); " +
-			"  if (fsBtn) { try { fsBtn.click(); return; } catch(e){} } " +
-			"  if (h.indexOf('douyin') !== -1) return; " + // Protect Douyin from native webkit extraction
 			"  let vid = document.querySelector('video'); " +
 			"  if (vid) { " +
 			"      try { if (vid.webkitEnterFullscreen) { vid.webkitEnterFullscreen(); return; } } catch(e) {} " +
 			"      try { vid.requestFullscreen(); } catch(e) {} " +
 			"  } " +
+			"  let fsBtn = document.querySelector('.xgplayer-fullscreen, .xg-fullscreen, .xgplayer-pagefull, [class*=\"fullscreen\"], .css-1vvdg2q'); " +
+			"  if (fsBtn) { try { fsBtn.click(); } catch(e){} } " +
 			"}; " +
 			"window.__permataTouchListener = function(e) { " +
 			"  try { window.focus(); } catch(err) {} " +
-			"  // RESTORED: Douyin requires a physical touch event to authorize programmatic Fullscreen clicks. TikTok remains fully isolated." +
-			"  if (window.location.hostname.indexOf('tiktok') === -1 && window.location.hostname.indexOf('instagram') === -1) { " +
+			"  let h = window.location.hostname; " +
+			"  if (h.indexOf('tiktok') === -1 && h.indexOf('instagram') === -1) { " +
 			"    window.__attemptFS(); " + 
 			"  } " +
 			"}; " +
@@ -209,7 +208,6 @@ public class KeyEventHandler {
 
 		final MainActivityDelegate finalTargetActivity = targetActivity;
 
-		// === DYNAMIC FOCUS GATEKEEPER ===
 		if (finalTargetActivity != null && event.getAction() == ACTION_DOWN) {
 			if (code == KeyEvent.KEYCODE_MEDIA_NEXT || code == KeyEvent.KEYCODE_MEDIA_PREVIOUS) {
 				boolean isNext = (code == KeyEvent.KEYCODE_MEDIA_NEXT);
@@ -257,7 +255,6 @@ public class KeyEventHandler {
 												isInstagram = h.contains("instagram.com");
 												isTikTok = h.contains("tiktok");
 												
-												// Douyin is excluded from SnapFeedHost to guarantee it gets the 4-layer Virtual JS script
 												isSnapFeedHost = h.contains("youtube") || h.contains("youtu") || h.contains("facebook") ||
 														h.contains("kuaishou") || h.contains("xiaohongshu") ||
 														h.contains("likee") || h.contains("kwai") || h.contains("snackvideo") ||
@@ -477,12 +474,13 @@ public class KeyEventHandler {
 			}
 		}
 
-		// === THE HIGH-VELOCITY FLING ALGORITHM (Pure Gestural Swipe Engine) ===
 		if (isMediaHost && !isInstagram) {
-			final float actionX = touchTarget.getWidth() * 0.10f; // 10% Left Gutter
+			// RESTORED: 15% Left Gutter to safely avoid the Android edge-swipe gesture area
+			final float actionX = touchTarget.getWidth() * 0.15f; 
 			final float centerY = touchTarget.getHeight() / 2f;
 			
-			float span = touchTarget.getHeight() * 0.50f; // Safe Zone limit
+			// RESTORED: 50% Safety Span (Tested Working on TikTok without pausing)
+			float span = touchTarget.getHeight() * 0.50f; 
 			final float yStart = up ? (centerY - span / 2f) : (centerY + span / 2f);
 			final float yEnd = up ? (centerY + span / 2f) : (centerY - span / 2f);
 
@@ -493,8 +491,9 @@ public class KeyEventHandler {
 				touchTarget.dispatchTouchEvent(eventDown);
 				eventDown.recycle();
 
-				final int stepCount = 20; 
-				final long swipeDuration = 300; 
+				// RESTORED: 10 Steps over 120ms (The verified Fling velocity)
+				final int stepCount = 10; 
+				final long swipeDuration = 120; 
 				
 				for (int i = 1; i <= stepCount; i++) {
 					final float linearT = (float) i / stepCount;
