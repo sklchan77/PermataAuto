@@ -407,7 +407,7 @@ public class KeyEventHandler {
 			});
 
 			if (isTikTok || isSnapFeedHost || hostTag.toLowerCase().contains("douyin")) {
-				Log.i(hostTag + "[ACTION] Swipe-based Feed Detected: Bypassing JS Scroll entirely. Relying purely on Left-Gutter Hardware Swipe.");
+				Log.i(hostTag + "[ACTION] Swipe-based Feed Detected: Bypassing JS Scroll entirely. Relying purely on Hardware Swipe.");
 			} else if (isMediaHost && !isInstagram) {
 				String generalJsScript = "(function() {" +
 						"  try {" +
@@ -460,10 +460,10 @@ public class KeyEventHandler {
 		}
 
 		if (isMediaHost && !isInstagram) {
-			final float actionX = touchTarget.getWidth() * 0.35f; 
+			final float actionX = touchTarget.getWidth() * 0.70f; 
 			final float centerY = touchTarget.getHeight() / 2f;
 			
-			float span = touchTarget.getHeight() * 0.65f; // UPDATED: 65% Y-axis span
+			float span = touchTarget.getHeight() * 0.70f; 
 			final float yStart = up ? (centerY - span / 2f) : (centerY + span / 2f);
 			final float yEnd = up ? (centerY + span / 2f) : (centerY - span / 2f);
 
@@ -474,8 +474,8 @@ public class KeyEventHandler {
 				touchTarget.dispatchTouchEvent(eventDown);
 				eventDown.recycle();
 
-				final int stepCount = 10; 
-				final long swipeDuration = 120; 
+				final int stepCount = 15; // UPDATED: 15 steps
+				final long swipeDuration = 150; // UPDATED: 150ms
 				
 				for (int i = 1; i <= stepCount; i++) {
 					final float linearT = (float) i / stepCount;
