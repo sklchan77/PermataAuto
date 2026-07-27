@@ -91,6 +91,8 @@ public class KeyEventHandler {
 			"      try { if (vid.webkitEnterFullscreen) { vid.webkitEnterFullscreen(); return; } } catch(e) {} " +
 			"      try { vid.requestFullscreen(); } catch(e) {} " +
 			"  } " +
+			"  let fsBtn = document.querySelector('.xgplayer-fullscreen, .xg-fullscreen, .xgplayer-pagefull, [class*=\"fullscreen\"], .css-1vvdg2q'); " +
+			"  if (fsBtn) { try { fsBtn.click(); } catch(e){} } " +
 			"}; " +
 			"window.__permataTouchListener = function(e) { " +
 			"  try { window.focus(); } catch(err) {} " +
@@ -121,17 +123,14 @@ public class KeyEventHandler {
 			"} " +
 			"const registry=[" +
 			"    {name:\"douyin\",match:/douyin\\.com/,execute:function(){" +
-			"      let dyWipe = injectGlobalWipe(); " +
-			"      /* DISABLED: Fullscreen methods removed for Douyin as they were confirmed useless" +
-			"      // if (typeof window.__attemptFS === 'function') window.__attemptFS(); " +
-			"      */" +
-			"      return 'DOUYIN FS Attempt Disabled | ' + dyWipe; " +
+			"      // DISABLED: Global Wipe and Fullscreen methods removed for Douyin so standard UI remains visible " +
+			"      return 'DOUYIN: Fullscreen and Global Wipe Disabled for Native Feed Layout'; " +
 			"    }}," +
 			"    {name:\"tiktok\",match:/tiktok\\.com/,execute:function(){" +
 			"      var ttCss = ' [data-e2e=\"video-author-avatar\"], [data-e2e=\"nav-login\"], [class*=\"DivHeaderContainer\"], [class*=\"DivSideNavContainer\"], [class*=\"DivBottomContainer\"] { display: none !important; pointer-events: none !important; } '; " +
 			"      return 'TIKTOK: ' + injectGlobalWipe() + ' | ' + injectSpecificWipe(ttCss, 'permata-tt-css'); " +
 			"    }}," +
-			"    {name:\"instagram\",match:/instagram\\.com/,execute:function(){" +
+			"    {name:\"instagram\",match:/instagram/,execute:function(){" +
 			"      var igCss = ' header, nav, [role=\"navigation\"] { display: none !important; pointer-events: none !important; opacity: 0 !important; visibility: hidden !important; } body, html { overflow: auto !important; touch-action: pan-y !important; } '; " +
 			"      return 'INSTAGRAM: ' + injectSpecificWipe(igCss, 'permata-ig-css'); " +
 			"    }}," +
@@ -253,7 +252,7 @@ public class KeyEventHandler {
 												if (host.startsWith("www.")) host = host.substring(4);
 												
 												String h = host.toLowerCase();
-												isInstagram = h.contains("instagram"); // Updated to match "instagram" globally
+												isInstagram = h.contains("instagram");
 												isTikTok = h.contains("tiktok");
 												isDouyin = h.contains("douyin");
 												
@@ -274,6 +273,7 @@ public class KeyEventHandler {
 
 									View touchTargetView = resolvedWebView;
 									
+									// Bypassing Fullscreen Reflection layer for Douyin, TikTok, and Instagram
 									if (isInstagram || isTikTok || isDouyin) {
 										String appName = isTikTok ? "TikTok" : (isDouyin ? "Douyin" : "Instagram");
 										Log.i("[CHECK] " + appName + " detected. Bypassing Fullscreen Reflection layer.");
