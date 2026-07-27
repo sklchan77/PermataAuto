@@ -460,7 +460,7 @@ public class KeyEventHandler {
 		}
 
 		if (isMediaHost && !isInstagram) {
-			final float actionX = touchTarget.getWidth() * 0.20f; 
+			final float actionX = touchTarget.getWidth() * 0.35f; // UPDATED: 35% X-axis placement
 			final float centerY = touchTarget.getHeight() / 2f;
 			
 			float span = touchTarget.getHeight() * 0.70f; 
