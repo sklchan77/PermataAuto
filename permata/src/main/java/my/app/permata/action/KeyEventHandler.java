@@ -84,10 +84,11 @@ public class KeyEventHandler {
 			"}; " +
 			"window.__attemptFS = function() { " +
 			"  let h = window.location.hostname; " +
-			"  if (h.indexOf('instagram') !== -1 || h.indexOf('tiktok') !== -1 || h.indexOf('douyin') !== -1 || h.indexOf('youtube') !== -1 || h.indexOf('facebook') !== -1 || h.indexOf('kuaishou') !== -1) return; " +
+			"  if (h.indexOf('instagram') !== -1 || h.indexOf('tiktok') !== -1 || h.indexOf('youtube') !== -1 || h.indexOf('facebook') !== -1 || h.indexOf('kuaishou') !== -1) return; " +
 			"  if (document.fullscreenElement || document.webkitFullscreenElement) return; " +
 			"  let fsBtn = document.querySelector('.xgplayer-fullscreen, .xg-fullscreen, .xgplayer-pagefull, [class*=\"fullscreen\"], .css-1vvdg2q'); " +
 			"  if (fsBtn) { try { fsBtn.click(); return; } catch(e){} } " +
+			"  if (h.indexOf('douyin') !== -1) return; " + // Protect Douyin from native webkit extraction
 			"  let vid = document.querySelector('video'); " +
 			"  if (vid) { " +
 			"      try { if (vid.webkitEnterFullscreen) { vid.webkitEnterFullscreen(); return; } } catch(e) {} " +
@@ -488,7 +489,6 @@ public class KeyEventHandler {
 				touchTarget.dispatchTouchEvent(eventDown);
 				eventDown.recycle();
 
-				// Smooth 66 FPS Gesture Injection to force Drag detection over Tap detection
 				final int stepCount = 20; 
 				final long swipeDuration = 300; 
 				
