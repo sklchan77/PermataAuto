@@ -97,6 +97,10 @@ public class KeyEventHandler {
 			"}; " +
 			"window.__permataTouchListener = function(e) { " +
 			"  try { window.focus(); } catch(err) {} " +
+			"  // RESTORED: Douyin requires a physical touch event to authorize programmatic Fullscreen clicks. TikTok remains fully isolated." +
+			"  if (window.location.hostname.indexOf('tiktok') === -1 && window.location.hostname.indexOf('instagram') === -1) { " +
+			"    window.__attemptFS(); " + 
+			"  } " +
 			"}; " +
 			"window.addEventListener('touchstart', window.__permataTouchListener, {passive: true}); " +
 			"window.addEventListener('touchend', window.__permataTouchListener, {passive: true}); " +
@@ -253,6 +257,7 @@ public class KeyEventHandler {
 												isInstagram = h.contains("instagram.com");
 												isTikTok = h.contains("tiktok");
 												
+												// Douyin is excluded from SnapFeedHost to guarantee it gets the 4-layer Virtual JS script
 												isSnapFeedHost = h.contains("youtube") || h.contains("youtu") || h.contains("facebook") ||
 														h.contains("kuaishou") || h.contains("xiaohongshu") ||
 														h.contains("likee") || h.contains("kwai") || h.contains("snackvideo") ||
@@ -270,7 +275,6 @@ public class KeyEventHandler {
 
 									View touchTargetView = resolvedWebView;
 									
-									// FIX: Cleanly bypass all FullScreen reflection logic for TikTok and Instagram
 									if (isInstagram || isTikTok) {
 										Log.i("[CHECK] " + (isTikTok ? "TikTok" : "Instagram") + " detected. Bypassing Fullscreen Reflection layer.");
 									} else {
