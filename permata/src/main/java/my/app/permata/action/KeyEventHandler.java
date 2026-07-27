@@ -83,20 +83,19 @@ public class KeyEventHandler {
 			"  return 'Custom CSS (' + id + ') Already Exists.'; " +
 			"}; " +
 			"window.__attemptFS = function() { " +
-			"  let h = window.location.hostname; " +
-			"  if (h.indexOf('instagram') !== -1 || h.indexOf('tiktok') !== -1 || h.indexOf('youtube') !== -1 || h.indexOf('facebook') !== -1 || h.indexOf('kuaishou') !== -1) return; " +
+			"  if (window.location.hostname.indexOf('instagram.com') !== -1) return; " +
 			"  if (document.fullscreenElement || document.webkitFullscreenElement) return; " +
-			"  let fsBtn = document.querySelector('.xgplayer-fullscreen, .xg-fullscreen, .xgplayer-pagefull, [class*=\"fullscreen\"], .css-1vvdg2q'); " +
-			"  if (fsBtn) { try { fsBtn.click(); return; } catch(e){} } " +
-			"  if (h.indexOf('douyin') !== -1) return; " + // Protect Douyin from native webkit extraction
 			"  let vid = document.querySelector('video'); " +
 			"  if (vid) { " +
 			"      try { if (vid.webkitEnterFullscreen) { vid.webkitEnterFullscreen(); return; } } catch(e) {} " +
 			"      try { vid.requestFullscreen(); } catch(e) {} " +
 			"  } " +
+			"  let fsBtn = document.querySelector('.xgplayer-fullscreen, .xg-fullscreen, .xgplayer-pagefull, [class*=\"fullscreen\"], .css-1vvdg2q'); " +
+			"  if (fsBtn) { try { fsBtn.click(); } catch(e){} } " +
 			"}; " +
 			"window.__permataTouchListener = function(e) { " +
 			"  try { window.focus(); } catch(err) {} " +
+			"  window.__attemptFS(); " +
 			"}; " +
 			"window.addEventListener('touchstart', window.__permataTouchListener, {passive: true}); " +
 			"window.addEventListener('touchend', window.__permataTouchListener, {passive: true}); " +
@@ -253,16 +252,16 @@ public class KeyEventHandler {
 												isInstagram = h.contains("instagram.com");
 												isTikTok = h.contains("tiktok");
 												
-												// Both TikTok and Douyin isolated to pure hardware swipe logic
+												// RESTORED: Douyin removed from SnapFeedHost to restore JS Virtual Scrolling
 												isSnapFeedHost = h.contains("youtube") || h.contains("youtu") || h.contains("facebook") ||
 														h.contains("kuaishou") || h.contains("xiaohongshu") ||
 														h.contains("likee") || h.contains("kwai") || h.contains("snackvideo") ||
-														h.contains("mojapp") || h.contains("sharechat") || h.contains("douyin");
+														h.contains("mojapp") || h.contains("sharechat");
 														
 												isMediaHost = isInstagram || isSnapFeedHost || h.contains("bilibili") || 
 														h.contains("reddit") || h.contains("twitter") || h.contains("x.com") || 
 														h.contains("pinterest") || h.contains("twitch") || h.contains("weibo") || 
-														h.contains("snapchat") || h.contains("vk") || isTikTok;
+														h.contains("snapchat") || h.contains("vk") || h.contains("douyin") || isTikTok;
 											}
 										} catch (Exception ignored) {}
 									}
