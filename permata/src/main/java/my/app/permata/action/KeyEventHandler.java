@@ -31,6 +31,14 @@ import my.app.utils.ui.fragment.ActivityFragment;
  * @author sklchan77
  */
 public class KeyEventHandler {
+	
+	// =========================================================================================
+	// MASTER TOGGLE: UNIVERSAL WEB TELEMETRY PROBE
+	// Set to TRUE to arm the DOM inspector for debugging complex web layouts (Scroll/Fullscreen).
+	// Set to FALSE for zero-overhead production builds.
+	// =========================================================================================
+	public static final boolean ENABLE_WEB_PROBE = true;
+
 	private static final int DBL_CLICK_INTERVAL = 500;
 	private static final int LONG_CLICK_INTERVAL = 1000;
 
@@ -39,6 +47,49 @@ public class KeyEventHandler {
 	// Enterprise Hardening: Synchronized map prevents ConcurrentModificationException across threads
 	private static final Map<View, Long> scrollTimestamps = Collections.synchronizedMap(new WeakHashMap<>());
 
+	// The Dedicated Universal Telemetry Probe Agent (Injected only when ENABLE_WEB_PROBE is true)
+	private static final String JS_TELEMETRY_PROBE = "(function() { " +
+			"  if (window.__permataProbeActive) return; " +
+			"  window.__permataProbeActive = true; " +
+			"  const recordEvent = function(e) { " +
+			"      try { " +
+			"          let touch = e.touches ? e.touches[0] : e; " +
+			"          let el = e.target; " +
+			"          let vWidth = window.innerWidth; let vHeight = window.innerHeight; " +
+			"          let nodeInfo = el ? el.tagName.toLowerCase() : 'unknown'; " +
+			"          if (el && el.id) nodeInfo += '#' + el.id; " +
+			"          if (el && typeof el.className === 'string' && el.className.trim()) nodeInfo += '.' + el.className.trim().split(/\\s+/).join('.'); " +
+			"          let textInfo = el && el.innerText ? el.innerText.trim().substring(0, 30).replace(/\\n/g, ' ') : ''; " +
+			"          let rect = el ? el.getBoundingClientRect() : {width:0, height:0}; " +
+			"          let scrollTarget = el; " +
+			"          while (scrollTarget && scrollTarget !== document.body && scrollTarget !== document.documentElement) { " +
+			"              let overflowY = window.getComputedStyle(scrollTarget).overflowY; " +
+			"              if (overflowY === 'auto' || overflowY === 'scroll') break; " +
+			"              scrollTarget = scrollTarget.parentElement; " +
+			"          } " +
+			"          let scrollInfo = 'window/body'; " +
+			"          if (scrollTarget && scrollTarget !== document.body && scrollTarget !== document.documentElement) { " +
+			"              scrollInfo = scrollTarget.tagName.toLowerCase(); " +
+			"              if (scrollTarget.id) scrollInfo += '#' + scrollTarget.id; " +
+			"              if (scrollTarget.className && typeof scrollTarget.className === 'string') scrollInfo += '.' + scrollTarget.className.trim().split(/\\s+/).join('.'); " +
+			"          } " +
+			"          let vids = document.querySelectorAll('video'); " +
+			"          let vidStats = vids.length + ' vid(s).'; " +
+			"          if(vids.length > 0) vidStats += ' Main size: ' + Math.round(vids[0].getBoundingClientRect().width) + 'x' + Math.round(vids[0].getBoundingClientRect().height); " +
+			"          let msg = '[Host: ' + window.location.hostname + '] ' + " +
+			"                    'Touch: (' + Math.round(touch.clientX) + ',' + Math.round(touch.clientY) + ') in ' + vWidth + 'x' + vHeight + ' viewport | ' + " +
+			"                    'Target: ' + nodeInfo + ' [Hitbox: ' + Math.round(rect.width) + 'x' + Math.round(rect.height) + '] | ' + " +
+			"                    'Text: [' + textInfo + '] | ' + " +
+			"                    'ScrollContainer: ' + scrollInfo + ' | ' + " +
+			"                    'Media: ' + vidStats; " +
+			"          if (window.PermataInspector && window.PermataInspector.recordTouch) { window.PermataInspector.recordTouch(msg); } " +
+			"      } catch(ex) {} " +
+			"  }; " +
+			"  window.addEventListener('touchstart', recordEvent, {passive: true}); " +
+			"  window.addEventListener('mousedown', recordEvent, {passive: true}); " +
+			"})();";
+
+	// The standard UI execution payload
 	private static final String JS_UNIVERSAL_PAYLOAD = "(function(){" +
 			"let res = 'Discovery [Layer 2]: JS Registry Miss (No custom formatting applied)'; " +
 			"const injectGlobalWipe = function() { " +
@@ -123,7 +174,6 @@ public class KeyEventHandler {
 			"} " +
 			"const registry=[" +
 			"    {name:\"douyin\",match:/douyin\\.com/,execute:function(){" +
-			"      // DISABLED: Global Wipe and Fullscreen methods removed for Douyin so standard UI remains visible " +
 			"      return 'DOUYIN: Fullscreen and Global Wipe Disabled for Native Feed Layout'; " +
 			"    }}," +
 			"    {name:\"tiktok\",match:/tiktok\\.com/,execute:function(){" +
@@ -272,6 +322,19 @@ public class KeyEventHandler {
 									Log.i("[DETECTION] " + hostTag + "Resolved. isMediaHost: " + isMediaHost + " | isSnapFeedHost: " + isSnapFeedHost + " | isTikTok: " + isTikTok);
 
 									View touchTargetView = resolvedWebView;
+									
+									// -------------------------------------------------------------------------
+									// PROBE INJECTION: Arms the Universal Web Probe if the master toggle is true
+									// -------------------------------------------------------------------------
+									if (ENABLE_WEB_PROBE) {
+										try {
+											resolvedWebView.addJavascriptInterface(new PermataInspectorBridge(resolvedWebView), "PermataInspector");
+											resolvedWebView.evaluateJavascript(JS_TELEMETRY_PROBE, null);
+											Log.w("[WEB_PROBE] Agent Armed successfully on: " + resolvedWebView.getClass().getSimpleName());
+										} catch (Exception e) {
+											Log.e(e, "[WEB_PROBE] Failed to arm Javascript Agent.");
+										}
+									}
 									
 									// Bypassing Fullscreen Reflection layer for Douyin, TikTok, and Instagram
 									if (isInstagram || isTikTok || isDouyin) {
@@ -474,8 +537,8 @@ public class KeyEventHandler {
 				touchTarget.dispatchTouchEvent(eventDown);
 				eventDown.recycle();
 
-				final int stepCount = 15; // UPDATED: 15 steps
-				final long swipeDuration = 150; // UPDATED: 150ms
+				final int stepCount = 15; 
+				final long swipeDuration = 150; 
 				
 				for (int i = 1; i <= stepCount; i++) {
 					final float linearT = (float) i / stepCount;
@@ -512,6 +575,20 @@ public class KeyEventHandler {
 																		@Nullable MainActivityDelegate activity, long timestamp) {
 		worker = null;
 		action.getHandler().handle(cb, activity, timestamp);
+	}
+	
+	// Dedicated Javascript Interface to safely pipe web touch coordinates/elements back to Java Log
+	public static class PermataInspectorBridge {
+		private final String webViewIdentifier;
+		
+		public PermataInspectorBridge(WebView webView) {
+			this.webViewIdentifier = webView.getClass().getSimpleName() + " (Hash: " + Integer.toHexString(webView.hashCode()) + ")";
+		}
+
+		@android.webkit.JavascriptInterface
+		public void recordTouch(String logData) {
+			Log.w("[WEB_PROBE] [Android View: " + webViewIdentifier + "] " + logData);
+		}
 	}
 
 	private static final class Worker implements Runnable {
