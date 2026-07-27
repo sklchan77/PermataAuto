@@ -83,19 +83,20 @@ public class KeyEventHandler {
 			"  return 'Custom CSS (' + id + ') Already Exists.'; " +
 			"}; " +
 			"window.__attemptFS = function() { " +
-			"  if (window.location.hostname.indexOf('instagram.com') !== -1) return; " +
+			"  let h = window.location.hostname; " +
+			"  if (h.indexOf('instagram') !== -1 || h.indexOf('tiktok') !== -1 || h.indexOf('youtube') !== -1 || h.indexOf('facebook') !== -1 || h.indexOf('kuaishou') !== -1) return; " +
 			"  if (document.fullscreenElement || document.webkitFullscreenElement) return; " +
+			"  let fsBtn = document.querySelector('.xgplayer-fullscreen, .xg-fullscreen, .xgplayer-pagefull, [class*=\"fullscreen\"], .css-1vvdg2q'); " +
+			"  if (fsBtn) { try { fsBtn.click(); return; } catch(e){} } " +
+			"  if (h.indexOf('douyin') !== -1) return; " + // Protect Douyin from native webkit extraction
 			"  let vid = document.querySelector('video'); " +
 			"  if (vid) { " +
 			"      try { if (vid.webkitEnterFullscreen) { vid.webkitEnterFullscreen(); return; } } catch(e) {} " +
 			"      try { vid.requestFullscreen(); } catch(e) {} " +
 			"  } " +
-			"  let fsBtn = document.querySelector('.xgplayer-fullscreen, .xg-fullscreen, .xgplayer-pagefull, [class*=\"fullscreen\"], .css-1vvdg2q'); " +
-			"  if (fsBtn) { try { fsBtn.click(); } catch(e){} } " +
 			"}; " +
 			"window.__permataTouchListener = function(e) { " +
 			"  try { window.focus(); } catch(err) {} " +
-			"  window.__attemptFS(); " +
 			"}; " +
 			"window.addEventListener('touchstart', window.__permataTouchListener, {passive: true}); " +
 			"window.addEventListener('touchend', window.__permataTouchListener, {passive: true}); " +
@@ -252,7 +253,6 @@ public class KeyEventHandler {
 												isInstagram = h.contains("instagram.com");
 												isTikTok = h.contains("tiktok");
 												
-												// RESTORED: Douyin removed from SnapFeedHost to restore JS Virtual Scrolling
 												isSnapFeedHost = h.contains("youtube") || h.contains("youtu") || h.contains("facebook") ||
 														h.contains("kuaishou") || h.contains("xiaohongshu") ||
 														h.contains("likee") || h.contains("kwai") || h.contains("snackvideo") ||
@@ -270,8 +270,9 @@ public class KeyEventHandler {
 
 									View touchTargetView = resolvedWebView;
 									
-									if (isInstagram) {
-										Log.i("[CHECK] Instagram detected. Overriding Reflection layer.");
+									// FIX: Cleanly bypass all FullScreen reflection logic for TikTok and Instagram
+									if (isInstagram || isTikTok) {
+										Log.i("[CHECK] " + (isTikTok ? "TikTok" : "Instagram") + " detected. Bypassing Fullscreen Reflection layer.");
 									} else {
 										try {
 											Method getChromeClient = resolvedWebView.getClass().getMethod("getWebChromeClient");
@@ -281,7 +282,7 @@ public class KeyEventHandler {
 												boolean isFullScreen = (Boolean) isFullScreenMethod.invoke(chromeClient);
 												
 												if (isFullScreen) {
-													if (isTikTok || isSnapFeedHost) {
+													if (isSnapFeedHost) {
 														Method hideMethod = chromeClient.getClass().getMethod("onHideCustomView");
 														hideMethod.invoke(chromeClient);
 														Log.i("[REACTION] " + hostTag + "Forced exit from FullScreenView. Feed apps cannot scroll in fullscreen.");
