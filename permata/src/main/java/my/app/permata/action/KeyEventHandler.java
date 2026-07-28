@@ -51,42 +51,79 @@ public class KeyEventHandler {
 	private static final String JS_TELEMETRY_PROBE = "(function() { " +
 			"  if (window.__permataProbeActive) return; " +
 			"  window.__permataProbeActive = true; " +
+			"  window.__permataLastTouch = 0; " + 
 			"  const recordEvent = function(e) { " +
 			"      try { " +
+			"          let now = Date.now(); " +
+			"          if (now - window.__permataLastTouch < 50) return; " + 
+			"          window.__permataLastTouch = now; " +
+			"          " +
 			"          let touch = e.touches ? e.touches[0] : e; " +
-			"          let el = e.target; " +
+			"          let el = (e.composedPath && e.composedPath().length > 0) ? e.composedPath()[0] : e.target; " +
+			"          let dpr = window.devicePixelRatio || 1; " +
 			"          let vWidth = window.innerWidth; let vHeight = window.innerHeight; " +
+			"          let isIframe = (window !== window.top) ? '[IFRAME] ' : ''; " +
 			"          let nodeInfo = el ? el.tagName.toLowerCase() : 'unknown'; " +
 			"          if (el && el.id) nodeInfo += '#' + el.id; " +
 			"          if (el && typeof el.className === 'string' && el.className.trim()) nodeInfo += '.' + el.className.trim().split(/\\s+/).join('.'); " +
-			"          let textInfo = el && el.innerText ? el.innerText.trim().substring(0, 30).replace(/\\n/g, ' ') : ''; " +
-			"          let rect = el ? el.getBoundingClientRect() : {width:0, height:0}; " +
+			"          " +
+			"          let actionTarget = el && el.closest ? (el.closest('button, a, [role=\"button\"]') || el) : el; " +
+			"          let actionInfo = (actionTarget !== el) ? (actionTarget.tagName.toLowerCase() + (actionTarget.id ? '#' + actionTarget.id : '')) : 'same'; " +
+			"          " +
+			"          let hiddenAttrs = Array.from(actionTarget.attributes || []).filter(a => a.name.startsWith('data-') || a.name.startsWith('aria-')).map(a => a.name + '=' + a.value).join(' '); " +
+			"          " +
+			"          let getPath = function(n) { let p=[]; while(n && n.nodeType===1 && n.tagName!=='BODY' && n.tagName!=='HTML'){ let s=n.tagName.toLowerCase(); if(n.id) { s+='#'+n.id; p.unshift(s); break; } else if(n.className && typeof n.className==='string') { s+='.'+n.className.trim().split(/\\s+/).join('.'); } p.unshift(s); n=n.parentNode; } return p.join(' > '); }; " +
+			"          let cssPath = getPath(actionTarget); " +
+			"          " +
+			"          let textInfo = el && el.innerText ? el.innerText.trim().substring(0, 25).replace(/\\n/g, ' ') : ''; " +
+			"          let rect = el ? el.getBoundingClientRect() : {width:0, height:0, top:0, left:0}; " +
+			"          " +
+			"          let canvasMath = ''; " +
+			"          if (nodeInfo.includes('canvas')) { canvasMath = ' [CanvasRel: ' + ((touch.clientX - rect.left) / rect.width).toFixed(3) + 'x, ' + ((touch.clientY - rect.top) / rect.height).toFixed(3) + 'y]'; } " +
+			"          " +
+			"          let elStyle = el ? window.getComputedStyle(el) : null; " +
+			"          let isVis = (el && el.checkVisibility) ? el.checkVisibility() : true; " +
+			"          let cssInfo = elStyle ? ('[pos:' + elStyle.position + '|z:' + elStyle.zIndex + '|pe:' + elStyle.pointerEvents + '|cur:' + elStyle.cursor + '|vis:' + isVis + ']') : ''; " +
+			"          " +
 			"          let scrollTarget = el; " +
 			"          while (scrollTarget && scrollTarget !== document.body && scrollTarget !== document.documentElement) { " +
 			"              let overflowY = window.getComputedStyle(scrollTarget).overflowY; " +
 			"              if (overflowY === 'auto' || overflowY === 'scroll') break; " +
 			"              scrollTarget = scrollTarget.parentElement; " +
 			"          } " +
-			"          let scrollInfo = 'window/body'; " +
+			"          let scrollInfo = 'window/body'; let scrollTransform = 'none'; " +
 			"          if (scrollTarget && scrollTarget !== document.body && scrollTarget !== document.documentElement) { " +
 			"              scrollInfo = scrollTarget.tagName.toLowerCase(); " +
 			"              if (scrollTarget.id) scrollInfo += '#' + scrollTarget.id; " +
 			"              if (scrollTarget.className && typeof scrollTarget.className === 'string') scrollInfo += '.' + scrollTarget.className.trim().split(/\\s+/).join('.'); " +
+			"              scrollTransform = window.getComputedStyle(scrollTarget).transform; " +
 			"          } " +
+			"          " +
 			"          let vids = document.querySelectorAll('video'); " +
 			"          let vidStats = vids.length + ' vid(s).'; " +
-			"          if(vids.length > 0) vidStats += ' Main size: ' + Math.round(vids[0].getBoundingClientRect().width) + 'x' + Math.round(vids[0].getBoundingClientRect().height); " +
-			"          let msg = '[Host: ' + window.location.hostname + '] ' + " +
-			"                    'Touch: (' + Math.round(touch.clientX) + ',' + Math.round(touch.clientY) + ') in ' + vWidth + 'x' + vHeight + ' viewport | ' + " +
-			"                    'Target: ' + nodeInfo + ' [Hitbox: ' + Math.round(rect.width) + 'x' + Math.round(rect.height) + '] | ' + " +
+			"          if(vids.length > 0) { " +
+			"              try { " +
+			"                  let v = vids[0]; let vRect = v.getBoundingClientRect(); " +
+			"                  vidStats += ' Main size: ' + Math.round(vRect.width) + 'x' + Math.round(vRect.height) + " +
+			"                              ' at X:' + Math.round(vRect.left) + ' Y:' + Math.round(vRect.top) + " +
+			"                              ' [Play:' + (!v.paused) + '|Vol:' + v.volume + '|Time:' + Math.round(v.currentTime) + '/' + Math.round(v.duration) + 's]'; " +
+			"              } catch(mediaErr) { vidStats += ' [CORS Blocked/Iframe]'; } " +
+			"          } " +
+			"          " +
+			"          let msg = '[Host: ' + isIframe + window.location.hostname + '] ' + " +
+			"                    'Touch: Viewport(' + Math.round(touch.clientX) + ',' + Math.round(touch.clientY) + ') Page(' + Math.round(touch.pageX) + ',' + Math.round(touch.pageY) + ') DPR:' + dpr + canvasMath + ' | ' + " +
+			"                    'Target: ' + nodeInfo + ' (ActionBtn: ' + actionInfo + ') ' + cssInfo + ' Hitbox[' + Math.round(rect.width) + 'x' + Math.round(rect.height) + ' at X:' + Math.round(rect.left) + ' Y:' + Math.round(rect.top) + '] | ' + " +
+			"                    'HiddenAttrs: {' + hiddenAttrs + '} | ' + " +
+			"                    'SelectorPath: ' + cssPath + ' | ' + " +
 			"                    'Text: [' + textInfo + '] | ' + " +
-			"                    'ScrollContainer: ' + scrollInfo + ' | ' + " +
+			"                    'ScrollContainer: ' + scrollInfo + ' (Transform: ' + scrollTransform + ') | ' + " +
 			"                    'Media: ' + vidStats; " +
 			"          if (window.PermataInspector && window.PermataInspector.recordTouch) { window.PermataInspector.recordTouch(msg); } " +
 			"      } catch(ex) {} " +
 			"  }; " +
-			"  window.addEventListener('touchstart', recordEvent, {passive: true}); " +
-			"  window.addEventListener('mousedown', recordEvent, {passive: true}); " +
+			"  window.addEventListener('pointerdown', recordEvent, {capture: true, passive: true}); " +
+			"  window.addEventListener('touchstart', recordEvent, {capture: true, passive: true}); " +
+			"  window.addEventListener('mousedown', recordEvent, {capture: true, passive: true}); " +
 			"})();";
 
 	// The standard UI execution payload
@@ -538,7 +575,7 @@ public class KeyEventHandler {
 				eventDown.recycle();
 
 				final int stepCount = 15; 
-				final long swipeDuration = 150; 
+				final long swipeDuration = 200; 
 				
 				for (int i = 1; i <= stepCount; i++) {
 					final float linearT = (float) i / stepCount;
