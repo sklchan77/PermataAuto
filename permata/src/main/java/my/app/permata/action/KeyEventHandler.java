@@ -6,6 +6,7 @@ import static android.view.KeyEvent.ACTION_MULTIPLE;
 import static android.view.KeyEvent.ACTION_UP;
 
 import android.net.Uri;
+import android.view.InputDevice;
 import android.view.KeyEvent;
 import android.view.MotionEvent;
 import android.view.View;
@@ -506,20 +507,8 @@ public class KeyEventHandler {
 				if (value != null && !value.equals("null")) Log.i(hostTag + "[REACTION] " + value.replace("\"", ""));
 			});
 
-			if (isTikTok || isSnapFeedHost || hostTag.toLowerCase().contains("douyin")) {
-				Log.i(hostTag + "[ACTION] Swipe-based Feed Detected: Bypassing JS Scroll entirely. Relying purely on Hardware Swipe.");
-			} else if (isMediaHost && !isInstagram) {
-				String generalJsScript = "(function() {" +
-						"  try {" +
-						"    var amount = " + (!up) + " ? window.innerHeight * 0.85 : -window.innerHeight * 0.85;" +
-						"    window.scrollBy({ top: amount, behavior: 'smooth' });" +
-						"    return 'Scroll: General Webpage Smooth Scroll Executed.';" +
-						"  } catch (err) { return 'Scroll Error: ' + err.message; }" +
-						"})();";
-				wv.evaluateJavascript(generalJsScript, value -> {
-					if (value != null && !value.equals("null")) Log.i(hostTag + "[REACTION] " + value.replace("\"", ""));
-				});
-
+			if (isMediaHost && !isInstagram) {
+				Log.i(hostTag + "[ACTION] Media Host Detected: Bypassing JS Scroll entirely. Relying purely on Hardware Swipe.");
 			} else if (isInstagram) {
 				String igJsScript = "(function() {" +
 						"  try {" +
@@ -550,15 +539,15 @@ public class KeyEventHandler {
 				});
 			}
 
-			if (!isSnapFeedHost && !isTikTok) {
-				if (!hostTag.toLowerCase().contains("douyin")) {
-					int backupKey = up ? KeyEvent.KEYCODE_PAGE_UP : KeyEvent.KEYCODE_PAGE_DOWN;
-					wv.dispatchKeyEvent(new KeyEvent(KeyEvent.ACTION_DOWN, backupKey));
-					wv.dispatchKeyEvent(new KeyEvent(KeyEvent.ACTION_UP, backupKey));
-				} 
+			// ONLY dispatch backup keys if we are NOT using the Hardware Swipe (prevents double-scroll everywhere)
+			if (!isMediaHost) {
+				int backupKey = up ? KeyEvent.KEYCODE_PAGE_UP : KeyEvent.KEYCODE_PAGE_DOWN;
+				wv.dispatchKeyEvent(new KeyEvent(KeyEvent.ACTION_DOWN, backupKey));
+				wv.dispatchKeyEvent(new KeyEvent(KeyEvent.ACTION_UP, backupKey));
 			}
 		}
 
+		// EXCLUSIVE Hardware Swipe for Media Hosts (Bilibili, Reddit, Douyin, TikTok, etc.)
 		if (isMediaHost && !isInstagram) {
 			final float actionX = touchTarget.getWidth() * 0.70f; 
 			final float centerY = touchTarget.getHeight() / 2f;
@@ -571,6 +560,7 @@ public class KeyEventHandler {
 				final long startTime = android.os.SystemClock.uptimeMillis();
 				
 				MotionEvent eventDown = MotionEvent.obtain(startTime, startTime, MotionEvent.ACTION_DOWN, actionX, yStart, 0);
+				eventDown.setSource(InputDevice.SOURCE_TOUCHSCREEN); // Anti-Bot: Force hardware to report as human finger
 				touchTarget.dispatchTouchEvent(eventDown);
 				eventDown.recycle();
 
@@ -586,6 +576,7 @@ public class KeyEventHandler {
 					touchTarget.postDelayed(() -> {
 						if (touchTarget.isAttachedToWindow() && touchTarget.getVisibility() == View.VISIBLE) {
 							MotionEvent eventMove = MotionEvent.obtain(startTime, moveTime, MotionEvent.ACTION_MOVE, actionX, currentY, 0);
+							eventMove.setSource(InputDevice.SOURCE_TOUCHSCREEN); // Anti-Bot evasion
 							touchTarget.dispatchTouchEvent(eventMove);
 							eventMove.recycle();
 						}
@@ -596,6 +587,7 @@ public class KeyEventHandler {
 					if (touchTarget.isAttachedToWindow() && touchTarget.getVisibility() == View.VISIBLE) {
 						long endTime = startTime + swipeDuration + 10;
 						MotionEvent eventUp = MotionEvent.obtain(startTime, endTime, MotionEvent.ACTION_UP, actionX, yEnd, 0);
+						eventUp.setSource(InputDevice.SOURCE_TOUCHSCREEN); // Anti-Bot evasion
 						touchTarget.dispatchTouchEvent(eventUp);
 						eventUp.recycle();
 						Log.i("[REACTION] " + hostTag + "Hardware Swipe Concluded (ACTION_UP). Duration: " + swipeDuration + "ms | Steps: " + stepCount);
