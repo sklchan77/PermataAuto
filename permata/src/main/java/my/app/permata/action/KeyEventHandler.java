@@ -388,8 +388,6 @@ public class KeyEventHandler {
 									// SURGICAL GOD-MODE: Traverse native Android hierarchy to find the topmost overlay layer
 									// -------------------------------------------------------------------------
 									View touchTargetView = findTopmostTouchTarget(finalTargetActivity, resolvedWebView);
-									Log.i("[SURGERY] Target locked to topmost layer: " + touchTargetView.getClass().getSimpleName() 
-											+ " [Width: " + touchTargetView.getWidth() + "x" + touchTargetView.getHeight() + "]");
 
 									smartScrollWebView(resolvedWebView, touchTargetView, !isNext, hostTag, isMediaHost, isInstagram, isSnapFeedHost, isTikTok);
 								} else {
@@ -497,9 +495,27 @@ public class KeyEventHandler {
 		
 		View topCandidate = scanHighestVisibleChild(decorView, minValidArea, minValidHeight);
 		
-		return (topCandidate != null && topCandidate.isShown()) 
-				? topCandidate 
-				: baseWebView;
+		if (topCandidate != null && topCandidate.isShown()) {
+			// Enriched Telemetry Logging for the locked target
+			long viewArea = (long) topCandidate.getWidth() * topCandidate.getHeight();
+			float areaPercentage = ((float) viewArea / totalScreenArea) * 100f;
+			
+			String layerName = topCandidate.getClass().getName();
+			// Simplify name if it's a standard Android widget to reduce log clutter
+			if (layerName.startsWith("android.widget.") || layerName.startsWith("android.view.")) {
+				layerName = topCandidate.getClass().getSimpleName();
+			}
+			
+			Log.i("[SURGERY] Target Locked -> Layer: [" + layerName + "]" + 
+					" | Size: " + topCandidate.getWidth() + "x" + topCandidate.getHeight() +
+					" | Area: " + String.format("%.1f", areaPercentage) + "%" +
+					" | Alpha: " + topCandidate.getAlpha());
+			
+			return topCandidate;
+		}
+		
+		Log.i("[SURGERY] Target Locked -> Layer: [Fallback Base WebView] | No overlay passed the 20% Area or 80% Height filter.");
+		return baseWebView;
 	}
 
 	private static View scanHighestVisibleChild(View parent, long minValidArea, int minValidHeight) {
