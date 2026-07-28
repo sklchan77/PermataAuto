@@ -45,6 +45,9 @@ public class KeyEventHandler {
 
 	private static Worker worker;
 	
+	// Global timestamp to prevent CPU overload from button spamming before reflection/traversal
+	private static long lastGlobalActionTime = 0L;
+
 	// Enterprise Hardening: Synchronized map prevents ConcurrentModificationException across threads
 	private static final Map<View, Long> scrollTimestamps = Collections.synchronizedMap(new WeakHashMap<>());
 
@@ -297,6 +300,15 @@ public class KeyEventHandler {
 
 		if (finalTargetActivity != null && event.getAction() == ACTION_DOWN) {
 			if (code == KeyEvent.KEYCODE_MEDIA_NEXT || code == KeyEvent.KEYCODE_MEDIA_PREVIOUS) {
+				
+				// THE FIX: Catch button spam BEFORE doing heavy reflection or view traversal
+				long currentUptime = android.os.SystemClock.uptimeMillis();
+				if (currentUptime - lastGlobalActionTime < 250) {
+					Log.w("[CHECK] Input dropped: Button spam detected (< 250ms)");
+					return true; // Consume event but do nothing
+				}
+				lastGlobalActionTime = currentUptime;
+
 				boolean isNext = (code == KeyEvent.KEYCODE_MEDIA_NEXT);
 				
 				ActivityFragment activeFragment = finalTargetActivity.getActiveFragment();
