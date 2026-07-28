@@ -477,38 +477,54 @@ public class KeyEventHandler {
 
 	/**
 	 * Surgically scans the decor view hierarchy to locate the topmost, highest z-index,
-	 * fully visible View (e.g. FullScreenView, overlay FrameLayout, or active WebView).
+	 * fully visible View that is large enough to be the primary interactive surface.
 	 */
 	private static View findTopmostTouchTarget(MainActivityDelegate activity, WebView baseWebView) {
 		if (activity == null || activity.getWindow() == null) return baseWebView;
 		
 		View decorView = activity.getWindow().getDecorView();
-		View topCandidate = scanHighestVisibleChild(decorView);
+		int screenWidth = decorView.getWidth();
+		int screenHeight = decorView.getHeight();
 		
-		return (topCandidate != null && topCandidate.isShown() && topCandidate.getWidth() > 0) 
+		if (screenWidth == 0 || screenHeight == 0) return baseWebView;
+		
+		long totalScreenArea = (long) screenWidth * screenHeight;
+		
+		// The 20% Automotive Rule: Drops the threshold to catch 9:16 vertical video on ultra-wide screens.
+		long minValidArea = (long) (totalScreenArea * 0.20f);
+		// The Height Rule: Feed containers almost always span > 80% of the screen height.
+		int minValidHeight = (int) (screenHeight * 0.80f);
+		
+		View topCandidate = scanHighestVisibleChild(decorView, minValidArea, minValidHeight);
+		
+		return (topCandidate != null && topCandidate.isShown()) 
 				? topCandidate 
 				: baseWebView;
 	}
 
-	private static View scanHighestVisibleChild(View parent) {
-		if (parent == null || !parent.isShown() || parent.getVisibility() != View.VISIBLE || parent.getAlpha() <= 0.1f) {
+	private static View scanHighestVisibleChild(View parent, long minValidArea, int minValidHeight) {
+		// Opacity & Visibility Check
+		if (parent == null || !parent.isShown() || parent.getVisibility() != View.VISIBLE || parent.getAlpha() < 0.1f) {
 			return null;
 		}
 		
-		// If it's a ViewGroup, traverse children backwards (top-most z-order rendered children are drawn LAST)
+		// Traversal (Reverse order for highest z-index)
 		if (parent instanceof ViewGroup) {
 			ViewGroup vg = (ViewGroup) parent;
 			for (int i = vg.getChildCount() - 1; i >= 0; i--) {
 				View child = vg.getChildAt(i);
-				View target = scanHighestVisibleChild(child);
+				View target = scanHighestVisibleChild(child, minValidArea, minValidHeight);
+				
 				if (target != null) {
 					return target;
 				}
 			}
 		}
 		
-		// Return leaf or view container if it takes up visible screen area
-		if (parent.getWidth() > 0 && parent.getHeight() > 0) {
+		// Geometry Filter: Must be at least 20% of the screen area OR span 80% of the screen height.
+		// (The 'OR' guarantees we catch extremely skinny vertical videos on extremely wide screens).
+		long viewArea = (long) parent.getWidth() * parent.getHeight();
+		if (viewArea >= minValidArea || parent.getHeight() >= minValidHeight) {
 			return parent;
 		}
 		
@@ -581,10 +597,10 @@ public class KeyEventHandler {
 
 		// EXCLUSIVE God-Mode Hardware Swipe for Media Hosts (Bilibili, Reddit, Douyin, TikTok, etc.)
 		if (isMediaHost && !isInstagram) {
-			final float actionX = touchTarget.getWidth() * 0.70f; 
+			final float actionX = touchTarget.getWidth() * 0.60f; // Adjusted to 60%
 			final float centerY = touchTarget.getHeight() / 2f;
 			
-			float span = touchTarget.getHeight() * 0.70f; 
+			float span = touchTarget.getHeight() * 0.60f; // Adjusted to 60%
 			final float yStart = up ? (centerY - span / 2f) : (centerY + span / 2f);
 			final float yEnd = up ? (centerY + span / 2f) : (centerY - span / 2f);
 
@@ -596,8 +612,8 @@ public class KeyEventHandler {
 				touchTarget.dispatchTouchEvent(eventDown);
 				eventDown.recycle();
 
-				final int stepCount = 15; 
-				final long swipeDuration = 200; 
+				final int stepCount = 13; // Refined for 60% distance
+				final long swipeDuration = 170; // Refined for 60% distance
 				
 				for (int i = 1; i <= stepCount; i++) {
 					final float linearT = (float) i / stepCount;
