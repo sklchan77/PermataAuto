@@ -359,8 +359,6 @@ public class KeyEventHandler {
 									final String hostTag = "[Host: " + host + "] ";
 									Log.i("[DETECTION] " + hostTag + "Resolved. isMediaHost: " + isMediaHost + " | isSnapFeedHost: " + isSnapFeedHost + " | isTikTok: " + isTikTok);
 
-									View touchTargetView = resolvedWebView;
-									
 									// -------------------------------------------------------------------------
 									// PROBE INJECTION: Arms the Universal Web Probe if the master toggle is true
 									// -------------------------------------------------------------------------
@@ -374,38 +372,12 @@ public class KeyEventHandler {
 										}
 									}
 									
-									// Bypassing Fullscreen Reflection layer for Douyin, TikTok, and Instagram
-									if (isInstagram || isTikTok || isDouyin) {
-										String appName = isTikTok ? "TikTok" : (isDouyin ? "Douyin" : "Instagram");
-										Log.i("[CHECK] " + appName + " detected. Bypassing Fullscreen Reflection layer.");
-									} else {
-										try {
-											Method getChromeClient = resolvedWebView.getClass().getMethod("getWebChromeClient");
-											Object chromeClient = getChromeClient.invoke(resolvedWebView);
-											if (chromeClient != null) {
-												Method isFullScreenMethod = chromeClient.getClass().getMethod("isFullScreen");
-												boolean isFullScreen = (Boolean) isFullScreenMethod.invoke(chromeClient);
-												
-												if (isFullScreen) {
-													if (isSnapFeedHost) {
-														Method hideMethod = chromeClient.getClass().getMethod("onHideCustomView");
-														hideMethod.invoke(chromeClient);
-														Log.i("[REACTION] " + hostTag + "Forced exit from FullScreenView. Feed apps cannot scroll in fullscreen.");
-														touchTargetView = resolvedWebView;
-													} else {
-														Method getFullScreenViewMethod = chromeClient.getClass().getMethod("getFullScreenView");
-														View fullScreenView = (View) getFullScreenViewMethod.invoke(chromeClient);
-														if (fullScreenView != null && fullScreenView.getVisibility() == View.VISIBLE) {
-															touchTargetView = fullScreenView;
-															Log.i("[REACTION] " + hostTag + "Target Layout locked to FullScreenView.");
-														}
-													}
-												}
-											}
-										} catch (Exception e) {
-											Log.e(e, "[REACTION] " + hostTag + "Reflection failed, defaulting to base WebView.");
-										}
-									}
+									// -------------------------------------------------------------------------
+									// SURGICAL GOD-MODE: Traverse native Android hierarchy to find the topmost overlay layer
+									// -------------------------------------------------------------------------
+									View touchTargetView = findTopmostTouchTarget(finalTargetActivity, resolvedWebView);
+									Log.i("[SURGERY] Target locked to topmost layer: " + touchTargetView.getClass().getSimpleName() 
+											+ " [Width: " + touchTargetView.getWidth() + "x" + touchTargetView.getHeight() + "]");
 
 									smartScrollWebView(resolvedWebView, touchTargetView, !isNext, hostTag, isMediaHost, isInstagram, isSnapFeedHost, isTikTok);
 								} else {
@@ -454,6 +426,10 @@ public class KeyEventHandler {
 		return true;
 	}
 
+	// =========================================================================================
+	// VIEW TRAVERSAL ENGINE
+	// =========================================================================================
+
 	private static WebView scanFragmentsForWebView(ActivityFragment activeFragment) {
 		try {
 			Method getWebViewMethod = activeFragment.getClass().getMethod("getWebView");
@@ -487,6 +463,50 @@ public class KeyEventHandler {
 		return null;
 	}
 
+	/**
+	 * Surgically scans the decor view hierarchy to locate the topmost, highest z-index,
+	 * fully visible View (e.g. FullScreenView, overlay FrameLayout, or active WebView).
+	 */
+	private static View findTopmostTouchTarget(MainActivityDelegate activity, WebView baseWebView) {
+		if (activity == null || activity.getWindow() == null) return baseWebView;
+		
+		View decorView = activity.getWindow().getDecorView();
+		View topCandidate = scanHighestVisibleChild(decorView);
+		
+		return (topCandidate != null && topCandidate.isShown() && topCandidate.getWidth() > 0) 
+				? topCandidate 
+				: baseWebView;
+	}
+
+	private static View scanHighestVisibleChild(View parent) {
+		if (parent == null || !parent.isShown() || parent.getVisibility() != View.VISIBLE || parent.getAlpha() <= 0.1f) {
+			return null;
+		}
+		
+		// If it's a ViewGroup, traverse children backwards (top-most z-order rendered children are drawn LAST)
+		if (parent instanceof ViewGroup) {
+			ViewGroup vg = (ViewGroup) parent;
+			for (int i = vg.getChildCount() - 1; i >= 0; i--) {
+				View child = vg.getChildAt(i);
+				View target = scanHighestVisibleChild(child);
+				if (target != null) {
+					return target;
+				}
+			}
+		}
+		
+		// Return leaf or view container if it takes up visible screen area
+		if (parent.getWidth() > 0 && parent.getHeight() > 0) {
+			return parent;
+		}
+		
+		return null;
+	}
+
+	// =========================================================================================
+	// HARDWARE SWIPE ENGINE
+	// =========================================================================================
+
 	private static void smartScrollWebView(final WebView wv, final View touchTarget, boolean up, final String hostTag, boolean isMediaHost, boolean isInstagram, boolean isSnapFeedHost, boolean isTikTok) {
 		if (wv == null || touchTarget == null || !touchTarget.isAttachedToWindow() || touchTarget.getWidth() <= 0 || touchTarget.getHeight() <= 0) return;
 
@@ -508,7 +528,7 @@ public class KeyEventHandler {
 			});
 
 			if (isMediaHost && !isInstagram) {
-				Log.i(hostTag + "[ACTION] Media Host Detected: Bypassing JS Scroll entirely. Relying purely on Hardware Swipe.");
+				Log.i(hostTag + "[ACTION] Media Host Detected: Bypassing JS Scroll entirely. Relying purely on God-Mode Hardware Swipe.");
 			} else if (isInstagram) {
 				String igJsScript = "(function() {" +
 						"  try {" +
@@ -547,7 +567,7 @@ public class KeyEventHandler {
 			}
 		}
 
-		// EXCLUSIVE Hardware Swipe for Media Hosts (Bilibili, Reddit, Douyin, TikTok, etc.)
+		// EXCLUSIVE God-Mode Hardware Swipe for Media Hosts (Bilibili, Reddit, Douyin, TikTok, etc.)
 		if (isMediaHost && !isInstagram) {
 			final float actionX = touchTarget.getWidth() * 0.70f; 
 			final float centerY = touchTarget.getHeight() / 2f;
@@ -590,7 +610,7 @@ public class KeyEventHandler {
 						eventUp.setSource(InputDevice.SOURCE_TOUCHSCREEN); // Anti-Bot evasion
 						touchTarget.dispatchTouchEvent(eventUp);
 						eventUp.recycle();
-						Log.i("[REACTION] " + hostTag + "Hardware Swipe Concluded (ACTION_UP). Duration: " + swipeDuration + "ms | Steps: " + stepCount);
+						Log.i("[REACTION] " + hostTag + "God-Mode Hardware Swipe Concluded (ACTION_UP). Duration: " + swipeDuration + "ms | Steps: " + stepCount);
 					}
 				}, swipeDuration + 10);
 
