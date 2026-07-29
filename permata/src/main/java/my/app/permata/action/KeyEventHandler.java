@@ -5,6 +5,7 @@ import static android.view.KeyEvent.ACTION_DOWN;
 import static android.view.KeyEvent.ACTION_MULTIPLE;
 import static android.view.KeyEvent.ACTION_UP;
 
+import android.app.Activity;
 import android.net.Uri;
 import android.view.InputDevice;
 import android.view.KeyEvent;
@@ -33,25 +34,17 @@ import my.app.utils.ui.fragment.ActivityFragment;
  */
 public class KeyEventHandler {
 	
-	// =========================================================================================
-	// MASTER TOGGLE: UNIVERSAL WEB TELEMETRY PROBE
-	// Set to TRUE to arm the DOM inspector for debugging complex web layouts (Scroll/Fullscreen).
-	// Set to FALSE for zero-overhead production builds.
-	// =========================================================================================
 	public static final boolean ENABLE_WEB_PROBE = true;
 
 	private static final int DBL_CLICK_INTERVAL = 500;
 	private static final int LONG_CLICK_INTERVAL = 1000;
 
-	private static Worker worker;
+	// THREAD SAFETY: Volatile ensures instantaneous cross-thread visibility between Input and MediaSession threads
+	private static volatile Worker worker;
+	private static volatile long lastGlobalActionTime = 0L;
 	
-	// Global timestamp to prevent CPU overload from button spamming before reflection/traversal
-	private static long lastGlobalActionTime = 0L;
-
-	// Enterprise Hardening: Synchronized map prevents ConcurrentModificationException across threads
 	private static final Map<View, Long> scrollTimestamps = Collections.synchronizedMap(new WeakHashMap<>());
 
-	// The Dedicated Universal Telemetry Probe Agent (Injected only when ENABLE_WEB_PROBE is true)
 	private static final String JS_TELEMETRY_PROBE = "(function() { " +
 			"  if (window.__permataProbeActive) return; " +
 			"  window.__permataProbeActive = true; " +
@@ -65,8 +58,6 @@ public class KeyEventHandler {
 			"          let touch = e.touches ? e.touches[0] : e; " +
 			"          let el = (e.composedPath && e.composedPath().length > 0) ? e.composedPath()[0] : e.target; " +
 			"          let dpr = window.devicePixelRatio || 1; " +
-			"          let vWidth = window.innerWidth; let vHeight = window.innerHeight; " +
-			"          let isIframe = (window !== window.top) ? '[IFRAME] ' : ''; " +
 			"          let nodeInfo = el ? el.tagName.toLowerCase() : 'unknown'; " +
 			"          if (el && el.id) nodeInfo += '#' + el.id; " +
 			"          if (el && typeof el.className === 'string' && el.className.trim()) nodeInfo += '.' + el.className.trim().split(/\\s+/).join('.'); " +
@@ -82,27 +73,6 @@ public class KeyEventHandler {
 			"          let textInfo = el && el.innerText ? el.innerText.trim().substring(0, 25).replace(/\\n/g, ' ') : ''; " +
 			"          let rect = el ? el.getBoundingClientRect() : {width:0, height:0, top:0, left:0}; " +
 			"          " +
-			"          let canvasMath = ''; " +
-			"          if (nodeInfo.includes('canvas')) { canvasMath = ' [CanvasRel: ' + ((touch.clientX - rect.left) / rect.width).toFixed(3) + 'x, ' + ((touch.clientY - rect.top) / rect.height).toFixed(3) + 'y]'; } " +
-			"          " +
-			"          let elStyle = el ? window.getComputedStyle(el) : null; " +
-			"          let isVis = (el && el.checkVisibility) ? el.checkVisibility() : true; " +
-			"          let cssInfo = elStyle ? ('[pos:' + elStyle.position + '|z:' + elStyle.zIndex + '|pe:' + elStyle.pointerEvents + '|cur:' + elStyle.cursor + '|vis:' + isVis + ']') : ''; " +
-			"          " +
-			"          let scrollTarget = el; " +
-			"          while (scrollTarget && scrollTarget !== document.body && scrollTarget !== document.documentElement) { " +
-			"              let overflowY = window.getComputedStyle(scrollTarget).overflowY; " +
-			"              if (overflowY === 'auto' || overflowY === 'scroll') break; " +
-			"              scrollTarget = scrollTarget.parentElement; " +
-			"          } " +
-			"          let scrollInfo = 'window/body'; let scrollTransform = 'none'; " +
-			"          if (scrollTarget && scrollTarget !== document.body && scrollTarget !== document.documentElement) { " +
-			"              scrollInfo = scrollTarget.tagName.toLowerCase(); " +
-			"              if (scrollTarget.id) scrollInfo += '#' + scrollTarget.id; " +
-			"              if (scrollTarget.className && typeof scrollTarget.className === 'string') scrollInfo += '.' + scrollTarget.className.trim().split(/\\s+/).join('.'); " +
-			"              scrollTransform = window.getComputedStyle(scrollTarget).transform; " +
-			"          } " +
-			"          " +
 			"          let vids = document.querySelectorAll('video'); " +
 			"          let vidStats = vids.length + ' vid(s).'; " +
 			"          if(vids.length > 0) { " +
@@ -114,15 +84,13 @@ public class KeyEventHandler {
 			"              } catch(mediaErr) { vidStats += ' [CORS Blocked/Iframe]'; } " +
 			"          } " +
 			"          " +
-			"          let msg = '[Host: ' + isIframe + window.location.hostname + '] ' + " +
-			"                    'Touch: Viewport(' + Math.round(touch.clientX) + ',' + Math.round(touch.clientY) + ') Page(' + Math.round(touch.pageX) + ',' + Math.round(touch.pageY) + ') DPR:' + dpr + canvasMath + ' | ' + " +
-			"                    'Target: ' + nodeInfo + ' (ActionBtn: ' + actionInfo + ') ' + cssInfo + ' Hitbox[' + Math.round(rect.width) + 'x' + Math.round(rect.height) + ' at X:' + Math.round(rect.left) + ' Y:' + Math.round(rect.top) + '] | ' + " +
-			"                    'HiddenAttrs: {' + hiddenAttrs + '} | ' + " +
+			"          let msg = '[Host: ' + window.location.hostname + '] ' + " +
+			"                    'Touch: Viewport(' + Math.round(touch.clientX) + ',' + Math.round(touch.clientY) + ') Page(' + Math.round(touch.pageX) + ',' + Math.round(touch.pageY) + ') DPR:' + dpr + ' | ' + " +
+			"                    'Target: ' + nodeInfo + ' (ActionBtn: ' + actionInfo + ') Hitbox[' + Math.round(rect.width) + 'x' + Math.round(rect.height) + ' at X:' + Math.round(rect.left) + ' Y:' + Math.round(rect.top) + '] | ' + " +
 			"                    'SelectorPath: ' + cssPath + ' | ' + " +
 			"                    'Text: [' + textInfo + '] | ' + " +
-			"                    'ScrollContainer: ' + scrollInfo + ' (Transform: ' + scrollTransform + ') | ' + " +
 			"                    'Media: ' + vidStats; " +
-			"          if (window.PermataInspector && window.PermataInspector.recordTouch) { window.PermataInspector.recordTouch(msg); } " +
+			"          if (window.PermataGodMode && window.PermataGodMode.recordTouch) { window.PermataGodMode.recordTouch(msg); } " +
 			"      } catch(ex) {} " +
 			"  }; " +
 			"  window.addEventListener('pointerdown', recordEvent, {capture: true, passive: true}); " +
@@ -130,7 +98,7 @@ public class KeyEventHandler {
 			"  window.addEventListener('mousedown', recordEvent, {capture: true, passive: true}); " +
 			"})();";
 
-	// The standard UI execution payload
+	// The standard UI execution payload with Real-Time Wide/Fullscreen Status Checks
 	private static final String JS_UNIVERSAL_PAYLOAD = "(function(){" +
 			"let res = 'Discovery [Layer 2]: JS Registry Miss (No custom formatting applied)'; " +
 			"const injectGlobalWipe = function() { " +
@@ -174,47 +142,37 @@ public class KeyEventHandler {
 			"  } " +
 			"  return 'Custom CSS (' + id + ') Already Exists.'; " +
 			"}; " +
-			"window.__attemptFS = function() { " +
-			"  let h = window.location.hostname; " +
-			"  if (h.indexOf('instagram') !== -1 || h.indexOf('tiktok') !== -1 || h.indexOf('douyin') !== -1) return; " +
-			"  if (document.fullscreenElement || document.webkitFullscreenElement) return; " +
-			"  let vid = document.querySelector('video'); " +
-			"  if (vid) { " +
-			"      try { if (vid.webkitEnterFullscreen) { vid.webkitEnterFullscreen(); return; } } catch(e) {} " +
-			"      try { vid.requestFullscreen(); } catch(e) {} " +
-			"  } " +
-			"  let fsBtn = document.querySelector('.xgplayer-fullscreen, .xg-fullscreen, .xgplayer-pagefull, [class*=\"fullscreen\"], .css-1vvdg2q'); " +
-			"  if (fsBtn) { try { fsBtn.click(); } catch(e){} } " +
-			"}; " +
-			"window.__permataTouchListener = function(e) { " +
-			"  try { window.focus(); } catch(err) {} " +
-			"  let h = window.location.hostname; " +
-			"  if (h.indexOf('tiktok') === -1 && h.indexOf('instagram') === -1 && h.indexOf('douyin') === -1) { " +
-			"    window.__attemptFS(); " + 
-			"  } " +
-			"}; " +
-			"window.addEventListener('touchstart', window.__permataTouchListener, {passive: true}); " +
-			"window.addEventListener('touchend', window.__permataTouchListener, {passive: true}); " +
-			"window.addEventListener('mouseup', window.__permataTouchListener, {passive: true}); " +
-			"if (!window.__permataMediaCapturerBound) { " +
-			"  window.__permataMediaCapturerBound = true; " +
-			"  document.addEventListener('play', function(e) { " +
-			"    if (e.target && (e.target.tagName === 'VIDEO' || e.target.tagName === 'AUDIO')) { " +
-			"      if (window.AndroidMediaBridge && window.AndroidMediaBridge.onMediaPlay) { " +
-			"        window.AndroidMediaBridge.onMediaPlay(); " +
-			"      } " +
-			"    } " +
-			"  }, true); " +
-			"  document.addEventListener('pause', function(e) { " +
-			"    if (e.target && (e.target.tagName === 'VIDEO' || e.target.tagName === 'AUDIO')) { " +
-			"      if (window.AndroidMediaBridge && window.AndroidMediaBridge.onMediaPause) { " +
-			"        window.AndroidMediaBridge.onMediaPause(); " +
-			"      } " +
-			"    } " +
-			"  }, true); " +
-			"} " +
 			"const registry=[" +
 			"    {name:\"douyin\",match:/douyin\\.com/,execute:function(){" +
+			"      let player = document.querySelector('.xgplayer'); " +
+			"      let btn = document.querySelector('xg-cssfullscreen, xg-fullscreen, .xgplayer-pagefull'); " +
+			"      if (player && btn) { " +
+			"        let isFs = player.classList.contains('xgplayer-pagefull-active') || " +
+			"                   player.classList.contains('xgplayer-is-cssfullscreen') || " +
+			"                   player.classList.contains('xgplayer-is-fullscreen') || " +
+			"                   player.classList.contains('xgplayer-fullscreen-active') || " +
+			"                   document.querySelector('.xgplayer-pagefull-active, .xgplayer-is-cssfullscreen, .xgplayer-is-fullscreen'); " +
+			"        " +
+			"        if (!isFs) { " +
+			"          player.classList.remove('xgplayer-inactive'); " +
+			"          player.classList.add('xgplayer-active'); " +
+			"          let controls = document.querySelector('xg-controls'); " +
+			"          if (controls) { controls.style.opacity = '1'; controls.style.pointerEvents = 'auto'; } " +
+			"          " +
+			"          let rect = btn.getBoundingClientRect(); " +
+			"          if (rect.width > 0 && rect.height > 0) { " +
+			"            let dpr = window.devicePixelRatio || 1; " +
+			"            let x = (rect.left + (rect.width / 2)) * dpr; " +
+			"            let y = (rect.top + (rect.height / 2)) * dpr; " +
+			"            if (window.PermataGodMode) { " +
+			"              window.PermataGodMode.requestHardwareTap(x, y); " +
+			"              return 'DOUYIN: Wide/Fullscreen inactive -> Re-applied God-Mode Tap at X:' + Math.round(x) + ' Y:' + Math.round(y); " +
+			"            } " +
+			"          } " +
+			"        } else { " +
+			"          return 'DOUYIN: Status Check -> Wide/Fullscreen already active.'; " +
+			"        } " +
+			"      } " +
 			"      return 'DOUYIN: Native Feed Layout Active'; " +
 			"    }}," +
 			"    {name:\"tiktok\",match:/tiktok\\.com/,execute:function(){" +
@@ -255,10 +213,6 @@ public class KeyEventHandler {
 			"  } " +
 			"  return res;" +
 			"})();";
-
-	private static final String JS_POLLING_PAYLOAD = "try { " +
-			"  if(window.__permataActive) { window.__permataActive.execute(); } " +
-			"} catch(e){}";
 
 	public static boolean handleKeyEvent(MediaSessionCallback cb, KeyEvent event,
 																			 IntObjectFunction<KeyEvent, Boolean> defaultHandler) {
@@ -301,11 +255,10 @@ public class KeyEventHandler {
 		if (finalTargetActivity != null && event.getAction() == ACTION_DOWN) {
 			if (code == KeyEvent.KEYCODE_MEDIA_NEXT || code == KeyEvent.KEYCODE_MEDIA_PREVIOUS) {
 				
-				// CPU SHIELD: Catch button spam BEFORE doing heavy reflection or view traversal
 				long currentUptime = android.os.SystemClock.uptimeMillis();
 				if (currentUptime - lastGlobalActionTime < 250) {
 					Log.w("[CHECK] Input dropped: Button spam detected (< 250ms)");
-					return true; // Consume event but do nothing
+					return true;
 				}
 				lastGlobalActionTime = currentUptime;
 
@@ -318,6 +271,12 @@ public class KeyEventHandler {
 					if (className.endsWith("WebBrowserFragment") && !className.endsWith("YoutubeFragment")) {
 						
 						finalTargetActivity.post(() -> {
+							// ANR Defense: Ensure Activity is still alive before executing UI bounds checks
+							if (finalTargetActivity instanceof Activity) {
+								Activity act = (Activity) finalTargetActivity;
+								if (act.isFinishing() || act.isDestroyed()) return;
+							}
+
 							WebView resolvedWebView = scanFragmentsForWebView(activeFragment);
 							boolean isExplicitWebFragment = (resolvedWebView != null);
 
@@ -371,23 +330,18 @@ public class KeyEventHandler {
 									final String hostTag = "[Host: " + host + "] ";
 									Log.i("[DETECTION] " + hostTag + "Resolved. isMediaHost: " + isMediaHost + " | isSnapFeedHost: " + isSnapFeedHost + " | isTikTok: " + isTikTok);
 
-									// -------------------------------------------------------------------------
-									// PROBE INJECTION: Arms the Universal Web Probe if the master toggle is true
-									// -------------------------------------------------------------------------
-									if (ENABLE_WEB_PROBE) {
-										try {
-											resolvedWebView.addJavascriptInterface(new PermataInspectorBridge(resolvedWebView), "PermataInspector");
-											resolvedWebView.evaluateJavascript(JS_TELEMETRY_PROBE, null);
-											Log.w("[WEB_PROBE] Agent Armed successfully on: " + resolvedWebView.getClass().getSimpleName());
-										} catch (Exception e) {
-											Log.e(e, "[WEB_PROBE] Failed to arm Javascript Agent.");
-										}
-									}
-									
-									// -------------------------------------------------------------------------
-									// SURGICAL GOD-MODE: Traverse native Android hierarchy to find the topmost overlay layer
-									// -------------------------------------------------------------------------
 									View touchTargetView = findTopmostTouchTarget(finalTargetActivity, resolvedWebView);
+
+									try {
+										// Safe to re-add. WeakReferences prevent memory leaks on Activity destruction
+										resolvedWebView.addJavascriptInterface(new PermataGodModeBridge(touchTargetView), "PermataGodMode");
+										if (ENABLE_WEB_PROBE) {
+											resolvedWebView.evaluateJavascript(JS_TELEMETRY_PROBE, null);
+											Log.w("[WEB_PROBE]", "Agent Armed successfully on: " + resolvedWebView.getClass().getSimpleName());
+										}
+									} catch (Exception e) {
+										Log.e(e, "[WEB_PROBE] Failed to arm Javascript Agent.");
+									}
 
 									smartScrollWebView(resolvedWebView, touchTargetView, !isNext, hostTag, isMediaHost, isInstagram, isSnapFeedHost, isTikTok);
 								} else {
@@ -473,10 +427,6 @@ public class KeyEventHandler {
 		return null;
 	}
 
-	/**
-	 * Surgically scans the decor view hierarchy to locate the topmost, highest z-index,
-	 * fully visible View that is large enough to be the primary interactive surface.
-	 */
 	private static View findTopmostTouchTarget(MainActivityDelegate activity, WebView baseWebView) {
 		if (activity == null || activity.getWindow() == null) return baseWebView;
 		
@@ -487,16 +437,12 @@ public class KeyEventHandler {
 		if (screenWidth == 0 || screenHeight == 0) return baseWebView;
 		
 		long totalScreenArea = (long) screenWidth * screenHeight;
-		
-		// The 20% Automotive Rule: Drops the threshold to catch 9:16 vertical video on ultra-wide screens.
 		long minValidArea = (long) (totalScreenArea * 0.20f);
-		// The Height Rule: Feed containers almost always span > 80% of the screen height.
 		int minValidHeight = (int) (screenHeight * 0.80f);
 		
 		View topCandidate = scanHighestVisibleChild(decorView, minValidArea, minValidHeight);
 		
 		if (topCandidate != null && topCandidate.isShown()) {
-			// Enriched Telemetry Logging for the locked target
 			long viewArea = (long) topCandidate.getWidth() * topCandidate.getHeight();
 			float areaPercentage = ((float) viewArea / totalScreenArea) * 100f;
 			
@@ -518,12 +464,10 @@ public class KeyEventHandler {
 	}
 
 	private static View scanHighestVisibleChild(View parent, long minValidArea, int minValidHeight) {
-		// Opacity & Visibility Check
 		if (parent == null || !parent.isShown() || parent.getVisibility() != View.VISIBLE || parent.getAlpha() < 0.1f) {
 			return null;
 		}
 		
-		// Traversal (Reverse order for highest z-index)
 		if (parent instanceof ViewGroup) {
 			ViewGroup vg = (ViewGroup) parent;
 			for (int i = vg.getChildCount() - 1; i >= 0; i--) {
@@ -536,12 +480,8 @@ public class KeyEventHandler {
 			}
 		}
 		
-		// Geometry Filter: Must be at least 20% of the screen area OR span 80% of the screen height.
 		long viewArea = (long) parent.getWidth() * parent.getHeight();
 		if (viewArea >= minValidArea || parent.getHeight() >= minValidHeight) {
-			
-			// STRICT VALIDATION: Destroy the Phantom Layer Trap.
-			// Reject generic Android container layouts unless they are the actual rendering surface.
 			String className = parent.getClass().getSimpleName();
 			boolean isGenericWrapper = className.equals("FrameLayout") || 
 									   className.equals("LinearLayout") || 
@@ -550,7 +490,6 @@ public class KeyEventHandler {
 									   className.equals("ViewGroup") ||
 									   className.equals("ViewStub");
 									   
-			// If it is an actual physical view (WebView, SurfaceView, TextureView, etc.), lock onto it.
 			if (!isGenericWrapper) {
 				return parent;
 			}
@@ -615,7 +554,6 @@ public class KeyEventHandler {
 				});
 			}
 
-			// ONLY dispatch backup keys if we are NOT using the Hardware Swipe (prevents double-scroll everywhere)
 			if (!isMediaHost) {
 				int backupKey = up ? KeyEvent.KEYCODE_PAGE_UP : KeyEvent.KEYCODE_PAGE_DOWN;
 				wv.dispatchKeyEvent(new KeyEvent(KeyEvent.ACTION_DOWN, backupKey));
@@ -623,9 +561,7 @@ public class KeyEventHandler {
 			}
 		}
 
-		// EXCLUSIVE God-Mode Hardware Swipe for Media Hosts (Bilibili, Reddit, Douyin, TikTok, etc.)
 		if (isMediaHost && !isInstagram) {
-			// DEAD-CENTER FIX: Set X-axis to 0.50f (50% screen center) so swipes hit directly inside TikTok/Douyin's 380px centered column
 			final float actionX = touchTarget.getWidth() * 0.50f; 
 			final float centerY = touchTarget.getHeight() / 2f;
 			
@@ -637,7 +573,7 @@ public class KeyEventHandler {
 				final long startTime = android.os.SystemClock.uptimeMillis();
 				
 				MotionEvent eventDown = MotionEvent.obtain(startTime, startTime, MotionEvent.ACTION_DOWN, actionX, yStart, 0);
-				eventDown.setSource(InputDevice.SOURCE_TOUCHSCREEN); // Anti-Bot: Force hardware to report as human finger
+				eventDown.setSource(InputDevice.SOURCE_TOUCHSCREEN); 
 				touchTarget.dispatchTouchEvent(eventDown);
 				eventDown.recycle();
 
@@ -653,7 +589,7 @@ public class KeyEventHandler {
 					touchTarget.postDelayed(() -> {
 						if (touchTarget.isAttachedToWindow() && touchTarget.getVisibility() == View.VISIBLE) {
 							MotionEvent eventMove = MotionEvent.obtain(startTime, moveTime, MotionEvent.ACTION_MOVE, actionX, currentY, 0);
-							eventMove.setSource(InputDevice.SOURCE_TOUCHSCREEN); // Anti-Bot evasion
+							eventMove.setSource(InputDevice.SOURCE_TOUCHSCREEN); 
 							touchTarget.dispatchTouchEvent(eventMove);
 							eventMove.recycle();
 						}
@@ -664,12 +600,29 @@ public class KeyEventHandler {
 					if (touchTarget.isAttachedToWindow() && touchTarget.getVisibility() == View.VISIBLE) {
 						long endTime = startTime + swipeDuration + 10;
 						MotionEvent eventUp = MotionEvent.obtain(startTime, endTime, MotionEvent.ACTION_UP, actionX, yEnd, 0);
-						eventUp.setSource(InputDevice.SOURCE_TOUCHSCREEN); // Anti-Bot evasion
+						eventUp.setSource(InputDevice.SOURCE_TOUCHSCREEN); 
 						touchTarget.dispatchTouchEvent(eventUp);
 						eventUp.recycle();
 						Log.i("[REACTION] " + hostTag + "God-Mode Hardware Swipe Concluded (ACTION_UP). Duration: " + swipeDuration + "ms | Steps: " + stepCount);
 					}
 				}, swipeDuration + 10);
+
+				touchTarget.postDelayed(() -> {
+					if (wv != null && wv.getSettings().getJavaScriptEnabled()) {
+						String resumeJs = "(function() { " +
+								"  try { " +
+								"    let vids = document.querySelectorAll('video'); " +
+								"    vids.forEach(function(v) { " +
+								"      if (v && v.paused) { " +
+								"        let p = v.play(); " +
+								"        if (p && p.catch) p.catch(function(e){}); " +
+								"      } " +
+								"    }); " +
+								"  } catch(e) {} " +
+								"})();";
+						wv.evaluateJavascript(resumeJs, null);
+					}
+				}, swipeDuration + 300);
 
 			} catch (Exception e) {
 				Log.e(e, "[REACTION] " + hostTag + "Hardware swipe failed with Exception.");
@@ -683,17 +636,38 @@ public class KeyEventHandler {
 		action.getHandler().handle(cb, activity, timestamp);
 	}
 	
-	// Dedicated Javascript Interface to safely pipe web touch coordinates/elements back to Java Log
-	public static class PermataInspectorBridge {
-		private final String webViewIdentifier;
+	public static class PermataGodModeBridge {
+		private final WeakReference<View> targetViewRef;
 		
-		public PermataInspectorBridge(WebView webView) {
-			this.webViewIdentifier = webView.getClass().getSimpleName() + " (Hash: " + Integer.toHexString(webView.hashCode()) + ")";
+		public PermataGodModeBridge(View targetView) {
+			this.targetViewRef = new WeakReference<>(targetView);
+		}
+
+		@android.webkit.JavascriptInterface
+		public void requestHardwareTap(float x, float y) {
+			View target = targetViewRef.get();
+			if (target == null) return;
+			
+			target.post(() -> {
+				long now = android.os.SystemClock.uptimeMillis();
+				
+				MotionEvent down = MotionEvent.obtain(now, now, MotionEvent.ACTION_DOWN, x, y, 0);
+				down.setSource(InputDevice.SOURCE_TOUCHSCREEN);
+				target.dispatchTouchEvent(down);
+				down.recycle();
+
+				MotionEvent up = MotionEvent.obtain(now, now + 50, MotionEvent.ACTION_UP, x, y, 0);
+				up.setSource(InputDevice.SOURCE_TOUCHSCREEN);
+				target.dispatchTouchEvent(up);
+				up.recycle();
+				
+				Log.i("[SURGERY]", "Executed God-Mode Auto-Tap for Fullscreen at Physical Coordinates -> X:" + x + " Y:" + y);
+			});
 		}
 
 		@android.webkit.JavascriptInterface
 		public void recordTouch(String logData) {
-			Log.w("[WEB_PROBE] [Android View: " + webViewIdentifier + "] " + logData);
+			Log.w("[WEB_PROBE]", logData);
 		}
 	}
 
