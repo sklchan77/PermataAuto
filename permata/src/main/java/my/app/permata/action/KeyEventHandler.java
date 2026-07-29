@@ -38,7 +38,7 @@ public class KeyEventHandler {
 	// Set to TRUE to arm the DOM inspector for debugging complex web layouts (Scroll/Fullscreen).
 	// Set to FALSE for zero-overhead production builds.
 	// =========================================================================================
-	public static final boolean ENABLE_WEB_PROBE = true;
+	public static final boolean ENABLE_WEB_PROBE = false;
 
 	private static final int DBL_CLICK_INTERVAL = 500;
 	private static final int LONG_CLICK_INTERVAL = 1000;
@@ -514,7 +514,7 @@ public class KeyEventHandler {
 			return topCandidate;
 		}
 		
-		Log.i("[SURGERY] Target Locked -> Layer: [Fallback Base WebView] | No overlay passed the 20% Area or 80% Height filter.");
+		Log.i("[SURGERY] Target Locked -> Layer: [Fallback Base WebView] | No overlay passed the filters.");
 		return baseWebView;
 	}
 
@@ -538,12 +538,26 @@ public class KeyEventHandler {
 		}
 		
 		// Geometry Filter: Must be at least 20% of the screen area OR span 80% of the screen height.
-		// (The 'OR' guarantees we catch extremely skinny vertical videos on extremely wide screens).
 		long viewArea = (long) parent.getWidth() * parent.getHeight();
 		if (viewArea >= minValidArea || parent.getHeight() >= minValidHeight) {
-			return parent;
+			
+			// STRICT VALIDATION: Destroy the Phantom Layer Trap.
+			// Reject generic Android container layouts unless they are the actual rendering surface.
+			String className = parent.getClass().getSimpleName();
+			boolean isGenericWrapper = className.equals("FrameLayout") || 
+									   className.equals("LinearLayout") || 
+									   className.equals("RelativeLayout") || 
+									   className.equals("DecorView") ||
+									   className.equals("ViewGroup") ||
+									   className.equals("ViewStub");
+									   
+			// If it is an actual physical view (WebView, SurfaceView, TextureView, etc.), lock onto it.
+			if (!isGenericWrapper) {
+				return parent;
+			}
 		}
 		
+		// If we reach here, it was either too small, or an empty phantom wrapper. Skip it.
 		return null;
 	}
 
@@ -613,10 +627,10 @@ public class KeyEventHandler {
 
 		// EXCLUSIVE God-Mode Hardware Swipe for Media Hosts (Bilibili, Reddit, Douyin, TikTok, etc.)
 		if (isMediaHost && !isInstagram) {
-			final float actionX = touchTarget.getWidth() * 0.60f; // Adjusted to 60%
+			final float actionX = touchTarget.getWidth() * 0.60f; 
 			final float centerY = touchTarget.getHeight() / 2f;
 			
-			float span = touchTarget.getHeight() * 0.60f; // Adjusted to 60%
+			float span = touchTarget.getHeight() * 0.60f; 
 			final float yStart = up ? (centerY - span / 2f) : (centerY + span / 2f);
 			final float yEnd = up ? (centerY + span / 2f) : (centerY - span / 2f);
 
@@ -628,8 +642,8 @@ public class KeyEventHandler {
 				touchTarget.dispatchTouchEvent(eventDown);
 				eventDown.recycle();
 
-				final int stepCount = 13; // Refined for 60% distance
-				final long swipeDuration = 170; // Refined for 60% distance
+				final int stepCount = 13; 
+				final long swipeDuration = 170; 
 				
 				for (int i = 1; i <= stepCount; i++) {
 					final float linearT = (float) i / stepCount;
