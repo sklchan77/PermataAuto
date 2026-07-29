@@ -50,10 +50,10 @@ public class UniversalMediaBridge {
     @JavascriptInterface
     public void onMediaPause() {
         Log.i("[JavaBridge]", TAG + ": Universal HTML5 Media PAUSE detected.");
-        // Delay the release by 1500ms. If another video plays during a swipe, 
+        // Delay the release by 5000ms. If another video plays during a swipe, 
         // the pending release is cancelled, keeping focus perfectly stable.
         mainHandler.removeCallbacks(focusReleaseRunnable);
-        mainHandler.postDelayed(focusReleaseRunnable, 3000);
+        mainHandler.postDelayed(focusReleaseRunnable, 5000);
     }
 
     /**
