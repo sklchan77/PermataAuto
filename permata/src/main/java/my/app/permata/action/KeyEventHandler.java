@@ -5,7 +5,6 @@ import static android.view.KeyEvent.ACTION_DOWN;
 import static android.view.KeyEvent.ACTION_MULTIPLE;
 import static android.view.KeyEvent.ACTION_UP;
 
-import android.app.Activity;
 import android.net.Uri;
 import android.view.InputDevice;
 import android.view.KeyEvent;
@@ -34,15 +33,13 @@ import my.app.utils.ui.fragment.ActivityFragment;
  */
 public class KeyEventHandler {
 	
-	public static final boolean ENABLE_WEB_PROBE = true;
+	public static final boolean ENABLE_WEB_PROBE = false;
 
 	private static final int DBL_CLICK_INTERVAL = 500;
 	private static final int LONG_CLICK_INTERVAL = 1000;
 
-	// THREAD SAFETY: Volatile ensures instantaneous cross-thread visibility between Input and MediaSession threads
 	private static volatile Worker worker;
 	private static volatile long lastGlobalActionTime = 0L;
-	
 	private static final Map<View, Long> scrollTimestamps = Collections.synchronizedMap(new WeakHashMap<>());
 
 	private static final String JS_TELEMETRY_PROBE = "(function() { " +
@@ -64,8 +61,6 @@ public class KeyEventHandler {
 			"          " +
 			"          let actionTarget = el && el.closest ? (el.closest('button, a, [role=\"button\"]') || el) : el; " +
 			"          let actionInfo = (actionTarget !== el) ? (actionTarget.tagName.toLowerCase() + (actionTarget.id ? '#' + actionTarget.id : '')) : 'same'; " +
-			"          " +
-			"          let hiddenAttrs = Array.from(actionTarget.attributes || []).filter(a => a.name.startsWith('data-') || a.name.startsWith('aria-')).map(a => a.name + '=' + a.value).join(' '); " +
 			"          " +
 			"          let getPath = function(n) { let p=[]; while(n && n.nodeType===1 && n.tagName!=='BODY' && n.tagName!=='HTML'){ let s=n.tagName.toLowerCase(); if(n.id) { s+='#'+n.id; p.unshift(s); break; } else if(n.className && typeof n.className==='string') { s+='.'+n.className.trim().split(/\\s+/).join('.'); } p.unshift(s); n=n.parentNode; } return p.join(' > '); }; " +
 			"          let cssPath = getPath(actionTarget); " +
@@ -271,10 +266,14 @@ public class KeyEventHandler {
 					if (className.endsWith("WebBrowserFragment") && !className.endsWith("YoutubeFragment")) {
 						
 						finalTargetActivity.post(() -> {
-							// ANR Defense: Ensure Activity is still alive before executing UI bounds checks
-							if (finalTargetActivity instanceof Activity) {
-								Activity act = (Activity) finalTargetActivity;
-								if (act.isFinishing() || act.isDestroyed()) return;
+							
+							// ANR Defense: Extract raw Context via Window to verify Activity Lifecycle safely
+							if (finalTargetActivity.getWindow() != null) {
+								android.content.Context ctx = finalTargetActivity.getWindow().getContext();
+								if (ctx instanceof android.app.Activity) {
+									android.app.Activity act = (android.app.Activity) ctx;
+									if (act.isFinishing() || act.isDestroyed()) return;
+								}
 							}
 
 							WebView resolvedWebView = scanFragmentsForWebView(activeFragment);
@@ -333,7 +332,6 @@ public class KeyEventHandler {
 									View touchTargetView = findTopmostTouchTarget(finalTargetActivity, resolvedWebView);
 
 									try {
-										// Safe to re-add. WeakReferences prevent memory leaks on Activity destruction
 										resolvedWebView.addJavascriptInterface(new PermataGodModeBridge(touchTargetView), "PermataGodMode");
 										if (ENABLE_WEB_PROBE) {
 											resolvedWebView.evaluateJavascript(JS_TELEMETRY_PROBE, null);
