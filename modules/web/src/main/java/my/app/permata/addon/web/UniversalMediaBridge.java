@@ -27,6 +27,10 @@ public class UniversalMediaBridge {
     private final WeakReference<WebView> webViewRef;
     private final Handler mainHandler;
     private AudioFocusRequest audioFocusRequest;
+    
+    // Anti-Ping-Pong State Tracking for Feed Auto-Play
+    private boolean isFocusHeld = false;
+    private final Runnable focusReleaseRunnable = this::doReleaseAudioFocus;
 
     public UniversalMediaBridge(@NonNull Context context, @NonNull WebView webView) {
         this.contextRef = new WeakReference<>(context);
@@ -37,13 +41,19 @@ public class UniversalMediaBridge {
     @JavascriptInterface
     public void onMediaPlay() {
         Log.i("[JavaBridge]", TAG + ": Universal HTML5 Media PLAY detected.");
+        // 1. Cancel any pending focus release immediately (user is scrolling feeds)
+        mainHandler.removeCallbacks(focusReleaseRunnable);
+        // 2. Safely request focus only if we don't already have it secured
         mainHandler.post(this::stealAudioFocus);
     }
 
     @JavascriptInterface
     public void onMediaPause() {
         Log.i("[JavaBridge]", TAG + ": Universal HTML5 Media PAUSE detected.");
-        mainHandler.post(this::releaseAudioFocus);
+        // Delay the release by 1500ms. If another video plays during a swipe, 
+        // the pending release is cancelled, keeping focus perfectly stable.
+        mainHandler.removeCallbacks(focusReleaseRunnable);
+        mainHandler.postDelayed(focusReleaseRunnable, 3000);
     }
 
     /**
@@ -51,6 +61,10 @@ public class UniversalMediaBridge {
      * This forces the Android OS to natively send an AUDIOFOCUS_LOSS (-1) event to the background ExoPlayer/IPTV.
      */
     private void stealAudioFocus() {
+        if (isFocusHeld) {
+            return; // We already securely hold the focus. Do not ping the OS and risk rejection.
+        }
+
         Context context = contextRef.get();
         if (context == null) return;
 
@@ -59,6 +73,15 @@ public class UniversalMediaBridge {
 
         Log.i("[JavaBridge]", TAG + ": Requesting Audio Focus for WebMedia to pause background players.");
 
+        AudioManager.OnAudioFocusChangeListener focusListener = focusChange -> {
+            Log.i("[JavaBridge]", TAG + ": WebMedia AudioFocus state changed to: " + focusChange);
+            if (focusChange == AudioManager.AUDIOFOCUS_LOSS || focusChange == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT) {
+                // If a phone call or native app violently steals focus, update our tracking state
+                isFocusHeld = false;
+            }
+        };
+
+        int result;
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             AudioAttributes audioAttributes = new AudioAttributes.Builder()
                     .setUsage(AudioAttributes.USAGE_MEDIA)
@@ -68,30 +91,29 @@ public class UniversalMediaBridge {
             audioFocusRequest = new AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
                     .setAudioAttributes(audioAttributes)
                     .setAcceptsDelayedFocusGain(false)
-                    .setOnAudioFocusChangeListener(focusChange -> {
-                        Log.i("[JavaBridge]", TAG + ": WebMedia AudioFocus state changed to: " + focusChange);
-                        // FIX: Aggressive JS Pause removed here to prevent Douyin/TikTok auto-play ping-pong lockups.
-                    })
+                    .setOnAudioFocusChangeListener(focusListener)
                     .build();
 
-            audioManager.requestAudioFocus(audioFocusRequest);
+            result = audioManager.requestAudioFocus(audioFocusRequest);
         } else {
             @SuppressWarnings("deprecation")
-            int result = audioManager.requestAudioFocus(
-                    focusChange -> {
-                        Log.i("[JavaBridge]", TAG + ": WebMedia AudioFocus state changed to: " + focusChange);
-                        // FIX: Aggressive JS Pause removed here to prevent Douyin/TikTok auto-play ping-pong lockups.
-                    },
+            int reqResult = audioManager.requestAudioFocus(
+                    focusListener,
                     AudioManager.STREAM_MUSIC,
                     AudioManager.AUDIOFOCUS_GAIN
             );
+            result = reqResult;
+        }
+
+        if (result == AudioManager.AUDIOFOCUS_REQUEST_GRANTED) {
+            isFocusHeld = true;
         }
     }
 
     /**
      * Abandons the Audio Focus request so background services can resume if requested.
      */
-    private void releaseAudioFocus() {
+    private void doReleaseAudioFocus() {
         Context context = contextRef.get();
         if (context == null) return;
 
@@ -107,5 +129,7 @@ public class UniversalMediaBridge {
             @SuppressWarnings("deprecation")
             int result = audioManager.abandonAudioFocus(focusChange -> {});
         }
+        
+        isFocusHeld = false;
     }
 }
