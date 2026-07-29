@@ -215,10 +215,10 @@ public class KeyEventHandler {
 			"} " +
 			"const registry=[" +
 			"    {name:\"douyin\",match:/douyin\\.com/,execute:function(){" +
-			"      return 'DOUYIN: Fullscreen and Global Wipe Disabled for Native Feed Layout'; " +
+			"      return 'DOUYIN: Native Feed Layout Active'; " +
 			"    }}," +
 			"    {name:\"tiktok\",match:/tiktok\\.com/,execute:function(){" +
-			"      var ttCss = ' [data-e2e=\"video-author-avatar\"], [data-e2e=\"nav-login\"], [class*=\"DivHeaderContainer\"], [class*=\"DivSideNavContainer\"], [class*=\"DivBottomContainer\"] { display: none !important; pointer-events: none !important; } '; " +
+			"      var ttCss = ' [data-e2e=\"video-author-avatar\"], [data-e2e=\"nav-login\"], [class*=\"DivHeaderContainer\"], [class*=\"DivSideNavContainer\"], [class*=\"DivBottomContainer\"] { display: none !important; } [class*=\"DivMediaCardOverlay\"], [class*=\"DivOverlayBottomContent\"], [class*=\"DivCreatorInfoContainer\"], [class*=\"BasePlayerContainer\"]::after { pointer-events: none !important; } '; " +
 			"      return 'TIKTOK: ' + injectGlobalWipe() + ' | ' + injectSpecificWipe(ttCss, 'permata-tt-css'); " +
 			"    }}," +
 			"    {name:\"instagram\",match:/instagram/,execute:function(){" +
@@ -301,7 +301,7 @@ public class KeyEventHandler {
 		if (finalTargetActivity != null && event.getAction() == ACTION_DOWN) {
 			if (code == KeyEvent.KEYCODE_MEDIA_NEXT || code == KeyEvent.KEYCODE_MEDIA_PREVIOUS) {
 				
-				// THE FIX: Catch button spam BEFORE doing heavy reflection or view traversal
+				// CPU SHIELD: Catch button spam BEFORE doing heavy reflection or view traversal
 				long currentUptime = android.os.SystemClock.uptimeMillis();
 				if (currentUptime - lastGlobalActionTime < 250) {
 					Log.w("[CHECK] Input dropped: Button spam detected (< 250ms)");
@@ -501,7 +501,6 @@ public class KeyEventHandler {
 			float areaPercentage = ((float) viewArea / totalScreenArea) * 100f;
 			
 			String layerName = topCandidate.getClass().getName();
-			// Simplify name if it's a standard Android widget to reduce log clutter
 			if (layerName.startsWith("android.widget.") || layerName.startsWith("android.view.")) {
 				layerName = topCandidate.getClass().getSimpleName();
 			}
@@ -557,7 +556,6 @@ public class KeyEventHandler {
 			}
 		}
 		
-		// If we reach here, it was either too small, or an empty phantom wrapper. Skip it.
 		return null;
 	}
 
@@ -627,7 +625,8 @@ public class KeyEventHandler {
 
 		// EXCLUSIVE God-Mode Hardware Swipe for Media Hosts (Bilibili, Reddit, Douyin, TikTok, etc.)
 		if (isMediaHost && !isInstagram) {
-			final float actionX = touchTarget.getWidth() * 0.60f; 
+			// DEAD-CENTER FIX: Set X-axis to 0.50f (50% screen center) so swipes hit directly inside TikTok/Douyin's 380px centered column
+			final float actionX = touchTarget.getWidth() * 0.50f; 
 			final float centerY = touchTarget.getHeight() / 2f;
 			
 			float span = touchTarget.getHeight() * 0.60f; 
