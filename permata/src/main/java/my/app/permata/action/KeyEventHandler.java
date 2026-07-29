@@ -38,7 +38,7 @@ public class KeyEventHandler {
 	// Set to TRUE to arm the DOM inspector for debugging complex web layouts (Scroll/Fullscreen).
 	// Set to FALSE for zero-overhead production builds.
 	// =========================================================================================
-	public static final boolean ENABLE_WEB_PROBE = false;
+	public static final boolean ENABLE_WEB_PROBE = true;
 
 	private static final int DBL_CLICK_INTERVAL = 500;
 	private static final int LONG_CLICK_INTERVAL = 1000;
