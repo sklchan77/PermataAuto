@@ -5,6 +5,9 @@ import static android.view.KeyEvent.ACTION_DOWN;
 import static android.view.KeyEvent.ACTION_MULTIPLE;
 import static android.view.KeyEvent.ACTION_UP;
 
+import android.app.Activity;
+import android.content.Context;
+import android.content.ContextWrapper;
 import android.net.Uri;
 import android.view.InputDevice;
 import android.view.KeyEvent;
@@ -33,7 +36,8 @@ import my.app.utils.ui.fragment.ActivityFragment;
  */
 public class KeyEventHandler {
 	
-	public static final boolean ENABLE_WEB_PROBE = false;
+	// Set to TRUE to arm the DOM inspector & DOM Scanner for debugging web layouts.
+	public static final boolean ENABLE_WEB_PROBE = true;
 
 	private static final int DBL_CLICK_INTERVAL = 500;
 	private static final int LONG_CLICK_INTERVAL = 1000;
@@ -42,12 +46,43 @@ public class KeyEventHandler {
 	private static volatile long lastGlobalActionTime = 0L;
 	private static final Map<View, Long> scrollTimestamps = Collections.synchronizedMap(new WeakHashMap<>());
 
+	// The Dedicated Universal Telemetry Probe & Web Page Investigator
 	private static final String JS_TELEMETRY_PROBE = "(function() { " +
 			"  if (window.__permataProbeActive) return; " +
 			"  window.__permataProbeActive = true; " +
 			"  window.__permataLastTouch = 0; " + 
+			"  window.__permataScanDone = false; " +
+			"  const scanDOMControls = function() { " +
+			"      try { " +
+			"          let elements = document.querySelectorAll('button, [role=\"button\"], [class*=\"btn\"], [class*=\"button\"], [class*=\"control\"], [class*=\"fullscreen\"], [class*=\"wide\"], [class*=\"clear\"], [class*=\"pure\"], [class*=\"screen\"], [id*=\"btn\"], [id*=\"control\"], xg-icon, [tagName^=\"XG-\"], [class*=\"play\"]'); " +
+			"          let found = []; " +
+			"          for (let i = 0; i < elements.length; i++) { " +
+			"              let el = elements[i]; " +
+			"              let rect = el.getBoundingClientRect(); " +
+			"              if (rect.width > 0 || rect.height > 0 || window.getComputedStyle(el).opacity === '0') { " +
+			"                  let tag = el.tagName.toLowerCase(); " +
+			"                  let id = el.id ? '#' + el.id : ''; " +
+			"                  let cls = (el.className && typeof el.className === 'string') ? '.' + el.className.trim().split(/\\s+/).join('.') : ''; " +
+			"                  let aria = el.getAttribute('aria-label') || el.getAttribute('data-tip') || ''; " +
+			"                  let text = el.innerText ? el.innerText.trim().substring(0, 15).replace(/\\n/g, '') : ''; " +
+			"                  let info = tag + id + cls; " +
+			"                  if (aria) info += ' [aria: ' + aria + ']'; " +
+			"                  if (text) info += ' [text: ' + text + ']'; " +
+			"                  found.push(info); " +
+			"              } " +
+			"          } " +
+			"          let unique = Array.from(new Set(found)); " +
+			"          if (window.PermataGodMode && window.PermataGodMode.recordTouch) { " +
+			"              window.PermataGodMode.recordTouch('[DOM_SCAN] Extracted ' + unique.length + ' potential controls: ' + unique.join(' || ')); " +
+			"          } " +
+			"      } catch(e) {} " +
+			"  }; " +
 			"  const recordEvent = function(e) { " +
 			"      try { " +
+			"          if (!window.__permataScanDone) { " +
+			"              window.__permataScanDone = true; " +
+			"              setTimeout(scanDOMControls, 1500); " + 
+			"          } " +
 			"          let now = Date.now(); " +
 			"          if (now - window.__permataLastTouch < 50) return; " + 
 			"          window.__permataLastTouch = now; " +
@@ -267,11 +302,17 @@ public class KeyEventHandler {
 						
 						finalTargetActivity.post(() -> {
 							
-							// ANR Defense: Extract raw Context via Window to verify Activity Lifecycle safely
+							// ANR Defense: Deep Context Unwrap to verify Activity Lifecycle safely
 							if (finalTargetActivity.getWindow() != null) {
-								android.content.Context ctx = finalTargetActivity.getWindow().getContext();
-								if (ctx instanceof android.app.Activity) {
-									android.app.Activity act = (android.app.Activity) ctx;
+								Context ctx = finalTargetActivity.getWindow().getContext();
+								while (ctx instanceof ContextWrapper) {
+									if (ctx instanceof Activity) {
+										break;
+									}
+									ctx = ((ContextWrapper) ctx).getBaseContext();
+								}
+								if (ctx instanceof Activity) {
+									Activity act = (Activity) ctx;
 									if (act.isFinishing() || act.isDestroyed()) return;
 								}
 							}
