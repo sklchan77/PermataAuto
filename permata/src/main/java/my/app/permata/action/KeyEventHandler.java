@@ -37,7 +37,7 @@ import my.app.utils.ui.fragment.ActivityFragment;
 public class KeyEventHandler {
 	
 	// Set to TRUE to arm the DOM inspector & DOM Scanner for debugging web layouts.
-	public static final boolean ENABLE_WEB_PROBE = false;
+	public static final boolean ENABLE_WEB_PROBE = true;
 
 	private static final int DBL_CLICK_INTERVAL = 500;
 	private static final int LONG_CLICK_INTERVAL = 1000;
