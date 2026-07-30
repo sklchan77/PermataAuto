@@ -37,7 +37,7 @@ import my.app.utils.ui.fragment.ActivityFragment;
 public class KeyEventHandler {
 	
 	// Set to TRUE to arm the DOM inspector & DOM Scanner for debugging web layouts.
-	public static final boolean ENABLE_WEB_PROBE = true;
+	public static final boolean ENABLE_WEB_PROBE = false;
 
 	private static final int DBL_CLICK_INTERVAL = 500;
 	private static final int LONG_CLICK_INTERVAL = 1000;
@@ -81,7 +81,7 @@ public class KeyEventHandler {
 			"      try { " +
 			"          if (!window.__permataScanDone) { " +
 			"              window.__permataScanDone = true; " +
-			"              setTimeout(scanDOMControls, 1500); " + 
+			"              setTimeout(scanDOMControls, 3000); " + 
 			"          } " +
 			"          let now = Date.now(); " +
 			"          if (now - window.__permataLastTouch < 50) return; " + 
@@ -128,7 +128,7 @@ public class KeyEventHandler {
 			"  window.addEventListener('mousedown', recordEvent, {capture: true, passive: true}); " +
 			"})();";
 
-	// The standard UI execution payload with Real-Time Wide/Fullscreen Status Checks
+	// The standard UI execution payload with Real-Time Wide/Fullscreen Status Checks & Phantom Clear Screen
 	private static final String JS_UNIVERSAL_PAYLOAD = "(function(){" +
 			"let res = 'Discovery [Layer 2]: JS Registry Miss (No custom formatting applied)'; " +
 			"const injectGlobalWipe = function() { " +
@@ -175,13 +175,12 @@ public class KeyEventHandler {
 			"const registry=[" +
 			"    {name:\"douyin\",match:/douyin\\.com/,execute:function(){" +
 			"      let player = document.querySelector('.xgplayer'); " +
-			"      let btn = document.querySelector('xg-cssfullscreen, xg-fullscreen, .xgplayer-pagefull'); " +
+			"      let btn = document.querySelector('.xgplayer-page-full-screen, xg-icon.xgplayer-page-full-screen, .xgplayer-pagefull'); " +
+			"      let fsMsg = 'Native Feed (Btn/Player missing)'; " +
 			"      if (player && btn) { " +
 			"        let isFs = player.classList.contains('xgplayer-pagefull-active') || " +
 			"                   player.classList.contains('xgplayer-is-cssfullscreen') || " +
-			"                   player.classList.contains('xgplayer-is-fullscreen') || " +
-			"                   player.classList.contains('xgplayer-fullscreen-active') || " +
-			"                   document.querySelector('.xgplayer-pagefull-active, .xgplayer-is-cssfullscreen, .xgplayer-is-fullscreen'); " +
+			"                   document.querySelector('.xgplayer-pagefull-active, .xgplayer-is-cssfullscreen'); " +
 			"        " +
 			"        if (!isFs) { " +
 			"          player.classList.remove('xgplayer-inactive'); " +
@@ -196,14 +195,35 @@ public class KeyEventHandler {
 			"            let y = (rect.top + (rect.height / 2)) * dpr; " +
 			"            if (window.PermataGodMode) { " +
 			"              window.PermataGodMode.requestHardwareTap(x, y); " +
-			"              return 'DOUYIN: Wide/Fullscreen inactive -> Re-applied God-Mode Tap at X:' + Math.round(x) + ' Y:' + Math.round(y); " +
+			"              fsMsg = 'Page-Fullscreen tapped at X:' + Math.round(x) + ' Y:' + Math.round(y); " +
 			"            } " +
 			"          } " +
 			"        } else { " +
-			"          return 'DOUYIN: Status Check -> Wide/Fullscreen already active.'; " +
+			"          fsMsg = 'Page-Fullscreen already active'; " +
 			"        } " +
 			"      } " +
-			"      return 'DOUYIN: Native Feed Layout Active'; " +
+			"      " +
+			"      setTimeout(function() { " +
+			"          try { " +
+			"              let clearBtn = document.querySelector('.xgplayer-immersive-switch-setting, .immersive-switch'); " +
+			"              if (clearBtn) { " +
+			"                  let rect = clearBtn.getBoundingClientRect(); " +
+			"                  if (rect.width > 0 && rect.height > 0) { " +
+			"                      let dpr = window.devicePixelRatio || 1; " +
+			"                      let x = (rect.left + (rect.width / 2)) * dpr; " +
+			"                      let y = (rect.top + (rect.height / 2)) * dpr; " +
+			"                      if (window.PermataGodMode) { " +
+			"                          window.PermataGodMode.requestHardwareTap(x, y); " +
+			"                          if (window.PermataGodMode.recordTouch) { " +
+			"                              window.PermataGodMode.recordTouch('[ACTION] DOUYIN: Clear Screen toggled via Hardware Tap at X:' + Math.round(x) + ' Y:' + Math.round(y)); " +
+			"                          } " +
+			"                      } " +
+			"                  } " +
+			"              } " +
+			"          } catch(e) {} " +
+			"      }, 2000); " +
+			"      " +
+			"      return 'DOUYIN: ' + fsMsg + ' | Clear Screen scheduled in 2000ms.'; " +
 			"    }}," +
 			"    {name:\"tiktok\",match:/tiktok\\.com/,execute:function(){" +
 			"      var ttCss = ' [data-e2e=\"video-author-avatar\"], [data-e2e=\"nav-login\"], [class*=\"DivHeaderContainer\"], [class*=\"DivSideNavContainer\"], [class*=\"DivBottomContainer\"] { display: none !important; } [class*=\"DivMediaCardOverlay\"], [class*=\"DivOverlayBottomContent\"], [class*=\"DivCreatorInfoContainer\"], [class*=\"BasePlayerContainer\"]::after { pointer-events: none !important; } '; " +
@@ -557,9 +577,12 @@ public class KeyEventHandler {
 
 		if (wv.getSettings().getJavaScriptEnabled()) {
 			
-			wv.evaluateJavascript(JS_UNIVERSAL_PAYLOAD, value -> {
-				if (value != null && !value.equals("null")) Log.i(hostTag + "[REACTION] " + value.replace("\"", ""));
-			});
+			// CPU CHOKE FIX: Defer JS execution until AFTER the physical swipe finishes (170ms + 50ms buffer)
+			wv.postDelayed(() -> {
+				wv.evaluateJavascript(JS_UNIVERSAL_PAYLOAD, value -> {
+					if (value != null && !value.equals("null")) Log.i(hostTag + "[REACTION] " + value.replace("\"", ""));
+				});
+			}, 220); 
 
 			if (isMediaHost && !isInstagram) {
 				Log.i(hostTag + "[ACTION] Media Host Detected: Bypassing JS Scroll entirely. Relying purely on God-Mode Hardware Swipe.");
@@ -645,23 +668,6 @@ public class KeyEventHandler {
 						Log.i("[REACTION] " + hostTag + "God-Mode Hardware Swipe Concluded (ACTION_UP). Duration: " + swipeDuration + "ms | Steps: " + stepCount);
 					}
 				}, swipeDuration + 10);
-
-				touchTarget.postDelayed(() -> {
-					if (wv != null && wv.getSettings().getJavaScriptEnabled()) {
-						String resumeJs = "(function() { " +
-								"  try { " +
-								"    let vids = document.querySelectorAll('video'); " +
-								"    vids.forEach(function(v) { " +
-								"      if (v && v.paused) { " +
-								"        let p = v.play(); " +
-								"        if (p && p.catch) p.catch(function(e){}); " +
-								"      } " +
-								"    }); " +
-								"  } catch(e) {} " +
-								"})();";
-						wv.evaluateJavascript(resumeJs, null);
-					}
-				}, swipeDuration + 300);
 
 			} catch (Exception e) {
 				Log.e(e, "[REACTION] " + hostTag + "Hardware swipe failed with Exception.");
