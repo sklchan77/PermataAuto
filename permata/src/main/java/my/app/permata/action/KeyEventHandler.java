@@ -81,7 +81,7 @@ public class KeyEventHandler {
 			"      try { " +
 			"          if (!window.__permataScanDone) { " +
 			"              window.__permataScanDone = true; " +
-			"              setTimeout(scanDOMControls, 3000); " + 
+			"              setTimeout(scanDOMControls, 1500); " + 
 			"          } " +
 			"          let now = Date.now(); " +
 			"          if (now - window.__permataLastTouch < 50) return; " + 
