@@ -128,7 +128,7 @@ public class KeyEventHandler {
 			"  window.addEventListener('mousedown', recordEvent, {capture: true, passive: true}); " +
 			"})();";
 
-	// The standard UI execution payload with Real-Time Wide/Fullscreen Status Checks & Phantom Clear Screen
+	// The standard UI execution payload with Real-Time Wide/Fullscreen Status Checks & Debounced Phantom Clear Screen
 	private static final String JS_UNIVERSAL_PAYLOAD = "(function(){" +
 			"let res = 'Discovery [Layer 2]: JS Registry Miss (No custom formatting applied)'; " +
 			"const injectGlobalWipe = function() { " +
@@ -203,7 +203,8 @@ public class KeyEventHandler {
 			"        } " +
 			"      } " +
 			"      " +
-			"      setTimeout(function() { " +
+			"      if (window.__permataClearTimer) clearTimeout(window.__permataClearTimer); " +
+			"      window.__permataClearTimer = setTimeout(function() { " +
 			"          try { " +
 			"              let clearBtn = document.querySelector('.xgplayer-immersive-switch-setting, .immersive-switch'); " +
 			"              if (clearBtn) { " +
