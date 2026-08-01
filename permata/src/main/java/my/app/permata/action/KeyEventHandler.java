@@ -174,42 +174,49 @@ public class KeyEventHandler {
 			"}; " +
 			"const registry=[" +
 			"    {name:\"douyin\",match:/douyin\\.com/,execute:function(){" +
-			"      let player = document.querySelector('.xgplayer'); " +
-			"      let btn = document.querySelector('.xgplayer-page-full-screen, xg-icon.xgplayer-page-full-screen, .xgplayer-pagefull'); " +
-			"      let fsMsg = 'Native Feed (Btn/Player missing)'; " +
-			"      if (player && btn) { " +
-			"        let isFs = player.classList.contains('xgplayer-pagefull-active') || " +
-			"                   player.classList.contains('xgplayer-is-cssfullscreen') || " +
-			"                   document.querySelector('.xgplayer-pagefull-active, .xgplayer-is-cssfullscreen'); " +
-			"        " +
-			"        if (!isFs) { " +
-			"          player.classList.remove('xgplayer-inactive'); " +
-			"          player.classList.add('xgplayer-active'); " +
-			"          let controls = document.querySelector('xg-controls'); " +
-			"          if (controls) { controls.style.opacity = '1'; controls.style.pointerEvents = 'auto'; } " +
+			"      let player = document.querySelector('.xgplayer-playing') || document.querySelector('.xgplayer'); " +
+			"      let fsMsg = 'Native Feed (Player missing)'; " +
+			"      if (player) { " +
+			"        let btn = player.querySelector('.xgplayer-page-full-screen, xg-icon.xgplayer-page-full-screen, .xgplayer-pagefull'); " +
+			"        fsMsg = 'Native Feed (Btn missing)'; " +
+			"        if (btn) { " +
+			"          let isFs = player.classList.contains('xgplayer-pagefull-active') || " +
+			"                     player.classList.contains('xgplayer-is-cssfullscreen') || " +
+			"                     document.querySelector('.xgplayer-pagefull-active, .xgplayer-is-cssfullscreen'); " +
 			"          " +
-			"          let rect = btn.getBoundingClientRect(); " +
-			"          if (rect.width > 0 && rect.height > 0) { " +
-			"            let dpr = window.devicePixelRatio || 1; " +
-			"            let x = (rect.left + (rect.width / 2)) * dpr; " +
-			"            let y = (rect.top + (rect.height / 2)) * dpr; " +
-			"            if (window.PermataGodMode) { " +
-			"              window.PermataGodMode.requestHardwareTap(x, y); " +
-			"              fsMsg = 'Page-Fullscreen tapped at X:' + Math.round(x) + ' Y:' + Math.round(y); " +
+			"          if (!isFs) { " +
+			"            player.classList.remove('xgplayer-inactive'); " +
+			"            player.classList.add('xgplayer-active'); " +
+			"            let controls = player.querySelector('xg-controls'); " +
+			"            if (controls) { controls.style.opacity = '1'; controls.style.pointerEvents = 'auto'; } " +
+			"            " +
+			"            let rect = btn.getBoundingClientRect(); " +
+			"            if (rect.width > 0 && rect.height > 0 && rect.top >= 0) { " +
+			"              let dpr = window.devicePixelRatio || 1; " +
+			"              let x = (rect.left + (rect.width / 2)) * dpr; " +
+			"              let y = (rect.top + (rect.height / 2)) * dpr; " +
+			"              if (window.PermataGodMode) { " +
+			"                window.PermataGodMode.requestHardwareTap(x, y); " +
+			"                fsMsg = 'Page-Fullscreen tapped at X:' + Math.round(x) + ' Y:' + Math.round(y); " +
+			"              } " +
+			"            } else { " +
+			"              fsMsg = 'Btn off-screen (Ghost player skipped)'; " +
 			"            } " +
+			"          } else { " +
+			"            fsMsg = 'Page-Fullscreen already active'; " +
 			"          } " +
-			"        } else { " +
-			"          fsMsg = 'Page-Fullscreen already active'; " +
 			"        } " +
 			"      } " +
 			"      " +
 			"      if (window.__permataClearTimer) clearTimeout(window.__permataClearTimer); " +
 			"      window.__permataClearTimer = setTimeout(function() { " +
 			"          try { " +
-			"              let clearBtn = document.querySelector('.xgplayer-immersive-switch-setting, .immersive-switch'); " +
+			"              let activePlayer = document.querySelector('.xgplayer-playing') || document.querySelector('.xgplayer'); " +
+			"              if (!activePlayer) return; " +
+			"              let clearBtn = activePlayer.querySelector('.xgplayer-immersive-switch-setting, .immersive-switch'); " +
 			"              if (clearBtn) { " +
 			"                  let rect = clearBtn.getBoundingClientRect(); " +
-			"                  if (rect.width > 0 && rect.height > 0) { " +
+			"                  if (rect.width > 0 && rect.height > 0 && rect.top >= 0) { " +
 			"                      let dpr = window.devicePixelRatio || 1; " +
 			"                      let x = (rect.left + (rect.width / 2)) * dpr; " +
 			"                      let y = (rect.top + (rect.height / 2)) * dpr; " +
