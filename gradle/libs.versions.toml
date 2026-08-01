@@ -1,6 +1,6 @@
 [versions]
 # App
-appVersionCode = "134"
+appVersionCode = "135"
 appVersionName = "1.0.0"
 
 # Build tooling
