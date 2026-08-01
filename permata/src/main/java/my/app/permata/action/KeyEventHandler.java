@@ -128,7 +128,7 @@ public class KeyEventHandler {
 			"  window.addEventListener('mousedown', recordEvent, {capture: true, passive: true}); " +
 			"})();";
 
-	// The standard UI execution payload with Asynchronous Delay Rendering Check
+	// The standard UI execution payload with Robust Uncapped Geolocation & Force-Wake Player Controls
 	private static final String JS_UNIVERSAL_PAYLOAD = "(function(){" +
 			"let res = 'Discovery [Layer 2]: JS Registry Miss (No custom formatting applied)'; " +
 			"const injectGlobalWipe = function() { " +
@@ -187,20 +187,21 @@ public class KeyEventHandler {
 			"      " +
 			"      const tryTapFullscreen = function() { " +
 			"        let player = getActivePlayer(); " +
-			"        if (!player) return; " +
-			"        let btn = player.querySelector('.xgplayer-page-full-screen, xg-icon.xgplayer-page-full-screen, .xgplayer-pagefull'); " +
+			"        let btn = player ? player.querySelector('.xgplayer-page-full-screen, xg-icon.xgplayer-page-full-screen, .xgplayer-pagefull') : null; " +
+			"        if (!btn) btn = document.querySelector('.xgplayer-page-full-screen, xg-icon.xgplayer-page-full-screen, .xgplayer-pagefull'); " +
 			"        if (btn) { " +
-			"          let isFs = player.classList.contains('xgplayer-pagefull-active') || " +
-			"                     player.classList.contains('xgplayer-is-cssfullscreen') || " +
-			"                     document.querySelector('.xgplayer-pagefull-active, .xgplayer-is-cssfullscreen'); " +
+			"          let targetPlayer = btn.closest('.xgplayer') || player; " +
+			"          let isFs = (targetPlayer && (targetPlayer.classList.contains('xgplayer-pagefull-active') || targetPlayer.classList.contains('xgplayer-is-cssfullscreen'))) || " +
+			"                     document.querySelector('.xgplayer-pagefull-active, .xgplayer-is-cssfullscreen, .isCssFullScreen'); " +
 			"          if (!isFs) { " +
-			"            player.classList.remove('xgplayer-inactive'); " +
-			"            player.classList.add('xgplayer-active'); " +
-			"            let controls = player.querySelector('xg-controls'); " +
-			"            if (controls) { controls.style.opacity = '1'; controls.style.pointerEvents = 'auto'; } " +
-			"            " +
+			"            if (targetPlayer) { " +
+			"              targetPlayer.classList.remove('xgplayer-inactive'); " +
+			"              targetPlayer.classList.add('xgplayer-active'); " +
+			"              let controls = targetPlayer.querySelector('xg-controls'); " +
+			"              if (controls) { controls.style.opacity = '1'; controls.style.pointerEvents = 'auto'; } " +
+			"            } " +
 			"            let rect = btn.getBoundingClientRect(); " +
-			"            if (rect.width > 0 && rect.height > 0 && rect.top >= 0 && rect.top <= window.innerHeight) { " +
+			"            if (rect.width > 0 || rect.height > 0) { " +
 			"              let dpr = window.devicePixelRatio || 1; " +
 			"              let x = (rect.left + (rect.width / 2)) * dpr; " +
 			"              let y = (rect.top + (rect.height / 2)) * dpr; " +
@@ -217,11 +218,18 @@ public class KeyEventHandler {
 			"      " +
 			"      const tryTapClear = function() { " +
 			"        let activePlayer = getActivePlayer(); " +
-			"        if (!activePlayer) return; " +
-			"        let clearBtn = activePlayer.querySelector('.xgplayer-immersive-switch-setting, .immersive-switch'); " +
+			"        let clearBtn = activePlayer ? activePlayer.querySelector('.xgplayer-immersive-switch-setting, .immersive-switch') : null; " +
+			"        if (!clearBtn) clearBtn = document.querySelector('.xgplayer-immersive-switch-setting, .immersive-switch'); " +
 			"        if (clearBtn) { " +
+			"          let targetPlayer = clearBtn.closest('.xgplayer') || activePlayer; " +
+			"          if (targetPlayer) { " +
+			"            targetPlayer.classList.remove('xgplayer-inactive'); " +
+			"            targetPlayer.classList.add('xgplayer-active'); " +
+			"            let controls = targetPlayer.querySelector('xg-controls'); " +
+			"            if (controls) { controls.style.opacity = '1'; controls.style.pointerEvents = 'auto'; } " +
+			"          } " +
 			"          let rect = clearBtn.getBoundingClientRect(); " +
-			"          if (rect.width > 0 && rect.height > 0 && rect.top >= 0 && rect.top <= window.innerHeight) { " +
+			"          if (rect.width > 0 || rect.height > 0) { " +
 			"            let dpr = window.devicePixelRatio || 1; " +
 			"            let x = (rect.left + (rect.width / 2)) * dpr; " +
 			"            let y = (rect.top + (rect.height / 2)) * dpr; " +
