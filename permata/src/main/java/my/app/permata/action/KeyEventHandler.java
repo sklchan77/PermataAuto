@@ -128,7 +128,7 @@ public class KeyEventHandler {
 			"  window.addEventListener('mousedown', recordEvent, {capture: true, passive: true}); " +
 			"})();";
 
-	// The standard UI execution payload with Real-Time Wide/Fullscreen Status Checks & Debounced Phantom Clear Screen
+	// The standard UI execution payload with Mathematical Active Video Targeting
 	private static final String JS_UNIVERSAL_PAYLOAD = "(function(){" +
 			"let res = 'Discovery [Layer 2]: JS Registry Miss (No custom formatting applied)'; " +
 			"const injectGlobalWipe = function() { " +
@@ -174,7 +174,17 @@ public class KeyEventHandler {
 			"}; " +
 			"const registry=[" +
 			"    {name:\"douyin\",match:/douyin\\.com/,execute:function(){" +
-			"      let player = document.querySelector('.xgplayer-playing') || document.querySelector('.xgplayer'); " +
+			"      const getActivePlayer = function() { " +
+			"        let nodes = document.querySelectorAll('.xgplayer'); " +
+			"        let active = null; let max = 0; " +
+			"        for(let i=0; i<nodes.length; i++){ " +
+			"          let r = nodes[i].getBoundingClientRect(); " +
+			"          let v = Math.max(0, Math.min(window.innerHeight, r.bottom) - Math.max(0, r.top)); " +
+			"          if(v > max){ max = v; active = nodes[i]; } " +
+			"        } " +
+			"        return active; " +
+			"      }; " +
+			"      let player = getActivePlayer(); " +
 			"      let fsMsg = 'Native Feed (Player missing)'; " +
 			"      if (player) { " +
 			"        let btn = player.querySelector('.xgplayer-page-full-screen, xg-icon.xgplayer-page-full-screen, .xgplayer-pagefull'); " +
@@ -191,7 +201,7 @@ public class KeyEventHandler {
 			"            if (controls) { controls.style.opacity = '1'; controls.style.pointerEvents = 'auto'; } " +
 			"            " +
 			"            let rect = btn.getBoundingClientRect(); " +
-			"            if (rect.width > 0 && rect.height > 0 && rect.top >= 0) { " +
+			"            if (rect.width > 0 && rect.height > 0 && rect.top >= 0 && rect.top <= window.innerHeight) { " +
 			"              let dpr = window.devicePixelRatio || 1; " +
 			"              let x = (rect.left + (rect.width / 2)) * dpr; " +
 			"              let y = (rect.top + (rect.height / 2)) * dpr; " +
@@ -211,12 +221,12 @@ public class KeyEventHandler {
 			"      if (window.__permataClearTimer) clearTimeout(window.__permataClearTimer); " +
 			"      window.__permataClearTimer = setTimeout(function() { " +
 			"          try { " +
-			"              let activePlayer = document.querySelector('.xgplayer-playing') || document.querySelector('.xgplayer'); " +
+			"              let activePlayer = getActivePlayer(); " +
 			"              if (!activePlayer) return; " +
 			"              let clearBtn = activePlayer.querySelector('.xgplayer-immersive-switch-setting, .immersive-switch'); " +
 			"              if (clearBtn) { " +
 			"                  let rect = clearBtn.getBoundingClientRect(); " +
-			"                  if (rect.width > 0 && rect.height > 0 && rect.top >= 0) { " +
+			"                  if (rect.width > 0 && rect.height > 0 && rect.top >= 0 && rect.top <= window.innerHeight) { " +
 			"                      let dpr = window.devicePixelRatio || 1; " +
 			"                      let x = (rect.left + (rect.width / 2)) * dpr; " +
 			"                      let y = (rect.top + (rect.height / 2)) * dpr; " +
