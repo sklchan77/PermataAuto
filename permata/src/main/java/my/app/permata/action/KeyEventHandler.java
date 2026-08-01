@@ -128,7 +128,7 @@ public class KeyEventHandler {
 			"  window.addEventListener('mousedown', recordEvent, {capture: true, passive: true}); " +
 			"})();";
 
-	// The standard UI execution payload with Mathematical Active Video Targeting
+	// The standard UI execution payload with Asynchronous Delay Rendering Check
 	private static final String JS_UNIVERSAL_PAYLOAD = "(function(){" +
 			"let res = 'Discovery [Layer 2]: JS Registry Miss (No custom formatting applied)'; " +
 			"const injectGlobalWipe = function() { " +
@@ -184,16 +184,15 @@ public class KeyEventHandler {
 			"        } " +
 			"        return active; " +
 			"      }; " +
-			"      let player = getActivePlayer(); " +
-			"      let fsMsg = 'Native Feed (Player missing)'; " +
-			"      if (player) { " +
+			"      " +
+			"      const tryTapFullscreen = function() { " +
+			"        let player = getActivePlayer(); " +
+			"        if (!player) return; " +
 			"        let btn = player.querySelector('.xgplayer-page-full-screen, xg-icon.xgplayer-page-full-screen, .xgplayer-pagefull'); " +
-			"        fsMsg = 'Native Feed (Btn missing)'; " +
 			"        if (btn) { " +
 			"          let isFs = player.classList.contains('xgplayer-pagefull-active') || " +
 			"                     player.classList.contains('xgplayer-is-cssfullscreen') || " +
 			"                     document.querySelector('.xgplayer-pagefull-active, .xgplayer-is-cssfullscreen'); " +
-			"          " +
 			"          if (!isFs) { " +
 			"            player.classList.remove('xgplayer-inactive'); " +
 			"            player.classList.add('xgplayer-active'); " +
@@ -207,41 +206,42 @@ public class KeyEventHandler {
 			"              let y = (rect.top + (rect.height / 2)) * dpr; " +
 			"              if (window.PermataGodMode) { " +
 			"                window.PermataGodMode.requestHardwareTap(x, y); " +
-			"                fsMsg = 'Page-Fullscreen tapped at X:' + Math.round(x) + ' Y:' + Math.round(y); " +
+			"                if (window.PermataGodMode.recordTouch) { " +
+			"                  window.PermataGodMode.recordTouch('[ACTION] DOUYIN: Page-Fullscreen tapped dynamically at X:' + Math.round(x) + ' Y:' + Math.round(y)); " +
+			"                } " +
 			"              } " +
-			"            } else { " +
-			"              fsMsg = 'Btn off-screen (Ghost player skipped)'; " +
 			"            } " +
-			"          } else { " +
-			"            fsMsg = 'Page-Fullscreen already active'; " +
 			"          } " +
 			"        } " +
-			"      } " +
+			"      }; " +
 			"      " +
-			"      if (window.__permataClearTimer) clearTimeout(window.__permataClearTimer); " +
-			"      window.__permataClearTimer = setTimeout(function() { " +
-			"          try { " +
-			"              let activePlayer = getActivePlayer(); " +
-			"              if (!activePlayer) return; " +
-			"              let clearBtn = activePlayer.querySelector('.xgplayer-immersive-switch-setting, .immersive-switch'); " +
-			"              if (clearBtn) { " +
-			"                  let rect = clearBtn.getBoundingClientRect(); " +
-			"                  if (rect.width > 0 && rect.height > 0 && rect.top >= 0 && rect.top <= window.innerHeight) { " +
-			"                      let dpr = window.devicePixelRatio || 1; " +
-			"                      let x = (rect.left + (rect.width / 2)) * dpr; " +
-			"                      let y = (rect.top + (rect.height / 2)) * dpr; " +
-			"                      if (window.PermataGodMode) { " +
-			"                          window.PermataGodMode.requestHardwareTap(x, y); " +
-			"                          if (window.PermataGodMode.recordTouch) { " +
-			"                              window.PermataGodMode.recordTouch('[ACTION] DOUYIN: Clear Screen toggled via Hardware Tap at X:' + Math.round(x) + ' Y:' + Math.round(y)); " +
-			"                          } " +
-			"                      } " +
-			"                  } " +
+			"      const tryTapClear = function() { " +
+			"        let activePlayer = getActivePlayer(); " +
+			"        if (!activePlayer) return; " +
+			"        let clearBtn = activePlayer.querySelector('.xgplayer-immersive-switch-setting, .immersive-switch'); " +
+			"        if (clearBtn) { " +
+			"          let rect = clearBtn.getBoundingClientRect(); " +
+			"          if (rect.width > 0 && rect.height > 0 && rect.top >= 0 && rect.top <= window.innerHeight) { " +
+			"            let dpr = window.devicePixelRatio || 1; " +
+			"            let x = (rect.left + (rect.width / 2)) * dpr; " +
+			"            let y = (rect.top + (rect.height / 2)) * dpr; " +
+			"            if (window.PermataGodMode) { " +
+			"              window.PermataGodMode.requestHardwareTap(x, y); " +
+			"              if (window.PermataGodMode.recordTouch) { " +
+			"                window.PermataGodMode.recordTouch('[ACTION] DOUYIN: Clear Screen tapped dynamically at X:' + Math.round(x) + ' Y:' + Math.round(y)); " +
 			"              } " +
-			"          } catch(e) {} " +
-			"      }, 2000); " +
+			"            } " +
+			"          } " +
+			"        } " +
+			"      }; " +
 			"      " +
-			"      return 'DOUYIN: ' + fsMsg + ' | Clear Screen scheduled in 2000ms.'; " +
+			"      if (window.__permataFsTimer) clearTimeout(window.__permataFsTimer); " +
+			"      if (window.__permataClearTimer) clearTimeout(window.__permataClearTimer); " +
+			"      " +
+			"      window.__permataFsTimer = setTimeout(tryTapFullscreen, 1000); " +
+			"      window.__permataClearTimer = setTimeout(tryTapClear, 2500); " +
+			"      " +
+			"      return 'DOUYIN: Scheduled FS tap at 1000ms and Clear tap at 2500ms.'; " +
 			"    }}," +
 			"    {name:\"tiktok\",match:/tiktok\\.com/,execute:function(){" +
 			"      var ttCss = ' [data-e2e=\"video-author-avatar\"], [data-e2e=\"nav-login\"], [class*=\"DivHeaderContainer\"], [class*=\"DivSideNavContainer\"], [class*=\"DivBottomContainer\"] { display: none !important; } [class*=\"DivMediaCardOverlay\"], [class*=\"DivOverlayBottomContent\"], [class*=\"DivCreatorInfoContainer\"], [class*=\"BasePlayerContainer\"]::after { pointer-events: none !important; } '; " +
