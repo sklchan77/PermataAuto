@@ -36,7 +36,7 @@ import my.app.utils.ui.fragment.ActivityFragment;
  */
 public class KeyEventHandler {
 	
-	// Set to TRUE to arm the DOM inspector & DOM Scanner for debugging web layouts.
+	// Set to FALSE to disable the DOM Scanner once debugging is no longer needed.
 	public static final boolean ENABLE_WEB_PROBE = true;
 
 	private static final int DBL_CLICK_INTERVAL = 500;
@@ -128,7 +128,7 @@ public class KeyEventHandler {
 			"  window.addEventListener('mousedown', recordEvent, {capture: true, passive: true}); " +
 			"})();";
 
-	// The standard UI execution payload with Robust Uncapped Geolocation & Force-Wake Player Controls
+	// The standard UI execution payload (Cleaned of Douyin Auto-UI Toggles)
 	private static final String JS_UNIVERSAL_PAYLOAD = "(function(){" +
 			"let res = 'Discovery [Layer 2]: JS Registry Miss (No custom formatting applied)'; " +
 			"const injectGlobalWipe = function() { " +
@@ -174,82 +174,7 @@ public class KeyEventHandler {
 			"}; " +
 			"const registry=[" +
 			"    {name:\"douyin\",match:/douyin\\.com/,execute:function(){" +
-			"      const getActivePlayer = function() { " +
-			"        let nodes = document.querySelectorAll('.xgplayer'); " +
-			"        let active = null; let max = 0; " +
-			"        for(let i=0; i<nodes.length; i++){ " +
-			"          let r = nodes[i].getBoundingClientRect(); " +
-			"          let v = Math.max(0, Math.min(window.innerHeight, r.bottom) - Math.max(0, r.top)); " +
-			"          if(v > max){ max = v; active = nodes[i]; } " +
-			"        } " +
-			"        return active; " +
-			"      }; " +
-			"      " +
-			"      const tryTapFullscreen = function() { " +
-			"        let player = getActivePlayer(); " +
-			"        let btn = player ? player.querySelector('.xgplayer-page-full-screen, xg-icon.xgplayer-page-full-screen, .xgplayer-pagefull') : null; " +
-			"        if (!btn) btn = document.querySelector('.xgplayer-page-full-screen, xg-icon.xgplayer-page-full-screen, .xgplayer-pagefull'); " +
-			"        if (btn) { " +
-			"          let targetPlayer = btn.closest('.xgplayer') || player; " +
-			"          let isFs = (targetPlayer && (targetPlayer.classList.contains('xgplayer-pagefull-active') || targetPlayer.classList.contains('xgplayer-is-cssfullscreen'))) || " +
-			"                     document.querySelector('.xgplayer-pagefull-active, .xgplayer-is-cssfullscreen, .isCssFullScreen'); " +
-			"          if (!isFs) { " +
-			"            if (targetPlayer) { " +
-			"              targetPlayer.classList.remove('xgplayer-inactive'); " +
-			"              targetPlayer.classList.add('xgplayer-active'); " +
-			"              let controls = targetPlayer.querySelector('xg-controls'); " +
-			"              if (controls) { controls.style.opacity = '1'; controls.style.pointerEvents = 'auto'; } " +
-			"            } " +
-			"            let rect = btn.getBoundingClientRect(); " +
-			"            if (rect.width > 0 || rect.height > 0) { " +
-			"              let dpr = window.devicePixelRatio || 1; " +
-			"              let x = (rect.left + (rect.width / 2)) * dpr; " +
-			"              let y = (rect.top + (rect.height / 2)) * dpr; " +
-			"              if (window.PermataGodMode) { " +
-			"                window.PermataGodMode.requestHardwareTap(x, y); " +
-			"                if (window.PermataGodMode.recordTouch) { " +
-			"                  window.PermataGodMode.recordTouch('[ACTION] DOUYIN: Page-Fullscreen tapped dynamically at X:' + Math.round(x) + ' Y:' + Math.round(y)); " +
-			"                } " +
-			"              } " +
-			"            } " +
-			"          } " +
-			"        } " +
-			"      }; " +
-			"      " +
-			"      const tryTapClear = function() { " +
-			"        let activePlayer = getActivePlayer(); " +
-			"        let clearBtn = activePlayer ? activePlayer.querySelector('.xgplayer-immersive-switch-setting, .immersive-switch') : null; " +
-			"        if (!clearBtn) clearBtn = document.querySelector('.xgplayer-immersive-switch-setting, .immersive-switch'); " +
-			"        if (clearBtn) { " +
-			"          let targetPlayer = clearBtn.closest('.xgplayer') || activePlayer; " +
-			"          if (targetPlayer) { " +
-			"            targetPlayer.classList.remove('xgplayer-inactive'); " +
-			"            targetPlayer.classList.add('xgplayer-active'); " +
-			"            let controls = targetPlayer.querySelector('xg-controls'); " +
-			"            if (controls) { controls.style.opacity = '1'; controls.style.pointerEvents = 'auto'; } " +
-			"          } " +
-			"          let rect = clearBtn.getBoundingClientRect(); " +
-			"          if (rect.width > 0 || rect.height > 0) { " +
-			"            let dpr = window.devicePixelRatio || 1; " +
-			"            let x = (rect.left + (rect.width / 2)) * dpr; " +
-			"            let y = (rect.top + (rect.height / 2)) * dpr; " +
-			"            if (window.PermataGodMode) { " +
-			"              window.PermataGodMode.requestHardwareTap(x, y); " +
-			"              if (window.PermataGodMode.recordTouch) { " +
-			"                window.PermataGodMode.recordTouch('[ACTION] DOUYIN: Clear Screen tapped dynamically at X:' + Math.round(x) + ' Y:' + Math.round(y)); " +
-			"              } " +
-			"            } " +
-			"          } " +
-			"        } " +
-			"      }; " +
-			"      " +
-			"      if (window.__permataFsTimer) clearTimeout(window.__permataFsTimer); " +
-			"      if (window.__permataClearTimer) clearTimeout(window.__permataClearTimer); " +
-			"      " +
-			"      window.__permataFsTimer = setTimeout(tryTapFullscreen, 1000); " +
-			"      window.__permataClearTimer = setTimeout(tryTapClear, 2500); " +
-			"      " +
-			"      return 'DOUYIN: Scheduled FS tap at 1000ms and Clear tap at 2500ms.'; " +
+			"      return 'DOUYIN: Clean swipe executed. Auto-UI features disabled per user request.'; " +
 			"    }}," +
 			"    {name:\"tiktok\",match:/tiktok\\.com/,execute:function(){" +
 			"      var ttCss = ' [data-e2e=\"video-author-avatar\"], [data-e2e=\"nav-login\"], [class*=\"DivHeaderContainer\"], [class*=\"DivSideNavContainer\"], [class*=\"DivBottomContainer\"] { display: none !important; } [class*=\"DivMediaCardOverlay\"], [class*=\"DivOverlayBottomContent\"], [class*=\"DivCreatorInfoContainer\"], [class*=\"BasePlayerContainer\"]::after { pointer-events: none !important; } '; " +
