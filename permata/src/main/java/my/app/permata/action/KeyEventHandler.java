@@ -19,7 +19,6 @@ import android.widget.EditText;
 
 import androidx.annotation.Nullable;
 
-import java.lang.ref.WeakReference;
 import java.lang.reflect.Method;
 import java.util.Collections;
 import java.util.Map;
@@ -35,9 +34,6 @@ import my.app.utils.ui.fragment.ActivityFragment;
  * @author sklchan77
  */
 public class KeyEventHandler {
-	
-	// Set to FALSE to disable the DOM Scanner once debugging is no longer needed.
-	public static final boolean ENABLE_WEB_PROBE = true;
 
 	private static final int DBL_CLICK_INTERVAL = 500;
 	private static final int LONG_CLICK_INTERVAL = 1000;
@@ -45,88 +41,6 @@ public class KeyEventHandler {
 	private static volatile Worker worker;
 	private static volatile long lastGlobalActionTime = 0L;
 	private static final Map<View, Long> scrollTimestamps = Collections.synchronizedMap(new WeakHashMap<>());
-
-	// The Dedicated Universal Telemetry Probe & Web Page Investigator
-	private static final String JS_TELEMETRY_PROBE = "(function() { " +
-			"  if (window.__permataProbeActive) return; " +
-			"  window.__permataProbeActive = true; " +
-			"  window.__permataLastTouch = 0; " + 
-			"  window.__permataScanDone = false; " +
-			"  const scanDOMControls = function() { " +
-			"      try { " +
-			"          let elements = document.querySelectorAll('button, [role=\"button\"], [class*=\"btn\"], [class*=\"button\"], [class*=\"control\"], [class*=\"fullscreen\"], [class*=\"wide\"], [class*=\"clear\"], [class*=\"pure\"], [class*=\"screen\"], [id*=\"btn\"], [id*=\"control\"], xg-icon, [tagName^=\"XG-\"], [class*=\"play\"]'); " +
-			"          let found = []; " +
-			"          for (let i = 0; i < elements.length; i++) { " +
-			"              let el = elements[i]; " +
-			"              let rect = el.getBoundingClientRect(); " +
-			"              if (rect.width > 0 || rect.height > 0 || window.getComputedStyle(el).opacity === '0') { " +
-			"                  let tag = el.tagName.toLowerCase(); " +
-			"                  let id = el.id ? '#' + el.id : ''; " +
-			"                  let cls = (el.className && typeof el.className === 'string') ? '.' + el.className.trim().split(/\\s+/).join('.') : ''; " +
-			"                  let aria = el.getAttribute('aria-label') || el.getAttribute('data-tip') || ''; " +
-			"                  let text = el.innerText ? el.innerText.trim().substring(0, 15).replace(/\\n/g, '') : ''; " +
-			"                  let info = tag + id + cls; " +
-			"                  if (aria) info += ' [aria: ' + aria + ']'; " +
-			"                  if (text) info += ' [text: ' + text + ']'; " +
-			"                  found.push(info); " +
-			"              } " +
-			"          } " +
-			"          let unique = Array.from(new Set(found)); " +
-			"          if (window.PermataGodMode && window.PermataGodMode.recordTouch) { " +
-			"              window.PermataGodMode.recordTouch('[DOM_SCAN] Extracted ' + unique.length + ' potential controls: ' + unique.join(' || ')); " +
-			"          } " +
-			"      } catch(e) {} " +
-			"  }; " +
-			"  const recordEvent = function(e) { " +
-			"      try { " +
-			"          if (!window.__permataScanDone) { " +
-			"              window.__permataScanDone = true; " +
-			"              setTimeout(scanDOMControls, 1500); " + 
-			"          } " +
-			"          let now = Date.now(); " +
-			"          if (now - window.__permataLastTouch < 50) return; " + 
-			"          window.__permataLastTouch = now; " +
-			"          " +
-			"          let touch = e.touches ? e.touches[0] : e; " +
-			"          let el = (e.composedPath && e.composedPath().length > 0) ? e.composedPath()[0] : e.target; " +
-			"          let dpr = window.devicePixelRatio || 1; " +
-			"          let nodeInfo = el ? el.tagName.toLowerCase() : 'unknown'; " +
-			"          if (el && el.id) nodeInfo += '#' + el.id; " +
-			"          if (el && typeof el.className === 'string' && el.className.trim()) nodeInfo += '.' + el.className.trim().split(/\\s+/).join('.'); " +
-			"          " +
-			"          let actionTarget = el && el.closest ? (el.closest('button, a, [role=\"button\"]') || el) : el; " +
-			"          let actionInfo = (actionTarget !== el) ? (actionTarget.tagName.toLowerCase() + (actionTarget.id ? '#' + actionTarget.id : '')) : 'same'; " +
-			"          " +
-			"          let getPath = function(n) { let p=[]; while(n && n.nodeType===1 && n.tagName!=='BODY' && n.tagName!=='HTML'){ let s=n.tagName.toLowerCase(); if(n.id) { s+='#'+n.id; p.unshift(s); break; } else if(n.className && typeof n.className==='string') { s+='.'+n.className.trim().split(/\\s+/).join('.'); } p.unshift(s); n=n.parentNode; } return p.join(' > '); }; " +
-			"          let cssPath = getPath(actionTarget); " +
-			"          " +
-			"          let textInfo = el && el.innerText ? el.innerText.trim().substring(0, 25).replace(/\\n/g, ' ') : ''; " +
-			"          let rect = el ? el.getBoundingClientRect() : {width:0, height:0, top:0, left:0}; " +
-			"          " +
-			"          let vids = document.querySelectorAll('video'); " +
-			"          let vidStats = vids.length + ' vid(s).'; " +
-			"          if(vids.length > 0) { " +
-			"              try { " +
-			"                  let v = vids[0]; let vRect = v.getBoundingClientRect(); " +
-			"                  vidStats += ' Main size: ' + Math.round(vRect.width) + 'x' + Math.round(vRect.height) + " +
-			"                              ' at X:' + Math.round(vRect.left) + ' Y:' + Math.round(vRect.top) + " +
-			"                              ' [Play:' + (!v.paused) + '|Vol:' + v.volume + '|Time:' + Math.round(v.currentTime) + '/' + Math.round(v.duration) + 's]'; " +
-			"              } catch(mediaErr) { vidStats += ' [CORS Blocked/Iframe]'; } " +
-			"          } " +
-			"          " +
-			"          let msg = '[Host: ' + window.location.hostname + '] ' + " +
-			"                    'Touch: Viewport(' + Math.round(touch.clientX) + ',' + Math.round(touch.clientY) + ') Page(' + Math.round(touch.pageX) + ',' + Math.round(touch.pageY) + ') DPR:' + dpr + ' | ' + " +
-			"                    'Target: ' + nodeInfo + ' (ActionBtn: ' + actionInfo + ') Hitbox[' + Math.round(rect.width) + 'x' + Math.round(rect.height) + ' at X:' + Math.round(rect.left) + ' Y:' + Math.round(rect.top) + '] | ' + " +
-			"                    'SelectorPath: ' + cssPath + ' | ' + " +
-			"                    'Text: [' + textInfo + '] | ' + " +
-			"                    'Media: ' + vidStats; " +
-			"          if (window.PermataGodMode && window.PermataGodMode.recordTouch) { window.PermataGodMode.recordTouch(msg); } " +
-			"      } catch(ex) {} " +
-			"  }; " +
-			"  window.addEventListener('pointerdown', recordEvent, {capture: true, passive: true}); " +
-			"  window.addEventListener('touchstart', recordEvent, {capture: true, passive: true}); " +
-			"  window.addEventListener('mousedown', recordEvent, {capture: true, passive: true}); " +
-			"})();";
 
 	// The standard UI execution payload (Cleaned of Douyin Auto-UI Toggles)
 	private static final String JS_UNIVERSAL_PAYLOAD = "(function(){" +
@@ -174,7 +88,7 @@ public class KeyEventHandler {
 			"}; " +
 			"const registry=[" +
 			"    {name:\"douyin\",match:/douyin\\.com/,execute:function(){" +
-			"      return 'DOUYIN: Clean swipe executed. Auto-UI features disabled per user request.'; " +
+			"      return 'DOUYIN: Standard media swipe executed. Auto-UI features disabled per user request.'; " +
 			"    }}," +
 			"    {name:\"tiktok\",match:/tiktok\\.com/,execute:function(){" +
 			"      var ttCss = ' [data-e2e=\"video-author-avatar\"], [data-e2e=\"nav-login\"], [class*=\"DivHeaderContainer\"], [class*=\"DivSideNavContainer\"], [class*=\"DivBottomContainer\"] { display: none !important; } [class*=\"DivMediaCardOverlay\"], [class*=\"DivOverlayBottomContent\"], [class*=\"DivCreatorInfoContainer\"], [class*=\"BasePlayerContainer\"]::after { pointer-events: none !important; } '; " +
@@ -342,17 +256,6 @@ public class KeyEventHandler {
 									Log.i("[DETECTION] " + hostTag + "Resolved. isMediaHost: " + isMediaHost + " | isSnapFeedHost: " + isSnapFeedHost + " | isTikTok: " + isTikTok);
 
 									View touchTargetView = findTopmostTouchTarget(finalTargetActivity, resolvedWebView);
-
-									try {
-										resolvedWebView.addJavascriptInterface(new PermataGodModeBridge(touchTargetView), "PermataGodMode");
-										if (ENABLE_WEB_PROBE) {
-											resolvedWebView.evaluateJavascript(JS_TELEMETRY_PROBE, null);
-											Log.w("[WEB_PROBE]", "Agent Armed successfully on: " + resolvedWebView.getClass().getSimpleName());
-										}
-									} catch (Exception e) {
-										Log.e(e, "[WEB_PROBE] Failed to arm Javascript Agent.");
-									}
-
 									smartScrollWebView(resolvedWebView, touchTargetView, !isNext, hostTag, isMediaHost, isInstagram, isSnapFeedHost, isTikTok);
 								} else {
 									Log.i("[DETECTION] WebBrowser is hidden or out of focus. Allowing default media propagation.");
@@ -631,45 +534,10 @@ public class KeyEventHandler {
 		worker = null;
 		action.getHandler().handle(cb, activity, timestamp);
 	}
-	
-	public static class PermataGodModeBridge {
-		private final WeakReference<View> targetViewRef;
-		
-		public PermataGodModeBridge(View targetView) {
-			this.targetViewRef = new WeakReference<>(targetView);
-		}
-
-		@android.webkit.JavascriptInterface
-		public void requestHardwareTap(float x, float y) {
-			View target = targetViewRef.get();
-			if (target == null) return;
-			
-			target.post(() -> {
-				long now = android.os.SystemClock.uptimeMillis();
-				
-				MotionEvent down = MotionEvent.obtain(now, now, MotionEvent.ACTION_DOWN, x, y, 0);
-				down.setSource(InputDevice.SOURCE_TOUCHSCREEN);
-				target.dispatchTouchEvent(down);
-				down.recycle();
-
-				MotionEvent up = MotionEvent.obtain(now, now + 50, MotionEvent.ACTION_UP, x, y, 0);
-				up.setSource(InputDevice.SOURCE_TOUCHSCREEN);
-				target.dispatchTouchEvent(up);
-				up.recycle();
-				
-				Log.i("[SURGERY]", "Executed God-Mode Auto-Tap for Fullscreen at Physical Coordinates -> X:" + x + " Y:" + y);
-			});
-		}
-
-		@android.webkit.JavascriptInterface
-		public void recordTouch(String logData) {
-			Log.w("[WEB_PROBE]", logData);
-		}
-	}
 
 	private static final class Worker implements Runnable {
 		private final MediaSessionCallback cb;
-		private final WeakReference<MainActivityDelegate> activityRef;
+		private final java.lang.ref.WeakReference<MainActivityDelegate> activityRef;
 		private final Key key;
 		private final Action clickAction;
 		private final Action dblClickAction;
@@ -681,7 +549,7 @@ public class KeyEventHandler {
 		Worker(MediaSessionCallback cb, @Nullable MainActivityDelegate activity, Key key,
 					 Action clickAction, Action dblClickAction, Action longClickAction) {
 			this.cb = cb;
-			this.activityRef = new WeakReference<>(activity);
+			this.activityRef = new java.lang.ref.WeakReference<>(activity);
 			this.key = key;
 			this.clickAction = clickAction;
 			this.dblClickAction = dblClickAction;
