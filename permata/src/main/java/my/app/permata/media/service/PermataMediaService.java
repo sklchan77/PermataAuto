@@ -28,6 +28,7 @@ import android.media.AudioFormat;
 import android.media.AudioManager;
 import android.media.AudioTrack;
 import android.os.Binder;
+import android.os.Build;
 import android.os.Bundle;
 import android.os.IBinder;
 import android.support.v4.media.MediaBrowserCompat.MediaItem;
@@ -135,6 +136,7 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 		return lib;
 	}
 
+	@SuppressLint("UnspecifiedRegisterReceiverFlag")
 	@Override
 	public void onCreate() {
 		super.onCreate();
@@ -178,7 +180,9 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 		IntentFilter dspFilter = new IntentFilter();
 		dspFilter.addAction(ACTION_STOP_SILENT_ANCHOR);
 		dspFilter.addAction(ACTION_START_SILENT_ANCHOR);
-		if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+		
+		// FIX: Android 14+ Security Requirement for Context.registerReceiver
+		if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
 			registerReceiver(dspAnchorReceiver, dspFilter, Context.RECEIVER_NOT_EXPORTED);
 		} else {
 			registerReceiver(dspAnchorReceiver, dspFilter);
@@ -495,6 +499,7 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 				notifColor, Utils.getLauncherColor(), s, s);
 	}
 
+	@SuppressLint("UnspecifiedRegisterReceiverFlag")
 	public void notificationInit() {
 		if (notifContentIntent != null) return;
 
@@ -555,7 +560,8 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 		filter.addAction(INTENT_FAVORITE_ADD);
 		filter.addAction(INTENT_FAVORITE_REMOVE);
 		
-		if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+		// FIX: Android 14+ Security Requirement for Context.registerReceiver
+		if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
 			registerReceiver(intentReceiver, filter, Context.RECEIVER_NOT_EXPORTED);
 		} else {
 			registerReceiver(intentReceiver, filter);
