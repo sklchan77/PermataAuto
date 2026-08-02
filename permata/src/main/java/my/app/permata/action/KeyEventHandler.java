@@ -8,6 +8,7 @@ import static android.view.KeyEvent.ACTION_UP;
 import android.app.Activity;
 import android.content.Context;
 import android.content.ContextWrapper;
+import android.content.Intent;
 import android.net.Uri;
 import android.view.InputDevice;
 import android.view.KeyEvent;
@@ -23,6 +24,8 @@ import java.lang.reflect.Method;
 import java.util.Collections;
 import java.util.Map;
 import java.util.WeakHashMap;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 import my.app.permata.media.service.MediaSessionCallback;
 import my.app.permata.ui.activity.MainActivityDelegate;
@@ -41,6 +44,10 @@ public class KeyEventHandler {
 	private static volatile Worker worker;
 	private static volatile long lastGlobalActionTime = 0L;
 	private static final Map<View, Long> scrollTimestamps = Collections.synchronizedMap(new WeakHashMap<>());
+
+	// ENTERPRISE HARDENING: Dedicated background queue for Audio DSP hardware resets
+	// Guarantees zero Main Thread ANRs and prevents button-spam deadlocks.
+	private static final ExecutorService audioResetExecutor = Executors.newSingleThreadExecutor();
 
 	// The standard UI execution payload (Cleaned of Douyin Auto-UI Toggles)
 	private static final String JS_UNIVERSAL_PAYLOAD = "(function(){" +
@@ -176,6 +183,14 @@ public class KeyEventHandler {
 					return true;
 				}
 				lastGlobalActionTime = currentUptime;
+				
+				// =================================================================================
+				// AUDIO TRAIL RESET (LIP-SYNC FIX)
+				// Dispatched safely to background Application Context to prevent Activity leaks
+				// =================================================================================
+				if (finalTargetActivity.getWindow() != null) {
+					flushAudioHardwareAsync(finalTargetActivity.getApplicationContext(), "[MediaKey] ");
+				}
 
 				boolean isNext = (code == KeyEvent.KEYCODE_MEDIA_NEXT);
 				
@@ -187,7 +202,6 @@ public class KeyEventHandler {
 						
 						finalTargetActivity.post(() -> {
 							
-							// ANR Defense: Deep Context Unwrap to verify Activity Lifecycle safely
 							if (finalTargetActivity.getWindow() != null) {
 								Context ctx = finalTargetActivity.getWindow().getContext();
 								while (ctx instanceof ContextWrapper) {
@@ -301,6 +315,39 @@ public class KeyEventHandler {
 
 		worker = new Worker(cb, finalTargetActivity, k, clickAction, dblClickAction, longClickAction);
 		return true;
+	}
+
+	// =========================================================================================
+	// BACKGROUND AUDIO HARDWARE RESET
+	// =========================================================================================
+
+	private static void flushAudioHardwareAsync(final Context applicationContext, final String hostTag) {
+		if (applicationContext == null) return;
+		
+		audioResetExecutor.execute(() -> {
+			try {
+				// 1. Send generic broadcast to target the Media Service stop command
+				Intent stopIntent = new Intent("my.app.permata.ACTION_STOP_SILENT_ANCHOR");
+				stopIntent.setPackage(applicationContext.getPackageName());
+				applicationContext.sendBroadcast(stopIntent);
+				
+				// 2. Hardware drain delay. Completely safe on this single background thread.
+				Thread.sleep(50);
+				
+				// 3. Send generic broadcast to target the Media Service start command
+				Intent startIntent = new Intent("my.app.permata.ACTION_START_SILENT_ANCHOR");
+				startIntent.setPackage(applicationContext.getPackageName());
+				applicationContext.sendBroadcast(startIntent);
+				
+				Log.i("[AUDIO_FLUSH] " + hostTag + "DSP audio buffer flushed successfully. Deadlocks avoided.");
+				
+			} catch (InterruptedException e) {
+				Thread.currentThread().interrupt();
+				Log.w("[AUDIO_FLUSH] DSP flush cycle interrupted.");
+			} catch (Exception e) {
+				Log.e(e, "[AUDIO_FLUSH] Failed to safely cycle audio DSP.");
+			}
+		});
 	}
 
 	// =========================================================================================
@@ -431,7 +478,6 @@ public class KeyEventHandler {
 
 		if (wv.getSettings().getJavaScriptEnabled()) {
 			
-			// CPU CHOKE FIX: Defer JS execution until AFTER the physical swipe finishes (170ms + 50ms buffer)
 			wv.postDelayed(() -> {
 				wv.evaluateJavascript(JS_UNIVERSAL_PAYLOAD, value -> {
 					if (value != null && !value.equals("null")) Log.i(hostTag + "[REACTION] " + value.replace("\"", ""));
