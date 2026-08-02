@@ -46,7 +46,6 @@ public class KeyEventHandler {
 	private static final Map<View, Long> scrollTimestamps = Collections.synchronizedMap(new WeakHashMap<>());
 
 	// ENTERPRISE HARDENING: Dedicated background queue for Audio DSP hardware resets
-	// Guarantees zero Main Thread ANRs and prevents button-spam deadlocks.
 	private static final ExecutorService audioResetExecutor = Executors.newSingleThreadExecutor();
 
 	// The standard UI execution payload (Cleaned of Douyin Auto-UI Toggles)
@@ -184,10 +183,6 @@ public class KeyEventHandler {
 				}
 				lastGlobalActionTime = currentUptime;
 				
-				// =================================================================================
-				// AUDIO TRAIL RESET (LIP-SYNC FIX)
-				// Dispatched safely to background Application Context to prevent Activity leaks
-				// =================================================================================
 				if (finalTargetActivity.getWindow() != null) {
 					flushAudioHardwareAsync(finalTargetActivity.getApplicationContext(), "[MediaKey] ");
 				}
@@ -326,15 +321,12 @@ public class KeyEventHandler {
 		
 		audioResetExecutor.execute(() -> {
 			try {
-				// 1. Send generic broadcast to target the Media Service stop command
 				Intent stopIntent = new Intent("my.app.permata.ACTION_STOP_SILENT_ANCHOR");
 				stopIntent.setPackage(applicationContext.getPackageName());
 				applicationContext.sendBroadcast(stopIntent);
 				
-				// 2. Hardware drain delay. Completely safe on this single background thread.
 				Thread.sleep(50);
 				
-				// 3. Send generic broadcast to target the Media Service start command
 				Intent startIntent = new Intent("my.app.permata.ACTION_START_SILENT_ANCHOR");
 				startIntent.setPackage(applicationContext.getPackageName());
 				applicationContext.sendBroadcast(startIntent);
