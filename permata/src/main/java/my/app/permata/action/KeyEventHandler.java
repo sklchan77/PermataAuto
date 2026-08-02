@@ -43,6 +43,8 @@ public class KeyEventHandler {
 
 	private static volatile Worker worker;
 	private static volatile long lastGlobalActionTime = 0L;
+	private static volatile long lastAudioFlushTime = 0L; // ENTERPRISE HARDENING: Hardware DSP Cooldown Tracker
+	
 	private static final Map<View, Long> scrollTimestamps = Collections.synchronizedMap(new WeakHashMap<>());
 
 	// ENTERPRISE HARDENING: Dedicated background queue for Audio DSP hardware resets
@@ -184,11 +186,16 @@ public class KeyEventHandler {
 				lastGlobalActionTime = currentUptime;
 				
 				// =================================================================================
-				// AUDIO TRAIL RESET (LIP-SYNC FIX)
-				// Dispatched safely to background Application Context to prevent Activity leaks
+				// AUDIO TRAIL RESET (LIP-SYNC FIX) WITH EXTREME DSP SPAM PROTECTION
 				// =================================================================================
 				if (finalTargetActivity.getWindow() != null) {
-					flushAudioHardwareAsync(finalTargetActivity.getWindow().getContext().getApplicationContext(), "[MediaKey] ");
+					// Enforces a strict 3000ms cooldown to prevent OS AudioFlinger crashes
+					if (currentUptime - lastAudioFlushTime > 3000) {
+						lastAudioFlushTime = currentUptime;
+						flushAudioHardwareAsync(finalTargetActivity.getWindow().getContext().getApplicationContext(), "[MediaKey] ");
+					} else {
+						Log.i("[AUDIO_FLUSH] Hardware reset skipped (DSP cooldown active to prevent hardware crash).");
+					}
 				}
 
 				boolean isNext = (code == KeyEvent.KEYCODE_MEDIA_NEXT);
@@ -329,7 +336,8 @@ public class KeyEventHandler {
 				stopIntent.setPackage(applicationContext.getPackageName());
 				applicationContext.sendBroadcast(stopIntent);
 				
-				Thread.sleep(50);
+				// 1000ms delay perfectly isolates the DSP to flush its internal hardware buffer
+				Thread.sleep(1000);
 				
 				Intent startIntent = new Intent("my.app.permata.ACTION_START_SILENT_ANCHOR");
 				startIntent.setPackage(applicationContext.getPackageName());
