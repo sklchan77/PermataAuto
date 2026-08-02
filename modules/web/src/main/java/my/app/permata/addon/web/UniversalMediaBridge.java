@@ -1,6 +1,7 @@
 package my.app.permata.addon.web;
 
 import android.content.Context;
+import android.content.Intent;
 import android.media.AudioAttributes;
 import android.media.AudioFocusRequest;
 import android.media.AudioManager;
@@ -57,26 +58,43 @@ public class UniversalMediaBridge {
     }
 
     /**
-     * Aggressively requests Audio Focus for the WebView. 
-     * This forces the Android OS to natively send an AUDIOFOCUS_LOSS (-1) event to the background ExoPlayer/IPTV.
+     * Notifies the PermataMediaService that web media is playing.
+     * The direct AudioManager focus steal has been replaced by Service delegation.
      */
     private void stealAudioFocus() {
         if (isFocusHeld) {
-            return; // We already securely hold the focus. Do not ping the OS and risk rejection.
+            return; // We already securely hold the state.
         }
 
         Context context = contextRef.get();
         if (context == null) return;
 
+        Log.i("[JavaBridge]", TAG + ": Delegating Play State to PermataMediaService.");
+
+        // =========================================================================
+        // [NEW CODE] - Delegate to PermataMediaService as Single Source of Truth
+        // =========================================================================
+        try {
+            Intent intent = new Intent("my.app.permata.action.WEB_MEDIA_PLAYING");
+            intent.setPackage(context.getPackageName());
+            // Optionally, explicit component targeting:
+            // intent.setClassName(context, "my.app.permata.media.service.PermataMediaService");
+            context.startService(intent);
+            isFocusHeld = true;
+        } catch (Exception e) {
+            Log.e(e, "[JavaBridge]", TAG + ": Failed to delegate PLAY state.");
+        }
+
+        // =========================================================================
+        // [OLD CODE PRESERVED FOR REVERT] - Direct Hardware Focus Steal
+        // =========================================================================
+        /*
         AudioManager audioManager = (AudioManager) context.getSystemService(Context.AUDIO_SERVICE);
         if (audioManager == null) return;
-
-        Log.i("[JavaBridge]", TAG + ": Requesting Audio Focus for WebMedia to pause background players.");
 
         AudioManager.OnAudioFocusChangeListener focusListener = focusChange -> {
             Log.i("[JavaBridge]", TAG + ": WebMedia AudioFocus state changed to: " + focusChange);
             if (focusChange == AudioManager.AUDIOFOCUS_LOSS || focusChange == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT) {
-                // If a phone call or native app violently steals focus, update our tracking state
                 isFocusHeld = false;
             }
         };
@@ -108,19 +126,39 @@ public class UniversalMediaBridge {
         if (result == AudioManager.AUDIOFOCUS_REQUEST_GRANTED) {
             isFocusHeld = true;
         }
+        */
+        // =========================================================================
     }
 
     /**
-     * Abandons the Audio Focus request so background services can resume if requested.
+     * Notifies the PermataMediaService that web media has paused (after 5000ms delay).
+     * The direct AudioManager abandon command has been replaced by Service delegation.
      */
     private void doReleaseAudioFocus() {
         Context context = contextRef.get();
         if (context == null) return;
 
+        Log.i("[JavaBridge]", TAG + ": Delegating Pause State to PermataMediaService.");
+
+        // =========================================================================
+        // [NEW CODE] - Delegate to PermataMediaService as Single Source of Truth
+        // =========================================================================
+        try {
+            Intent intent = new Intent("my.app.permata.action.WEB_MEDIA_PAUSED");
+            intent.setPackage(context.getPackageName());
+            context.startService(intent);
+        } catch (Exception e) {
+            Log.e(e, "[JavaBridge]", TAG + ": Failed to delegate PAUSE state.");
+        }
+        
+        isFocusHeld = false;
+
+        // =========================================================================
+        // [OLD CODE PRESERVED FOR REVERT] - Direct Hardware Focus Abandon
+        // =========================================================================
+        /*
         AudioManager audioManager = (AudioManager) context.getSystemService(Context.AUDIO_SERVICE);
         if (audioManager == null) return;
-
-        Log.i("[JavaBridge]", TAG + ": Releasing Audio Focus.");
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && audioFocusRequest != null) {
             audioManager.abandonAudioFocusRequest(audioFocusRequest);
@@ -129,7 +167,7 @@ public class UniversalMediaBridge {
             @SuppressWarnings("deprecation")
             int result = audioManager.abandonAudioFocus(focusChange -> {});
         }
-        
-        isFocusHeld = false;
+        */
+        // =========================================================================
     }
 }
