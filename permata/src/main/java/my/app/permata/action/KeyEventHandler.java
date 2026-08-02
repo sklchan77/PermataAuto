@@ -183,8 +183,12 @@ public class KeyEventHandler {
 				}
 				lastGlobalActionTime = currentUptime;
 				
+				// =================================================================================
+				// AUDIO TRAIL RESET (LIP-SYNC FIX)
+				// Dispatched safely to background Application Context to prevent Activity leaks
+				// =================================================================================
 				if (finalTargetActivity.getWindow() != null) {
-					flushAudioHardwareAsync(finalTargetActivity.getApplicationContext(), "[MediaKey] ");
+					flushAudioHardwareAsync(finalTargetActivity.getWindow().getContext().getApplicationContext(), "[MediaKey] ");
 				}
 
 				boolean isNext = (code == KeyEvent.KEYCODE_MEDIA_NEXT);
