@@ -79,6 +79,10 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 	public static final String ACTION_WEB_MEDIA_PLAYING = "my.app.permata.action.WEB_MEDIA_PLAYING"; 
 	public static final String ACTION_WEB_MEDIA_PAUSED = "my.app.permata.action.WEB_MEDIA_PAUSED"; 
 	
+	// Enterprise Hardening: DSP Hardware Reset Broadcast Actions
+	public static final String ACTION_STOP_SILENT_ANCHOR = "my.app.permata.ACTION_STOP_SILENT_ANCHOR";
+	public static final String ACTION_START_SILENT_ANCHOR = "my.app.permata.ACTION_START_SILENT_ANCHOR";
+	
 	public static final String INTENT_ATTR_NOTIF_COLOR = "my.app.permata.notif.color";
 	public static final String DEFAULT_NOTIF_COLOR = "#3D2562";
 	private static final String CONTENT_STYLE_SUPPORTED =
@@ -106,6 +110,7 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 	private MediaSessionCompat session;
 	MediaSessionCallback callback;
 	private BroadcastReceiver intentReceiver;
+	private BroadcastReceiver dspAnchorReceiver;
 	private int notifColor;
 	private PendingIntent notifContentIntent;
 	private MediaStyle notifStyle;
@@ -154,6 +159,31 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 				PendingIntent.getBroadcast(ctx, 0, mediaButtonIntent, FLAG_IMMUTABLE));
 		notifColor = Color.parseColor(DEFAULT_NOTIF_COLOR);
 		App.get().getScheduler().schedule(lib::cleanUpPrefs, 1, TimeUnit.HOURS);
+		
+		// Enterprise Hardening: Register the DSP Anchor Receiver early in the lifecycle
+		dspAnchorReceiver = new BroadcastReceiver() {
+			@Override
+			public void onReceive(Context context, Intent intent) {
+				if (intent != null && intent.getAction() != null) {
+					if (ACTION_STOP_SILENT_ANCHOR.equals(intent.getAction())) {
+						Log.i("PermataMediaService: Received DSP Flush -> STOP Anchor");
+						stopSilentAudioAnchor();
+					} else if (ACTION_START_SILENT_ANCHOR.equals(intent.getAction())) {
+						Log.i("PermataMediaService: Received DSP Flush -> START Anchor");
+						startSilentAudioAnchor();
+					}
+				}
+			}
+		};
+		IntentFilter dspFilter = new IntentFilter();
+		dspFilter.addAction(ACTION_STOP_SILENT_ANCHOR);
+		dspFilter.addAction(ACTION_START_SILENT_ANCHOR);
+		if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+			registerReceiver(dspAnchorReceiver, dspFilter, Context.RECEIVER_NOT_EXPORTED);
+		} else {
+			registerReceiver(dspAnchorReceiver, dspFilter);
+		}
+
 		Log.d("PermataMediaService created");
 		for (PermataAddon a : AddonManager.get().getAddons()) {
 			if (a instanceof PermataMediaServiceAddon)
@@ -173,6 +203,8 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 		NotificationManagerCompat.from(this).cancel(NOTIF_ID);
 		if (intentReceiver != null) unregisterReceiver(intentReceiver);
 		intentReceiver = null;
+		if (dspAnchorReceiver != null) unregisterReceiver(dspAnchorReceiver);
+		dspAnchorReceiver = null;
 		callback.close();
 		session.release();
 		Log.d("PermataMediaService destroyed");
