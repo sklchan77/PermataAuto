@@ -138,6 +138,21 @@ public class MainActivity extends SplitCompatActivityBase
 			// Intentionally leave the static `service` connection alive so car projection and background audio aren't interrupted.
 		} else {
 			Log.i("Golden Gate: App is truly idle. Executing full Service teardown.");
+			
+			// =========================================================================================
+			// [NEW CODE] THE ZOMBIE KILL SWITCH
+			// Explicitly command the Android OS to destroy the foreground service and its MediaSession
+			// when the car abruptly disconnects. This prevents the YouTube notification from getting stuck.
+			// =========================================================================================
+			try {
+				Intent killServiceIntent = new Intent(this, my.app.permata.media.service.PermataMediaService.class);
+				stopService(killServiceIntent);
+				Log.i("Golden Gate: Zombie Kill Switch engaged. PermataMediaService explicitly stopped.");
+			} catch (Exception e) {
+				Log.e(e, "Golden Gate: Failed to execute Zombie Kill Switch.");
+			}
+			// =========================================================================================
+
 			PermataMediaServiceConnection s = service;
 			service = null;
 			if (s != null) {
