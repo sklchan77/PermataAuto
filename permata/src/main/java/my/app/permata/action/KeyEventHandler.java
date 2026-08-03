@@ -463,7 +463,7 @@ public class KeyEventHandler {
 	}
 
 	// =========================================================================================
-	// HARDWARE SWIPE ENGINE
+	// HARDWARE SWIPE ENGINE & RESYNC KICK
 	// =========================================================================================
 
 	private static void smartScrollWebView(final WebView wv, final View touchTarget, boolean up, final String hostTag, boolean isMediaHost, boolean isInstagram, boolean isSnapFeedHost, boolean isTikTok) {
@@ -487,6 +487,33 @@ public class KeyEventHandler {
 					if (value != null && !value.equals("null")) Log.i(hostTag + "[REACTION] " + value.replace("\"", ""));
 				});
 			}, 220); 
+
+			// =========================================================================================
+			// [NEW CODE] HTML5 CHROMIUM RESYNC KICK (THE LIP-SYNC FIX)
+			// Triggers exactly 2000ms post-swipe (1500ms HW drain + 500ms buffer).
+			// Forces the active <video> tag to skip forward by 0.05 seconds. This causes the Chromium 
+			// media engine to panic, dump its lagging audio queue, and perfectly realign the tracks.
+			// =========================================================================================
+			if (isMediaHost) {
+				wv.postDelayed(() -> {
+					String resyncJs = "(function() {" +
+							"  try {" +
+							"    var v = document.getElementsByTagName('video');" +
+							"    for(var i=0; i<v.length; i++) {" +
+							"      if(!v[i].paused && v[i].readyState > 2) {" +
+							"        v[i].currentTime += 0.05;" +
+							"        return 'Audio Lip-Sync Resync Kick Applied (Forced Buffer Dump).';" +
+							"      }" +
+							"    }" +
+							"    return 'No active video found for resync.';" +
+							"  } catch(e) { return 'Resync Error: ' + e.message; }" +
+							"})();";
+					wv.evaluateJavascript(resyncJs, value -> {
+						if (value != null && !value.equals("null")) Log.i(hostTag + "[AUDIO_RESYNC] " + value.replace("\"", ""));
+					});
+				}, 2000); 
+			}
+			// =========================================================================================
 
 			if (isMediaHost && !isInstagram) {
 				Log.i(hostTag + "[ACTION] Media Host Detected: Bypassing JS Scroll entirely. Relying purely on God-Mode Hardware Swipe.");
