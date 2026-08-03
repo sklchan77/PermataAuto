@@ -189,8 +189,8 @@ public class KeyEventHandler {
 				// AUDIO TRAIL RESET (LIP-SYNC FIX) WITH EXTREME DSP SPAM PROTECTION
 				// =================================================================================
 				if (finalTargetActivity.getWindow() != null) {
-					// Enforces a strict 3000ms cooldown to prevent OS AudioFlinger crashes
-					if (currentUptime - lastAudioFlushTime > 3000) {
+					// Enforces a strict 5000ms cooldown to prevent OS AudioFlinger crashes
+					if (currentUptime - lastAudioFlushTime > 5000) {
 						lastAudioFlushTime = currentUptime;
 						flushAudioHardwareAsync(finalTargetActivity.getWindow().getContext().getApplicationContext(), "[MediaKey] ");
 					} else {
@@ -336,8 +336,8 @@ public class KeyEventHandler {
 				stopIntent.setPackage(applicationContext.getPackageName());
 				applicationContext.sendBroadcast(stopIntent);
 				
-				// 1000ms delay perfectly isolates the DSP to flush its internal hardware buffer
-				Thread.sleep(1000);
+				// 1500ms delay perfectly isolates the DSP to flush its internal hardware buffer
+				Thread.sleep(1500);
 				
 				Intent startIntent = new Intent("my.app.permata.ACTION_START_SILENT_ANCHOR");
 				startIntent.setPackage(applicationContext.getPackageName());
