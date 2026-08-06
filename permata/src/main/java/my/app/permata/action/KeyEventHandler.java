@@ -476,41 +476,59 @@ public class KeyEventHandler {
 			}, 220); 
 
 			// =========================================================================================
-			// [NEW CODE] SMART POLLING RESYNC ENGINE
+			// [NEW CODE] SMART POLLING RESYNC ENGINE (WITH TELEMETRY)
 			// Uses a recursive Runnable to actively monitor the browser state.
 			// It checks every 1000ms until the video starts playing. Once playing, it kicks the timestamp
 			// and shifts into a 6000ms maintenance heartbeat loop for long-form video support.
 			// =========================================================================================
 			if (isMediaHost) {
 				Runnable smartResyncTask = new Runnable() {
+					private int pollCount = 1;
+					private int heartbeatCount = 1;
+
 					@Override
 					public void run() {
-						// KILL SWITCH: Stop if user swiped to a new video
-						if (swipeSessionId.get() != currentSessionId) return;
+						// KILL SWITCH PRE-CHECK: Stop if user swiped to a new video
+						long actualSession = swipeSessionId.get();
+						if (actualSession != currentSessionId) {
+							Log.i(hostTag + "[AUDIO_RESYNC] Old timer gracefully terminated. (Session changed from " + currentSessionId + " to " + actualSession + ")");
+							return;
+						}
 
 						String resyncJs = "(function() {" +
 								"  try {" +
 								"    var v = document.getElementsByTagName('video');" +
+								"    if (v.length === 0) return 'NO_VIDEO_TAG';" +
 								"    for(var i=0; i<v.length; i++) {" +
 								"      if(!v[i].paused && v[i].readyState > 2) {" +
 								"        v[i].currentTime += 0.05;" +
 								"        return 'SUCCESS';" +
 								"      }" +
 								"    }" +
-								"    return 'BUFFERING';" +
+								"    return 'BUFFERING_OR_PAUSED';" +
 								"  } catch(e) { return 'ERROR: ' + e.message; }" +
 								"})();";
 
 						wv.evaluateJavascript(resyncJs, value -> {
-							// Double-check the kill switch after JS execution
-							if (swipeSessionId.get() != currentSessionId) return;
+							// Double-check the kill switch after asynchronous JS execution
+							long postJsSession = swipeSessionId.get();
+							if (postJsSession != currentSessionId) {
+								Log.i(hostTag + "[AUDIO_RESYNC] JS callback terminated mid-flight. (Session changed to " + postJsSession + ")");
+								return;
+							}
 
 							if (value != null && value.contains("SUCCESS")) {
-								Log.i(hostTag + "[AUDIO_RESYNC] Audio Lip-Sync Resync Kick Applied (Forced Buffer Dump). Next heartbeat in 6s.");
-								// Video is successfully playing. Transition to 6-second heartbeat maintenance mode.
+								Log.i(hostTag + "[AUDIO_RESYNC] [Heartbeat " + heartbeatCount + "] Audio Lip-Sync Resync Kick Applied (Forced Buffer Dump). Next check in 6s.");
+								heartbeatCount++;
 								wv.postDelayed(this, 6000); 
+							} else if (value != null && value.contains("ERROR")) {
+								Log.e(hostTag + "[AUDIO_RESYNC] [Poll " + pollCount + "] JS Exception Encountered: " + value);
+								pollCount++;
+								wv.postDelayed(this, 1000); 
 							} else {
 								// Video is still loading or network stalled. Poll again in 1000ms.
+								Log.w(hostTag + "[AUDIO_RESYNC] [Poll " + pollCount + "] Video missing/buffering. Network stalled? Retrying in 1000ms... (Response: " + value + ")");
+								pollCount++;
 								wv.postDelayed(this, 1000); 
 							}
 						});
