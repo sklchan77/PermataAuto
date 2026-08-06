@@ -46,7 +46,7 @@ public class KeyEventHandler {
 	private static volatile long lastGlobalActionTime = 0L;
 	private static volatile long lastAudioFlushTime = 0L;
 	
-	// ENTERPRISE HARDENING: Tracks the current swipe session to cancel pending Resync Kicks
+	// ENTERPRISE HARDENING: Tracks the current swipe session to manage Smart Polling lifecycle
 	private static final AtomicLong swipeSessionId = new AtomicLong(0);
 	
 	private static final Map<View, Long> scrollTimestamps = Collections.synchronizedMap(new WeakHashMap<>());
@@ -476,39 +476,49 @@ public class KeyEventHandler {
 			}, 220); 
 
 			// =========================================================================================
-			// [NEW CODE] MULTI-FIRE RESYNC KICK (WITH SESSION CANCELLATION)
-			// Triggers at 2000ms, 8000ms, 14000ms, and 20000ms.
-			// If the user swipes before a timer fires, the ID check fails and the trigger aborts quietly.
+			// [NEW CODE] SMART POLLING RESYNC ENGINE
+			// Uses a recursive Runnable to actively monitor the browser state.
+			// It checks every 1000ms until the video starts playing. Once playing, it kicks the timestamp
+			// and shifts into a 6000ms maintenance heartbeat loop for long-form video support.
 			// =========================================================================================
 			if (isMediaHost) {
-				int[] resyncDelays = {2000, 8000, 14000, 20000};
-				
-				for (int delay : resyncDelays) {
-					wv.postDelayed(() -> {
-						// Safety check: Has the user swiped to a new video since this timer started?
-						if (swipeSessionId.get() != currentSessionId) {
-							Log.i(hostTag + "[AUDIO_RESYNC] Timer at " + delay + "ms cancelled (Media changed).");
-							return; 
-						}
-						
+				Runnable smartResyncTask = new Runnable() {
+					@Override
+					public void run() {
+						// KILL SWITCH: Stop if user swiped to a new video
+						if (swipeSessionId.get() != currentSessionId) return;
+
 						String resyncJs = "(function() {" +
 								"  try {" +
 								"    var v = document.getElementsByTagName('video');" +
 								"    for(var i=0; i<v.length; i++) {" +
 								"      if(!v[i].paused && v[i].readyState > 2) {" +
 								"        v[i].currentTime += 0.05;" +
-								"        return 'Audio Lip-Sync Resync Kick Applied @ " + delay + "ms.';" +
+								"        return 'SUCCESS';" +
 								"      }" +
 								"    }" +
-								"    return 'No active video found for resync @ " + delay + "ms.';" +
-								"  } catch(e) { return 'Resync Error @ " + delay + "ms: ' + e.message; }" +
+								"    return 'BUFFERING';" +
+								"  } catch(e) { return 'ERROR: ' + e.message; }" +
 								"})();";
-								
+
 						wv.evaluateJavascript(resyncJs, value -> {
-							if (value != null && !value.equals("null")) Log.i(hostTag + "[AUDIO_RESYNC] " + value.replace("\"", ""));
+							// Double-check the kill switch after JS execution
+							if (swipeSessionId.get() != currentSessionId) return;
+
+							if (value != null && value.contains("SUCCESS")) {
+								Log.i(hostTag + "[AUDIO_RESYNC] Audio Lip-Sync Resync Kick Applied (Forced Buffer Dump). Next heartbeat in 6s.");
+								// Video is successfully playing. Transition to 6-second heartbeat maintenance mode.
+								wv.postDelayed(this, 6000); 
+							} else {
+								// Video is still loading or network stalled. Poll again in 1000ms.
+								wv.postDelayed(this, 1000); 
+							}
 						});
-					}, delay); 
-				}
+					}
+				};
+				
+				// Start the very first check at exactly 2000ms post-swipe
+				wv.postDelayed(smartResyncTask, 2000); 
 			}
 			// =========================================================================================
 
