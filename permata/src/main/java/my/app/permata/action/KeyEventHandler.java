@@ -26,6 +26,7 @@ import java.util.Map;
 import java.util.WeakHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicLong;
 
 import my.app.permata.media.service.MediaSessionCallback;
 import my.app.permata.ui.activity.MainActivityDelegate;
@@ -43,14 +44,14 @@ public class KeyEventHandler {
 
 	private static volatile Worker worker;
 	private static volatile long lastGlobalActionTime = 0L;
-	private static volatile long lastAudioFlushTime = 0L; // ENTERPRISE HARDENING: Hardware DSP Cooldown Tracker
+	private static volatile long lastAudioFlushTime = 0L;
+	
+	// ENTERPRISE HARDENING: Tracks the current swipe session to cancel pending Resync Kicks
+	private static final AtomicLong swipeSessionId = new AtomicLong(0);
 	
 	private static final Map<View, Long> scrollTimestamps = Collections.synchronizedMap(new WeakHashMap<>());
-
-	// ENTERPRISE HARDENING: Dedicated background queue for Audio DSP hardware resets
 	private static final ExecutorService audioResetExecutor = Executors.newSingleThreadExecutor();
 
-	// The standard UI execution payload (Cleaned of Douyin Auto-UI Toggles)
 	private static final String JS_UNIVERSAL_PAYLOAD = "(function(){" +
 			"let res = 'Discovery [Layer 2]: JS Registry Miss (No custom formatting applied)'; " +
 			"const injectGlobalWipe = function() { " +
@@ -185,11 +186,7 @@ public class KeyEventHandler {
 				}
 				lastGlobalActionTime = currentUptime;
 				
-				// =================================================================================
-				// AUDIO TRAIL RESET (LIP-SYNC FIX) WITH EXTREME DSP SPAM PROTECTION
-				// =================================================================================
 				if (finalTargetActivity.getWindow() != null) {
-					// Enforces a strict 5000ms cooldown to prevent OS AudioFlinger crashes
 					if (currentUptime - lastAudioFlushTime > 5000) {
 						lastAudioFlushTime = currentUptime;
 						flushAudioHardwareAsync(finalTargetActivity.getWindow().getContext().getApplicationContext(), "[MediaKey] ");
@@ -323,10 +320,6 @@ public class KeyEventHandler {
 		return true;
 	}
 
-	// =========================================================================================
-	// BACKGROUND AUDIO HARDWARE RESET
-	// =========================================================================================
-
 	private static void flushAudioHardwareAsync(final Context applicationContext, final String hostTag) {
 		if (applicationContext == null) return;
 		
@@ -336,7 +329,6 @@ public class KeyEventHandler {
 				stopIntent.setPackage(applicationContext.getPackageName());
 				applicationContext.sendBroadcast(stopIntent);
 				
-				// 1500ms delay perfectly isolates the DSP to flush its internal hardware buffer
 				Thread.sleep(1500);
 				
 				Intent startIntent = new Intent("my.app.permata.ACTION_START_SILENT_ANCHOR");
@@ -353,10 +345,6 @@ public class KeyEventHandler {
 			}
 		});
 	}
-
-	// =========================================================================================
-	// VIEW TRAVERSAL ENGINE
-	// =========================================================================================
 
 	private static WebView scanFragmentsForWebView(ActivityFragment activeFragment) {
 		try {
@@ -462,10 +450,6 @@ public class KeyEventHandler {
 		return null;
 	}
 
-	// =========================================================================================
-	// HARDWARE SWIPE ENGINE & RESYNC KICK
-	// =========================================================================================
-
 	private static void smartScrollWebView(final WebView wv, final View touchTarget, boolean up, final String hostTag, boolean isMediaHost, boolean isInstagram, boolean isSnapFeedHost, boolean isTikTok) {
 		if (wv == null || touchTarget == null || !touchTarget.isAttachedToWindow() || touchTarget.getWidth() <= 0 || touchTarget.getHeight() <= 0) return;
 
@@ -479,6 +463,9 @@ public class KeyEventHandler {
 		}
 		scrollTimestamps.put(wv, now); 
 		touchTarget.requestFocus();
+		
+		// Generate a unique ID for this specific swipe event
+		final long currentSessionId = swipeSessionId.incrementAndGet();
 
 		if (wv.getSettings().getJavaScriptEnabled()) {
 			
@@ -489,29 +476,39 @@ public class KeyEventHandler {
 			}, 220); 
 
 			// =========================================================================================
-			// [NEW CODE] HTML5 CHROMIUM RESYNC KICK (THE LIP-SYNC FIX)
-			// Triggers exactly 2000ms post-swipe (1500ms HW drain + 500ms buffer).
-			// Forces the active <video> tag to skip forward by 0.05 seconds. This causes the Chromium 
-			// media engine to panic, dump its lagging audio queue, and perfectly realign the tracks.
+			// [NEW CODE] MULTI-FIRE RESYNC KICK (WITH SESSION CANCELLATION)
+			// Triggers at 2000ms, 8000ms, 14000ms, and 20000ms.
+			// If the user swipes before a timer fires, the ID check fails and the trigger aborts quietly.
 			// =========================================================================================
 			if (isMediaHost) {
-				wv.postDelayed(() -> {
-					String resyncJs = "(function() {" +
-							"  try {" +
-							"    var v = document.getElementsByTagName('video');" +
-							"    for(var i=0; i<v.length; i++) {" +
-							"      if(!v[i].paused && v[i].readyState > 2) {" +
-							"        v[i].currentTime += 0.05;" +
-							"        return 'Audio Lip-Sync Resync Kick Applied (Forced Buffer Dump).';" +
-							"      }" +
-							"    }" +
-							"    return 'No active video found for resync.';" +
-							"  } catch(e) { return 'Resync Error: ' + e.message; }" +
-							"})();";
-					wv.evaluateJavascript(resyncJs, value -> {
-						if (value != null && !value.equals("null")) Log.i(hostTag + "[AUDIO_RESYNC] " + value.replace("\"", ""));
-					});
-				}, 2000); 
+				int[] resyncDelays = {2000, 8000, 14000, 20000};
+				
+				for (int delay : resyncDelays) {
+					wv.postDelayed(() -> {
+						// Safety check: Has the user swiped to a new video since this timer started?
+						if (swipeSessionId.get() != currentSessionId) {
+							Log.i(hostTag + "[AUDIO_RESYNC] Timer at " + delay + "ms cancelled (Media changed).");
+							return; 
+						}
+						
+						String resyncJs = "(function() {" +
+								"  try {" +
+								"    var v = document.getElementsByTagName('video');" +
+								"    for(var i=0; i<v.length; i++) {" +
+								"      if(!v[i].paused && v[i].readyState > 2) {" +
+								"        v[i].currentTime += 0.05;" +
+								"        return 'Audio Lip-Sync Resync Kick Applied @ " + delay + "ms.';" +
+								"      }" +
+								"    }" +
+								"    return 'No active video found for resync @ " + delay + "ms.';" +
+								"  } catch(e) { return 'Resync Error @ " + delay + "ms: ' + e.message; }" +
+								"})();";
+								
+						wv.evaluateJavascript(resyncJs, value -> {
+							if (value != null && !value.equals("null")) Log.i(hostTag + "[AUDIO_RESYNC] " + value.replace("\"", ""));
+						});
+					}, delay); 
+				}
 			}
 			// =========================================================================================
 
