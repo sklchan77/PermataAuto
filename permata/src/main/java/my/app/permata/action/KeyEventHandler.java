@@ -479,7 +479,7 @@ public class KeyEventHandler {
 			// [NEW CODE] SMART POLLING RESYNC ENGINE (WITH TELEMETRY)
 			// Uses a recursive Runnable to actively monitor the browser state.
 			// It checks every 1000ms until the video starts playing. Once playing, it kicks the timestamp
-			// and shifts into a 6000ms maintenance heartbeat loop for long-form video support.
+			// and shifts into a 10000ms maintenance heartbeat loop for long-form video support.
 			// =========================================================================================
 			if (isMediaHost) {
 				Runnable smartResyncTask = new Runnable() {
@@ -518,9 +518,9 @@ public class KeyEventHandler {
 							}
 
 							if (value != null && value.contains("SUCCESS")) {
-								Log.i(hostTag + "[AUDIO_RESYNC] [Heartbeat " + heartbeatCount + "] Audio Lip-Sync Resync Kick Applied (Forced Buffer Dump). Next check in 6s.");
+								Log.i(hostTag + "[AUDIO_RESYNC] [Heartbeat " + heartbeatCount + "] Audio Lip-Sync Resync Kick Applied (Forced Buffer Dump). Next check in 10s.");
 								heartbeatCount++;
-								wv.postDelayed(this, 6000); 
+								wv.postDelayed(this, 10000); 
 							} else if (value != null && value.contains("ERROR")) {
 								Log.e(hostTag + "[AUDIO_RESYNC] [Poll " + pollCount + "] JS Exception Encountered: " + value);
 								pollCount++;
