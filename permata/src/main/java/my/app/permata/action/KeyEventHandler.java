@@ -476,10 +476,10 @@ public class KeyEventHandler {
 			}, 220); 
 
 			// =========================================================================================
-			// [NEW CODE] SMART POLLING RESYNC ENGINE (WITH TELEMETRY)
+			// [NEW CODE] SMART POLLING RESYNC ENGINE (WITH TELEMETRY & 30s HEARTBEAT)
 			// Uses a recursive Runnable to actively monitor the browser state.
-			// It checks every 1000ms until the video starts playing. Once playing, it kicks the timestamp
-			// and shifts into a 10000ms maintenance heartbeat loop for long-form video support.
+			// It checks every 3000ms until the video starts playing. Once playing, it kicks the timestamp
+			// by an imperceptible 10ms and shifts into a 30000ms maintenance heartbeat loop.
 			// =========================================================================================
 			if (isMediaHost) {
 				Runnable smartResyncTask = new Runnable() {
@@ -501,7 +501,7 @@ public class KeyEventHandler {
 								"    if (v.length === 0) return 'NO_VIDEO_TAG';" +
 								"    for(var i=0; i<v.length; i++) {" +
 								"      if(!v[i].paused && v[i].readyState > 2) {" +
-								"        v[i].currentTime += 0.05;" +
+								"        v[i].currentTime += 0.01;" + // 10ms micro-kick to avoid visual/audio distortion
 								"        return 'SUCCESS';" +
 								"      }" +
 								"    }" +
@@ -518,18 +518,18 @@ public class KeyEventHandler {
 							}
 
 							if (value != null && value.contains("SUCCESS")) {
-								Log.i(hostTag + "[AUDIO_RESYNC] [Heartbeat " + heartbeatCount + "] Audio Lip-Sync Resync Kick Applied (Forced Buffer Dump). Next check in 10s.");
+								Log.i(hostTag + "[AUDIO_RESYNC] [Heartbeat " + heartbeatCount + "] Audio Lip-Sync Resync Kick Applied (Forced Buffer Dump). Next check in 30s.");
 								heartbeatCount++;
-								wv.postDelayed(this, 10000); 
+								wv.postDelayed(this, 30000); 
 							} else if (value != null && value.contains("ERROR")) {
 								Log.e(hostTag + "[AUDIO_RESYNC] [Poll " + pollCount + "] JS Exception Encountered: " + value);
 								pollCount++;
-								wv.postDelayed(this, 1000); 
+								wv.postDelayed(this, 3000); 
 							} else {
-								// Video is still loading or network stalled. Poll again in 1000ms.
-								Log.w(hostTag + "[AUDIO_RESYNC] [Poll " + pollCount + "] Video missing/buffering. Network stalled? Retrying in 1000ms... (Response: " + value + ")");
+								// Video is still loading or network stalled. Poll again in 3000ms.
+								Log.w(hostTag + "[AUDIO_RESYNC] [Poll " + pollCount + "] Video missing/buffering. Network stalled? Retrying in 3000ms... (Response: " + value + ")");
 								pollCount++;
-								wv.postDelayed(this, 1000); 
+								wv.postDelayed(this, 3000); 
 							}
 						});
 					}
