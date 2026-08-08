@@ -46,7 +46,7 @@ public class KeyEventHandler {
 	private static volatile long lastGlobalActionTime = 0L;
 	private static volatile long lastAudioFlushTime = 0L;
 	
-	// ENTERPRISE HARDENING: Tracks the current swipe session to manage Smart Polling lifecycle
+	// ENTERPRISE HARDENING: Thread-safe global session tracker for the Kill Switch
 	private static final AtomicLong swipeSessionId = new AtomicLong(0);
 	
 	private static final Map<View, Long> scrollTimestamps = Collections.synchronizedMap(new WeakHashMap<>());
@@ -186,6 +186,7 @@ public class KeyEventHandler {
 				}
 				lastGlobalActionTime = currentUptime;
 				
+				// DSP Reset - Retained safely on a background thread to prevent car AudioFlinger deadlocks
 				if (finalTargetActivity.getWindow() != null) {
 					if (currentUptime - lastAudioFlushTime > 5000) {
 						lastAudioFlushTime = currentUptime;
@@ -476,67 +477,55 @@ public class KeyEventHandler {
 			}, 220); 
 
 			// =========================================================================================
-			// [NEW CODE] SMART POLLING RESYNC ENGINE (WITH TELEMETRY & 30s HEARTBEAT)
-			// Uses a recursive Runnable to actively monitor the browser state.
-			// It checks every 3000ms until the video starts playing. Once playing, it kicks the timestamp
-			// by an imperceptible 10ms and shifts into a 30000ms maintenance heartbeat loop.
+			// [INVERSION OF CONTROL] FIRE-AND-FORGET JS WATCHER (VECTOR A: PAUSE/PLAY SLAM)
+			// All Java loops removed. This injects exactly once at 500ms. JS natively polls the DOM 
+			// every 100ms without waking the Android UI thread. When readyState > 2, it executes a hard 
+			// 3000ms Pause/Play slam. The session kill-switch protects against accidental playback 
+			// if the user swipes away during the 3-second pause delay.
 			// =========================================================================================
 			if (isMediaHost) {
-				Runnable smartResyncTask = new Runnable() {
-					private int pollCount = 1;
-					private int heartbeatCount = 1;
+				wv.postDelayed(() -> {
+					// Ensure we haven't swiped away before we even inject the script
+					if (swipeSessionId.get() != currentSessionId) return;
 
-					@Override
-					public void run() {
-						// KILL SWITCH PRE-CHECK: Stop if user swiped to a new video
-						long actualSession = swipeSessionId.get();
-						if (actualSession != currentSessionId) {
-							Log.i(hostTag + "[AUDIO_RESYNC] Old timer gracefully terminated. (Session changed from " + currentSessionId + " to " + actualSession + ")");
-							return;
+					String fireAndForgetJs = "(function() {" +
+							"  try {" +
+							"    window.__permataSwipeId = " + currentSessionId + ";" +
+							"    var attempts = 0;" +
+							"    var watcher = setInterval(function() {" +
+							"      if (window.__permataSwipeId !== " + currentSessionId + ") {" +
+							"        clearInterval(watcher);" +
+							"        return;" + // User swiped away. Die instantly without resuming playback.
+							"      }" +
+							"      attempts++;" +
+							"      if (attempts > 150) {" +
+							"        clearInterval(watcher);" +
+							"        return;" + // 15s Doomsday timeout. Network dead.
+							"      }" +
+							"      var v = document.getElementsByTagName('video');" +
+							"      for(var i=0; i<v.length; i++) {" +
+							"        if(!v[i].paused && v[i].readyState > 2) {" +
+							"          clearInterval(watcher);" +
+							"          v[i].pause();" +
+							"          setTimeout(function() {" +
+							"             if (window.__permataSwipeId === " + currentSessionId + ") {" +
+							"                 v[i].play();" +
+							"             }" +
+							"          }, 3000);" + // Exactly 3000ms Pause Slam
+							"          return;" +
+							"        }" +
+							"      }" +
+							"    }, 100);" +
+							"    return 'Watcher Injected';" +
+							"  } catch(e) { return 'ERROR: ' + e.message; }" +
+							"})();";
+
+					wv.evaluateJavascript(fireAndForgetJs, value -> {
+						if (value != null) {
+							Log.i(hostTag + "[AUDIO_RESYNC] Fire-and-Forget JS Watcher Injected (Session " + currentSessionId + "). Response: " + value.replace("\"", ""));
 						}
-
-						String resyncJs = "(function() {" +
-								"  try {" +
-								"    var v = document.getElementsByTagName('video');" +
-								"    if (v.length === 0) return 'NO_VIDEO_TAG';" +
-								"    for(var i=0; i<v.length; i++) {" +
-								"      if(!v[i].paused && v[i].readyState > 2) {" +
-								"        v[i].currentTime += 0.01;" + // 10ms micro-kick to avoid visual/audio distortion
-								"        return 'SUCCESS';" +
-								"      }" +
-								"    }" +
-								"    return 'BUFFERING_OR_PAUSED';" +
-								"  } catch(e) { return 'ERROR: ' + e.message; }" +
-								"})();";
-
-						wv.evaluateJavascript(resyncJs, value -> {
-							// Double-check the kill switch after asynchronous JS execution
-							long postJsSession = swipeSessionId.get();
-							if (postJsSession != currentSessionId) {
-								Log.i(hostTag + "[AUDIO_RESYNC] JS callback terminated mid-flight. (Session changed to " + postJsSession + ")");
-								return;
-							}
-
-							if (value != null && value.contains("SUCCESS")) {
-								Log.i(hostTag + "[AUDIO_RESYNC] [Heartbeat " + heartbeatCount + "] Audio Lip-Sync Resync Kick Applied (Forced Buffer Dump). Next check in 30s.");
-								heartbeatCount++;
-								wv.postDelayed(this, 30000); 
-							} else if (value != null && value.contains("ERROR")) {
-								Log.e(hostTag + "[AUDIO_RESYNC] [Poll " + pollCount + "] JS Exception Encountered: " + value);
-								pollCount++;
-								wv.postDelayed(this, 3000); 
-							} else {
-								// Video is still loading or network stalled. Poll again in 3000ms.
-								Log.w(hostTag + "[AUDIO_RESYNC] [Poll " + pollCount + "] Video missing/buffering. Network stalled? Retrying in 3000ms... (Response: " + value + ")");
-								pollCount++;
-								wv.postDelayed(this, 3000); 
-							}
-						});
-					}
-				};
-				
-				// Start the very first check at exactly 2000ms post-swipe
-				wv.postDelayed(smartResyncTask, 2000); 
+					});
+				}, 500); // Inject exactly 500ms after the swipe starts
 			}
 			// =========================================================================================
 
