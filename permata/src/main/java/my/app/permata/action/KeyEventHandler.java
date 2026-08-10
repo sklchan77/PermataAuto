@@ -478,10 +478,10 @@ public class KeyEventHandler {
 
 			// =========================================================================================
 			// [INVERSION OF CONTROL] FIRE-AND-FORGET JS WATCHER (VECTOR A: PAUSE/PLAY SLAM)
-			// All Java loops removed. This injects exactly once at 500ms. JS natively polls the DOM 
-			// every 100ms without waking the Android UI thread. When readyState > 2, it executes a hard 
-			// 3000ms Pause/Play slam. The session kill-switch protects against accidental playback 
-			// if the user swipes away during the 3-second pause delay.
+			// This injects exactly once at 500ms. JS natively polls the DOM every 100ms.
+			// When readyState > 2, it executes a hard 1500ms Pause/Play slam. The session kill-switch 
+			// protects against accidental playback if the user swipes away during the 1.5s pause delay.
+			// Ultimate Safety Net: 300 seconds (3000 attempts at 100ms) to outlast total network death.
 			// =========================================================================================
 			if (isMediaHost) {
 				wv.postDelayed(() -> {
@@ -498,9 +498,9 @@ public class KeyEventHandler {
 							"        return;" + // User swiped away. Die instantly without resuming playback.
 							"      }" +
 							"      attempts++;" +
-							"      if (attempts > 150) {" +
+							"      if (attempts > 3000) {" +
 							"        clearInterval(watcher);" +
-							"        return;" + // 15s Doomsday timeout. Network dead.
+							"        return;" + // 300s (5 Min) Doomsday timeout. Network dead.
 							"      }" +
 							"      var v = document.getElementsByTagName('video');" +
 							"      for(var i=0; i<v.length; i++) {" +
@@ -511,12 +511,12 @@ public class KeyEventHandler {
 							"             if (window.__permataSwipeId === " + currentSessionId + ") {" +
 							"                 v[i].play();" +
 							"             }" +
-							"          }, 3000);" + // Exactly 3000ms Pause Slam
+							"          }, 1500);" + // Exactly 1500ms Pause Slam
 							"          return;" +
 							"        }" +
 							"      }" +
 							"    }, 100);" +
-							"    return 'Watcher Injected';" +
+							"    return 'Watcher Injected (300s Timeout | 1500ms Slam)';" +
 							"  } catch(e) { return 'ERROR: ' + e.message; }" +
 							"})();";
 
