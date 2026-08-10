@@ -479,11 +479,11 @@ public class KeyEventHandler {
 
 			// =========================================================================================
 			// [INVERSION OF CONTROL] FIRE-AND-FORGET JS WATCHER (VECTOR A: PAUSE/PLAY SLAM)
-			// PRE-COGNITIVE REFLEX UPDATE: Injects at exactly 50ms (giving UI thread early processing room).
-			// JS natively polls the DOM every 10ms to instantly catch the new video before it plays.
+			// PRE-COGNITIVE REFLEX UPDATE: Injects at exactly 100ms (sweet spot for UI smoothness).
+			// JS natively polls the DOM every 20ms (50 times a second) to catch the video seamlessly.
 			// When readyState > 2, executes a hard 3080ms Pause/Play slam. The session kill-switch 
 			// protects against accidental playback if the user swipes away during the pause delay.
-			// Ultimate Safety Net: 300 seconds (30000 attempts at 10ms) to outlast total network death.
+			// Ultimate Safety Net: 300 seconds (15000 attempts at 20ms) to outlast total network death.
 			// Includes direct Chromium-to-Logcat Telemetry tracing.
 			// =========================================================================================
 			if (isMediaHost) {
@@ -502,10 +502,10 @@ public class KeyEventHandler {
 							"        return;" + // User swiped away. Die instantly without resuming playback.
 							"      }" +
 							"      attempts++;" +
-							"      if (attempts > 30000) {" +
+							"      if (attempts > 15000) {" +
 							"        clearInterval(watcher);" +
 							"        console.log('[PERMATA-SYNC] Session ' + " + currentSessionId + " Doomsday Timeout (300s).');" +
-							"        return;" + // 300s (5 Min) Doomsday timeout at 10ms ticks.
+							"        return;" + // 300s (5 Min) Doomsday timeout at 20ms ticks.
 							"      }" +
 							"      var v = document.getElementsByTagName('video');" +
 							"      for(var i=0; i<v.length; i++) {" +
@@ -522,8 +522,8 @@ public class KeyEventHandler {
 							"          return;" +
 							"        }" +
 							"      }" +
-							"    }, 10);" + // HYPER REFLEX: Polling native DOM every 10ms
-							"    return 'Watcher Injected (300s Timeout | 3080ms Slam | 10ms Reflex)';" +
+							"    }, 20);" + // HIGH REFLEX: Polling native DOM every 20ms
+							"    return 'Watcher Injected (300s Timeout | 3080ms Slam | 20ms Reflex)';" +
 							"  } catch(e) { return 'ERROR: ' + e.message; }" +
 							"})();";
 
@@ -532,7 +532,7 @@ public class KeyEventHandler {
 							Log.i(hostTag + "[AUDIO_RESYNC] Fire-and-Forget JS Watcher Injected (Session " + currentSessionId + "). Response: " + value.replace("\"", ""));
 						}
 					});
-				}, 50); // PRE-COGNITIVE INJECTION: Inject at exactly 50ms (smooth UI balance)
+				}, 100); // PRE-COGNITIVE INJECTION: Inject at exactly 100ms (smooth UI balance)
 			}
 			// =========================================================================================
 
