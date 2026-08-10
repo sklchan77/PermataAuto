@@ -479,9 +479,9 @@ public class KeyEventHandler {
 
 			// =========================================================================================
 			// [INVERSION OF CONTROL] FIRE-AND-FORGET JS WATCHER (VECTOR A: PAUSE/PLAY SLAM)
-			// Handoff injected at exactly 150ms (ultra-safe UI smoothing).
+			// Handoff injected at exactly 100ms (sweet spot for UI smoothness).
 			// JS natively polls the DOM every 50ms to efficiently catch the video.
-			// Uses readyState > 1 to freeze the video BEFORE it can even begin playing.
+			// REVERTED to readyState > 2 to safely bypass the Chromium Play Promise DOMException.
 			// Executes a hard 3050ms Pause/Play slam. The session kill-switch 
 			// protects against accidental playback if the user swipes away during the pause delay.
 			// Ultimate Safety Net: 300 seconds (6000 attempts at 50ms) to outlast total network death.
@@ -509,7 +509,7 @@ public class KeyEventHandler {
 							"      }" +
 							"      var v = document.getElementsByTagName('video');" +
 							"      for(var i=0; i<v.length; i++) {" +
-							"        if(!v[i].paused && v[i].readyState > 1) {" + // AGGRESSIVE CATCH: readyState > 1 (State 2, 3, or 4)
+							"        if(!v[i].paused && v[i].readyState > 2) {" + // REVERTED: Must be > 2 to avoid Play Promise exception
 							"          clearInterval(watcher);" +
 							"          console.log('[PERMATA-SYNC] Session ' + " + currentSessionId + " Target Acquired (readyState ' + v[i].readyState + ')! Loop destroyed. Commencing 3050ms Slam.');" +
 							"          v[i].pause();" +
@@ -532,7 +532,7 @@ public class KeyEventHandler {
 							Log.i(hostTag + "[AUDIO_RESYNC] Fire-and-Forget JS Watcher Injected (Session " + currentSessionId + "). Response: " + value.replace("\"", ""));
 						}
 					});
-				}, 150); // PRE-COGNITIVE INJECTION: Inject at exactly 150ms (safest UI balance)
+				}, 100); // PRE-COGNITIVE INJECTION: Inject at exactly 100ms (sweet spot UI balance)
 			}
 			// =========================================================================================
 
