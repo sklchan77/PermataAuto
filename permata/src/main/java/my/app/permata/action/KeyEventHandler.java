@@ -330,7 +330,7 @@ public class KeyEventHandler {
 				stopIntent.setPackage(applicationContext.getPackageName());
 				applicationContext.sendBroadcast(stopIntent);
 				
-				// INCREASED TO 3000MS: Gives Android OS double the time to properly close and flush the AudioFlinger.
+				// 3000ms delay: Gives Android OS double the time to properly close and flush the AudioFlinger.
 				Thread.sleep(3000);
 				
 				Intent startIntent = new Intent("my.app.permata.ACTION_START_SILENT_ANCHOR");
@@ -479,10 +479,11 @@ public class KeyEventHandler {
 
 			// =========================================================================================
 			// [INVERSION OF CONTROL] FIRE-AND-FORGET JS WATCHER (VECTOR A: PAUSE/PLAY SLAM)
-			// This injects exactly once at 500ms. JS natively polls the DOM every 100ms.
-			// When readyState > 2, it executes a hard 4500ms Pause/Play slam. The session kill-switch 
-			// protects against accidental playback if the user swipes away during the 4.5s pause delay.
-			// Ultimate Safety Net: 300 seconds (3000 attempts at 100ms) to outlast total network death.
+			// FAST REFLEX UPDATE: Injects exactly 10ms after the physical scroll concludes.
+			// JS natively polls the DOM every 50ms to instantly catch the new video before it plays.
+			// When readyState > 2, executes a hard 3300ms Pause/Play slam. The session kill-switch 
+			// protects against accidental playback if the user swipes away during the 3.3s pause delay.
+			// Ultimate Safety Net: 300 seconds (6000 attempts at 50ms) to outlast total network death.
 			// =========================================================================================
 			if (isMediaHost) {
 				wv.postDelayed(() -> {
@@ -499,9 +500,9 @@ public class KeyEventHandler {
 							"        return;" + // User swiped away. Die instantly without resuming playback.
 							"      }" +
 							"      attempts++;" +
-							"      if (attempts > 3000) {" +
+							"      if (attempts > 6000) {" +
 							"        clearInterval(watcher);" +
-							"        return;" + // 300s (5 Min) Doomsday timeout. Network dead.
+							"        return;" + // 300s (5 Min) Doomsday timeout at 50ms ticks.
 							"      }" +
 							"      var v = document.getElementsByTagName('video');" +
 							"      for(var i=0; i<v.length; i++) {" +
@@ -512,12 +513,12 @@ public class KeyEventHandler {
 							"             if (window.__permataSwipeId === " + currentSessionId + ") {" +
 							"                 v[i].play();" +
 							"             }" +
-							"          }, 4500);" + // INCREASED: Exactly 4500ms Pause Slam
+							"          }, 3300);" + // Exactly 3300ms Pause Slam
 							"          return;" +
 							"        }" +
 							"      }" +
-							"    }, 100);" +
-							"    return 'Watcher Injected (300s Timeout | 4500ms Slam)';" +
+							"    }, 50);" + // FASTER REFLEX: Polling native DOM every 50ms
+							"    return 'Watcher Injected (300s Timeout | 3300ms Slam | 50ms Reflex)';" +
 							"  } catch(e) { return 'ERROR: ' + e.message; }" +
 							"})();";
 
@@ -526,7 +527,7 @@ public class KeyEventHandler {
 							Log.i(hostTag + "[AUDIO_RESYNC] Fire-and-Forget JS Watcher Injected (Session " + currentSessionId + "). Response: " + value.replace("\"", ""));
 						}
 					});
-				}, 500); // Inject exactly 500ms after the swipe starts
+				}, 180); // FAST INJECTION: Inject exactly 10ms after the 170ms hardware swipe concludes
 			}
 			// =========================================================================================
 
