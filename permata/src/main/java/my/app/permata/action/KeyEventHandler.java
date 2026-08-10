@@ -479,11 +479,12 @@ public class KeyEventHandler {
 
 			// =========================================================================================
 			// [INVERSION OF CONTROL] FIRE-AND-FORGET JS WATCHER (VECTOR A: PAUSE/PLAY SLAM)
-			// PRE-COGNITIVE REFLEX UPDATE: Injects at exactly 10ms (immediately as scroll initiates).
+			// PRE-COGNITIVE REFLEX UPDATE: Injects at exactly 50ms (giving UI thread early processing room).
 			// JS natively polls the DOM every 10ms to instantly catch the new video before it plays.
 			// When readyState > 2, executes a hard 3080ms Pause/Play slam. The session kill-switch 
 			// protects against accidental playback if the user swipes away during the pause delay.
 			// Ultimate Safety Net: 300 seconds (30000 attempts at 10ms) to outlast total network death.
+			// Includes direct Chromium-to-Logcat Telemetry tracing.
 			// =========================================================================================
 			if (isMediaHost) {
 				wv.postDelayed(() -> {
@@ -497,21 +498,25 @@ public class KeyEventHandler {
 							"    var watcher = setInterval(function() {" +
 							"      if (window.__permataSwipeId !== " + currentSessionId + ") {" +
 							"        clearInterval(watcher);" +
+							"        console.log('[PERMATA-SYNC] Session ' + " + currentSessionId + " killed by new swipe.');" +
 							"        return;" + // User swiped away. Die instantly without resuming playback.
 							"      }" +
 							"      attempts++;" +
 							"      if (attempts > 30000) {" +
 							"        clearInterval(watcher);" +
+							"        console.log('[PERMATA-SYNC] Session ' + " + currentSessionId + " Doomsday Timeout (300s).');" +
 							"        return;" + // 300s (5 Min) Doomsday timeout at 10ms ticks.
 							"      }" +
 							"      var v = document.getElementsByTagName('video');" +
 							"      for(var i=0; i<v.length; i++) {" +
 							"        if(!v[i].paused && v[i].readyState > 2) {" +
 							"          clearInterval(watcher);" +
+							"          console.log('[PERMATA-SYNC] Session ' + " + currentSessionId + " Target Acquired! Loop destroyed. Commencing 3080ms Slam.');" +
 							"          v[i].pause();" +
 							"          setTimeout(function() {" +
 							"             if (window.__permataSwipeId === " + currentSessionId + ") {" +
 							"                 v[i].play();" +
+							"                 console.log('[PERMATA-SYNC] Session ' + " + currentSessionId + " Play Slam Executed.');" +
 							"             }" +
 							"          }, 3080);" + // SURGICAL TIMING: Exactly 3080ms Pause Slam
 							"          return;" +
@@ -527,7 +532,7 @@ public class KeyEventHandler {
 							Log.i(hostTag + "[AUDIO_RESYNC] Fire-and-Forget JS Watcher Injected (Session " + currentSessionId + "). Response: " + value.replace("\"", ""));
 						}
 					});
-				}, 10); // PRE-COGNITIVE INJECTION: Inject at exactly 10ms (almost instantly as scroll starts)
+				}, 50); // PRE-COGNITIVE INJECTION: Inject at exactly 50ms (smooth UI balance)
 			}
 			// =========================================================================================
 
