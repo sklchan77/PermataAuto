@@ -330,7 +330,8 @@ public class KeyEventHandler {
 				stopIntent.setPackage(applicationContext.getPackageName());
 				applicationContext.sendBroadcast(stopIntent);
 				
-				Thread.sleep(1500);
+				// INCREASED TO 3000MS: Gives Android OS double the time to properly close and flush the AudioFlinger.
+				Thread.sleep(3000);
 				
 				Intent startIntent = new Intent("my.app.permata.ACTION_START_SILENT_ANCHOR");
 				startIntent.setPackage(applicationContext.getPackageName());
@@ -479,8 +480,8 @@ public class KeyEventHandler {
 			// =========================================================================================
 			// [INVERSION OF CONTROL] FIRE-AND-FORGET JS WATCHER (VECTOR A: PAUSE/PLAY SLAM)
 			// This injects exactly once at 500ms. JS natively polls the DOM every 100ms.
-			// When readyState > 2, it executes a hard 1500ms Pause/Play slam. The session kill-switch 
-			// protects against accidental playback if the user swipes away during the 1.5s pause delay.
+			// When readyState > 2, it executes a hard 4500ms Pause/Play slam. The session kill-switch 
+			// protects against accidental playback if the user swipes away during the 4.5s pause delay.
 			// Ultimate Safety Net: 300 seconds (3000 attempts at 100ms) to outlast total network death.
 			// =========================================================================================
 			if (isMediaHost) {
@@ -511,12 +512,12 @@ public class KeyEventHandler {
 							"             if (window.__permataSwipeId === " + currentSessionId + ") {" +
 							"                 v[i].play();" +
 							"             }" +
-							"          }, 1500);" + // Exactly 1500ms Pause Slam
+							"          }, 4500);" + // INCREASED: Exactly 4500ms Pause Slam
 							"          return;" +
 							"        }" +
 							"      }" +
 							"    }, 100);" +
-							"    return 'Watcher Injected (300s Timeout | 1500ms Slam)';" +
+							"    return 'Watcher Injected (300s Timeout | 4500ms Slam)';" +
 							"  } catch(e) { return 'ERROR: ' + e.message; }" +
 							"})();";
 
