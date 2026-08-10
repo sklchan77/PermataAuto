@@ -478,13 +478,12 @@ public class KeyEventHandler {
 			}, 220); 
 
 			// =========================================================================================
-			// [INVERSION OF CONTROL] FIRE-AND-FORGET JS WATCHER (VECTOR A: PAUSE/PLAY SLAM)
-			// Handoff injected at exactly 100ms (sweet spot for UI smoothness).
-			// JS natively polls the DOM every 50ms to efficiently catch the video.
-			// REVERTED to readyState > 2 to safely bypass the Chromium Play Promise DOMException.
-			// Executes a hard 3050ms Pause/Play slam. The session kill-switch 
-			// protects against accidental playback if the user swipes away during the pause delay.
-			// Ultimate Safety Net: 300 seconds (6000 attempts at 50ms) to outlast total network death.
+			// [INVERSION OF CONTROL] FIRE-AND-FORGET JS WATCHER (BLEEDING EDGE LIMITS)
+			// Handoff injected at exactly 10ms (Pre-Cognitive).
+			// JS natively polls the DOM every 10ms (100 times a second).
+			// Uses readyState > 1 to attempt freezing the video BEFORE it can even begin playing.
+			// Executes a hard 3000ms Pause/Play slam (Zero millisecond buffer relative to DSP flush).
+			// Includes perfectly sanitized, native Chromium-to-Logcat Telemetry tracing.
 			// =========================================================================================
 			if (isMediaHost) {
 				wv.postDelayed(() -> {
@@ -498,32 +497,32 @@ public class KeyEventHandler {
 							"    var watcher = setInterval(function() {" +
 							"      if (window.__permataSwipeId !== " + currentSessionId + ") {" +
 							"        clearInterval(watcher);" +
-							"        console.log('[PERMATA-SYNC] Session ' + " + currentSessionId + " killed by new swipe.');" +
+							"        console.log('[PERMATA-SYNC] Session ' + " + currentSessionId + " + ' killed by new swipe.');" +
 							"        return;" + // User swiped away. Die instantly without resuming playback.
 							"      }" +
 							"      attempts++;" +
-							"      if (attempts > 6000) {" +
+							"      if (attempts > 30000) {" +
 							"        clearInterval(watcher);" +
-							"        console.log('[PERMATA-SYNC] Session ' + " + currentSessionId + " Doomsday Timeout (300s).');" +
-							"        return;" + // 300s (5 Min) Doomsday timeout at 50ms ticks.
+							"        console.log('[PERMATA-SYNC] Session ' + " + currentSessionId + " + ' Doomsday Timeout (300s).');" +
+							"        return;" + // 300s (5 Min) Doomsday timeout at 10ms ticks.
 							"      }" +
 							"      var v = document.getElementsByTagName('video');" +
 							"      for(var i=0; i<v.length; i++) {" +
-							"        if(!v[i].paused && v[i].readyState > 2) {" + // REVERTED: Must be > 2 to avoid Play Promise exception
+							"        if(!v[i].paused && v[i].readyState > 1) {" + // AGGRESSIVE CATCH: readyState > 1
 							"          clearInterval(watcher);" +
-							"          console.log('[PERMATA-SYNC] Session ' + " + currentSessionId + " Target Acquired (readyState ' + v[i].readyState + ')! Loop destroyed. Commencing 3050ms Slam.');" +
+							"          console.log('[PERMATA-SYNC] Session ' + " + currentSessionId + " + ' Target Acquired (readyState ' + v[i].readyState + ')! Loop destroyed. Commencing 3000ms Slam.');" +
 							"          v[i].pause();" +
 							"          setTimeout(function() {" +
 							"             if (window.__permataSwipeId === " + currentSessionId + ") {" +
 							"                 v[i].play();" +
-							"                 console.log('[PERMATA-SYNC] Session ' + " + currentSessionId + " Play Slam Executed.');" +
+							"                 console.log('[PERMATA-SYNC] Session ' + " + currentSessionId + " + ' Play Slam Executed.');" +
 							"             }" +
-							"          }, 3050);" + // SURGICAL TIMING: Exactly 3050ms Pause Slam
+							"          }, 3000);" + // SURGICAL TIMING: Exactly 3000ms Pause Slam
 							"          return;" +
 							"        }" +
 							"      }" +
-							"    }, 50);" + // HIGH REFLEX: Polling native DOM every 50ms
-							"    return 'Watcher Injected (300s Timeout | 3050ms Slam | 50ms Reflex)';" +
+							"    }, 10);" + // HYPER REFLEX: Polling native DOM every 10ms
+							"    return 'Watcher Injected (300s Timeout | 3000ms Slam | 10ms Reflex)';" +
 							"  } catch(e) { return 'ERROR: ' + e.message; }" +
 							"})();";
 
@@ -532,7 +531,7 @@ public class KeyEventHandler {
 							Log.i(hostTag + "[AUDIO_RESYNC] Fire-and-Forget JS Watcher Injected (Session " + currentSessionId + "). Response: " + value.replace("\"", ""));
 						}
 					});
-				}, 100); // PRE-COGNITIVE INJECTION: Inject at exactly 100ms (sweet spot UI balance)
+				}, 10); // BLEEDING EDGE INJECTION: Inject at exactly 10ms
 			}
 			// =========================================================================================
 
