@@ -484,6 +484,7 @@ public class KeyEventHandler {
 			// Uses readyState > 1 to attempt freezing the video BEFORE it can even begin playing.
 			// Executes a hard 3000ms Pause/Play slam (Zero millisecond buffer relative to DSP flush).
 			// Includes perfectly sanitized, native Chromium-to-Logcat Telemetry tracing.
+			// Contains the "Micro-Seek Nuke" to defeat Douyin MSE blobs prior to playback.
 			// =========================================================================================
 			if (isMediaHost) {
 				wv.postDelayed(() -> {
@@ -514,8 +515,9 @@ public class KeyEventHandler {
 							"          v[i].pause();" +
 							"          setTimeout(function() {" +
 							"             if (window.__permataSwipeId === " + currentSessionId + ") {" +
+							"                 try { v[i].currentTime = v[i].currentTime + 0.1; } catch(err) {}" + // <--- THE MICRO-SEEK NUKE
 							"                 v[i].play();" +
-							"                 console.log('[PERMATA-SYNC] Session ' + " + currentSessionId + " + ' Play Slam Executed.');" +
+							"                 console.log('[PERMATA-SYNC] Session ' + " + currentSessionId + " + ' Play Slam & Micro-Seek Executed.');" +
 							"             }" +
 							"          }, 3000);" + // SURGICAL TIMING: Exactly 3000ms Pause Slam
 							"          return;" +
