@@ -489,8 +489,8 @@ public class KeyEventHandler {
 			}, 220); 
 
 			// =========================================================================================
-			// [INVERSION OF CONTROL] FIRE-AND-FORGET JS WATCHER (BLEEDING EDGE LIMITS)
-			// Includes Memory-Locked targetVideo payload, 100ms Nuke, and Safe Static Telemetry.
+			// [INVERSION OF CONTROL] 3000ms SUPPRESSION FIELD & GEOMETRIC TARGETING
+			// Includes hardware playbackRate lock, 100ms Micro-Seek Nuke, completely clean telemetry.
 			// =========================================================================================
 			if (isMediaHost) {
 				wv.postDelayed(() -> {
@@ -500,42 +500,37 @@ public class KeyEventHandler {
 					String fireAndForgetJs = "(function() {" +
 							"  try {" +
 							"    window.__permataSwipeId = " + currentSessionId + ";" +
-							"    var attempts = 0;" +
 							"    var watcher = setInterval(function() {" +
 							"      if (window.__permataSwipeId !== " + currentSessionId + ") {" +
 							"        clearInterval(watcher);" +
-							"        return;" + // User swiped away. Die instantly without resuming playback.
-							"      }" +
-							"      attempts++;" +
-							"      if (attempts > 30000) {" +
-							"        clearInterval(watcher);" +
-							"        return;" + // 300s (5 Min) Doomsday timeout at 10ms ticks.
+							"        return;" + // User swiped again, kill this loop instantly.
 							"      }" +
 							"      var v = document.getElementsByTagName('video');" +
 							"      for(var i=0; i<v.length; i++) {" +
-							"        if(!v[i].paused && v[i].readyState > 1) {" + // AGGRESSIVE CATCH: readyState > 1
-							"          clearInterval(watcher);" +
-							"          var targetVideo = v[i];" + // FIX: Lock physical memory address
-							"          targetVideo.pause();" +
-							"          console.log('[PERMATA-SYNC] Pause Executed');" + // Safe static confirmation
-							"          setTimeout(function() {" +
-							"             if (window.__permataSwipeId === " + currentSessionId + ") {" +
-							"                 try { targetVideo.currentTime = targetVideo.currentTime + 0.1; } catch(err) {}" + // <--- THE MICRO-SEEK NUKE
-							"                 targetVideo.play();" +
-							"                 console.log('[PERMATA-SYNC] Play Slam Executed');" + // Safe static confirmation
-							"             }" +
-							"          }, 3000);" + // SURGICAL TIMING: Exactly 3000ms Pause Slam
-							"          return;" +
+							"        v[i].playbackRate = 0.0;" + // HARDWARE BRAKE: Neuter the video decoder
+							"        v[i].pause();" + // FORCE PAUSE: Prevent audio leak during SPA transition
+							"      }" +
+							"    }, 10);" + // SUPPRESSION FIELD: 100 sweeps per second
+							"    setTimeout(function() {" +
+							"      if (window.__permataSwipeId !== " + currentSessionId + ") return;" +
+							"      clearInterval(watcher);" + // LIFT SUPPRESSION FIELD at exactly 3000ms
+							"      var v = document.getElementsByTagName('video');" +
+							"      for(var i=0; i<v.length; i++) {" +
+							"        v[i].playbackRate = 1.0;" + // Restore normal hardware playback speed
+							"        if (v[i].offsetWidth > 0 && v[i].offsetHeight > 0) {" + // ISOLATE: Only target the visible video on screen
+							"          try { v[i].currentTime = v[i].currentTime + 0.1; } catch(err) {}" + // 100MS MICRO-SEEK NUKE
+							"          var playPromise = v[i].play();" + // PLAY SLAM
+							"          if (playPromise !== undefined) { playPromise.catch(function(e){}); }" + // Catch SPA play promise exceptions silently
 							"        }" +
 							"      }" +
-							"    }, 10);" + // HYPER REFLEX: Polling native DOM every 10ms
-							"    return 'Watcher Injected (Memory-Locked Payload)';" +
+							"    }, 3000);" + // SURGICAL TIMING: Perfectly matches your DSP anchor rebuild
+							"    return 'Suppression Field Injected';" +
 							"  } catch(e) { return 'ERROR: ' + e.message; }" +
 							"})();";
 
 					wv.evaluateJavascript(fireAndForgetJs, value -> {
 						if (value != null) {
-							Log.i(hostTag + "[AUDIO_RESYNC] Fire-and-Forget JS Watcher Injected (Session " + currentSessionId + "). Response: " + value.replace("\"", ""));
+							Log.i(hostTag + "[AUDIO_RESYNC] JS Suppression Field Deployed (Session " + currentSessionId + "). Response: " + value.replace("\"", ""));
 						}
 					});
 				}, 10); // BLEEDING EDGE INJECTION: Inject at exactly 10ms
