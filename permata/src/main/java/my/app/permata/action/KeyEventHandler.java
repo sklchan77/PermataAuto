@@ -479,16 +479,10 @@ public class KeyEventHandler {
 
 			// =========================================================================================
 			// [INVERSION OF CONTROL] FIRE-AND-FORGET JS WATCHER (BLEEDING EDGE LIMITS)
-			// Handoff injected at exactly 10ms (Pre-Cognitive).
-			// JS natively polls the DOM every 10ms (100 times a second).
-			// Uses readyState > 1 to attempt freezing the video BEFORE it can even begin playing.
-			// Executes a hard 3000ms Pause/Play slam (Zero millisecond buffer relative to DSP flush).
-			// Includes perfectly sanitized, native Chromium-to-Logcat Telemetry tracing.
-			// Contains the "Micro-Seek Nuke" to defeat Douyin MSE blobs prior to playback.
+			// Console.log telemetry completely stripped. Clean execution loop.
 			// =========================================================================================
 			if (isMediaHost) {
 				wv.postDelayed(() -> {
-					// Ensure we haven't swiped away before we even inject the script
 					if (swipeSessionId.get() != currentSessionId) return;
 
 					String fireAndForgetJs = "(function() {" +
@@ -498,33 +492,29 @@ public class KeyEventHandler {
 							"    var watcher = setInterval(function() {" +
 							"      if (window.__permataSwipeId !== " + currentSessionId + ") {" +
 							"        clearInterval(watcher);" +
-							"        console.log('[PERMATA-SYNC] Session ' + " + currentSessionId + " + ' killed by new swipe.');" +
-							"        return;" + // User swiped away. Die instantly without resuming playback.
+							"        return;" + 
 							"      }" +
 							"      attempts++;" +
 							"      if (attempts > 30000) {" +
 							"        clearInterval(watcher);" +
-							"        console.log('[PERMATA-SYNC] Session ' + " + currentSessionId + " + ' Doomsday Timeout (300s).');" +
-							"        return;" + // 300s (5 Min) Doomsday timeout at 10ms ticks.
+							"        return;" + 
 							"      }" +
 							"      var v = document.getElementsByTagName('video');" +
 							"      for(var i=0; i<v.length; i++) {" +
-							"        if(!v[i].paused && v[i].readyState > 1) {" + // AGGRESSIVE CATCH: readyState > 1
+							"        if(!v[i].paused && v[i].readyState > 1) {" + 
 							"          clearInterval(watcher);" +
-							"          console.log('[PERMATA-SYNC] Session ' + " + currentSessionId + " + ' Target Acquired (readyState ' + v[i].readyState + ')! Loop destroyed. Commencing 3000ms Slam.');" +
 							"          v[i].pause();" +
 							"          setTimeout(function() {" +
 							"             if (window.__permataSwipeId === " + currentSessionId + ") {" +
-							"                 try { v[i].currentTime = v[i].currentTime + 0.1; } catch(err) {}" + // <--- THE MICRO-SEEK NUKE
+							"                 try { v[i].currentTime = v[i].currentTime + 0.1; } catch(err) {}" + 
 							"                 v[i].play();" +
-							"                 console.log('[PERMATA-SYNC] Session ' + " + currentSessionId + " + ' Play Slam & Micro-Seek Executed.');" +
 							"             }" +
-							"          }, 3000);" + // SURGICAL TIMING: Exactly 3000ms Pause Slam
+							"          }, 3000);" + 
 							"          return;" +
 							"        }" +
 							"      }" +
-							"    }, 10);" + // HYPER REFLEX: Polling native DOM every 10ms
-							"    return 'Watcher Injected (300s Timeout | 3000ms Slam | 10ms Reflex)';" +
+							"    }, 10);" + 
+							"    return 'Watcher Injected (Clean Payload)';" +
 							"  } catch(e) { return 'ERROR: ' + e.message; }" +
 							"})();";
 
@@ -533,7 +523,7 @@ public class KeyEventHandler {
 							Log.i(hostTag + "[AUDIO_RESYNC] Fire-and-Forget JS Watcher Injected (Session " + currentSessionId + "). Response: " + value.replace("\"", ""));
 						}
 					});
-				}, 10); // BLEEDING EDGE INJECTION: Inject at exactly 10ms
+				}, 10);
 			}
 			// =========================================================================================
 
