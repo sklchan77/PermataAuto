@@ -490,7 +490,7 @@ public class KeyEventHandler {
 
 			// =========================================================================================
 			// [INVERSION OF CONTROL] 3000ms SUPPRESSION FIELD & GEOMETRIC TARGETING
-			// Includes hardware playbackRate lock, 100ms Micro-Seek Nuke, completely clean telemetry.
+			// Includes hardware playbackRate lock, 100ms Micro-Seek Nuke, and 200ms Audio Gate
 			// =========================================================================================
 			if (isMediaHost) {
 				wv.postDelayed(() -> {
@@ -503,27 +503,38 @@ public class KeyEventHandler {
 							"    var watcher = setInterval(function() {" +
 							"      if (window.__permataSwipeId !== " + currentSessionId + ") {" +
 							"        clearInterval(watcher);" +
-							"        return;" + // User swiped again, kill this loop instantly.
+							"        return;" + 
 							"      }" +
 							"      var v = document.getElementsByTagName('video');" +
 							"      for(var i=0; i<v.length; i++) {" +
-							"        v[i].playbackRate = 0.0;" + // HARDWARE BRAKE: Neuter the video decoder
-							"        v[i].pause();" + // FORCE PAUSE: Prevent audio leak during SPA transition
+							"        v[i].playbackRate = 0.0;" + 
+							"        v[i].muted = true;" + // AUDIO LOCK: Mute absolutely everything
+							"        v[i].pause();" + 
 							"      }" +
-							"    }, 10);" + // SUPPRESSION FIELD: 100 sweeps per second
+							"    }, 10);" + // SUPPRESSION FIELD
 							"    setTimeout(function() {" +
 							"      if (window.__permataSwipeId !== " + currentSessionId + ") return;" +
-							"      clearInterval(watcher);" + // LIFT SUPPRESSION FIELD at exactly 3000ms
+							"      clearInterval(watcher);" + 
 							"      var v = document.getElementsByTagName('video');" +
 							"      for(var i=0; i<v.length; i++) {" +
-							"        v[i].playbackRate = 1.0;" + // Restore normal hardware playback speed
-							"        if (v[i].offsetWidth > 0 && v[i].offsetHeight > 0) {" + // ISOLATE: Only target the visible video on screen
-							"          try { v[i].currentTime = v[i].currentTime + 0.1; } catch(err) {}" + // 100MS MICRO-SEEK NUKE
-							"          var playPromise = v[i].play();" + // PLAY SLAM
-							"          if (playPromise !== undefined) { playPromise.catch(function(e){}); }" + // Catch SPA play promise exceptions silently
+							"        if (v[i].offsetWidth > 0 && v[i].offsetHeight > 0) {" + 
+							"          v[i].playbackRate = 1.0;" + 
+							"          v[i].muted = true;" + // AUDIO GATE: Keep it muted during the Play Slam
+							"          try { v[i].currentTime = v[i].currentTime + 0.1; } catch(err) {}" + 
+							"          var playPromise = v[i].play();" + 
+							"          if (playPromise !== undefined) { playPromise.catch(function(e){}); }" + 
+							"          var activeVid = v[i];" + // Lock the memory address for the delay
+							"          setTimeout(function() {" +
+							"             if (window.__permataSwipeId === " + currentSessionId + ") {" +
+							"                 activeVid.muted = false;" + // LIFT AUDIO GATE: Unmute 200ms after playback starts
+							"             }" +
+							"          }, 200);" + // 200ms Mute Shield
+							"        } else {" +
+							"          v[i].muted = true;" + // Keep old/hidden SPA videos permanently muted
+							"          v[i].pause();" +
 							"        }" +
 							"      }" +
-							"    }, 3000);" + // SURGICAL TIMING: Perfectly matches your DSP anchor rebuild
+							"    }, 3000);" + // DSP REBUILD MATCH
 							"    return 'Suppression Field Injected';" +
 							"  } catch(e) { return 'ERROR: ' + e.message; }" +
 							"})();";
