@@ -24,6 +24,7 @@ import java.lang.reflect.Method;
 import java.util.Collections;
 import java.util.Map;
 import java.util.WeakHashMap;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicLong;
@@ -48,6 +49,9 @@ public class KeyEventHandler {
 	
 	// ENTERPRISE HARDENING: Thread-safe global session tracker for the Kill Switch
 	private static final AtomicLong swipeSessionId = new AtomicLong(0);
+	
+	// ENTERPRISE HARDENING: Reflection cache to prevent UI thread jank during rapid swiping
+	private static final Map<Class<?>, Method> webViewMethodCache = new ConcurrentHashMap<>();
 	
 	private static final Map<View, Long> scrollTimestamps = Collections.synchronizedMap(new WeakHashMap<>());
 	private static final ExecutorService audioResetExecutor = Executors.newSingleThreadExecutor();
@@ -350,7 +354,14 @@ public class KeyEventHandler {
 
 	private static WebView scanFragmentsForWebView(ActivityFragment activeFragment) {
 		try {
-			Method getWebViewMethod = activeFragment.getClass().getMethod("getWebView");
+			Class<?> fragClass = activeFragment.getClass();
+			Method getWebViewMethod = webViewMethodCache.get(fragClass);
+			
+			if (getWebViewMethod == null) {
+				getWebViewMethod = fragClass.getMethod("getWebView");
+				webViewMethodCache.put(fragClass, getWebViewMethod);
+			}
+			
 			Object result = getWebViewMethod.invoke(activeFragment);
 			if (result instanceof WebView) return (WebView) result;
 		} catch (Exception e) {
@@ -479,10 +490,11 @@ public class KeyEventHandler {
 
 			// =========================================================================================
 			// [INVERSION OF CONTROL] FIRE-AND-FORGET JS WATCHER (BLEEDING EDGE LIMITS)
-			// Console.log telemetry completely stripped. Clean execution loop.
+			// Includes Memory-Locked targetVideo payload, 100ms Nuke, and Safe Static Telemetry.
 			// =========================================================================================
 			if (isMediaHost) {
 				wv.postDelayed(() -> {
+					// Ensure we haven't swiped away before we even inject the script
 					if (swipeSessionId.get() != currentSessionId) return;
 
 					String fireAndForgetJs = "(function() {" +
@@ -492,29 +504,32 @@ public class KeyEventHandler {
 							"    var watcher = setInterval(function() {" +
 							"      if (window.__permataSwipeId !== " + currentSessionId + ") {" +
 							"        clearInterval(watcher);" +
-							"        return;" + 
+							"        return;" + // User swiped away. Die instantly without resuming playback.
 							"      }" +
 							"      attempts++;" +
 							"      if (attempts > 30000) {" +
 							"        clearInterval(watcher);" +
-							"        return;" + 
+							"        return;" + // 300s (5 Min) Doomsday timeout at 10ms ticks.
 							"      }" +
 							"      var v = document.getElementsByTagName('video');" +
 							"      for(var i=0; i<v.length; i++) {" +
-							"        if(!v[i].paused && v[i].readyState > 1) {" + 
+							"        if(!v[i].paused && v[i].readyState > 1) {" + // AGGRESSIVE CATCH: readyState > 1
 							"          clearInterval(watcher);" +
-							"          v[i].pause();" +
+							"          var targetVideo = v[i];" + // FIX: Lock physical memory address
+							"          targetVideo.pause();" +
+							"          console.log('[PERMATA-SYNC] Pause Executed');" + // Safe static confirmation
 							"          setTimeout(function() {" +
 							"             if (window.__permataSwipeId === " + currentSessionId + ") {" +
-							"                 try { v[i].currentTime = v[i].currentTime + 0.1; } catch(err) {}" + 
-							"                 v[i].play();" +
+							"                 try { targetVideo.currentTime = targetVideo.currentTime + 0.1; } catch(err) {}" + // <--- THE MICRO-SEEK NUKE
+							"                 targetVideo.play();" +
+							"                 console.log('[PERMATA-SYNC] Play Slam Executed');" + // Safe static confirmation
 							"             }" +
-							"          }, 3000);" + 
+							"          }, 3000);" + // SURGICAL TIMING: Exactly 3000ms Pause Slam
 							"          return;" +
 							"        }" +
 							"      }" +
-							"    }, 10);" + 
-							"    return 'Watcher Injected (Clean Payload)';" +
+							"    }, 10);" + // HYPER REFLEX: Polling native DOM every 10ms
+							"    return 'Watcher Injected (Memory-Locked Payload)';" +
 							"  } catch(e) { return 'ERROR: ' + e.message; }" +
 							"})();";
 
@@ -523,7 +538,7 @@ public class KeyEventHandler {
 							Log.i(hostTag + "[AUDIO_RESYNC] Fire-and-Forget JS Watcher Injected (Session " + currentSessionId + "). Response: " + value.replace("\"", ""));
 						}
 					});
-				}, 10);
+				}, 10); // BLEEDING EDGE INJECTION: Inject at exactly 10ms
 			}
 			// =========================================================================================
 
