@@ -489,8 +489,8 @@ public class KeyEventHandler {
 			}, 220); 
 
 			// =========================================================================================
-			// [INVERSION OF CONTROL] 3000ms SUPPRESSION FIELD & GEOMETRIC TARGETING
-			// Includes hardware playbackRate lock, 100ms Micro-Seek Nuke, and 200ms Audio Gate
+			// [INVERSION OF CONTROL] 3000ms SUPPRESSION FIELD & 3-SECOND UNMUTE WATCHDOG
+			// Includes hardware playbackRate lock, 100ms Micro-Seek Nuke, and dynamic Unmute recovery.
 			// =========================================================================================
 			if (isMediaHost) {
 				wv.postDelayed(() -> {
@@ -523,11 +523,20 @@ public class KeyEventHandler {
 							"          try { v[i].currentTime = v[i].currentTime + 0.1; } catch(err) {}" + 
 							"          var playPromise = v[i].play();" + 
 							"          if (playPromise !== undefined) { playPromise.catch(function(e){}); }" + 
-							"          var activeVid = v[i];" + // Lock the memory address for the delay
+							"          var activeVid = v[i];" + // Lock the memory address
 							"          setTimeout(function() {" +
-							"             if (window.__permataSwipeId === " + currentSessionId + ") {" +
-							"                 activeVid.muted = false;" + // LIFT AUDIO GATE: Unmute 200ms after playback starts
-							"             }" +
+							"             if (window.__permataSwipeId !== " + currentSessionId + ") return;" +
+							"             var unmuteChecks = 0;" +
+							"             var unmuteWatchdog = setInterval(function() {" + // THE 3-SECOND UNMUTE WATCHDOG
+							"                 if (window.__permataSwipeId !== " + currentSessionId + " || !document.body.contains(activeVid) || unmuteChecks >= 30) {" +
+							"                     clearInterval(unmuteWatchdog);" + // Self-destruct after 3s (30 checks) or if media changed
+							"                     return;" +
+							"                 }" +
+							"                 if (activeVid.muted) {" +
+							"                     activeVid.muted = false;" + // Forcefully lift mute
+							"                 }" +
+							"                 unmuteChecks++;" +
+							"             }, 100);" + // 100ms interval
 							"          }, 200);" + // 200ms Mute Shield
 							"        } else {" +
 							"          v[i].muted = true;" + // Keep old/hidden SPA videos permanently muted
