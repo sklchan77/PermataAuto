@@ -489,8 +489,8 @@ public class KeyEventHandler {
 			}, 220); 
 
 			// =========================================================================================
-			// [INVERSION OF CONTROL] 3000ms SUPPRESSION FIELD & 3-SECOND UNMUTE WATCHDOG
-			// Includes hardware playbackRate lock, 100ms Micro-Seek Nuke, and dynamic Unmute recovery.
+			// [INVERSION OF CONTROL] 3000ms BLANKET SUPPRESSION FIELD & BLANKET UNMUTE WATCHDOG
+			// Safely hands visibility/cleanup management back to Douyin's IntersectionObserver
 			// =========================================================================================
 			if (isMediaHost) {
 				wv.postDelayed(() -> {
@@ -517,34 +517,28 @@ public class KeyEventHandler {
 							"      clearInterval(watcher);" + 
 							"      var v = document.getElementsByTagName('video');" +
 							"      for(var i=0; i<v.length; i++) {" +
-							"        if (v[i].offsetWidth > 0 && v[i].offsetHeight > 0) {" + 
-							"          v[i].playbackRate = 1.0;" + 
-							"          v[i].muted = true;" + // AUDIO GATE: Keep it muted during the Play Slam
-							"          try { v[i].currentTime = v[i].currentTime + 0.1; } catch(err) {}" + 
-							"          var playPromise = v[i].play();" + 
-							"          if (playPromise !== undefined) { playPromise.catch(function(e){}); }" + 
-							"          var activeVid = v[i];" + // Lock the memory address
-							"          setTimeout(function() {" +
-							"             if (window.__permataSwipeId !== " + currentSessionId + ") return;" +
-							"             var unmuteChecks = 0;" +
-							"             var unmuteWatchdog = setInterval(function() {" + // THE 3-SECOND UNMUTE WATCHDOG
-							"                 if (window.__permataSwipeId !== " + currentSessionId + " || !document.body.contains(activeVid) || unmuteChecks >= 30) {" +
-							"                     clearInterval(unmuteWatchdog);" + // Self-destruct after 3s (30 checks) or if media changed
-							"                     return;" +
-							"                 }" +
-							"                 if (activeVid.muted) {" +
-							"                     activeVid.muted = false;" + // Forcefully lift mute
-							"                 }" +
-							"                 unmuteChecks++;" +
-							"             }, 100);" + // 100ms interval
-							"          }, 200);" + // 200ms Mute Shield
-							"        } else {" +
-							"          v[i].muted = true;" + // Keep old/hidden SPA videos permanently muted
-							"          v[i].pause();" +
-							"        }" +
+							"        v[i].playbackRate = 1.0;" + 
+							"        try { v[i].currentTime = v[i].currentTime + 0.1; } catch(err) {}" + // BLANKET NUKE
+							"        var playPromise = v[i].play();" + // BLANKET SLAM
+							"        if (playPromise !== undefined) { playPromise.catch(function(e){}); }" + 
 							"      }" +
+							"      setTimeout(function() {" +
+							"         if (window.__permataSwipeId !== " + currentSessionId + ") return;" +
+							"         var unmuteChecks = 0;" +
+							"         var unmuteWatchdog = setInterval(function() {" + // THE BLANKET UNMUTE WATCHDOG
+							"             if (window.__permataSwipeId !== " + currentSessionId + " || unmuteChecks >= 30) {" +
+							"                 clearInterval(unmuteWatchdog);" + // Self-destruct safely after 3 seconds
+							"                 return;" +
+							"             }" +
+							"             var vids = document.getElementsByTagName('video');" +
+							"             for(var j=0; j<vids.length; j++) {" +
+							"                 if (vids[j].muted) vids[j].muted = false;" + // FORCE UNMUTE ALL
+							"             }" +
+							"             unmuteChecks++;" +
+							"         }, 100);" + // Check every 100ms
+							"      }, 200);" + // 200ms Audio Mute Shield
 							"    }, 3000);" + // DSP REBUILD MATCH
-							"    return 'Suppression Field Injected';" +
+							"    return 'Blanket Suppression Field Injected';" +
 							"  } catch(e) { return 'ERROR: ' + e.message; }" +
 							"})();";
 
