@@ -101,7 +101,7 @@ public class KeyEventHandler {
 			"}; " +
 			"const registry=[" +
 			"    {name:\"douyin\",match:/douyin/,execute:function(){" +
-			"      var dyFullscreenCss = ' video, xg-video-container, xg-video-wrapper { position: fixed !important; top: 0 !important; left: 0 !important; width: 100vw !important; height: 100vh !important; z-index: 999999 !important; object-fit: cover !important; background-color: black !important; pointer-events: none !important; } '; " +
+			"      var dyFullscreenCss = ' video, xg-video-container, xg-video-wrapper { position: fixed !important; top: 0 !important; left: 0 !important; width: 100vw !important; height: 100vh !important; z-index: 999999 !important; object-fit: contain !important; background-color: black !important; pointer-events: none !important; } '; " +
 			"      return 'DOUYIN: ' + injectGlobalWipe() + ' | ' + injectSpecificWipe(dyFullscreenCss, 'permata-dy-fullscreen'); " +
 			"    }}," +
 			"    {name:\"tiktok\",match:/tiktok/,execute:function(){" +
