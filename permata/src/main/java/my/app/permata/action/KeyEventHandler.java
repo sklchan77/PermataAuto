@@ -489,117 +489,58 @@ public class KeyEventHandler {
 			}, 220); 
 
 			// =========================================================================================
-			// [INVERSION OF CONTROL] 3000ms SUPPRESSION FIELD & DYNAMIC UNMUTE WATCHDOG
-			// Splits payload: "Targeted Unmute" for Instagram, "Blanket Unmute" for all other hosts
+			// [INVERSION OF CONTROL] 3000ms BLANKET SUPPRESSION FIELD & BLANKET UNMUTE WATCHDOG
+			// Safely hands visibility/cleanup management back to Douyin's IntersectionObserver
 			// =========================================================================================
 			if (isMediaHost) {
 				wv.postDelayed(() -> {
+					// Ensure we haven't swiped away before we even inject the script
 					if (swipeSessionId.get() != currentSessionId) return;
 
-					String fireAndForgetJs;
-					
-					if (isInstagram) {
-						// INSTAGRAM SPECIFIC: Only unmute the video with the largest on-screen bounding box area
-						fireAndForgetJs = "(function() {" +
-								"  try {" +
-								"    window.__permataSwipeId = " + currentSessionId + ";" +
-								"    var watcher = setInterval(function() {" +
-								"      if (window.__permataSwipeId !== " + currentSessionId + ") {" +
-								"        clearInterval(watcher);" +
-								"        return;" + 
-								"      }" +
-								"      var v = document.getElementsByTagName('video');" +
-								"      for(var i=0; i<v.length; i++) {" +
-								"        v[i].playbackRate = 0.0;" + 
-								"        v[i].muted = true;" + // AUDIO LOCK: Mute absolutely everything
-								"        v[i].pause();" + 
-								"      }" +
-								"    }, 10);" + // SUPPRESSION FIELD
-								"    setTimeout(function() {" +
-								"      if (window.__permataSwipeId !== " + currentSessionId + ") return;" +
-								"      clearInterval(watcher);" + 
-								"      var v = document.getElementsByTagName('video');" +
-								"      var activeVid = null;" +
-								"      var maxArea = 0;" +
-								"      for(var i=0; i<v.length; i++) {" +
-								"        var rect = v[i].getBoundingClientRect();" +
-								"        var vH = Math.min(rect.bottom, window.innerHeight) - Math.max(rect.top, 0);" +
-								"        var vW = Math.min(rect.right, window.innerWidth) - Math.max(rect.left, 0);" +
-								"        var area = (vH > 0 && vW > 0) ? (vH * vW) : 0;" +
-								"        if (area > maxArea) {" +
-								"          maxArea = area;" +
-								"          activeVid = v[i];" + // Lock targeting onto the most visible video
-								"        }" +
-								"      }" +
-								"      if (activeVid) {" +
-								"        activeVid.playbackRate = 1.0;" + 
-								"        try { activeVid.currentTime = activeVid.currentTime + 0.1; } catch(err) {}" + 
-								"        var playPromise = activeVid.play();" + 
-								"        if (playPromise !== undefined) { playPromise.catch(function(e){}); }" + 
-								"        setTimeout(function() {" +
-								"           if (window.__permataSwipeId !== " + currentSessionId + ") return;" +
-								"           var unmuteChecks = 0;" +
-								"           var unmuteWatchdog = setInterval(function() {" + // IG TARGETED UNMUTE WATCHDOG
-								"               if (window.__permataSwipeId !== " + currentSessionId + " || unmuteChecks >= 30) {" +
-								"                   clearInterval(unmuteWatchdog);" + // Self-destruct safely after 3 seconds
-								"                   return;" +
-								"               }" +
-								"               if (activeVid.muted) activeVid.muted = false;" + // ONLY unmute the targeted video
-								"               unmuteChecks++;" +
-								"           }, 100);" + // Check every 100ms
-								"        }, 200);" + // 200ms Audio Mute Shield
-								"      }" +
-								"    }, 3000);" + // DSP REBUILD MATCH
-								"    return 'IG Targeted Suppression Field Injected';" +
-								"  } catch(e) { return 'ERROR: ' + e.message; }" +
-								"})();";
-					} else {
-						// DOUYIN / TIKTOK / GLOBAL: Blanket Play & Blanket Unmute to exploit native IntersectionObserver
-						fireAndForgetJs = "(function() {" +
-								"  try {" +
-								"    window.__permataSwipeId = " + currentSessionId + ";" +
-								"    var watcher = setInterval(function() {" +
-								"      if (window.__permataSwipeId !== " + currentSessionId + ") {" +
-								"        clearInterval(watcher);" +
-								"        return;" + 
-								"      }" +
-								"      var v = document.getElementsByTagName('video');" +
-								"      for(var i=0; i<v.length; i++) {" +
-								"        v[i].playbackRate = 0.0;" + 
-								"        v[i].muted = true;" + // AUDIO LOCK: Mute absolutely everything
-								"        v[i].pause();" + 
-								"      }" +
-								"    }, 10);" + // SUPPRESSION FIELD
-								"    setTimeout(function() {" +
-								"      if (window.__permataSwipeId !== " + currentSessionId + ") return;" +
-								"      clearInterval(watcher);" + 
-								"      var v = document.getElementsByTagName('video');" +
-								"      for(var i=0; i<v.length; i++) {" +
-								"        v[i].playbackRate = 1.0;" + 
-								"        try { v[i].currentTime = v[i].currentTime + 0.1; } catch(err) {}" + // BLANKET NUKE
-								"        var playPromise = v[i].play();" + // BLANKET SLAM
-								"        if (playPromise !== undefined) { playPromise.catch(function(e){}); }" + 
-								"      }" +
-								"      setTimeout(function() {" +
-								"         if (window.__permataSwipeId !== " + currentSessionId + ") return;" +
-								"         var unmuteChecks = 0;" +
-								"         var unmuteWatchdog = setInterval(function() {" + // GLOBAL BLANKET UNMUTE WATCHDOG
-								"             if (window.__permataSwipeId !== " + currentSessionId + " || unmuteChecks >= 30) {" +
-								"                 clearInterval(unmuteWatchdog);" + // Self-destruct safely after 3 seconds
-								"                 return;" +
-								"             }" +
-								"             var vids = document.getElementsByTagName('video');" +
-								"             for(var j=0; j<vids.length; j++) {" +
-								"                 if (vids[j].muted) vids[j].muted = false;" + // FORCE UNMUTE ALL
-								"             }" +
-								"             unmuteChecks++;" +
-								"         }, 100);" + // Check every 100ms
-								"      }, 200);" + // 200ms Audio Mute Shield
-								"    }, 3000);" + // DSP REBUILD MATCH
-								"    return 'Global Blanket Suppression Field Injected';" +
-								"  } catch(e) { return 'ERROR: ' + e.message; }" +
-								"})();";
-					}
+					String fireAndForgetJs = "(function() {" +
+							"  try {" +
+							"    window.__permataSwipeId = " + currentSessionId + ";" +
+							"    var watcher = setInterval(function() {" +
+							"      if (window.__permataSwipeId !== " + currentSessionId + ") {" +
+							"        clearInterval(watcher);" +
+							"        return;" + 
+							"      }" +
+							"      var v = document.getElementsByTagName('video');" +
+							"      for(var i=0; i<v.length; i++) {" +
+							"        v[i].playbackRate = 0.0;" + 
+							"        v[i].muted = true;" + // AUDIO LOCK: Mute absolutely everything
+							"        v[i].pause();" + 
+							"      }" +
+							"    }, 10);" + // SUPPRESSION FIELD
+							"    setTimeout(function() {" +
+							"      if (window.__permataSwipeId !== " + currentSessionId + ") return;" +
+							"      clearInterval(watcher);" + 
+							"      var v = document.getElementsByTagName('video');" +
+							"      for(var i=0; i<v.length; i++) {" +
+							"        v[i].playbackRate = 1.0;" + 
+							"        try { v[i].currentTime = v[i].currentTime + 0.1; } catch(err) {}" + // BLANKET NUKE
+							"        var playPromise = v[i].play();" + // BLANKET SLAM
+							"        if (playPromise !== undefined) { playPromise.catch(function(e){}); }" + 
+							"      }" +
+							"      setTimeout(function() {" +
+							"         if (window.__permataSwipeId !== " + currentSessionId + ") return;" +
+							"         var unmuteChecks = 0;" +
+							"         var unmuteWatchdog = setInterval(function() {" + // THE BLANKET UNMUTE WATCHDOG
+							"             if (window.__permataSwipeId !== " + currentSessionId + " || unmuteChecks >= 30) {" +
+							"                 clearInterval(unmuteWatchdog);" + // Self-destruct safely after 3 seconds
+							"                 return;" +
+							"             }" +
+							"             var vids = document.getElementsByTagName('video');" +
+							"             for(var j=0; j<vids.length; j++) {" +
+							"                 if (vids[j].muted) vids[j].muted = false;" + // FORCE UNMUTE ALL
+							"             }" +
+							"             unmuteChecks++;" +
+							"         }, 100);" + // Check every 100ms
+							"      }, 200);" + // 200ms Audio Mute Shield
+							"    }, 3000);" + // DSP REBUILD MATCH
+							"    return 'Blanket Suppression Field Injected';" +
+							"  } catch(e) { return 'ERROR: ' + e.message; }" +
+							"})();";
 
 					wv.evaluateJavascript(fireAndForgetJs, value -> {
 						if (value != null) {
