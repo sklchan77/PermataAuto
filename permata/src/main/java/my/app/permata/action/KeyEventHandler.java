@@ -100,10 +100,10 @@ public class KeyEventHandler {
 			"  return 'Custom CSS (' + id + ') Already Exists.'; " +
 			"}; " +
 			"const registry=[" +
-			"    {name:\"douyin\",match:/douyin\\.com/,execute:function(){" +
+			"    {name:\"douyin\",match:/douyin/,execute:function(){" +
 			"      return 'DOUYIN: Standard media swipe executed. Auto-UI features disabled per user request.'; " +
 			"    }}," +
-			"    {name:\"tiktok\",match:/tiktok\\.com/,execute:function(){" +
+			"    {name:\"tiktok\",match:/tiktok/,execute:function(){" +
 			"      var ttCss = ' [data-e2e=\"video-author-avatar\"], [data-e2e=\"nav-login\"], [class*=\"DivHeaderContainer\"], [class*=\"DivSideNavContainer\"], [class*=\"DivBottomContainer\"] { display: none !important; } [class*=\"DivMediaCardOverlay\"], [class*=\"DivOverlayBottomContent\"], [class*=\"DivCreatorInfoContainer\"], [class*=\"BasePlayerContainer\"]::after { pointer-events: none !important; } '; " +
 			"      return 'TIKTOK: ' + injectGlobalWipe() + ' | ' + injectSpecificWipe(ttCss, 'permata-tt-css'); " +
 			"    }}," +
@@ -111,21 +111,21 @@ public class KeyEventHandler {
 			"      var igCss = ' header, nav, [role=\"navigation\"] { display: none !important; pointer-events: none !important; opacity: 0 !important; visibility: hidden !important; } body, html { overflow: auto !important; touch-action: pan-y !important; } '; " +
 			"      return 'INSTAGRAM: ' + injectSpecificWipe(igCss, 'permata-ig-css'); " +
 			"    }}," +
-			"    {name:\"youtube\",match:/(youtube\\.com|youtu\\.be)/,execute:function(){" +
+			"    {name:\"youtube\",match:/(youtube|youtu)/,execute:function(){" +
 			"      let ad=document.querySelector('.ytp-skip-ad-button,.ytp-ad-skip-button,.ytp-skip-button');if(ad)ad.click();" +
 			"      let dm=document.querySelectorAll('yt-button-renderer[id=\"dismiss-button\"],[aria-label=\"No thanks\"],[aria-label=\"Dismiss\"],.yt-spec-button-shape-next--text');" +
 			"      dm.forEach(b=>{if(b.textContent&&(b.textContent.includes('No thanks')||b.textContent.includes('Skip')||b.textContent.includes('Dismiss')))b.click();});" +
 			"      return 'YOUTUBE: Handled standard media skip.'; " +
 			"    }}," +
-			"    {name:\"bilibili\",match:/bilibili\\.com/,execute:function(){" +
+			"    {name:\"bilibili\",match:/bilibili/,execute:function(){" +
 			"      let pl=document.querySelector('.mplayer-play');if(pl&&pl.classList.contains('play'))pl.click();" +
 			"      return 'BILIBILI: ' + injectGlobalWipe(); " +
 			"    }}," +
-			"    {name:\"reddit\",match:/reddit\\.com/,execute:function(){" +
+			"    {name:\"reddit\",match:/reddit/,execute:function(){" +
 			"      if(document.body&&window.getComputedStyle(document.body).overflow==='hidden') document.body.style.overflow='auto';" +
 			"      return 'REDDIT: ' + injectGlobalWipe(); " +
 			"    }}," +
-			"    {name:\"moj\",match:/(mojapp\\.in|sharechat\\.com)/,execute:function(){" +
+			"    {name:\"moj\",match:/(mojapp|sharechat)/,execute:function(){" +
 			"      if(document.body) document.body.style.overflow='auto';" +
 			"      return 'MOJ: ' + injectGlobalWipe(); " +
 			"    }}" +
@@ -275,10 +275,10 @@ public class KeyEventHandler {
 										} catch (Exception ignored) {}
 									}
 									final String hostTag = "[Host: " + host + "] ";
-									Log.i("[DETECTION] " + hostTag + "Resolved. isMediaHost: " + isMediaHost + " | isSnapFeedHost: " + isSnapFeedHost + " | isTikTok: " + isTikTok);
+									Log.i("[DETECTION] " + hostTag + "Resolved. isMediaHost: " + isMediaHost + " | isSnapFeedHost: " + isSnapFeedHost + " | isTikTok: " + isTikTok + " | isDouyin: " + isDouyin);
 
 									View touchTargetView = findTopmostTouchTarget(finalTargetActivity, resolvedWebView);
-									smartScrollWebView(resolvedWebView, touchTargetView, !isNext, hostTag, isMediaHost, isInstagram, isSnapFeedHost, isTikTok);
+									smartScrollWebView(resolvedWebView, touchTargetView, !isNext, hostTag, isMediaHost, isInstagram, isSnapFeedHost, isTikTok, isDouyin);
 								} else {
 									Log.i("[DETECTION] WebBrowser is hidden or out of focus. Allowing default media propagation.");
 								}
@@ -463,7 +463,58 @@ public class KeyEventHandler {
 		return null;
 	}
 
-	private static void smartScrollWebView(final WebView wv, final View touchTarget, boolean up, final String hostTag, boolean isMediaHost, boolean isInstagram, boolean isSnapFeedHost, boolean isTikTok) {
+	// ENTERPRISE HARDENING: Centralized MotionEvent Dispatcher. Eliminates redundancy and simplifies future touch adjustments.
+	private static void executeHardwareTouchSwipe(final View touchTarget, boolean up, final String hostTag, final String contextLog) {
+		final float actionX = touchTarget.getWidth() * 0.50f; 
+		final float centerY = touchTarget.getHeight() / 2f;
+		
+		float span = touchTarget.getHeight() * 0.60f; 
+		final float yStart = up ? (centerY - span / 2f) : (centerY + span / 2f);
+		final float yEnd = up ? (centerY + span / 2f) : (centerY - span / 2f);
+
+		try {
+			final long startTime = android.os.SystemClock.uptimeMillis();
+			
+			MotionEvent eventDown = MotionEvent.obtain(startTime, startTime, MotionEvent.ACTION_DOWN, actionX, yStart, 0);
+			eventDown.setSource(InputDevice.SOURCE_TOUCHSCREEN); 
+			touchTarget.dispatchTouchEvent(eventDown);
+			eventDown.recycle();
+
+			final int stepCount = 13; 
+			final long swipeDuration = 170; 
+			
+			for (int i = 1; i <= stepCount; i++) {
+				final float linearT = (float) i / stepCount;
+				final float currentY = yStart + (yEnd - yStart) * linearT;
+				final long moveTime = startTime + (long) (swipeDuration * linearT);
+				
+				touchTarget.postDelayed(() -> {
+					if (touchTarget.isAttachedToWindow() && touchTarget.getVisibility() == View.VISIBLE) {
+						MotionEvent eventMove = MotionEvent.obtain(startTime, moveTime, MotionEvent.ACTION_MOVE, actionX, currentY, 0);
+						eventMove.setSource(InputDevice.SOURCE_TOUCHSCREEN); 
+						touchTarget.dispatchTouchEvent(eventMove);
+						eventMove.recycle();
+					}
+				}, (long) (swipeDuration * linearT));
+			}
+
+			touchTarget.postDelayed(() -> {
+				if (touchTarget.isAttachedToWindow() && touchTarget.getVisibility() == View.VISIBLE) {
+					long endTime = startTime + swipeDuration + 10;
+					MotionEvent eventUp = MotionEvent.obtain(startTime, endTime, MotionEvent.ACTION_UP, actionX, yEnd, 0);
+					eventUp.setSource(InputDevice.SOURCE_TOUCHSCREEN); 
+					touchTarget.dispatchTouchEvent(eventUp);
+					eventUp.recycle();
+					Log.i("[REACTION] " + hostTag + contextLog + " Concluded (ACTION_UP). Duration: " + swipeDuration + "ms | Steps: " + stepCount);
+				}
+			}, swipeDuration + 10);
+
+		} catch (Exception e) {
+			Log.e(e, "[REACTION] " + hostTag + contextLog + " failed with Exception.");
+		}
+	}
+
+	private static void smartScrollWebView(final WebView wv, final View touchTarget, boolean up, final String hostTag, boolean isMediaHost, boolean isInstagram, boolean isSnapFeedHost, boolean isTikTok, boolean isDouyin) {
 		if (wv == null || touchTarget == null || !touchTarget.isAttachedToWindow() || touchTarget.getWidth() <= 0 || touchTarget.getHeight() <= 0) return;
 
 		long now = android.os.SystemClock.uptimeMillis();
@@ -498,7 +549,53 @@ public class KeyEventHandler {
 
 					String fireAndForgetJs;
 					
-					if (isInstagram) {
+					if (isDouyin) {
+						// DOUYIN STANDALONE: Blanket Play & Blanket Unmute isolated strictly for Douyin
+						fireAndForgetJs = "(function() {" +
+								"  try {" +
+								"    window.__permataSwipeId = " + currentSessionId + ";" +
+								"    var watcher = setInterval(function() {" +
+								"      if (window.__permataSwipeId !== " + currentSessionId + ") {" +
+								"        clearInterval(watcher);" +
+								"        return;" + 
+								"      }" +
+								"      var v = document.getElementsByTagName('video');" +
+								"      for(var i=0; i<v.length; i++) {" +
+								"        v[i].playbackRate = 0.0;" + 
+								"        v[i].muted = true;" + 
+								"        v[i].pause();" + 
+								"      }" +
+								"    }, 10);" + 
+								"    setTimeout(function() {" +
+								"      if (window.__permataSwipeId !== " + currentSessionId + ") return;" +
+								"      clearInterval(watcher);" + 
+								"      var v = document.getElementsByTagName('video');" +
+								"      for(var i=0; i<v.length; i++) {" +
+								"        v[i].playbackRate = 1.0;" + 
+								"        try { v[i].currentTime = v[i].currentTime + 0.1; } catch(err) {}" + 
+								"        var playPromise = v[i].play();" + 
+								"        if (playPromise !== undefined) { playPromise.catch(function(e){}); }" + 
+								"      }" +
+								"      setTimeout(function() {" +
+								"         if (window.__permataSwipeId !== " + currentSessionId + ") return;" +
+								"         var unmuteChecks = 0;" +
+								"         var unmuteWatchdog = setInterval(function() {" + 
+								"             if (window.__permataSwipeId !== " + currentSessionId + " || unmuteChecks >= 30) {" +
+								"                 clearInterval(unmuteWatchdog);" + 
+								"                 return;" +
+								"             }" +
+								"             var vids = document.getElementsByTagName('video');" +
+								"             for(var j=0; j<vids.length; j++) {" +
+								"                 if (vids[j].muted) vids[j].muted = false;" + 
+								"             }" +
+								"             unmuteChecks++;" +
+								"         }, 100);" + 
+								"      }, 200);" + 
+								"    }, 3000);" + 
+								"    return 'Douyin Standalone Blanket Suppression Field Injected';" +
+								"  } catch(e) { return 'ERROR: ' + e.message; }" +
+								"})();";
+					} else if (isInstagram) {
 						// INSTAGRAM SPECIFIC: Only unmute the video with the largest on-screen bounding box area
 						fireAndForgetJs = "(function() {" +
 								"  try {" +
@@ -511,10 +608,10 @@ public class KeyEventHandler {
 								"      var v = document.getElementsByTagName('video');" +
 								"      for(var i=0; i<v.length; i++) {" +
 								"        v[i].playbackRate = 0.0;" + 
-								"        v[i].muted = true;" + // AUDIO LOCK: Mute absolutely everything
+								"        v[i].muted = true;" + 
 								"        v[i].pause();" + 
 								"      }" +
-								"    }, 10);" + // SUPPRESSION FIELD
+								"    }, 10);" + 
 								"    setTimeout(function() {" +
 								"      if (window.__permataSwipeId !== " + currentSessionId + ") return;" +
 								"      clearInterval(watcher);" + 
@@ -528,7 +625,7 @@ public class KeyEventHandler {
 								"        var area = (vH > 0 && vW > 0) ? (vH * vW) : 0;" +
 								"        if (area > maxArea) {" +
 								"          maxArea = area;" +
-								"          activeVid = v[i];" + // Lock targeting onto the most visible video
+								"          activeVid = v[i];" + 
 								"        }" +
 								"      }" +
 								"      if (activeVid) {" +
@@ -539,22 +636,22 @@ public class KeyEventHandler {
 								"        setTimeout(function() {" +
 								"           if (window.__permataSwipeId !== " + currentSessionId + ") return;" +
 								"           var unmuteChecks = 0;" +
-								"           var unmuteWatchdog = setInterval(function() {" + // IG TARGETED UNMUTE WATCHDOG
+								"           var unmuteWatchdog = setInterval(function() {" + 
 								"               if (window.__permataSwipeId !== " + currentSessionId + " || unmuteChecks >= 30) {" +
-								"                   clearInterval(unmuteWatchdog);" + // Self-destruct safely after 3 seconds
+								"                   clearInterval(unmuteWatchdog);" + 
 								"                   return;" +
 								"               }" +
-								"               if (activeVid.muted) activeVid.muted = false;" + // ONLY unmute the targeted video
+								"               if (activeVid.muted) activeVid.muted = false;" + 
 								"               unmuteChecks++;" +
-								"           }, 100);" + // Check every 100ms
-								"        }, 200);" + // 200ms Audio Mute Shield
+								"           }, 100);" + 
+								"        }, 200);" + 
 								"      }" +
-								"    }, 3000);" + // DSP REBUILD MATCH
+								"    }, 3000);" + 
 								"    return 'IG Targeted Suppression Field Injected';" +
 								"  } catch(e) { return 'ERROR: ' + e.message; }" +
 								"})();";
 					} else {
-						// DOUYIN / TIKTOK / GLOBAL: Blanket Play & Blanket Unmute to exploit native IntersectionObserver
+						// TIKTOK / GLOBAL: Blanket Play & Blanket Unmute to exploit native IntersectionObserver
 						fireAndForgetJs = "(function() {" +
 								"  try {" +
 								"    window.__permataSwipeId = " + currentSessionId + ";" +
@@ -566,36 +663,36 @@ public class KeyEventHandler {
 								"      var v = document.getElementsByTagName('video');" +
 								"      for(var i=0; i<v.length; i++) {" +
 								"        v[i].playbackRate = 0.0;" + 
-								"        v[i].muted = true;" + // AUDIO LOCK: Mute absolutely everything
+								"        v[i].muted = true;" + 
 								"        v[i].pause();" + 
 								"      }" +
-								"    }, 10);" + // SUPPRESSION FIELD
+								"    }, 10);" + 
 								"    setTimeout(function() {" +
 								"      if (window.__permataSwipeId !== " + currentSessionId + ") return;" +
 								"      clearInterval(watcher);" + 
 								"      var v = document.getElementsByTagName('video');" +
 								"      for(var i=0; i<v.length; i++) {" +
 								"        v[i].playbackRate = 1.0;" + 
-								"        try { v[i].currentTime = v[i].currentTime + 0.1; } catch(err) {}" + // BLANKET NUKE
-								"        var playPromise = v[i].play();" + // BLANKET SLAM
+								"        try { v[i].currentTime = v[i].currentTime + 0.1; } catch(err) {}" + 
+								"        var playPromise = v[i].play();" + 
 								"        if (playPromise !== undefined) { playPromise.catch(function(e){}); }" + 
 								"      }" +
 								"      setTimeout(function() {" +
 								"         if (window.__permataSwipeId !== " + currentSessionId + ") return;" +
 								"         var unmuteChecks = 0;" +
-								"         var unmuteWatchdog = setInterval(function() {" + // GLOBAL BLANKET UNMUTE WATCHDOG
+								"         var unmuteWatchdog = setInterval(function() {" + 
 								"             if (window.__permataSwipeId !== " + currentSessionId + " || unmuteChecks >= 30) {" +
-								"                 clearInterval(unmuteWatchdog);" + // Self-destruct safely after 3 seconds
+								"                 clearInterval(unmuteWatchdog);" + 
 								"                 return;" +
 								"             }" +
 								"             var vids = document.getElementsByTagName('video');" +
 								"             for(var j=0; j<vids.length; j++) {" +
-								"                 if (vids[j].muted) vids[j].muted = false;" + // FORCE UNMUTE ALL
+								"                 if (vids[j].muted) vids[j].muted = false;" + 
 								"             }" +
 								"             unmuteChecks++;" +
-								"         }, 100);" + // Check every 100ms
-								"      }, 200);" + // 200ms Audio Mute Shield
-								"    }, 3000);" + // DSP REBUILD MATCH
+								"         }, 100);" + 
+								"      }, 200);" + 
+								"    }, 3000);" + 
 								"    return 'Global Blanket Suppression Field Injected';" +
 								"  } catch(e) { return 'ERROR: ' + e.message; }" +
 								"})();";
@@ -606,11 +703,13 @@ public class KeyEventHandler {
 							Log.i(hostTag + "[AUDIO_RESYNC] JS Suppression Field Deployed (Session " + currentSessionId + "). Response: " + value.replace("\"", ""));
 						}
 					});
-				}, 10); // BLEEDING EDGE INJECTION: Inject at exactly 10ms
+				}, 10); 
 			}
 			// =========================================================================================
 
-			if (isMediaHost && !isInstagram) {
+			if (isDouyin) {
+				Log.i(hostTag + "[ACTION] Douyin Host Detected: Bypassing JS Scroll entirely. Relying purely on God-Mode Hardware Swipe.");
+			} else if (isMediaHost && !isInstagram) {
 				Log.i(hostTag + "[ACTION] Media Host Detected: Bypassing JS Scroll entirely. Relying purely on God-Mode Hardware Swipe.");
 			} else if (isInstagram) {
 				String igJsScript = "(function() {" +
@@ -649,55 +748,13 @@ public class KeyEventHandler {
 			}
 		}
 
-		if (isMediaHost && !isInstagram) {
-			final float actionX = touchTarget.getWidth() * 0.50f; 
-			final float centerY = touchTarget.getHeight() / 2f;
-			
-			float span = touchTarget.getHeight() * 0.60f; 
-			final float yStart = up ? (centerY - span / 2f) : (centerY + span / 2f);
-			final float yEnd = up ? (centerY + span / 2f) : (centerY - span / 2f);
-
-			try {
-				final long startTime = android.os.SystemClock.uptimeMillis();
-				
-				MotionEvent eventDown = MotionEvent.obtain(startTime, startTime, MotionEvent.ACTION_DOWN, actionX, yStart, 0);
-				eventDown.setSource(InputDevice.SOURCE_TOUCHSCREEN); 
-				touchTarget.dispatchTouchEvent(eventDown);
-				eventDown.recycle();
-
-				final int stepCount = 13; 
-				final long swipeDuration = 170; 
-				
-				for (int i = 1; i <= stepCount; i++) {
-					final float linearT = (float) i / stepCount;
-					
-					final float currentY = yStart + (yEnd - yStart) * linearT;
-					final long moveTime = startTime + (long) (swipeDuration * linearT);
-					
-					touchTarget.postDelayed(() -> {
-						if (touchTarget.isAttachedToWindow() && touchTarget.getVisibility() == View.VISIBLE) {
-							MotionEvent eventMove = MotionEvent.obtain(startTime, moveTime, MotionEvent.ACTION_MOVE, actionX, currentY, 0);
-							eventMove.setSource(InputDevice.SOURCE_TOUCHSCREEN); 
-							touchTarget.dispatchTouchEvent(eventMove);
-							eventMove.recycle();
-						}
-					}, (long) (swipeDuration * linearT));
-				}
-
-				touchTarget.postDelayed(() -> {
-					if (touchTarget.isAttachedToWindow() && touchTarget.getVisibility() == View.VISIBLE) {
-						long endTime = startTime + swipeDuration + 10;
-						MotionEvent eventUp = MotionEvent.obtain(startTime, endTime, MotionEvent.ACTION_UP, actionX, yEnd, 0);
-						eventUp.setSource(InputDevice.SOURCE_TOUCHSCREEN); 
-						touchTarget.dispatchTouchEvent(eventUp);
-						eventUp.recycle();
-						Log.i("[REACTION] " + hostTag + "God-Mode Hardware Swipe Concluded (ACTION_UP). Duration: " + swipeDuration + "ms | Steps: " + stepCount);
-					}
-				}, swipeDuration + 10);
-
-			} catch (Exception e) {
-				Log.e(e, "[REACTION] " + hostTag + "Hardware swipe failed with Exception.");
-			}
+		// ENTERPRISE LOGIC ISOLATION: 
+		// Douyin routes to its isolated block. Other MediaHosts route to their isolated block.
+		// Both share the mathematically identical thread-safe executeHardwareTouchSwipe method footprint.
+		if (isDouyin) {
+			executeHardwareTouchSwipe(touchTarget, up, hostTag, "Douyin Standalone Hardware Swipe");
+		} else if (isMediaHost && !isInstagram) {
+			executeHardwareTouchSwipe(touchTarget, up, hostTag, "Global Hardware Swipe");
 		}
 	}
 
