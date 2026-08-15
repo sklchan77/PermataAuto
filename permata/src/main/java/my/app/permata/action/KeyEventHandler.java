@@ -47,12 +47,8 @@ public class KeyEventHandler {
 	private static volatile long lastGlobalActionTime = 0L;
 	private static volatile long lastAudioFlushTime = 0L;
 	
-	// ENTERPRISE HARDENING: Thread-safe global session tracker for the Kill Switch
 	private static final AtomicLong swipeSessionId = new AtomicLong(0);
-	
-	// ENTERPRISE HARDENING: Reflection cache to prevent UI thread jank during rapid swiping
 	private static final Map<Class<?>, Method> webViewMethodCache = new ConcurrentHashMap<>();
-	
 	private static final Map<View, Long> scrollTimestamps = Collections.synchronizedMap(new WeakHashMap<>());
 	private static final ExecutorService audioResetExecutor = Executors.newSingleThreadExecutor();
 
@@ -101,7 +97,7 @@ public class KeyEventHandler {
 			"}; " +
 			"const registry=[" +
 			"    {name:\"douyin\",match:/douyin/,execute:function(){" +
-			"      var dyFullscreenCss = ' video, xg-video-container, xg-video-wrapper { position: fixed !important; top: 0 !important; left: 0 !important; width: 100vw !important; height: 100vh !important; z-index: 999999 !important; object-fit: contain !important; background-color: black !important; pointer-events: none !important; } '; " +
+			"      var dyFullscreenCss = ' .xgplayer-poster, [class*=\"blur-img\"], [class*=\"poster\"] { display: none !important; opacity: 0 !important; } video { position: fixed !important; top: 0 !important; left: 0 !important; width: 100vw !important; height: 100vh !important; z-index: 999999 !important; object-fit: contain !important; background-color: black !important; pointer-events: none !important; } '; " +
 			"      return 'DOUYIN: ' + injectGlobalWipe() + ' | ' + injectSpecificWipe(dyFullscreenCss, 'permata-dy-fullscreen'); " +
 			"    }}," +
 			"    {name:\"tiktok\",match:/tiktok/,execute:function(){" +
@@ -191,7 +187,6 @@ public class KeyEventHandler {
 				}
 				lastGlobalActionTime = currentUptime;
 				
-				// DSP Reset - Retained safely on a background thread to prevent car AudioFlinger deadlocks
 				if (finalTargetActivity.getWindow() != null) {
 					if (currentUptime - lastAudioFlushTime > 5000) {
 						lastAudioFlushTime = currentUptime;
@@ -335,7 +330,6 @@ public class KeyEventHandler {
 				stopIntent.setPackage(applicationContext.getPackageName());
 				applicationContext.sendBroadcast(stopIntent);
 				
-				// 3000ms delay: Gives Android OS double the time to properly close and flush the AudioFlinger.
 				Thread.sleep(3000);
 				
 				Intent startIntent = new Intent("my.app.permata.ACTION_START_SILENT_ANCHOR");
@@ -478,7 +472,6 @@ public class KeyEventHandler {
 		scrollTimestamps.put(wv, now); 
 		touchTarget.requestFocus();
 		
-		// Generate a unique ID for this specific swipe event
 		final long currentSessionId = swipeSessionId.incrementAndGet();
 
 		if (wv.getSettings().getJavaScriptEnabled()) {
@@ -489,10 +482,6 @@ public class KeyEventHandler {
 				});
 			}, 220); 
 
-			// =========================================================================================
-			// [INVERSION OF CONTROL] 3000ms SUPPRESSION FIELD & DYNAMIC UNMUTE WATCHDOG
-			// Splits payload: "Targeted Unmute" for Instagram, "Blanket Unmute" for Douyin & other hosts
-			// =========================================================================================
 			if (isMediaHost) {
 				wv.postDelayed(() -> {
 					if (swipeSessionId.get() != currentSessionId) return;
@@ -500,7 +489,6 @@ public class KeyEventHandler {
 					String fireAndForgetJs;
 					
 					if (isInstagram) {
-						// INSTAGRAM SPECIFIC: Only unmute the video with the largest on-screen bounding box area
 						fireAndForgetJs = "(function() {" +
 								"  try {" +
 								"    window.__permataSwipeId = " + currentSessionId + ";" +
@@ -512,10 +500,10 @@ public class KeyEventHandler {
 								"      var v = document.getElementsByTagName('video');" +
 								"      for(var i=0; i<v.length; i++) {" +
 								"        v[i].playbackRate = 0.0;" + 
-								"        v[i].muted = true;" + // AUDIO LOCK: Mute absolutely everything
+								"        v[i].muted = true;" + 
 								"        v[i].pause();" + 
 								"      }" +
-								"    }, 10);" + // SUPPRESSION FIELD
+								"    }, 10);" + 
 								"    setTimeout(function() {" +
 								"      if (window.__permataSwipeId !== " + currentSessionId + ") return;" +
 								"      clearInterval(watcher);" + 
@@ -529,7 +517,7 @@ public class KeyEventHandler {
 								"        var area = (vH > 0 && vW > 0) ? (vH * vW) : 0;" +
 								"        if (area > maxArea) {" +
 								"          maxArea = area;" +
-								"          activeVid = v[i];" + // Lock targeting onto the most visible video
+								"          activeVid = v[i];" + 
 								"        }" +
 								"      }" +
 								"      if (activeVid) {" +
@@ -540,22 +528,22 @@ public class KeyEventHandler {
 								"        setTimeout(function() {" +
 								"           if (window.__permataSwipeId !== " + currentSessionId + ") return;" +
 								"           var unmuteChecks = 0;" +
-								"           var unmuteWatchdog = setInterval(function() {" + // IG TARGETED UNMUTE WATCHDOG
+								"           var unmuteWatchdog = setInterval(function() {" + 
 								"               if (window.__permataSwipeId !== " + currentSessionId + " || unmuteChecks >= 30) {" +
-								"                   clearInterval(unmuteWatchdog);" + // Self-destruct safely after 3 seconds
+								"                   clearInterval(unmuteWatchdog);" + 
 								"                   return;" +
 								"               }" +
-								"               if (activeVid.muted) activeVid.muted = false;" + // ONLY unmute the targeted video
+								"               if (activeVid.muted) activeVid.muted = false;" + 
 								"               unmuteChecks++;" +
-								"           }, 100);" + // Check every 100ms
-								"        }, 200);" + // 200ms Audio Mute Shield
+								"           }, 100);" + 
+								"        }, 200);" + 
 								"      }" +
-								"    }, 3000);" + // DSP REBUILD MATCH
+								"    }, 3000);" + 
 								"    return 'IG Targeted Suppression Field Injected';" +
 								"  } catch(e) { return 'ERROR: ' + e.message; }" +
 								"})();";
 					} else if (isDouyin) {
-						// DOUYIN STANDALONE: Blanket Play & Blanket Unmute to exploit native IntersectionObserver
+						// DOUYIN RESTORED: Brought back the currentTime + 0.1 micro-seek as requested.
 						fireAndForgetJs = "(function() {" +
 								"  try {" +
 								"    window.__permataSwipeId = " + currentSessionId + ";" +
@@ -567,41 +555,40 @@ public class KeyEventHandler {
 								"      var v = document.getElementsByTagName('video');" +
 								"      for(var i=0; i<v.length; i++) {" +
 								"        v[i].playbackRate = 0.0;" + 
-								"        v[i].muted = true;" + // AUDIO LOCK: Mute absolutely everything
+								"        v[i].muted = true;" + 
 								"        v[i].pause();" + 
 								"      }" +
-								"    }, 10);" + // SUPPRESSION FIELD
+								"    }, 10);" + 
 								"    setTimeout(function() {" +
 								"      if (window.__permataSwipeId !== " + currentSessionId + ") return;" +
 								"      clearInterval(watcher);" + 
 								"      var v = document.getElementsByTagName('video');" +
 								"      for(var i=0; i<v.length; i++) {" +
 								"        v[i].playbackRate = 1.0;" + 
-								"        try { v[i].currentTime = v[i].currentTime + 0.1; } catch(err) {}" + // BLANKET NUKE
-								"        var playPromise = v[i].play();" + // BLANKET SLAM
+								"        try { v[i].currentTime = v[i].currentTime + 0.1; } catch(err) {}" + 
+								"        var playPromise = v[i].play();" + 
 								"        if (playPromise !== undefined) { playPromise.catch(function(e){}); }" + 
 								"      }" +
 								"      setTimeout(function() {" +
 								"         if (window.__permataSwipeId !== " + currentSessionId + ") return;" +
 								"         var unmuteChecks = 0;" +
-								"         var unmuteWatchdog = setInterval(function() {" + // BLANKET UNMUTE WATCHDOG
+								"         var unmuteWatchdog = setInterval(function() {" + 
 								"             if (window.__permataSwipeId !== " + currentSessionId + " || unmuteChecks >= 30) {" +
-								"                 clearInterval(unmuteWatchdog);" + // Self-destruct safely after 3 seconds
+								"                 clearInterval(unmuteWatchdog);" + 
 								"                 return;" +
 								"             }" +
 								"             var vids = document.getElementsByTagName('video');" +
 								"             for(var j=0; j<vids.length; j++) {" +
-								"                 if (vids[j].muted) vids[j].muted = false;" + // FORCE UNMUTE ALL
+								"                 if (vids[j].muted) vids[j].muted = false;" + 
 								"             }" +
 								"             unmuteChecks++;" +
-								"         }, 100);" + // Check every 100ms
-								"      }, 200);" + // 200ms Audio Mute Shield
-								"    }, 3000);" + // DSP REBUILD MATCH
+								"         }, 100);" + 
+								"      }, 200);" + 
+								"    }, 3000);" + 
 								"    return 'Douyin Blanket Suppression Field Injected';" +
 								"  } catch(e) { return 'ERROR: ' + e.message; }" +
 								"})();";
 					} else {
-						// GLOBAL MEDIA HOST: Blanket Play & Blanket Unmute to exploit native IntersectionObserver
 						fireAndForgetJs = "(function() {" +
 								"  try {" +
 								"    window.__permataSwipeId = " + currentSessionId + ";" +
@@ -613,36 +600,36 @@ public class KeyEventHandler {
 								"      var v = document.getElementsByTagName('video');" +
 								"      for(var i=0; i<v.length; i++) {" +
 								"        v[i].playbackRate = 0.0;" + 
-								"        v[i].muted = true;" + // AUDIO LOCK: Mute absolutely everything
+								"        v[i].muted = true;" + 
 								"        v[i].pause();" + 
 								"      }" +
-								"    }, 10);" + // SUPPRESSION FIELD
+								"    }, 10);" + 
 								"    setTimeout(function() {" +
 								"      if (window.__permataSwipeId !== " + currentSessionId + ") return;" +
 								"      clearInterval(watcher);" + 
 								"      var v = document.getElementsByTagName('video');" +
 								"      for(var i=0; i<v.length; i++) {" +
 								"        v[i].playbackRate = 1.0;" + 
-								"        try { v[i].currentTime = v[i].currentTime + 0.1; } catch(err) {}" + // BLANKET NUKE
-								"        var playPromise = v[i].play();" + // BLANKET SLAM
+								"        try { v[i].currentTime = v[i].currentTime + 0.1; } catch(err) {}" + 
+								"        var playPromise = v[i].play();" + 
 								"        if (playPromise !== undefined) { playPromise.catch(function(e){}); }" + 
 								"      }" +
 								"      setTimeout(function() {" +
 								"         if (window.__permataSwipeId !== " + currentSessionId + ") return;" +
 								"         var unmuteChecks = 0;" +
-								"         var unmuteWatchdog = setInterval(function() {" + // GLOBAL BLANKET UNMUTE WATCHDOG
+								"         var unmuteWatchdog = setInterval(function() {" + 
 								"             if (window.__permataSwipeId !== " + currentSessionId + " || unmuteChecks >= 30) {" +
-								"                 clearInterval(unmuteWatchdog);" + // Self-destruct safely after 3 seconds
+								"                 clearInterval(unmuteWatchdog);" + 
 								"                 return;" +
 								"             }" +
 								"             var vids = document.getElementsByTagName('video');" +
 								"             for(var j=0; j<vids.length; j++) {" +
-								"                 if (vids[j].muted) vids[j].muted = false;" + // FORCE UNMUTE ALL
+								"                 if (vids[j].muted) vids[j].muted = false;" + 
 								"             }" +
 								"             unmuteChecks++;" +
-								"         }, 100);" + // Check every 100ms
-								"      }, 200);" + // 200ms Audio Mute Shield
-								"    }, 3000);" + // DSP REBUILD MATCH
+								"         }, 100);" + 
+								"      }, 200);" + 
+								"    }, 3000);" + 
 								"    return 'Global Blanket Suppression Field Injected';" +
 								"  } catch(e) { return 'ERROR: ' + e.message; }" +
 								"})();";
@@ -653,9 +640,8 @@ public class KeyEventHandler {
 							Log.i(hostTag + "[AUDIO_RESYNC] JS Suppression Field Deployed (Session " + currentSessionId + "). Response: " + value.replace("\"", ""));
 						}
 					});
-				}, 10); // BLEEDING EDGE INJECTION: Inject at exactly 10ms
+				}, 10); 
 			}
-			// =========================================================================================
 
 			if (isDouyin) {
 				Log.i(hostTag + "[ACTION] Douyin Host Detected: Bypassing JS Scroll entirely. Relying purely on God-Mode Hardware Swipe.");
@@ -699,9 +685,6 @@ public class KeyEventHandler {
 		}
 
 		if (isDouyin) {
-			// ---------------------------------------------------------
-			// DOUYIN STANDALONE: God-Mode Hardware Swipe
-			// ---------------------------------------------------------
 			final float actionX = touchTarget.getWidth() * 0.50f; 
 			final float centerY = touchTarget.getHeight() / 2f;
 			
@@ -751,9 +734,6 @@ public class KeyEventHandler {
 				Log.e(e, "[REACTION] " + hostTag + "Douyin standalone hardware swipe failed with Exception.");
 			}
 		} else if (isMediaHost && !isInstagram) {
-			// ---------------------------------------------------------
-			// GLOBAL MEDIA HOST: God-Mode Hardware Swipe
-			// ---------------------------------------------------------
 			final float actionX = touchTarget.getWidth() * 0.50f; 
 			final float centerY = touchTarget.getHeight() / 2f;
 			
