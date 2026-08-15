@@ -100,11 +100,11 @@ public class KeyEventHandler {
 			"  return 'Custom CSS (' + id + ') Already Exists.'; " +
 			"}; " +
 			"const registry=[" +
-			"    {name:\"douyin\",match:/douyin\\.com/,execute:function(){" +
+			"    {name:\"douyin\",match:/douyin/,execute:function(){" +
 			"      var dyFullscreenCss = ' video, xg-video-container, xg-video-wrapper { position: fixed !important; top: 0 !important; left: 0 !important; width: 100vw !important; height: 100vh !important; z-index: 999999 !important; object-fit: cover !important; background-color: black !important; pointer-events: none !important; } '; " +
 			"      return 'DOUYIN: ' + injectGlobalWipe() + ' | ' + injectSpecificWipe(dyFullscreenCss, 'permata-dy-fullscreen'); " +
 			"    }}," +
-			"    {name:\"tiktok\",match:/tiktok\\.com/,execute:function(){" +
+			"    {name:\"tiktok\",match:/tiktok/,execute:function(){" +
 			"      var ttCss = ' [data-e2e=\"video-author-avatar\"], [data-e2e=\"nav-login\"], [class*=\"DivHeaderContainer\"], [class*=\"DivSideNavContainer\"], [class*=\"DivBottomContainer\"] { display: none !important; } [class*=\"DivMediaCardOverlay\"], [class*=\"DivOverlayBottomContent\"], [class*=\"DivCreatorInfoContainer\"], [class*=\"BasePlayerContainer\"]::after { pointer-events: none !important; } '; " +
 			"      return 'TIKTOK: ' + injectGlobalWipe() + ' | ' + injectSpecificWipe(ttCss, 'permata-tt-css'); " +
 			"    }}," +
@@ -112,21 +112,21 @@ public class KeyEventHandler {
 			"      var igCss = ' header, nav, [role=\"navigation\"] { display: none !important; pointer-events: none !important; opacity: 0 !important; visibility: hidden !important; } body, html { overflow: auto !important; touch-action: pan-y !important; } '; " +
 			"      return 'INSTAGRAM: ' + injectSpecificWipe(igCss, 'permata-ig-css'); " +
 			"    }}," +
-			"    {name:\"youtube\",match:/(youtube\\.com|youtu\\.be)/,execute:function(){" +
+			"    {name:\"youtube\",match:/(youtube|youtu)/,execute:function(){" +
 			"      let ad=document.querySelector('.ytp-skip-ad-button,.ytp-ad-skip-button,.ytp-skip-button');if(ad)ad.click();" +
 			"      let dm=document.querySelectorAll('yt-button-renderer[id=\"dismiss-button\"],[aria-label=\"No thanks\"],[aria-label=\"Dismiss\"],.yt-spec-button-shape-next--text');" +
 			"      dm.forEach(b=>{if(b.textContent&&(b.textContent.includes('No thanks')||b.textContent.includes('Skip')||b.textContent.includes('Dismiss')))b.click();});" +
 			"      return 'YOUTUBE: Handled standard media skip.'; " +
 			"    }}," +
-			"    {name:\"bilibili\",match:/bilibili\\.com/,execute:function(){" +
+			"    {name:\"bilibili\",match:/bilibili/,execute:function(){" +
 			"      let pl=document.querySelector('.mplayer-play');if(pl&&pl.classList.contains('play'))pl.click();" +
 			"      return 'BILIBILI: ' + injectGlobalWipe(); " +
 			"    }}," +
-			"    {name:\"reddit\",match:/reddit\\.com/,execute:function(){" +
+			"    {name:\"reddit\",match:/reddit/,execute:function(){" +
 			"      if(document.body&&window.getComputedStyle(document.body).overflow==='hidden') document.body.style.overflow='auto';" +
 			"      return 'REDDIT: ' + injectGlobalWipe(); " +
 			"    }}," +
-			"    {name:\"moj\",match:/(mojapp\\.in|sharechat\\.com)/,execute:function(){" +
+			"    {name:\"moj\",match:/(mojapp|sharechat)/,execute:function(){" +
 			"      if(document.body) document.body.style.overflow='auto';" +
 			"      return 'MOJ: ' + injectGlobalWipe(); " +
 			"    }}" +
