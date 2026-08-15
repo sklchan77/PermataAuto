@@ -275,10 +275,10 @@ public class KeyEventHandler {
 										} catch (Exception ignored) {}
 									}
 									final String hostTag = "[Host: " + host + "] ";
-									Log.i("[DETECTION] " + hostTag + "Resolved. isMediaHost: " + isMediaHost + " | isSnapFeedHost: " + isSnapFeedHost + " | isTikTok: " + isTikTok);
+									Log.i("[DETECTION] " + hostTag + "Resolved. isMediaHost: " + isMediaHost + " | isSnapFeedHost: " + isSnapFeedHost + " | isTikTok: " + isTikTok + " | isDouyin: " + isDouyin);
 
 									View touchTargetView = findTopmostTouchTarget(finalTargetActivity, resolvedWebView);
-									smartScrollWebView(resolvedWebView, touchTargetView, !isNext, hostTag, isMediaHost, isInstagram, isSnapFeedHost, isTikTok);
+									smartScrollWebView(resolvedWebView, touchTargetView, !isNext, hostTag, isMediaHost, isInstagram, isSnapFeedHost, isTikTok, isDouyin);
 								} else {
 									Log.i("[DETECTION] WebBrowser is hidden or out of focus. Allowing default media propagation.");
 								}
@@ -463,7 +463,7 @@ public class KeyEventHandler {
 		return null;
 	}
 
-	private static void smartScrollWebView(final WebView wv, final View touchTarget, boolean up, final String hostTag, boolean isMediaHost, boolean isInstagram, boolean isSnapFeedHost, boolean isTikTok) {
+	private static void smartScrollWebView(final WebView wv, final View touchTarget, boolean up, final String hostTag, boolean isMediaHost, boolean isInstagram, boolean isSnapFeedHost, boolean isTikTok, boolean isDouyin) {
 		if (wv == null || touchTarget == null || !touchTarget.isAttachedToWindow() || touchTarget.getWidth() <= 0 || touchTarget.getHeight() <= 0) return;
 
 		long now = android.os.SystemClock.uptimeMillis();
@@ -490,7 +490,7 @@ public class KeyEventHandler {
 
 			// =========================================================================================
 			// [INVERSION OF CONTROL] 3000ms SUPPRESSION FIELD & DYNAMIC UNMUTE WATCHDOG
-			// Splits payload: "Targeted Unmute" for Instagram, "Blanket Unmute" for all other hosts
+			// Splits payload: "Targeted Unmute" for Instagram, "Blanket Unmute" for Douyin & other hosts
 			// =========================================================================================
 			if (isMediaHost) {
 				wv.postDelayed(() -> {
@@ -553,8 +553,54 @@ public class KeyEventHandler {
 								"    return 'IG Targeted Suppression Field Injected';" +
 								"  } catch(e) { return 'ERROR: ' + e.message; }" +
 								"})();";
+					} else if (isDouyin) {
+						// DOUYIN STANDALONE: Blanket Play & Blanket Unmute to exploit native IntersectionObserver
+						fireAndForgetJs = "(function() {" +
+								"  try {" +
+								"    window.__permataSwipeId = " + currentSessionId + ";" +
+								"    var watcher = setInterval(function() {" +
+								"      if (window.__permataSwipeId !== " + currentSessionId + ") {" +
+								"        clearInterval(watcher);" +
+								"        return;" + 
+								"      }" +
+								"      var v = document.getElementsByTagName('video');" +
+								"      for(var i=0; i<v.length; i++) {" +
+								"        v[i].playbackRate = 0.0;" + 
+								"        v[i].muted = true;" + // AUDIO LOCK: Mute absolutely everything
+								"        v[i].pause();" + 
+								"      }" +
+								"    }, 10);" + // SUPPRESSION FIELD
+								"    setTimeout(function() {" +
+								"      if (window.__permataSwipeId !== " + currentSessionId + ") return;" +
+								"      clearInterval(watcher);" + 
+								"      var v = document.getElementsByTagName('video');" +
+								"      for(var i=0; i<v.length; i++) {" +
+								"        v[i].playbackRate = 1.0;" + 
+								"        try { v[i].currentTime = v[i].currentTime + 0.1; } catch(err) {}" + // BLANKET NUKE
+								"        var playPromise = v[i].play();" + // BLANKET SLAM
+								"        if (playPromise !== undefined) { playPromise.catch(function(e){}); }" + 
+								"      }" +
+								"      setTimeout(function() {" +
+								"         if (window.__permataSwipeId !== " + currentSessionId + ") return;" +
+								"         var unmuteChecks = 0;" +
+								"         var unmuteWatchdog = setInterval(function() {" + // BLANKET UNMUTE WATCHDOG
+								"             if (window.__permataSwipeId !== " + currentSessionId + " || unmuteChecks >= 30) {" +
+								"                 clearInterval(unmuteWatchdog);" + // Self-destruct safely after 3 seconds
+								"                 return;" +
+								"             }" +
+								"             var vids = document.getElementsByTagName('video');" +
+								"             for(var j=0; j<vids.length; j++) {" +
+								"                 if (vids[j].muted) vids[j].muted = false;" + // FORCE UNMUTE ALL
+								"             }" +
+								"             unmuteChecks++;" +
+								"         }, 100);" + // Check every 100ms
+								"      }, 200);" + // 200ms Audio Mute Shield
+								"    }, 3000);" + // DSP REBUILD MATCH
+								"    return 'Douyin Blanket Suppression Field Injected';" +
+								"  } catch(e) { return 'ERROR: ' + e.message; }" +
+								"})();";
 					} else {
-						// DOUYIN / TIKTOK / GLOBAL: Blanket Play & Blanket Unmute to exploit native IntersectionObserver
+						// GLOBAL MEDIA HOST: Blanket Play & Blanket Unmute to exploit native IntersectionObserver
 						fireAndForgetJs = "(function() {" +
 								"  try {" +
 								"    window.__permataSwipeId = " + currentSessionId + ";" +
@@ -610,7 +656,9 @@ public class KeyEventHandler {
 			}
 			// =========================================================================================
 
-			if (isMediaHost && !isInstagram) {
+			if (isDouyin) {
+				Log.i(hostTag + "[ACTION] Douyin Host Detected: Bypassing JS Scroll entirely. Relying purely on God-Mode Hardware Swipe.");
+			} else if (isMediaHost && !isInstagram) {
 				Log.i(hostTag + "[ACTION] Media Host Detected: Bypassing JS Scroll entirely. Relying purely on God-Mode Hardware Swipe.");
 			} else if (isInstagram) {
 				String igJsScript = "(function() {" +
@@ -649,7 +697,10 @@ public class KeyEventHandler {
 			}
 		}
 
-		if (isMediaHost && !isInstagram) {
+		if (isDouyin) {
+			// ---------------------------------------------------------
+			// DOUYIN STANDALONE: God-Mode Hardware Swipe
+			// ---------------------------------------------------------
 			final float actionX = touchTarget.getWidth() * 0.50f; 
 			final float centerY = touchTarget.getHeight() / 2f;
 			
@@ -691,12 +742,64 @@ public class KeyEventHandler {
 						eventUp.setSource(InputDevice.SOURCE_TOUCHSCREEN); 
 						touchTarget.dispatchTouchEvent(eventUp);
 						eventUp.recycle();
-						Log.i("[REACTION] " + hostTag + "God-Mode Hardware Swipe Concluded (ACTION_UP). Duration: " + swipeDuration + "ms | Steps: " + stepCount);
+						Log.i("[REACTION] " + hostTag + "Douyin Standalone Hardware Swipe Concluded (ACTION_UP). Duration: " + swipeDuration + "ms | Steps: " + stepCount);
 					}
 				}, swipeDuration + 10);
 
 			} catch (Exception e) {
-				Log.e(e, "[REACTION] " + hostTag + "Hardware swipe failed with Exception.");
+				Log.e(e, "[REACTION] " + hostTag + "Douyin standalone hardware swipe failed with Exception.");
+			}
+		} else if (isMediaHost && !isInstagram) {
+			// ---------------------------------------------------------
+			// GLOBAL MEDIA HOST: God-Mode Hardware Swipe
+			// ---------------------------------------------------------
+			final float actionX = touchTarget.getWidth() * 0.50f; 
+			final float centerY = touchTarget.getHeight() / 2f;
+			
+			float span = touchTarget.getHeight() * 0.60f; 
+			final float yStart = up ? (centerY - span / 2f) : (centerY + span / 2f);
+			final float yEnd = up ? (centerY + span / 2f) : (centerY - span / 2f);
+
+			try {
+				final long startTime = android.os.SystemClock.uptimeMillis();
+				
+				MotionEvent eventDown = MotionEvent.obtain(startTime, startTime, MotionEvent.ACTION_DOWN, actionX, yStart, 0);
+				eventDown.setSource(InputDevice.SOURCE_TOUCHSCREEN); 
+				touchTarget.dispatchTouchEvent(eventDown);
+				eventDown.recycle();
+
+				final int stepCount = 13; 
+				final long swipeDuration = 170; 
+				
+				for (int i = 1; i <= stepCount; i++) {
+					final float linearT = (float) i / stepCount;
+					
+					final float currentY = yStart + (yEnd - yStart) * linearT;
+					final long moveTime = startTime + (long) (swipeDuration * linearT);
+					
+					touchTarget.postDelayed(() -> {
+						if (touchTarget.isAttachedToWindow() && touchTarget.getVisibility() == View.VISIBLE) {
+							MotionEvent eventMove = MotionEvent.obtain(startTime, moveTime, MotionEvent.ACTION_MOVE, actionX, currentY, 0);
+							eventMove.setSource(InputDevice.SOURCE_TOUCHSCREEN); 
+							touchTarget.dispatchTouchEvent(eventMove);
+							eventMove.recycle();
+						}
+					}, (long) (swipeDuration * linearT));
+				}
+
+				touchTarget.postDelayed(() -> {
+					if (touchTarget.isAttachedToWindow() && touchTarget.getVisibility() == View.VISIBLE) {
+						long endTime = startTime + swipeDuration + 10;
+						MotionEvent eventUp = MotionEvent.obtain(startTime, endTime, MotionEvent.ACTION_UP, actionX, yEnd, 0);
+						eventUp.setSource(InputDevice.SOURCE_TOUCHSCREEN); 
+						touchTarget.dispatchTouchEvent(eventUp);
+						eventUp.recycle();
+						Log.i("[REACTION] " + hostTag + "Global Hardware Swipe Concluded (ACTION_UP). Duration: " + swipeDuration + "ms | Steps: " + stepCount);
+					}
+				}, swipeDuration + 10);
+
+			} catch (Exception e) {
+				Log.e(e, "[REACTION] " + hostTag + "Global hardware swipe failed with Exception.");
 			}
 		}
 	}
