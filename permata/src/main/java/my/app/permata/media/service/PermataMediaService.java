@@ -12,10 +12,7 @@ import android.media.AudioFormat;
 import android.media.AudioManager;
 import android.media.AudioTrack;
 import android.os.Build;
-import android.os.Bundle;
 import android.support.v4.media.session.PlaybackStateCompat;
-
-import androidx.annotation.NonNull;
 
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
