@@ -135,7 +135,7 @@
                 <data android:scheme="https" />
                 <data android:host="*" />
 
-                <!-- video -->
+                <!-- video extensions -->
                 <data android:pathPattern=".*.3G2" />
                 <data android:pathPattern=".*.3g2" />
                 <data android:pathPattern=".*\\..*\\..*\\.3G2" />
@@ -503,7 +503,7 @@
                 <data android:pathPattern=".*\\..*\\.XESC" />
                 <data android:pathPattern=".*\\..*\\.xesc" />
 
-                <!-- audio -->
+                <!-- audio extensions -->
                 <data android:pathPattern=".*\\..*\\.3ga" />
                 <data android:pathPattern=".*\\..*\\.3GA" />
                 <data android:pathPattern=".*\\..*\\..*\\.3ga" />
@@ -840,6 +840,7 @@
             </intent-filter>
         </activity>
 
+        <!-- Primary Sole MediaBrowserService for Android Auto -->
         <service
             android:name="my.app.permata.media.service.PermataMediaService"
             android:enabled="true"
