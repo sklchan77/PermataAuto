@@ -392,14 +392,28 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 	}
 
 	@Override
-	public BrowserRoot onGetRoot(@NonNull String clientPackageName, int clientUid,
-															 Bundle rootHints) {
+	public BrowserRoot onGetRoot(@NonNull String clientPackageName, int clientUid, Bundle rootHints) {
+		// ENTERPRISE HARDENING: Intercept and log the exact package asking for media access
+		Log.i("PermataMediaService: Handshake attempted by -> " + clientPackageName);
+
 		Bundle extras = new Bundle();
 		extras.putBoolean(EXTRA_MEDIA_SEARCH_SUPPORTED, true);
 		extras.putBoolean(CONTENT_STYLE_SUPPORTED, true);
 		extras.putInt(CONTENT_STYLE_BROWSABLE_HINT, CONTENT_STYLE_LIST_ITEM_HINT_VALUE);
 		extras.putInt(CONTENT_STYLE_PLAYABLE_HINT, CONTENT_STYLE_LIST_ITEM_HINT_VALUE);
-		return new BrowserRoot(getLib().getRootId(), extras);
+		
+		// NULL-SAFETY LOCK: If lib is missing or returns null, force a generic root ID.
+		// Returning 'null' from onGetRoot causes Android Auto to permanently blacklist the app.
+		String safeRootId = "permata_root";
+		try {
+			if (getLib() != null && getLib().getRootId() != null && !getLib().getRootId().isEmpty()) {
+				safeRootId = getLib().getRootId();
+			}
+		} catch (Exception e) {
+			Log.e(e, "PermataMediaService: Failed to extract root ID from MediaLib, using safe fallback.");
+		}
+
+		return new BrowserRoot(safeRootId, extras);
 	}
 
 	@Override
