@@ -122,7 +122,9 @@ public abstract class BasePermataMediaService extends MediaBrowserServiceCompat 
 		lib = new DefaultMediaLib(PermataApplication.get());
 		session = new MediaSessionCompat(this, "PermataMediaService");
 		setSessionToken(session.getSessionToken());
-		callback = new MediaSessionCallback(this, session, lib,
+		
+		// Fixed: Explicitly cast 'this' to PermataMediaService for MediaSessionCallback compatibility
+		callback = new MediaSessionCallback((PermataMediaService) this, session, lib,
 				PlaybackControlPrefs.create(PermataApplication.get().getDefaultSharedPreferences()),
 				PermataApplication.get().getHandler());
 		callback.onPrepare();
