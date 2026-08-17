@@ -135,7 +135,7 @@
                 <data android:scheme="https" />
                 <data android:host="*" />
 
-                <!-- video extensions -->
+                <!-- video -->
                 <data android:pathPattern=".*.3G2" />
                 <data android:pathPattern=".*.3g2" />
                 <data android:pathPattern=".*\\..*\\..*\\.3G2" />
@@ -503,7 +503,7 @@
                 <data android:pathPattern=".*\\..*\\.XESC" />
                 <data android:pathPattern=".*\\..*\\.xesc" />
 
-                <!-- audio extensions -->
+                <!-- audio -->
                 <data android:pathPattern=".*\\..*\\.3ga" />
                 <data android:pathPattern=".*\\..*\\.3GA" />
                 <data android:pathPattern=".*\\..*\\..*\\.3ga" />
@@ -840,7 +840,6 @@
             </intent-filter>
         </activity>
 
-        <!-- Primary Sole MediaBrowserService for Android Auto -->
         <service
             android:name="my.app.permata.media.service.PermataMediaService"
             android:enabled="true"
@@ -857,6 +856,13 @@
             </intent-filter>
             <intent-filter>
                 <action android:name="my.app.permata.action.MediaService" />
+            </intent-filter>
+            
+            <!-- ADDED: Android Auto Projection Launcher Intent Filter -->
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="com.google.android.gms.car.category.CATEGORY_PROJECTION" />
+                <category android:name="com.google.android.gms.car.category.CATEGORY_PROJECTION_OEM" />
             </intent-filter>
         </service>
 
