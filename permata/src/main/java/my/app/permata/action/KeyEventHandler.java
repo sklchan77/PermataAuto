@@ -334,8 +334,8 @@ public class KeyEventHandler {
 				stopIntent.setPackage(applicationContext.getPackageName());
 				applicationContext.sendBroadcast(stopIntent);
 				
-				// 2000ms delay: Balanced window to flush AudioFlinger without triggering OS session revocation
-				Thread.sleep(2000);
+				// 3000ms delay: Gives Android OS double the time to properly close and flush the AudioFlinger.
+				Thread.sleep(3000);
 				
 				Intent startIntent = new Intent("my.app.permata.ACTION_START_SILENT_ANCHOR");
 				startIntent.setPackage(applicationContext.getPackageName());
@@ -756,24 +756,6 @@ public class KeyEventHandler {
 		} else if (isMediaHost && !isInstagram) {
 			executeHardwareTouchSwipe(touchTarget, up, hostTag, "Global Hardware Swipe");
 		}
-
-		// =========================================================================================
-		// [FOCUS RECLAIMER - 4000ms]
-		// Re-anchors Audio Focus 1 second AFTER JS finishes unmuting/playing (3000ms mark),
-		// ensuring Chromium has finished its playback request before Permata reclaims the focus.
-		// =========================================================================================
-		wv.postDelayed(() -> {
-			if (swipeSessionId.get() != currentSessionId) return; // Only execute for the latest active swipe
-			try {
-				Context appCtx = wv.getContext().getApplicationContext();
-				Intent reclaimIntent = new Intent("my.app.permata.ACTION_START_SILENT_ANCHOR");
-				reclaimIntent.setPackage(appCtx.getPackageName());
-				appCtx.sendBroadcast(reclaimIntent);
-				Log.i(hostTag + "[AUDIO_RESYNC] Swipe sequence completed. Reclaiming AudioFocus from Chromium to restore steering controls.");
-			} catch (Exception e) {
-				Log.e(e, hostTag + "[AUDIO_RESYNC] Failed to broadcast reclaim intent.");
-			}
-		}, 4000);
 	}
 
 	private static void performAction(Action action, MediaSessionCallback cb,
