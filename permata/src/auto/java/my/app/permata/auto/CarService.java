@@ -35,4 +35,3 @@ public class CarService extends CarActivityService {
 		super.onDestroy();
 	}
 }
-```[cite: 3]
