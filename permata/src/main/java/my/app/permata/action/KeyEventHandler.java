@@ -542,6 +542,7 @@ public class KeyEventHandler {
 			// =========================================================================================
 			// [INVERSION OF CONTROL] 3000ms SUPPRESSION FIELD & DYNAMIC UNMUTE WATCHDOG
 			// Splits payload: "Targeted Unmute" for Instagram, "Blanket Unmute" for all other hosts
+			// TIMELINE: 3000ms (Skip 100ms) -> 3200ms (Unmute Watchdog) -> 3500ms (Un-pause & Play)
 			// =========================================================================================
 			if (isMediaHost) {
 				wv.postDelayed(() -> {
@@ -571,11 +572,9 @@ public class KeyEventHandler {
 								"      clearInterval(watcher);" + 
 								"      var v = document.getElementsByTagName('video');" +
 								"      for(var i=0; i<v.length; i++) {" +
-								"        v[i].playbackRate = 1.0;" + 
 								"        try { v[i].currentTime = v[i].currentTime + 0.1; } catch(err) {}" + 
-								"        var playPromise = v[i].play();" + 
-								"        if (playPromise !== undefined) { playPromise.catch(function(e){}); }" + 
 								"      }" +
+								"      /* STEP 1: Unmute Watchdog anchored at 3200ms (+200ms after 3000ms mark) */" +
 								"      setTimeout(function() {" +
 								"         if (window.__permataSwipeId !== " + currentSessionId + ") return;" +
 								"         var unmuteChecks = 0;" +
@@ -591,6 +590,16 @@ public class KeyEventHandler {
 								"             unmuteChecks++;" +
 								"         }, 100);" + 
 								"      }, 200);" + 
+								"      /* STEP 2: Un-pause & Resume Play at 3500ms (+500ms after 3000ms mark) */" +
+								"      setTimeout(function() {" +
+								"        if (window.__permataSwipeId !== " + currentSessionId + ") return;" +
+								"        var v2 = document.getElementsByTagName('video');" +
+								"        for(var k=0; k<v2.length; k++) {" +
+								"          v2[k].playbackRate = 1.0;" + 
+								"          var playPromise = v2[k].play();" + 
+								"          if (playPromise !== undefined) { playPromise.catch(function(e){}); }" + 
+								"        }" +
+								"      }, 500);" + 
 								"    }, 3000);" + 
 								"    return 'Douyin Standalone Blanket Suppression Field Injected';" +
 								"  } catch(e) { return 'ERROR: ' + e.message; }" +
@@ -619,6 +628,7 @@ public class KeyEventHandler {
 								"      var activeVid = null;" +
 								"      var maxArea = 0;" +
 								"      for(var i=0; i<v.length; i++) {" +
+								"        try { v[i].currentTime = v[i].currentTime + 0.1; } catch(err) {}" + 
 								"        var rect = v[i].getBoundingClientRect();" +
 								"        var vH = Math.min(rect.bottom, window.innerHeight) - Math.max(rect.top, 0);" +
 								"        var vW = Math.min(rect.right, window.innerWidth) - Math.max(rect.left, 0);" +
@@ -628,24 +638,28 @@ public class KeyEventHandler {
 								"          activeVid = v[i];" + 
 								"        }" +
 								"      }" +
-								"      if (activeVid) {" +
-								"        activeVid.playbackRate = 1.0;" + 
-								"        try { activeVid.currentTime = activeVid.currentTime + 0.1; } catch(err) {}" + 
-								"        var playPromise = activeVid.play();" + 
-								"        if (playPromise !== undefined) { playPromise.catch(function(e){}); }" + 
-								"        setTimeout(function() {" +
-								"           if (window.__permataSwipeId !== " + currentSessionId + ") return;" +
-								"           var unmuteChecks = 0;" +
-								"           var unmuteWatchdog = setInterval(function() {" + 
-								"               if (window.__permataSwipeId !== " + currentSessionId + " || unmuteChecks >= 30) {" +
-								"                   clearInterval(unmuteWatchdog);" + 
-								"                   return;" +
-								"               }" +
-								"               if (activeVid.muted) activeVid.muted = false;" + 
-								"               unmuteChecks++;" +
-								"           }, 100);" + 
-								"        }, 200);" + 
-								"      }" +
+								"      /* STEP 1: Unmute Watchdog anchored at 3200ms (+200ms after 3000ms mark) */" +
+								"      setTimeout(function() {" +
+								"         if (window.__permataSwipeId !== " + currentSessionId + ") return;" +
+								"         var unmuteChecks = 0;" +
+								"         var unmuteWatchdog = setInterval(function() {" + 
+								"             if (window.__permataSwipeId !== " + currentSessionId + " || unmuteChecks >= 30) {" +
+								"                 clearInterval(unmuteWatchdog);" + 
+								"                 return;" +
+								"             }" +
+								"             if (activeVid && activeVid.muted) activeVid.muted = false;" + 
+								"             unmuteChecks++;" +
+								"         }, 100);" + 
+								"      }, 200);" + 
+								"      /* STEP 2: Un-pause & Resume Play at 3500ms (+500ms after 3000ms mark) */" +
+								"      setTimeout(function() {" +
+								"        if (window.__permataSwipeId !== " + currentSessionId + ") return;" +
+								"        if (activeVid) {" +
+								"          activeVid.playbackRate = 1.0;" + 
+								"          var playPromise = activeVid.play();" + 
+								"          if (playPromise !== undefined) { playPromise.catch(function(e){}); }" + 
+								"        }" +
+								"      }, 500);" + 
 								"    }, 3000);" + 
 								"    return 'IG Targeted Suppression Field Injected';" +
 								"  } catch(e) { return 'ERROR: ' + e.message; }" +
@@ -672,11 +686,9 @@ public class KeyEventHandler {
 								"      clearInterval(watcher);" + 
 								"      var v = document.getElementsByTagName('video');" +
 								"      for(var i=0; i<v.length; i++) {" +
-								"        v[i].playbackRate = 1.0;" + 
 								"        try { v[i].currentTime = v[i].currentTime + 0.1; } catch(err) {}" + 
-								"        var playPromise = v[i].play();" + 
-								"        if (playPromise !== undefined) { playPromise.catch(function(e){}); }" + 
 								"      }" +
+								"      /* STEP 1: Unmute Watchdog anchored at 3200ms (+200ms after 3000ms mark) */" +
 								"      setTimeout(function() {" +
 								"         if (window.__permataSwipeId !== " + currentSessionId + ") return;" +
 								"         var unmuteChecks = 0;" +
@@ -692,6 +704,16 @@ public class KeyEventHandler {
 								"             unmuteChecks++;" +
 								"         }, 100);" + 
 								"      }, 200);" + 
+								"      /* STEP 2: Un-pause & Resume Play at 3500ms (+500ms after 3000ms mark) */" +
+								"      setTimeout(function() {" +
+								"        if (window.__permataSwipeId !== " + currentSessionId + ") return;" +
+								"        var v2 = document.getElementsByTagName('video');" +
+								"        for(var k=0; k<v2.length; k++) {" +
+								"          v2[k].playbackRate = 1.0;" + 
+								"          var playPromise = v2[k].play();" + 
+								"          if (playPromise !== undefined) { playPromise.catch(function(e){}); }" + 
+								"        }" +
+								"      }, 500);" + 
 								"    }, 3000);" + 
 								"    return 'Global Blanket Suppression Field Injected';" +
 								"  } catch(e) { return 'ERROR: ' + e.message; }" +
