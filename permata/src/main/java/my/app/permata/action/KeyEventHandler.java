@@ -38,6 +38,7 @@ import my.app.utils.ui.fragment.ActivityFragment;
 /**
  * Enterprise Hardened Production Release Version
  * Includes Experimental Douyin Full-Screen Theater Mode (Isolated Block)
+ * Includes 100ms Anti-Race Condition Guard for Automotive CPUs
  * 
  * @author sklchan77
  */
@@ -824,11 +825,20 @@ public class KeyEventHandler {
 			}
 		}
 
-		if (isDouyin) {
-			executeHardwareTouchSwipe(touchTarget, up, hostTag, "Douyin Standalone Hardware Swipe");
-		} else if (isMediaHost && !isInstagram) {
-			executeHardwareTouchSwipe(touchTarget, up, hostTag, "Global Hardware Swipe");
-		}
+		// =========================================================================================
+		// [ANTI-RACE CONDITION GUARD] The 100ms Chromium Breath
+		// Provides 6 full render frames (at 60fps) for slower automotive CPUs to parse, execute, 
+		// and render the JS/CSS payloads (like pointer-events: none) before the hardware swipe hits.
+		// =========================================================================================
+		wv.postDelayed(() -> {
+			if (!wv.isAttachedToWindow() || touchTarget == null || !touchTarget.isAttachedToWindow()) return;
+			
+			if (isDouyin) {
+				executeHardwareTouchSwipe(touchTarget, up, hostTag, "Douyin Standalone Hardware Swipe");
+			} else if (isMediaHost && !isInstagram) {
+				executeHardwareTouchSwipe(touchTarget, up, hostTag, "Global Hardware Swipe");
+			}
+		}, 100);
 	}
 
 	private static void performAction(Action action, MediaSessionCallback cb,
