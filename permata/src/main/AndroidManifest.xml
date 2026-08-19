@@ -859,11 +859,11 @@
             </intent-filter>
             
             <!-- ADDED: Android Auto Projection Launcher Intent Filter -->
-            <intent-filter>
+            <!--  <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="com.google.android.gms.car.category.CATEGORY_PROJECTION" />
                 <category android:name="com.google.android.gms.car.category.CATEGORY_PROJECTION_OEM" />
-            </intent-filter>
+            </intent-filter> -->
         </service>
 
         <service
