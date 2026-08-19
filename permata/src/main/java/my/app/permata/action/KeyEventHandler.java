@@ -36,6 +36,9 @@ import my.app.utils.log.Log;
 import my.app.utils.ui.fragment.ActivityFragment;
 
 /**
+ * Enterprise Hardened Production Release Version
+ * Includes Experimental Douyin Full-Screen Theater Mode (Isolated Block)
+ * 
  * @author sklchan77
  */
 public class KeyEventHandler {
@@ -334,7 +337,7 @@ public class KeyEventHandler {
 				stopIntent.setPackage(applicationContext.getPackageName());
 				applicationContext.sendBroadcast(stopIntent);
 				
-				// 3000ms delay: Gives Android OS double the time to properly close and flush the AudioFlinger.
+				// 3000ms delay: Gives Android OS time to properly close and flush the AudioFlinger.
 				Thread.sleep(3000);
 				
 				Intent startIntent = new Intent("my.app.permata.ACTION_START_SILENT_ANCHOR");
@@ -463,8 +466,9 @@ public class KeyEventHandler {
 		return null;
 	}
 
-	// ENTERPRISE HARDENING: Centralized MotionEvent Dispatcher. Eliminates redundancy and simplifies future touch adjustments.
 	private static void executeHardwareTouchSwipe(final View touchTarget, boolean up, final String hostTag, final String contextLog) {
+		if (touchTarget == null || !touchTarget.isAttachedToWindow()) return;
+
 		final float actionX = touchTarget.getWidth() * 0.50f; 
 		final float centerY = touchTarget.getHeight() / 2f;
 		
@@ -532,8 +536,57 @@ public class KeyEventHandler {
 		final long currentSessionId = swipeSessionId.incrementAndGet();
 
 		if (wv.getSettings().getJavaScriptEnabled()) {
-			
+
+			// =========================================================================================
+			// [EXPERIMENTAL BLOCK - START] DOUYIN FULL SCREEN THEATER MODE
+			// Target: Isolate CSS injection. Add touch fallthrough and aspect-ratio scaling.
+			// Telemetry Probes: Reports ARMED_SUCCESS vs ALREADY_ACTIVE to Logcat.
+			// Revert: Comment out this block entirely to revert to baseline KeyEventHandler behavior.
+			// =========================================================================================
+			if (isDouyin) {
+				String expDouyinFsJs = "(function() {" +
+						"  try {" +
+						"    if (document.getElementById('permata-douyin-fs')) {" +
+						"      return 'TELEMETRY_CHECK: FullScreen State ALREADY_ACTIVE. Skipping injection.';" +
+						"    }" +
+						"    var style = document.createElement('style');" +
+						"    style.id = 'permata-douyin-fs';" +
+						"    style.innerHTML = `" +
+						"      .xgplayer, .xg-video-container, [data-e2e=\"feed-active-video\"], .xgplayer-video-wrap {" +
+						"        height: 100vh !important; width: 100vw !important;" +
+						"        max-height: 100vh !important; max-width: 100vw !important;" +
+						"        background-color: #000000 !important;" +
+						"        pointer-events: none !important; touch-action: pan-y !important;" +
+						"      }" +
+						"      .xgplayer video, video {" +
+						"        height: 100% !important; width: 100% !important;" +
+						"        object-fit: contain !important; background-color: transparent !important;" +
+						"        pointer-events: none !important;" +
+						"      }" +
+						"      .xgplayer-poster, .poster-bg {" +
+						"        display: none !important; opacity: 0 !important;" +
+						"      }" +
+						"      #root, body, html {" +
+						"        pointer-events: auto !important; touch-action: pan-y !important;" +
+						"      }" +
+						"    `;" +
+						"    document.head.appendChild(style);" +
+						"    return 'TELEMETRY_CHECK: FullScreen State ARMED_SUCCESS. CSS Injected.';" +
+						"  } catch(e) { return 'TELEMETRY_ERROR: ' + e.message; }" +
+						"})();";
+
+				wv.evaluateJavascript(expDouyinFsJs, value -> {
+					if (value != null && !value.equals("null")) {
+						Log.i(hostTag + "[EXP_FS] " + value.replace("\"", ""));
+					}
+				});
+			}
+			// =========================================================================================
+			// [EXPERIMENTAL BLOCK - END]
+			// =========================================================================================
+
 			wv.postDelayed(() -> {
+				if (!wv.isAttachedToWindow()) return;
 				wv.evaluateJavascript(JS_UNIVERSAL_PAYLOAD, value -> {
 					if (value != null && !value.equals("null")) Log.i(hostTag + "[REACTION] " + value.replace("\"", ""));
 				});
@@ -546,6 +599,7 @@ public class KeyEventHandler {
 			// =========================================================================================
 			if (isMediaHost) {
 				wv.postDelayed(() -> {
+					if (!wv.isAttachedToWindow()) return;
 					if (swipeSessionId.get() != currentSessionId) return;
 
 					String fireAndForgetJs;
@@ -770,9 +824,6 @@ public class KeyEventHandler {
 			}
 		}
 
-		// ENTERPRISE LOGIC ISOLATION: 
-		// Douyin routes to its isolated block. Other MediaHosts route to their isolated block.
-		// Both share the mathematically identical thread-safe executeHardwareTouchSwipe method footprint.
 		if (isDouyin) {
 			executeHardwareTouchSwipe(touchTarget, up, hostTag, "Douyin Standalone Hardware Swipe");
 		} else if (isMediaHost && !isInstagram) {
