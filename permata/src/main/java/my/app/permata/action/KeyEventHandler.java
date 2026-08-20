@@ -37,7 +37,7 @@ import my.app.utils.ui.fragment.ActivityFragment;
 
 /**
  * Enterprise Hardened Production Release Version
- * Includes Experimental Douyin Full-Screen Theater Mode (Sidebar Annihilator)
+ * Includes Experimental Douyin Full-Screen Theater Mode (Header/Sidebar Annihilator)
  * Includes 100ms Anti-Race Condition Guard for Automotive CPUs
  * 
  * @author sklchan77
@@ -552,16 +552,19 @@ public class KeyEventHandler {
 						"    var style = document.createElement('style');" +
 						"    style.id = 'permata-douyin-fs';" +
 						"    style.innerHTML = `" +
-						"      /* 1. ANNIHILATE THE LEFT SIDEBAR & NAVIGATION */" +
+						"      /* 1. ANNIHILATE THE LEFT SIDEBAR & TOP HEADER */" +
 						"      [data-e2e=\"douyin-navigation\"], [data-e2e=\"nav\"], " +
+						"      header, #douyin-header, [data-e2e=\"douyin-header\"], [class*=\"douyin-header\"], " +
 						"      [class*=\"douyin-nav\"], [class*=\"sidebar\"], .left-menu {" +
-						"        display: none !important; width: 0 !important; max-width: 0 !important;" +
+						"        display: none !important; width: 0 !important; height: 0 !important;" +
+						"        max-width: 0 !important; max-height: 0 !important;" +
 						"        opacity: 0 !important; pointer-events: none !important;" +
 						"      }" +
-						"      /* 2. FORCE MAIN FEED TO FLUSH LEFT */" +
-						"      #root, #app, [data-e2e=\"scroll-list\"], [data-e2e=\"main-content\"], .main-container {" +
-						"        margin-left: 0 !important; padding-left: 0 !important;" +
+						"      /* 2. SHATTER MAX-WIDTH LIMITS & FORCE MAIN FEED TO EDGES */" +
+						"      #root, #app, [data-e2e=\"scroll-list\"], [data-e2e=\"main-content\"], .main-container, .playerContainer {" +
+						"        margin: 0 !important; padding: 0 !important;" +
 						"        width: 100vw !important; max-width: 100vw !important;" +
+						"        height: 100vh !important; max-height: 100vh !important;" +
 						"      }" +
 						"      /* 3. BEST-FIT THEATER MODE FOR THE VIDEO */" +
 						"      .xgplayer, .xg-video-container, [data-e2e=\"feed-active-video\"], .xgplayer-video-wrap {" +
@@ -569,6 +572,7 @@ public class KeyEventHandler {
 						"        max-height: 100vh !important; max-width: 100vw !important;" +
 						"        background-color: #000000 !important;" +
 						"        pointer-events: none !important; touch-action: pan-y !important;" +
+						"        border-radius: 0 !important; margin: 0 !important;" +
 						"      }" +
 						"      .xgplayer video, video {" +
 						"        height: 100% !important; width: 100% !important;" +
@@ -582,6 +586,7 @@ public class KeyEventHandler {
 						"      html, body {" +
 						"        pointer-events: auto !important; touch-action: pan-y !important;" +
 						"        margin: 0 !important; padding: 0 !important;" +
+						"        overflow: hidden !important;" +
 						"      }" +
 						"    `;" +
 						"    document.head.appendChild(style);" +
