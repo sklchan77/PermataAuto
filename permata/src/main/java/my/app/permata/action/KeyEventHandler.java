@@ -37,7 +37,7 @@ import my.app.utils.ui.fragment.ActivityFragment;
 
 /**
  * Enterprise Hardened Production Release Version
- * Includes Experimental Douyin Full-Screen Theater Mode (Isolated Block)
+ * Includes Experimental Douyin Full-Screen Theater Mode (Sidebar Annihilator)
  * Includes 100ms Anti-Race Condition Guard for Automotive CPUs
  * 
  * @author sklchan77
@@ -542,7 +542,6 @@ public class KeyEventHandler {
 			// [EXPERIMENTAL BLOCK - START] DOUYIN FULL SCREEN THEATER MODE
 			// Target: Isolate CSS injection. Add touch fallthrough and aspect-ratio scaling.
 			// Telemetry Probes: Reports ARMED_SUCCESS vs ALREADY_ACTIVE to Logcat.
-			// Revert: Comment out this block entirely to revert to baseline KeyEventHandler behavior.
 			// =========================================================================================
 			if (isDouyin) {
 				String expDouyinFsJs = "(function() {" +
@@ -553,6 +552,18 @@ public class KeyEventHandler {
 						"    var style = document.createElement('style');" +
 						"    style.id = 'permata-douyin-fs';" +
 						"    style.innerHTML = `" +
+						"      /* 1. ANNIHILATE THE LEFT SIDEBAR & NAVIGATION */" +
+						"      [data-e2e=\"douyin-navigation\"], [data-e2e=\"nav\"], " +
+						"      [class*=\"douyin-nav\"], [class*=\"sidebar\"], .left-menu {" +
+						"        display: none !important; width: 0 !important; max-width: 0 !important;" +
+						"        opacity: 0 !important; pointer-events: none !important;" +
+						"      }" +
+						"      /* 2. FORCE MAIN FEED TO FLUSH LEFT */" +
+						"      #root, #app, [data-e2e=\"scroll-list\"], [data-e2e=\"main-content\"], .main-container {" +
+						"        margin-left: 0 !important; padding-left: 0 !important;" +
+						"        width: 100vw !important; max-width: 100vw !important;" +
+						"      }" +
+						"      /* 3. BEST-FIT THEATER MODE FOR THE VIDEO */" +
 						"      .xgplayer, .xg-video-container, [data-e2e=\"feed-active-video\"], .xgplayer-video-wrap {" +
 						"        height: 100vh !important; width: 100vw !important;" +
 						"        max-height: 100vh !important; max-width: 100vw !important;" +
@@ -564,11 +575,13 @@ public class KeyEventHandler {
 						"        object-fit: contain !important; background-color: transparent !important;" +
 						"        pointer-events: none !important;" +
 						"      }" +
+						"      /* 4. HIDE BLURRED BACKGROUNDS & TOUCH FALLTHROUGH */" +
 						"      .xgplayer-poster, .poster-bg {" +
 						"        display: none !important; opacity: 0 !important;" +
 						"      }" +
-						"      #root, body, html {" +
+						"      html, body {" +
 						"        pointer-events: auto !important; touch-action: pan-y !important;" +
+						"        margin: 0 !important; padding: 0 !important;" +
 						"      }" +
 						"    `;" +
 						"    document.head.appendChild(style);" +
