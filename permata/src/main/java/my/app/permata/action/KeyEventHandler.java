@@ -40,6 +40,7 @@ import my.app.utils.ui.fragment.ActivityFragment;
  * Includes Experimental Douyin Full-Screen Theater Mode (Header/Sidebar Annihilator)
  * Safely maintains scroll-list height for intact swipe functionality
  * Includes 100ms Anti-Race Condition Guard for Automotive CPUs
+ * Optimized Media Playback Timeline (Pre-buffering playbackRate at 3000ms)
  * 
  * @author sklchan77
  */
@@ -614,7 +615,7 @@ public class KeyEventHandler {
 			// =========================================================================================
 			// [INVERSION OF CONTROL] 3000ms SUPPRESSION FIELD & DYNAMIC UNMUTE WATCHDOG
 			// Splits payload: "Targeted Unmute" for Instagram, "Blanket Unmute" for all other hosts
-			// TIMELINE: 3000ms (Skip 100ms) -> 3200ms (Unmute Watchdog) -> 3500ms (Un-pause & Play)
+			// TIMELINE: 3000ms (Skip 100ms + playbackRate 1.0) -> 3200ms (Unmute Watchdog) -> 3500ms (Play)
 			// =========================================================================================
 			if (isMediaHost) {
 				wv.postDelayed(() -> {
@@ -646,6 +647,7 @@ public class KeyEventHandler {
 								"      var v = document.getElementsByTagName('video');" +
 								"      for(var i=0; i<v.length; i++) {" +
 								"        try { v[i].currentTime = v[i].currentTime + 0.1; } catch(err) {}" + 
+								"        v[i].playbackRate = 1.0;" + 
 								"      }" +
 								"      /* STEP 1: Unmute Watchdog anchored at 3200ms (+200ms after 3000ms mark) */" +
 								"      setTimeout(function() {" +
@@ -668,7 +670,6 @@ public class KeyEventHandler {
 								"        if (window.__permataSwipeId !== " + currentSessionId + ") return;" +
 								"        var v2 = document.getElementsByTagName('video');" +
 								"        for(var k=0; k<v2.length; k++) {" +
-								"          v2[k].playbackRate = 1.0;" + 
 								"          var playPromise = v2[k].play();" + 
 								"          if (playPromise !== undefined) { playPromise.catch(function(e){}); }" + 
 								"        }" +
@@ -702,6 +703,7 @@ public class KeyEventHandler {
 								"      var maxArea = 0;" +
 								"      for(var i=0; i<v.length; i++) {" +
 								"        try { v[i].currentTime = v[i].currentTime + 0.1; } catch(err) {}" + 
+								"        v[i].playbackRate = 1.0;" + 
 								"        var rect = v[i].getBoundingClientRect();" +
 								"        var vH = Math.min(rect.bottom, window.innerHeight) - Math.max(rect.top, 0);" +
 								"        var vW = Math.min(rect.right, window.innerWidth) - Math.max(rect.left, 0);" +
@@ -728,7 +730,6 @@ public class KeyEventHandler {
 								"      setTimeout(function() {" +
 								"        if (window.__permataSwipeId !== " + currentSessionId + ") return;" +
 								"        if (activeVid) {" +
-								"          activeVid.playbackRate = 1.0;" + 
 								"          var playPromise = activeVid.play();" + 
 								"          if (playPromise !== undefined) { playPromise.catch(function(e){}); }" + 
 								"        }" +
@@ -760,6 +761,7 @@ public class KeyEventHandler {
 								"      var v = document.getElementsByTagName('video');" +
 								"      for(var i=0; i<v.length; i++) {" +
 								"        try { v[i].currentTime = v[i].currentTime + 0.1; } catch(err) {}" + 
+								"        v[i].playbackRate = 1.0;" + 
 								"      }" +
 								"      /* STEP 1: Unmute Watchdog anchored at 3200ms (+200ms after 3000ms mark) */" +
 								"      setTimeout(function() {" +
@@ -782,7 +784,6 @@ public class KeyEventHandler {
 								"        if (window.__permataSwipeId !== " + currentSessionId + ") return;" +
 								"        var v2 = document.getElementsByTagName('video');" +
 								"        for(var k=0; k<v2.length; k++) {" +
-								"          v2[k].playbackRate = 1.0;" + 
 								"          var playPromise = v2[k].play();" + 
 								"          if (playPromise !== undefined) { playPromise.catch(function(e){}); }" + 
 								"        }" +
