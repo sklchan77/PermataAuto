@@ -38,6 +38,7 @@ import my.app.utils.ui.fragment.ActivityFragment;
 /**
  * Enterprise Hardened Production Release Version
  * Includes Experimental Douyin Full-Screen Theater Mode (Header/Sidebar Annihilator)
+ * Safely maintains scroll-list height for intact swipe functionality
  * Includes 100ms Anti-Race Condition Guard for Automotive CPUs
  * 
  * @author sklchan77
@@ -560,14 +561,13 @@ public class KeyEventHandler {
 						"        max-width: 0 !important; max-height: 0 !important;" +
 						"        opacity: 0 !important; pointer-events: none !important;" +
 						"      }" +
-						"      /* 2. SHATTER MAX-WIDTH LIMITS & FORCE MAIN FEED TO EDGES */" +
-						"      #root, #app, [data-e2e=\"scroll-list\"], [data-e2e=\"main-content\"], .main-container, .playerContainer {" +
+						"      /* 2. SHATTER WIDTH LIMITS ONLY (DO NOT TOUCH HEIGHT HERE) */" +
+						"      #root, #app, [data-e2e=\"scroll-list\"], [data-e2e=\"main-content\"], .main-container {" +
 						"        margin: 0 !important; padding: 0 !important;" +
 						"        width: 100vw !important; max-width: 100vw !important;" +
-						"        height: 100vh !important; max-height: 100vh !important;" +
 						"      }" +
-						"      /* 3. BEST-FIT THEATER MODE FOR THE VIDEO */" +
-						"      .xgplayer, .xg-video-container, [data-e2e=\"feed-active-video\"], .xgplayer-video-wrap {" +
+						"      /* 3. BEST-FIT THEATER MODE ONLY FOR THE SPECIFIC VIDEO SLIDES */" +
+						"      .playerContainer, .xgplayer, .xg-video-container, [data-e2e=\"feed-active-video\"], .xgplayer-video-wrap {" +
 						"        height: 100vh !important; width: 100vw !important;" +
 						"        max-height: 100vh !important; max-width: 100vw !important;" +
 						"        background-color: #000000 !important;" +
