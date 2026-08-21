@@ -37,8 +37,7 @@ import my.app.utils.ui.fragment.ActivityFragment;
 
 /**
  * Enterprise Hardened Production Release Version
- * Includes Experimental Douyin Full-Screen Theater Mode (Header/Sidebar Annihilator)
- * Safely maintains scroll-list height for intact swipe functionality
+ * Includes Nuclear DOM Crawler for Douyin Desktop Theater Mode
  * Includes 100ms Anti-Race Condition Guard for Automotive CPUs
  * Optimized Media Playback Timeline (Pre-buffering playbackRate at 3000ms)
  * 
@@ -542,8 +541,7 @@ public class KeyEventHandler {
 
 			// =========================================================================================
 			// [EXPERIMENTAL BLOCK - START] DOUYIN FULL SCREEN THEATER MODE
-			// Target: Isolate CSS injection. Add touch fallthrough and aspect-ratio scaling.
-			// Telemetry Probes: Reports ARMED_SUCCESS vs ALREADY_ACTIVE to Logcat.
+			// Target: Nuclear DOM Crawler & CSS Wildcard Annihilator
 			// =========================================================================================
 			if (isDouyin) {
 				String expDouyinFsJs = "(function() {" +
@@ -551,23 +549,42 @@ public class KeyEventHandler {
 						"    if (document.getElementById('permata-douyin-fs')) {" +
 						"      return 'TELEMETRY_CHECK: FullScreen State ALREADY_ACTIVE. Skipping injection.';" +
 						"    }" +
+						"    /* 1. NUCLEAR DOM CRAWLER: Physically destroy grid/flex margins on all parents */" +
+						"    var vids = document.getElementsByTagName('video');" +
+						"    if (vids.length > 0) {" +
+						"        var el = vids[0];" +
+						"        while (el && el !== document.body && el !== document.documentElement) {" +
+						"            el.style.setProperty('margin-left', '0', 'important');" +
+						"            el.style.setProperty('padding-left', '0', 'important');" +
+						"            el.style.setProperty('margin-top', '0', 'important');" +
+						"            el.style.setProperty('padding-top', '0', 'important');" +
+						"            el.style.setProperty('max-width', '100vw', 'important');" +
+						"            el.style.setProperty('width', '100vw', 'important');" +
+						"            el.style.setProperty('border-radius', '0', 'important');" +
+						"            el = el.parentElement;" +
+						"        }" +
+						"    }" +
 						"    var style = document.createElement('style');" +
 						"    style.id = 'permata-douyin-fs';" +
 						"    style.innerHTML = `" +
-						"      /* 1. ANNIHILATE THE LEFT SIDEBAR & TOP HEADER */" +
-						"      [data-e2e=\"douyin-navigation\"], [data-e2e=\"nav\"], " +
-						"      header, #douyin-header, [data-e2e=\"douyin-header\"], [class*=\"douyin-header\"], " +
-						"      [class*=\"douyin-nav\"], [class*=\"sidebar\"], .left-menu {" +
+						"      /* 2. ROOT VARIABLE NUKE (Strips Bytedance global layouts) */" +
+						"      :root, body, html {" +
+						"        --navigation-width: 0px !important;" +
+						"        --header-height: 0px !important;" +
+						"      }" +
+						"      /* 3. WILDCARD ANNIHILATION (Kills anything with sidebar/header/nav in the name) */" +
+						"      header, nav, aside, [class*=\"header\" i], [class*=\"nav\" i], [class*=\"sidebar\" i], [class*=\"menu\" i], " +
+						"      [id*=\"header\" i], [id*=\"nav\" i], [id*=\"sidebar\" i], [id*=\"menu\" i] {" +
 						"        display: none !important; width: 0 !important; height: 0 !important;" +
-						"        max-width: 0 !important; max-height: 0 !important;" +
-						"        opacity: 0 !important; pointer-events: none !important;" +
+						"        margin: 0 !important; padding: 0 !important; position: absolute !important;" +
+						"        opacity: 0 !important; pointer-events: none !important; z-index: -9999 !important;" +
 						"      }" +
-						"      /* 2. SHATTER WIDTH LIMITS ONLY (DO NOT TOUCH HEIGHT HERE) */" +
-						"      #root, #app, [data-e2e=\"scroll-list\"], [data-e2e=\"main-content\"], .main-container {" +
-						"        margin: 0 !important; padding: 0 !important;" +
-						"        width: 100vw !important; max-width: 100vw !important;" +
+						"      /* 4. RIGHT-CONTAINER FLUSH */" +
+						"      #douyin-right-container, [class*=\"right-container\" i], [class*=\"main-layout\" i] {" +
+						"        margin: 0 !important; padding: 0 !important; width: 100vw !important; max-width: 100vw !important;" +
+						"        left: 0 !important; transform: none !important;" +
 						"      }" +
-						"      /* 3. BEST-FIT THEATER MODE ONLY FOR THE SPECIFIC VIDEO SLIDES */" +
+						"      /* 5. THEATER MODE BEST-FIT */" +
 						"      .playerContainer, .xgplayer, .xg-video-container, [data-e2e=\"feed-active-video\"], .xgplayer-video-wrap {" +
 						"        height: 100vh !important; width: 100vw !important;" +
 						"        max-height: 100vh !important; max-width: 100vw !important;" +
@@ -580,18 +597,17 @@ public class KeyEventHandler {
 						"        object-fit: contain !important; background-color: transparent !important;" +
 						"        pointer-events: none !important;" +
 						"      }" +
-						"      /* 4. HIDE BLURRED BACKGROUNDS & TOUCH FALLTHROUGH */" +
+						"      /* 6. HIDE FALLBACKS */" +
 						"      .xgplayer-poster, .poster-bg {" +
 						"        display: none !important; opacity: 0 !important;" +
 						"      }" +
 						"      html, body {" +
 						"        pointer-events: auto !important; touch-action: pan-y !important;" +
-						"        margin: 0 !important; padding: 0 !important;" +
-						"        overflow: hidden !important;" +
+						"        margin: 0 !important; padding: 0 !important; overflow-x: hidden !important;" +
 						"      }" +
 						"    `;" +
 						"    document.head.appendChild(style);" +
-						"    return 'TELEMETRY_CHECK: FullScreen State ARMED_SUCCESS. CSS Injected.';" +
+						"    return 'TELEMETRY_CHECK: FullScreen State ARMED_SUCCESS. Nuclear CSS Injected.';" +
 						"  } catch(e) { return 'TELEMETRY_ERROR: ' + e.message; }" +
 						"})();";
 
