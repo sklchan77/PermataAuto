@@ -37,7 +37,7 @@ import my.app.utils.ui.fragment.ActivityFragment;
 
 /**
  * Enterprise Hardened Production Release Version
- * Includes Precision Strike Douyin Full-Screen Theater Mode
+ * Includes Precision Strike Douyin Full-Screen Theater Mode (With Left Edge Fix)
  * Includes 100ms Anti-Race Condition Guard for Automotive CPUs
  * Optimized Media Playback Timeline (Pre-buffering playbackRate at 3000ms)
  * 
@@ -554,7 +554,7 @@ public class KeyEventHandler {
 						"    style.innerHTML = `" +
 						"      /* 1. PRECISION HEADER & SIDEBAR WIPE */" +
 						"      [data-e2e=\"douyin-header\"], #douyin-header, .douyin-header, " +
-						"      [data-e2e=\"douyin-navigation\"], .douyin-navigation {" +
+						"      [data-e2e=\"douyin-navigation\"], .douyin-navigation, #douyin-navigation {" +
 						"        display: none !important; width: 0 !important; height: 0 !important;" +
 						"        opacity: 0 !important; pointer-events: none !important; position: absolute !important;" +
 						"      }" +
