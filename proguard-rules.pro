@@ -7,7 +7,6 @@
 # 2. DYNAMIC MODULES, ADDONS & MEDIA ENGINES (AAB / PLAY FEATURE DELIVERY)
 # ==============================================================================
 # CRITICAL: Prevent R8 from stripping SPI Service Provider descriptors for ExoPlayer, VLC, etc.
--keepresources META-INF/services/**
 -keep class * implements my.app.permata.media.engine.MediaEngineProvider { *; }
 
 # Protect all Addons, Dynamic Feature Modules, and Media Engines
