@@ -106,7 +106,6 @@ jobs:
           NO_GS: true
         run: |
           out=permata/build/outputs/bundle/autoRelease
-          mapping_out=permata/build/outputs/mapping/autoRelease
           mkdir -p dist
           echo "App name: $APP_NAME"
           echo "Package suffix: $APP_ID_SFX"
@@ -117,16 +116,11 @@ jobs:
           ./gradlew permata:bundleAutoRelease "${ARGS[@]}"
           
           mv $out/*.aab dist/
-          if [ -f "$mapping_out/mapping.txt" ]; then
-            mv $mapping_out/mapping.txt dist/
-          fi
 
-      - name: Upload App Bundle & Mapping File
+      - name: Upload App Bundle
         uses: actions/upload-artifact@v4
         with:
           name: permata-auto-${{ env.APP_VERSION }}${{ env.ARTIFACT_SFX }}-release
-          path: |
-            dist/*.aab
-            dist/mapping.txt
+          path: dist/*.aab
           retention-days: 30
           if-no-files-found: error
