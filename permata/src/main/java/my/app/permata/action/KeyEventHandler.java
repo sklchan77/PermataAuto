@@ -607,7 +607,7 @@ public class KeyEventHandler {
 
 			// =========================================================================================
 			// [INVERSION OF CONTROL] 3000ms SUPPRESSION FIELD & DYNAMIC UNMUTE WATCHDOG
-			// Splits payload: "Targeted Unmute" for Instagram, "Blanket Unmute" for all other hosts
+			// Splits payload: "Targeted Unmute" for Instagram/Facebook, "Blanket Unmute" for all other hosts
 			// TIMELINE: 3000ms (Skip 100ms + playbackRate 1.0) -> 3200ms (Unmute Watchdog) -> 3500ms (Play)
 			// =========================================================================================
 			if (isMediaHost) {
@@ -671,8 +671,8 @@ public class KeyEventHandler {
 								"    return 'Douyin Standalone Blanket Suppression Field Injected';" +
 								"  } catch(e) { return 'ERROR: ' + e.message; }" +
 								"})();";
-					} else if (isInstagram) {
-						// INSTAGRAM SPECIFIC: Only unmute the video with the largest on-screen bounding box area
+					} else if (isInstagram || hostTag.toLowerCase().contains("facebook")) {
+						// INSTAGRAM & FACEBOOK SPECIFIC: Only unmute the video with the largest on-screen bounding box area
 						fireAndForgetJs = "(function() {" +
 								"  try {" +
 								"    window.__permataSwipeId = " + currentSessionId + ";" +
@@ -728,7 +728,7 @@ public class KeyEventHandler {
 								"        }" +
 								"      }, 500);" + 
 								"    }, 3000);" + 
-								"    return 'IG Targeted Suppression Field Injected';" +
+								"    return 'IG/FB Targeted Suppression Field Injected';" +
 								"  } catch(e) { return 'ERROR: ' + e.message; }" +
 								"})();";
 					} else {
