@@ -34,53 +34,6 @@
 
 ---
 
-## 🛠️ Development & Compilation
-
-Follow these standardized production guidelines to compile the ecosystem locally using **Android Studio** or isolated **Docker containers**.
-
-### Prerequisites
-1. Download and deploy the latest [Android SDK](https://android.com) environment.
-2. Map your local system environment variables directly to your SDK directory path:
-
-```bash
-export ANDROID_SDK_ROOT=/path/to/android/sdk
-```
-
-### Build Instructions
-
-First, clone the source tree recursively to pull down all necessary submodules:
-```bash
-git clone --recurse-submodules https://github.com
-cd PermataAuto
-```
-
-#### Option A: Compiling Android App Bundles (.AAB)
-Execute the release bundle task while specifying a unique package suffix to decouple the application layer from standard blocks:
-```bash
-./gradlew bundleAutoRelease -PAPP_ID_SFX=.your.custom.suffix
-find \$PWD -name "*.aab"
-```
-
-#### Option B: Compiling Standalone Installers (.APK)
-Generate a deployable, custom-signed package directly to your local file path:
-```bash
-./gradlew assembleAutoRelease -PAPP_ID_SFX=.your.custom.suffix
-find \$PWD -name "*.apk"
-```
-
-#### Option C: Isolated Containerized Builds (Docker)
-To maintain an immutable build workspace, compile directly within our automated Docker stack:
-```bash
-# Instantiate and build inside the environment
-docker run -ti --name Permata sklchan77/PermataAuto
-
-# Extract the compiled output bundles to your host machine
-docker cp Permata:/home/mobiledevops/PermataAuto/permata/build/outputs/bundle/autoRelease/ .
-```
-*(Note: Provide your requested verification alias and key signatures when prompted by the terminal prompt).*
-
----
-
 ## 🤝 Acknowledgments
 
 Special thanks to **Andrey Pavlenko** for the unwavering commitment to releasing this source code openly. This dedication keeps localized open-source development alive, secure, and accessible for everyone.
