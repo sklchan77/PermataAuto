@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <automotiveApp xmlns:tools="http://schemas.android.com/tools">
-    <!-- ONLY navigation is declared. 
-         Removing "media" stops Android Auto from hiding the video canvas icon -->
+    <uses name="template" />
     <uses name="navigation" />
+    <uses name="media" />
     <uses
         name="service"
         tools:ignore="InvalidUsesTagAttribute" />
