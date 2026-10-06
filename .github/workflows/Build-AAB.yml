@@ -74,8 +74,19 @@ jobs:
           java-version: ${{ env.JAVA_VERSION }}
           distribution: ${{ env.JAVA_DISTRIBUTION }}
 
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
+
+    - name: Setup Android SDK
+      uses: android-actions/setup-android@v3
+      with:
+        cmdline-tools-version: 12266719
+        accept-android-sdk-licenses: true
+        packages: tools platform-tools
+
+    # Add this step directly underneath to force-accept all licenses
+    - name: Accept Android SDK Licenses Manually
+      run: |
+        yes | /usr/local/lib/android/sdk/cmdline-tools/16.0/bin/sdkmanager --licenses
+
 
       - name: Cache Android NDK
         uses: actions/cache@v4
