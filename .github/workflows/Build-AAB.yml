@@ -75,11 +75,7 @@ jobs:
           distribution: ${{ env.JAVA_DISTRIBUTION }}
 
       - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
-
-      - name: Force Accept Android SDK Licenses
-        run: |
-          yes | /usr/local/lib/android/sdk/cmdline-tools/16.0/bin/sdkmanager --licenses
+        uses: android-actions/setup-android@v4
 
       - name: Cache Android NDK
         uses: actions/cache@v4
