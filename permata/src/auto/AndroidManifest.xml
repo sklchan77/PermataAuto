@@ -46,7 +46,7 @@
         <service
             android:name="my.app.permata.auto.PermataCarAppService"
             android:exported="true"
-            android:label="Permata Video"
+            android:label="@string/app_name"
             android:icon="@drawable/launcher"
             tools:ignore="ExportedService">
             <intent-filter>
