@@ -77,10 +77,6 @@ jobs:
 
     - name: Setup Android SDK
       uses: android-actions/setup-android@v3
-      with:
-        cmdline-tools-version: 12266719
-        accept-android-sdk-licenses: true
-        packages: tools platform-tools
 
     # Add this step directly underneath to force-accept all licenses
     - name: Accept Android SDK Licenses Manually
