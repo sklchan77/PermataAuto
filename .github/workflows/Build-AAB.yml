@@ -78,11 +78,6 @@ jobs:
     - name: Setup Android SDK
       uses: android-actions/setup-android@v3
 
-    # Add this step directly underneath to force-accept all licenses
-    - name: Accept Android SDK Licenses Manually
-      run: |
-        yes | /usr/local/lib/android/sdk/cmdline-tools/16.0/bin/sdkmanager --licenses
-
 
       - name: Cache Android NDK
         uses: actions/cache@v4
