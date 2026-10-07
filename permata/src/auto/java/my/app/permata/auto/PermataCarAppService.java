@@ -1,13 +1,18 @@
 package my.app.permata.auto;
 
+import android.app.Presentation;
+import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
+import android.content.ServiceConnection;
+import android.graphics.Color;
 import android.hardware.display.DisplayManager;
 import android.hardware.display.VirtualDisplay;
-import android.os.Handler;
-import android.os.Looper;
-import android.util.DisplayMetrics;
+import android.os.IBinder;
+import android.view.Gravity;
 import android.view.Surface;
+import android.widget.LinearLayout;
+import android.widget.TextView;
 
 import androidx.annotation.NonNull;
 import androidx.car.app.AppManager;
@@ -24,6 +29,10 @@ import androidx.car.app.model.Template;
 import androidx.car.app.navigation.model.NavigationTemplate;
 import androidx.car.app.validation.HostValidator;
 
+import java.lang.reflect.Method;
+
+import my.app.permata.media.engine.MediaEngine;
+
 public class PermataCarAppService extends CarAppService {
 
     @NonNull
@@ -38,98 +47,201 @@ public class PermataCarAppService extends CarAppService {
         return new PermataVideoSession();
     }
 
-    private static class PermataVideoSession extends Session {
+    private static class PermataVideoSession extends Session implements ServiceConnection {
+        private Object mediaSessionCallback;
+        private Surface currentSurface;
+        private PermataVideoScreen screen;
+        
+        // WebKit specific wrappers
+        private VirtualDisplay virtualDisplay;
+        private Presentation webKitPresentation;
+
         @NonNull
         @Override
         public Screen onCreateScreen(@NonNull Intent intent) {
-            return new PermataVideoScreen(getCarContext());
+            try {
+                Intent bindIntent = new Intent();
+                bindIntent.setClassName(getCarContext(), "my.app.permata.media.service.PermataMediaService");
+                boolean bound = getCarContext().bindService(bindIntent, this, Context.BIND_AUTO_CREATE);
+                
+                if (!bound) {
+                    bindIntent.setPackage(getCarContext().getPackageName());
+                    bindIntent.setAction("android.media.browse.MediaBrowserService");
+                    getCarContext().bindService(bindIntent, this, Context.BIND_AUTO_CREATE);
+                }
+            } catch (Throwable e) {
+                android.util.Log.e("PermataVideo", "Failed to bind to MediaService", e);
+            }
+
+            screen = new PermataVideoScreen(getCarContext(), this);
+            return screen;
+        }
+
+        @Override
+        public void onServiceConnected(ComponentName name, IBinder service) {
+            try {
+                Method getCb = service.getClass().getMethod("getMediaSessionCallback");
+                mediaSessionCallback = getCb.invoke(service);
+                
+                if (currentSurface != null) {
+                    routeSurface();
+                }
+            } catch (Throwable e) {
+                android.util.Log.e("PermataVideo", "Failed to extract MediaSessionCallback", e);
+            }
+        }
+
+        @Override
+        public void onServiceDisconnected(ComponentName name) {
+            mediaSessionCallback = null;
+        }
+
+        public void onSurfaceAvailable(Surface surface) {
+            this.currentSurface = surface;
+            if (mediaSessionCallback != null) {
+                routeSurface();
+            }
+        }
+
+        public void onSurfaceDestroyed() {
+            destroyWebKitPresentation();
+            if (mediaSessionCallback != null) {
+                attachSurfaceToEngine(null);
+            }
+            this.currentSurface = null;
+        }
+
+        public void togglePlayPause() {
+            try {
+                if (mediaSessionCallback != null) {
+                    Method isPlaying = mediaSessionCallback.getClass().getMethod("isPlaying");
+                    boolean playing = (boolean) isPlaying.invoke(mediaSessionCallback);
+                    if (playing) {
+                        mediaSessionCallback.getClass().getMethod("onPause").invoke(mediaSessionCallback);
+                    } else {
+                        mediaSessionCallback.getClass().getMethod("onPlay").invoke(mediaSessionCallback);
+                    }
+                }
+            } catch (Throwable ignored) {}
+        }
+
+        private void routeSurface() {
+            try {
+                Method getEngine = mediaSessionCallback.getClass().getMethod("getEngine");
+                MediaEngine engine = (MediaEngine) getEngine.invoke(mediaSessionCallback);
+                
+                if (engine != null) {
+                    String engineName = engine.getClass().getSimpleName().toLowerCase();
+                    if (engineName.contains("web") || engineName.contains("browser")) {
+                        // Engine is WebKit: Must use a Presentation Window
+                        mountWebKitPresentation(currentSurface);
+                    } else {
+                        // Engine is ExoPlayer/VLC: Use direct raw surface
+                        attachSurfaceToEngine(currentSurface);
+                    }
+                }
+            } catch (Throwable e) {
+                android.util.Log.e("PermataVideo", "Error routing surface", e);
+            }
+        }
+
+        private void mountWebKitPresentation(Surface surface) {
+            try {
+                // Use application context to satisfy Window Manager constraints
+                Context appCtx = my.app.permata.PermataApplication.get();
+                DisplayManager dm = (DisplayManager) appCtx.getSystemService(Context.DISPLAY_SERVICE);
+                
+                virtualDisplay = dm.createVirtualDisplay(
+                        "PermataWebDisplay", 
+                        1920, 1080, 160, 
+                        surface, 
+                        DisplayManager.VIRTUAL_DISPLAY_FLAG_PRESENTATION
+                );
+
+                webKitPresentation = new Presentation(appCtx, virtualDisplay.getDisplay());
+                
+                // --- MOUNT WEBKIT UI HERE ---
+                // We create a visible fallback layout so you can confirm the window renders
+                LinearLayout layout = new LinearLayout(appCtx);
+                layout.setBackgroundColor(Color.parseColor("#121212"));
+                layout.setGravity(Gravity.CENTER);
+                
+                TextView warning = new TextView(appCtx);
+                warning.setText("WebKit Engine Detected.\nWebView requires this Presentation Window to render.\n\nTo view YouTube here, either:\n1. Switch Permata settings to ExoPlayer\n2. Mount your WebView instance into this Presentation layout.");
+                warning.setTextColor(Color.WHITE);
+                warning.setTextSize(24f);
+                warning.setGravity(Gravity.CENTER);
+                
+                layout.addView(warning);
+                webKitPresentation.setContentView(layout);
+                // -----------------------------
+
+                // Requires SYSTEM_ALERT_WINDOW permission (which your manifest already has)
+                webKitPresentation.getWindow().setType(android.view.WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY);
+                webKitPresentation.show();
+                android.util.Log.i("PermataVideo", "WebKit Presentation mounted successfully.");
+
+            } catch (Throwable e) {
+                android.util.Log.e("PermataVideo", "Failed to mount WebKit Presentation", e);
+            }
+        }
+
+        private void destroyWebKitPresentation() {
+            if (webKitPresentation != null) {
+                try {
+                    webKitPresentation.dismiss();
+                } catch (Exception ignored) {}
+                webKitPresentation = null;
+            }
+            if (virtualDisplay != null) {
+                virtualDisplay.release();
+                virtualDisplay = null;
+            }
+        }
+
+        private void attachSurfaceToEngine(Surface surface) {
+            try {
+                Method getEngine = mediaSessionCallback.getClass().getMethod("getEngine");
+                MediaEngine engine = (MediaEngine) getEngine.invoke(mediaSessionCallback);
+                if (engine != null) {
+                    try {
+                        Method m = engine.getClass().getMethod("setSurface", Surface.class);
+                        m.invoke(engine, surface);
+                    } catch (Exception e1) {
+                        try {
+                            Method m = engine.getClass().getMethod("setVideoSurface", Surface.class);
+                            m.invoke(engine, surface);
+                        } catch (Exception e2) {}
+                    }
+                }
+            } catch (Throwable ignored) {}
         }
     }
 
     private static final class PermataVideoScreen extends Screen implements SurfaceCallback {
+        private final PermataVideoSession session;
 
-        private VirtualDisplay virtualDisplay;
-        private Surface currentSurface;
-
-        PermataVideoScreen(@NonNull CarContext ctx) {
+        PermataVideoScreen(@NonNull CarContext ctx, PermataVideoSession session) {
             super(ctx);
+            this.session = session;
             try {
                 ctx.getCarService(AppManager.class).setSurfaceCallback(this);
-            } catch (Throwable e) {
-                android.util.Log.e("PermataVideo", "Failed to set surface callback", e);
-            }
+            } catch (Throwable ignored) {}
         }
 
         @Override
         public void onSurfaceAvailable(@NonNull SurfaceContainer sc) {
-            currentSurface = sc.getSurface();
-            if (currentSurface != null) {
-                startVirtualDisplay();
-            }
+            if (sc.getSurface() != null) session.onSurfaceAvailable(sc.getSurface());
         }
 
         @Override
         public void onSurfaceDestroyed(@NonNull SurfaceContainer sc) {
-            stopVirtualDisplay();
-            currentSurface = null;
-        }
-
-        private void startVirtualDisplay() {
-            if (currentSurface == null) return;
-            
-            try {
-                DisplayManager displayManager = (DisplayManager) getCarContext().getSystemService(Context.DISPLAY_SERVICE);
-                if (displayManager == null) return;
-
-                // Standardized automotive wide-screen dimensions
-                int width = 1920;
-                int height = 1080;
-                int densityDpi = DisplayMetrics.DENSITY_DEFAULT;
-
-                // Create a VirtualDisplay that writes directly to the car's Surface.
-                // This bypasses WebView restrictions by capturing the system drawing cache.
-                virtualDisplay = displayManager.createVirtualDisplay(
-                        "PermataAutoScreen",
-                        width, height, densityDpi,
-                        currentSurface,
-                        DisplayManager.VIRTUAL_DISPLAY_FLAG_PUBLIC | DisplayManager.VIRTUAL_DISPLAY_FLAG_PRESENTATION
-                );
-
-                android.util.Log.i("PermataVideo", "VirtualDisplay mirroring started.");
-            } catch (Throwable e) {
-                android.util.Log.e("PermataVideo", "Failed to start VirtualDisplay", e);
-            }
-        }
-
-        private void stopVirtualDisplay() {
-            if (virtualDisplay != null) {
-                try {
-                    virtualDisplay.release();
-                    virtualDisplay = null;
-                    android.util.Log.i("PermataVideo", "VirtualDisplay mirroring stopped.");
-                } catch (Throwable e) {
-                    android.util.Log.e("PermataVideo", "Failed to release VirtualDisplay", e);
-                }
-            }
+            session.onSurfaceDestroyed();
         }
 
         @Override
         public void onClick(float x, float y) {
-            // Emulate a click event into the center of your application
-            try {
-                if (MainCarActivity.service != null) {
-                    Object cb = MainCarActivity.service.getMediaSessionCallback();
-                    if (cb != null) {
-                        java.lang.reflect.Method isPlaying = cb.getClass().getMethod("isPlaying");
-                        boolean playing = (boolean) isPlaying.invoke(cb);
-                        if (playing) {
-                            cb.getClass().getMethod("onPause").invoke(cb);
-                        } else {
-                            cb.getClass().getMethod("onPlay").invoke(cb);
-                        }
-                    }
-                }
-            } catch (Throwable ignored) {}
+            session.togglePlayPause();
         }
 
         @Override
@@ -141,22 +253,14 @@ public class PermataCarAppService extends CarAppService {
         @NonNull
         @Override
         public Template onGetTemplate() {
-            try {
-                Action toggleAction = new Action.Builder()
-                        .setTitle("Play / Pause")
-                        .setOnClickListener(() -> onClick(0f, 0f))
-                        .build();
+            Action toggleAction = new Action.Builder()
+                    .setTitle("Play / Pause")
+                    .setOnClickListener(() -> session.togglePlayPause())
+                    .build();
 
-                ActionStrip actionStrip = new ActionStrip.Builder()
-                        .addAction(toggleAction)
-                        .build();
-
-                return new NavigationTemplate.Builder()
-                        .setActionStrip(actionStrip)
-                        .build();
-            } catch (Throwable e) {
-                throw new IllegalStateException("Template generation failed", e);
-            }
+            return new NavigationTemplate.Builder()
+                    .setActionStrip(new ActionStrip.Builder().addAction(toggleAction).build())
+                    .build();
         }
     }
 }
