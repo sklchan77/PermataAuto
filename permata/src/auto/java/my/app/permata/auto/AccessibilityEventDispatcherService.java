@@ -34,6 +34,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
+import my.app.permata.PermataApplication;
 import my.app.utils.log.Log;
 
 public class AccessibilityEventDispatcherService extends AccessibilityService {
@@ -246,6 +247,11 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
 
 	@Override
 	public void onAccessibilityEvent(AccessibilityEvent event) {
+		// OPTIMIZATION 1: Ignore all events if phone is not connected to Android Auto
+		if (!PermataApplication.get().isConnectedToAuto()) {
+			return;
+		}
+
 		var type = event.getEventType();
 		if ((VERSION.SDK_INT >= VERSION_CODES.TIRAMISU) && (type == TYPE_WINDOWS_CHANGED)) {
 			if (event.getDisplayId() != DEFAULT_DISPLAY) return;
@@ -255,36 +261,43 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
 			return;
 		}
 
-		if (type != TYPE_WINDOW_STATE_CHANGED && type != AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED) return;
+		// OPTIMIZATION 2: Only trigger on discrete window state transitions (ignore continuous content updates)
+		if (type != TYPE_WINDOW_STATE_CHANGED) return;
 
-		var root = getRootInActiveWindow();
-		if (root == null) return;
-
-		// 1. Process explicit button click requests set via autoClickOnButton()
-		if (clickOnButton != null) {
-			Log.i("Event received: ", event);
-			Log.i("Finding button by text: ", clickOnButton);
-			var btn = root.findAccessibilityNodeInfosByText(clickOnButton);
-			if (btn.isEmpty()) {
-				Log.i("Button not found. Trying to find by id: android:id/button1.");
-				btn = root.findAccessibilityNodeInfosByViewId("android:id/button1");
-			}
-			if (!btn.isEmpty()) {
-				Log.i("Button '", btn.get(0).getText(), "' found. Performing click.");
-				performClickNode(btn.get(0));
-				return;
-			}
-		}
-
-		// 2. Automatically detect and click MediaProjection consent dialog buttons across localizations
-		checkAndClickMediaProjectionConsent(root, event);
-	}
-
-	private void checkAndClickMediaProjectionConsent(AccessibilityNodeInfo root, AccessibilityEvent event) {
+		// OPTIMIZATION 3: Early package name check before parsing UI tree
 		CharSequence pkg = event.getPackageName();
 		if (pkg == null) return;
 		String pkgName = pkg.toString();
 
+		var root = getRootInActiveWindow();
+		if (root == null) return;
+
+		try {
+			// 1. Process explicit button click requests if set via autoClickOnButton()
+			if (clickOnButton != null) {
+				Log.i("Event received: ", event);
+				Log.i("Finding button by text: ", clickOnButton);
+				var btn = root.findAccessibilityNodeInfosByText(clickOnButton);
+				if (btn.isEmpty()) {
+					Log.i("Button not found. Trying to find by id: android:id/button1.");
+					btn = root.findAccessibilityNodeInfosByViewId("android:id/button1");
+				}
+				if (!btn.isEmpty()) {
+					Log.i("Button '", btn.get(0).getText(), "' found. Performing click.");
+					performClickNode(btn.get(0));
+					clickOnButton = null; // OPTIMIZATION 4: Reset click request immediately after success
+					return;
+				}
+			}
+
+			// 2. Automatically detect and click MediaProjection consent dialog buttons across localizations
+			checkAndClickMediaProjectionConsent(root, pkgName);
+		} finally {
+			root.recycle(); // OPTIMIZATION 5: Prevent memory leaks / GC stutters
+		}
+	}
+
+	private void checkAndClickMediaProjectionConsent(AccessibilityNodeInfo root, String pkgName) {
 		// Intercept system UI dialogs where the casting/recording dialog appears
 		if ("com.android.systemui".equals(pkgName) || "android".equals(pkgName) || pkgName.contains("systemui")) {
 			String[] targetTexts = new String[]{
