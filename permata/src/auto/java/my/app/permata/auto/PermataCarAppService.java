@@ -12,8 +12,6 @@ import androidx.car.app.Session;
 import androidx.car.app.SessionInfo;
 import androidx.car.app.SurfaceCallback;
 import androidx.car.app.SurfaceContainer;
-import androidx.car.app.model.Action;
-import androidx.car.app.model.ActionStrip;
 import androidx.car.app.model.Template;
 import androidx.car.app.navigation.model.NavigationTemplate;
 import androidx.car.app.validation.HostValidator;
@@ -21,6 +19,9 @@ import androidx.car.app.validation.HostValidator;
 import java.lang.reflect.Method;
 
 import my.app.permata.media.engine.MediaEngine;
+import my.app.permata.media.service.MediaSessionCallback;
+import my.app.permata.ui.activity.MainActivityDelegate;
+import my.app.utils.async.FutureSupplier;
 import my.app.utils.log.Log;
 
 public class PermataCarAppService extends CarAppService {
@@ -56,92 +57,88 @@ public class PermataCarAppService extends CarAppService {
             if (surface == null) return;
 
             try {
-                my.app.permata.media.service.MediaSessionCallback cb = null;
-                
-                my.app.permata.ui.activity.MainActivityDelegate delegate = 
-                        my.app.permata.ui.activity.MainActivityDelegate.get(my.app.permata.PermataApplication.get());
-                
-                if (delegate != null && delegate.getMediaServiceBinder() != null) {
-                    cb = delegate.getMediaServiceBinder().getMediaSessionCallback();
-                } else if (MainCarActivity.service != null) {
-                    cb = MainCarActivity.service.getMediaSessionCallback();
-                }
+                // Fix 1: Use the correct FutureSupplier retrieval method confirmed in VideoView.java
+                FutureSupplier<MainActivityDelegate> future = MainActivityDelegate.getActivityDelegate(getCarContext());
+                if (future == null) return;
 
-                if (cb != null) {
-                    MediaEngine engine = cb.getEngine();
-                    if (engine != null) {
-                        try {
-                            Method m = engine.getClass().getMethod("setSurface", Surface.class);
-                            m.invoke(engine, surface);
-                            Log.i("[AUTO_FULLSCREEN] Attached Surface via Phone Delegate.");
-                        } catch (NoSuchMethodException e) {
+                MainActivityDelegate delegate = future.peek();
+                if (delegate != null) {
+                    MediaSessionCallback cb = delegate.getMediaSessionCallback();
+                    if (cb != null) {
+                        MediaEngine engine = cb.getEngine();
+                        if (engine != null) {
                             try {
-                                Method m = engine.getClass().getMethod("setVideoSurface", Surface.class);
+                                Method m = engine.getClass().getMethod("setSurface", Surface.class);
                                 m.invoke(engine, surface);
-                                Log.i("[AUTO_FULLSCREEN] Attached VideoSurface via Phone Delegate.");
-                            } catch (NoSuchMethodException e2) {}
+                                Log.i("[AUTO_FULLSCREEN] Attached Surface to engine.");
+                            } catch (NoSuchMethodException e) {
+                                try {
+                                    Method m = engine.getClass().getMethod("setVideoSurface", Surface.class);
+                                    m.invoke(engine, surface);
+                                } catch (NoSuchMethodException ignored) {}
+                            }
                         }
                     }
                 }
-            } catch (Exception e) {
-                Log.e(e, "[AUTO_FULLSCREEN] Error attaching Surface to MediaEngine");
+            } catch (Throwable e) {
+                Log.e(e, "[AUTO_FULLSCREEN] Crash intercepted in onSurfaceAvailable");
             }
         }
 
         @Override
         public void onSurfaceDestroyed(@NonNull SurfaceContainer sc) {
             try {
-                my.app.permata.media.service.MediaSessionCallback cb = null;
-                my.app.permata.ui.activity.MainActivityDelegate delegate = 
-                        my.app.permata.ui.activity.MainActivityDelegate.get(my.app.permata.PermataApplication.get());
-                
-                if (delegate != null && delegate.getMediaServiceBinder() != null) {
-                    cb = delegate.getMediaServiceBinder().getMediaSessionCallback();
-                } else if (MainCarActivity.service != null) {
-                    cb = MainCarActivity.service.getMediaSessionCallback();
-                }
+                FutureSupplier<MainActivityDelegate> future = MainActivityDelegate.getActivityDelegate(getCarContext());
+                if (future == null) return;
 
-                if (cb != null) {
-                    MediaEngine engine = cb.getEngine();
-                    if (engine != null) {
-                        try {
-                            Method m = engine.getClass().getMethod("setSurface", Surface.class);
-                            m.invoke(engine, new Object[]{null});
-                        } catch (NoSuchMethodException e) {
+                MainActivityDelegate delegate = future.peek();
+                if (delegate != null) {
+                    MediaSessionCallback cb = delegate.getMediaSessionCallback();
+                    if (cb != null) {
+                        MediaEngine engine = cb.getEngine();
+                        if (engine != null) {
                             try {
-                                Method m = engine.getClass().getMethod("setVideoSurface", Surface.class);
+                                Method m = engine.getClass().getMethod("setSurface", Surface.class);
                                 m.invoke(engine, new Object[]{null});
-                            } catch (NoSuchMethodException e2) {}
+                            } catch (NoSuchMethodException e) {
+                                try {
+                                    Method m = engine.getClass().getMethod("setVideoSurface", Surface.class);
+                                    m.invoke(engine, new Object[]{null});
+                                } catch (NoSuchMethodException ignored) {}
+                            }
                         }
-                        Log.i("[AUTO_FULLSCREEN] Detached Android Auto Surface.");
                     }
                 }
-            } catch (Exception e) {
-                Log.e(e, "[AUTO_FULLSCREEN] Error detaching Surface");
+            } catch (Throwable e) {
+                Log.e(e, "[AUTO_FULLSCREEN] Crash intercepted in onSurfaceDestroyed");
             }
         }
 
         @Override
         public void onClick(float x, float y) {
             try {
-                my.app.permata.ui.activity.MainActivityDelegate delegate = 
-                        my.app.permata.ui.activity.MainActivityDelegate.get(my.app.permata.PermataApplication.get());
-                if (delegate != null && delegate.getMediaServiceBinder() != null) {
-                    my.app.permata.media.service.MediaSessionCallback cb = delegate.getMediaServiceBinder().getMediaSessionCallback();
+                FutureSupplier<MainActivityDelegate> future = MainActivityDelegate.getActivityDelegate(getCarContext());
+                if (future != null && future.peek() != null) {
+                    MediaSessionCallback cb = future.peek().getMediaSessionCallback();
                     if (cb != null) {
                         if (cb.isPlaying()) cb.onPause();
                         else cb.onPlay();
                     }
                 }
-            } catch (Exception ignored) {}
+            } catch (Throwable ignored) {}
         }
+
+        @Override
+        public void onScroll(float distanceX, float distanceY) {}
+
+        @Override
+        public void onScale(float focusX, float focusY, float scaleFactor) {}
 
         @NonNull
         @Override
         public Template onGetTemplate() {
-            return new NavigationTemplate.Builder()
-                    .setMapActionStrip(new ActionStrip.Builder().addAction(Action.PAN).build())
-                    .build();
+            // Fix 2: Return a pure, empty NavigationTemplate to completely bypass the Action.PAN fatal crash
+            return new NavigationTemplate.Builder().build();
         }
     }
 }
