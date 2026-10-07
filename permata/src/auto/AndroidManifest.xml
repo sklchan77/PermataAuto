@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:tools="http://schemas.android.com/tools">
+    xmlns:tools="http://schemas.android.com/tools"
+    package="my.app.permata">
 
     <uses-permission android:name="androidx.car.app.ACCESS_SURFACE" />
     <uses-permission android:name="androidx.car.app.NAVIGATION_TEMPLATES" />
@@ -83,7 +84,7 @@
             </intent-filter>
         </service>
 
-        <!-- CORRECTED: Permata Media Service (Dedicated Audio & Media Browser Service) -->
+        <!-- CORRECTED: Permata Media Service -->
         <service
             android:name="my.app.permata.media.service.PermataMediaService"
             android:exported="true"
@@ -116,4 +117,37 @@
         <service
             android:name="my.app.permata.auto.AccessibilityEventDispatcherService"
             android:exported="true"
-            android:permission="android.permission.BIND_
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/accessibility" />
+        </service>
+
+        <service
+            android:name="my.app.permata.auto.XposedEventDispatcherService"
+            android:exported="true"
+            tools:ignore="ExportedService" />
+
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.FileProvider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/filepaths" />
+        </provider>
+
+        <receiver
+            android:name="my.app.permata.auto.MediaServiceStarter"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.bluetooth.device.action.ACL_CONNECTED" />
+                <action android:name="android.bluetooth.device.action.ACL_DISCONNECTED" />
+            </intent-filter>
+        </receiver>
+    </application>
+</manifest>
