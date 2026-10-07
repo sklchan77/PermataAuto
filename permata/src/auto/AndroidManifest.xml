@@ -84,13 +84,14 @@
             </intent-filter>
         </service>
 
-        <!-- CORRECTED: Permata Media Service -->
+        <!-- OVERRIDE: Permata Media Service -->
         <service
             android:name="my.app.permata.media.service.PermataMediaService"
             android:exported="true"
             android:icon="@drawable/launcher"
             android:label="Permata Media"
-            tools:ignore="ExportedService">
+            tools:ignore="ExportedService"
+            tools:replace="android:icon,android:label">
             <intent-filter>
                 <action android:name="android.media.browse.MediaBrowserService" />
             </intent-filter>
