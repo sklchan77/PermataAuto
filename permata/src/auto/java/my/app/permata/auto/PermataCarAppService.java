@@ -12,6 +12,8 @@ import androidx.car.app.Session;
 import androidx.car.app.SessionInfo;
 import androidx.car.app.SurfaceCallback;
 import androidx.car.app.SurfaceContainer;
+import androidx.car.app.model.Action;
+import androidx.car.app.model.ActionStrip;
 import androidx.car.app.model.Template;
 import androidx.car.app.navigation.model.NavigationTemplate;
 import androidx.car.app.validation.HostValidator;
@@ -46,7 +48,6 @@ public class PermataCarAppService extends CarAppService {
         PermataVideoScreen(@NonNull CarContext ctx) {
             super(ctx);
             try {
-                // Attach surface safely so if the API level is mismatched, it doesn't crash the car
                 ctx.getCarService(AppManager.class).setSurfaceCallback(this);
             } catch (Throwable e) {
                 android.util.Log.e("PermataVideo", "Failed to set surface callback", e);
@@ -128,30 +129,32 @@ public class PermataCarAppService extends CarAppService {
         @Override
         public Template onGetTemplate() {
             try {
-                // A completely barebones navigation template. 
-                // We do not add Action.PAN or MapActionStrip here because failing to provide 
-                // a strict PanModeDelegate or satisfying map requirements causes instant car crashes.
-                return new NavigationTemplate.Builder().build();
+                // ActionStrip required to pass Android Auto template validation
+                Action toggleAction = new Action.Builder()
+                        .setTitle("Play / Pause")
+                        .setOnClickListener(() -> onClick(0f, 0f))
+                        .build();
+
+                ActionStrip actionStrip = new ActionStrip.Builder()
+                        .addAction(toggleAction)
+                        .build();
+
+                return new NavigationTemplate.Builder()
+                        .setActionStrip(actionStrip)
+                        .build();
             } catch (Throwable e) {
                 android.util.Log.e("PermataVideo", "Template generation failed", e);
-                throw e; // Car libraries require a template to be returned, so if it fails, let it fallback.
+                throw e;
             }
         }
 
-        // -------------------------------------------------------------------------
-        // PURE REFLECTION HELPERS
-        // Using reflection bypasses all ClassDefNotFound/VerifyError crashes 
-        // that occur when Android Auto runs in the background.
-        // -------------------------------------------------------------------------
-
         private Object findMediaSessionCallbackSafely() {
             try {
-                // Route 1: Try via MainActivityDelegate without importing the class
                 Object app = my.app.permata.PermataApplication.get();
                 Class<?> delegateClass = Class.forName("my.app.permata.ui.activity.MainActivityDelegate");
                 Method getDelegate = delegateClass.getMethod("getActivityDelegate", android.content.Context.class);
                 Object future = getDelegate.invoke(null, app);
-                
+
                 if (future != null) {
                     Method peek = future.getClass().getMethod("peek");
                     Object delegate = peek.invoke(future);
@@ -172,7 +175,6 @@ public class PermataCarAppService extends CarAppService {
             } catch (Throwable ignored) {}
 
             try {
-                // Route 2: Fallback to your legacy MainCarActivity static reference if it exists
                 Class<?> carActivityClass = Class.forName("my.app.permata.auto.MainCarActivity");
                 Field serviceField = carActivityClass.getField("service");
                 Object service = serviceField.get(null);
