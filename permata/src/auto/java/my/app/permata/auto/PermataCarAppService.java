@@ -1,10 +1,12 @@
 package my.app.permata.auto;
 
-import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
-import android.content.ServiceConnection;
-import android.os.IBinder;
+import android.hardware.display.DisplayManager;
+import android.hardware.display.VirtualDisplay;
+import android.os.Handler;
+import android.os.Looper;
+import android.util.DisplayMetrics;
 import android.view.Surface;
 
 import androidx.annotation.NonNull;
@@ -22,10 +24,6 @@ import androidx.car.app.model.Template;
 import androidx.car.app.navigation.model.NavigationTemplate;
 import androidx.car.app.validation.HostValidator;
 
-import java.lang.reflect.Method;
-
-import my.app.permata.media.engine.MediaEngine;
-
 public class PermataCarAppService extends CarAppService {
 
     @NonNull
@@ -40,112 +38,21 @@ public class PermataCarAppService extends CarAppService {
         return new PermataVideoSession();
     }
 
-    private static class PermataVideoSession extends Session implements ServiceConnection {
-        private Object mediaSessionCallback;
-        private Surface currentSurface;
-        private PermataVideoScreen screen;
-
+    private static class PermataVideoSession extends Session {
         @NonNull
         @Override
         public Screen onCreateScreen(@NonNull Intent intent) {
-            try {
-                // Bind directly to the Media service so we do not rely on the phone UI being open.
-                Intent bindIntent = new Intent();
-                bindIntent.setClassName(getCarContext(), "my.app.permata.media.service.PermataMediaService");
-                boolean bound = getCarContext().bindService(bindIntent, this, Context.BIND_AUTO_CREATE);
-                
-                // Fallback via standard MediaBrowser intent if direct package lookup fails
-                if (!bound) {
-                    bindIntent.setPackage(getCarContext().getPackageName());
-                    bindIntent.setAction("android.media.browse.MediaBrowserService");
-                    getCarContext().bindService(bindIntent, this, Context.BIND_AUTO_CREATE);
-                }
-            } catch (Throwable e) {
-                android.util.Log.e("PermataVideo", "Failed to bind to MediaService", e);
-            }
-
-            screen = new PermataVideoScreen(getCarContext(), this);
-            return screen;
-        }
-
-        @Override
-        public void onServiceConnected(ComponentName name, IBinder service) {
-            try {
-                // The IBinder is your MediaServiceBinder. Extract the callback directly.
-                Method getCb = service.getClass().getMethod("getMediaSessionCallback");
-                mediaSessionCallback = getCb.invoke(service);
-                android.util.Log.i("PermataVideo", "Successfully bound to MediaService and retrieved Callback");
-                
-                // If Android Auto already prepared the Surface before connection finished, attach it now
-                if (currentSurface != null) {
-                    attachSurfaceToEngine(currentSurface);
-                }
-            } catch (Throwable e) {
-                android.util.Log.e("PermataVideo", "Failed to extract MediaSessionCallback from Binder", e);
-            }
-        }
-
-        @Override
-        public void onServiceDisconnected(ComponentName name) {
-            mediaSessionCallback = null;
-        }
-
-        public void onSurfaceAvailable(Surface surface) {
-            this.currentSurface = surface;
-            if (mediaSessionCallback != null) {
-                attachSurfaceToEngine(surface);
-            }
-        }
-
-        public void onSurfaceDestroyed() {
-            if (mediaSessionCallback != null) {
-                attachSurfaceToEngine(null);
-            }
-            this.currentSurface = null;
-        }
-
-        public void togglePlayPause() {
-            try {
-                if (mediaSessionCallback != null) {
-                    Method isPlaying = mediaSessionCallback.getClass().getMethod("isPlaying");
-                    boolean playing = (boolean) isPlaying.invoke(mediaSessionCallback);
-                    if (playing) {
-                        mediaSessionCallback.getClass().getMethod("onPause").invoke(mediaSessionCallback);
-                    } else {
-                        mediaSessionCallback.getClass().getMethod("onPlay").invoke(mediaSessionCallback);
-                    }
-                }
-            } catch (Throwable ignored) {}
-        }
-
-        private void attachSurfaceToEngine(Surface surface) {
-            try {
-                Method getEngine = mediaSessionCallback.getClass().getMethod("getEngine");
-                MediaEngine engine = (MediaEngine) getEngine.invoke(mediaSessionCallback);
-                if (engine != null) {
-                    try {
-                        Method m = engine.getClass().getMethod("setSurface", Surface.class);
-                        m.invoke(engine, surface);
-                    } catch (Exception e1) {
-                        try {
-                            Method m = engine.getClass().getMethod("setVideoSurface", Surface.class);
-                            m.invoke(engine, surface);
-                        } catch (Exception e2) {}
-                    }
-                    android.util.Log.i("PermataVideo", surface != null ? "Surface Attached!" : "Surface Detached");
-                }
-            } catch (Throwable e) {
-                android.util.Log.e("PermataVideo", "Error attaching surface to Engine", e);
-            }
+            return new PermataVideoScreen(getCarContext());
         }
     }
 
     private static final class PermataVideoScreen extends Screen implements SurfaceCallback {
-        private final PermataVideoSession session;
 
-        PermataVideoScreen(@NonNull CarContext ctx, PermataVideoSession session) {
+        private VirtualDisplay virtualDisplay;
+        private Surface currentSurface;
+
+        PermataVideoScreen(@NonNull CarContext ctx) {
             super(ctx);
-            this.session = session;
             try {
                 ctx.getCarService(AppManager.class).setSurfaceCallback(this);
             } catch (Throwable e) {
@@ -155,21 +62,74 @@ public class PermataCarAppService extends CarAppService {
 
         @Override
         public void onSurfaceAvailable(@NonNull SurfaceContainer sc) {
-            Surface surface = sc.getSurface();
-            if (surface != null) {
-                session.onSurfaceAvailable(surface);
+            currentSurface = sc.getSurface();
+            if (currentSurface != null) {
+                startVirtualDisplay();
             }
         }
 
         @Override
         public void onSurfaceDestroyed(@NonNull SurfaceContainer sc) {
-            session.onSurfaceDestroyed();
+            stopVirtualDisplay();
+            currentSurface = null;
+        }
+
+        private void startVirtualDisplay() {
+            if (currentSurface == null) return;
+            
+            try {
+                DisplayManager displayManager = (DisplayManager) getCarContext().getSystemService(Context.DISPLAY_SERVICE);
+                if (displayManager == null) return;
+
+                // Standardized automotive wide-screen dimensions
+                int width = 1920;
+                int height = 1080;
+                int densityDpi = DisplayMetrics.DENSITY_DEFAULT;
+
+                // Create a VirtualDisplay that writes directly to the car's Surface.
+                // This bypasses WebView restrictions by capturing the system drawing cache.
+                virtualDisplay = displayManager.createVirtualDisplay(
+                        "PermataAutoScreen",
+                        width, height, densityDpi,
+                        currentSurface,
+                        DisplayManager.VIRTUAL_DISPLAY_FLAG_PUBLIC | DisplayManager.VIRTUAL_DISPLAY_FLAG_PRESENTATION
+                );
+
+                android.util.Log.i("PermataVideo", "VirtualDisplay mirroring started.");
+            } catch (Throwable e) {
+                android.util.Log.e("PermataVideo", "Failed to start VirtualDisplay", e);
+            }
+        }
+
+        private void stopVirtualDisplay() {
+            if (virtualDisplay != null) {
+                try {
+                    virtualDisplay.release();
+                    virtualDisplay = null;
+                    android.util.Log.i("PermataVideo", "VirtualDisplay mirroring stopped.");
+                } catch (Throwable e) {
+                    android.util.Log.e("PermataVideo", "Failed to release VirtualDisplay", e);
+                }
+            }
         }
 
         @Override
         public void onClick(float x, float y) {
-            // Allows tapping the video canvas itself to play/pause
-            session.togglePlayPause();
+            // Emulate a click event into the center of your application
+            try {
+                if (MainCarActivity.service != null) {
+                    Object cb = MainCarActivity.service.getMediaSessionCallback();
+                    if (cb != null) {
+                        java.lang.reflect.Method isPlaying = cb.getClass().getMethod("isPlaying");
+                        boolean playing = (boolean) isPlaying.invoke(cb);
+                        if (playing) {
+                            cb.getClass().getMethod("onPause").invoke(cb);
+                        } else {
+                            cb.getClass().getMethod("onPlay").invoke(cb);
+                        }
+                    }
+                }
+            } catch (Throwable ignored) {}
         }
 
         @Override
@@ -184,7 +144,7 @@ public class PermataCarAppService extends CarAppService {
             try {
                 Action toggleAction = new Action.Builder()
                         .setTitle("Play / Pause")
-                        .setOnClickListener(() -> session.togglePlayPause())
+                        .setOnClickListener(() -> onClick(0f, 0f))
                         .build();
 
                 ActionStrip actionStrip = new ActionStrip.Builder()
