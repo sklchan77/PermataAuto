@@ -254,25 +254,116 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
 			else if (change == WINDOWS_CHANGE_REMOVED) windowIds.remove(event.getWindowId());
 			return;
 		}
-		if (type != TYPE_WINDOW_STATE_CHANGED) return;
-		if (clickOnButton == null) return;
-		Log.i("Event received: ", event);
+
+		if (type != TYPE_WINDOW_STATE_CHANGED && type != AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED) return;
+
 		var root = getRootInActiveWindow();
 		if (root == null) return;
-		Log.i("Finding button by text: ", clickOnButton);
-		var btn = root.findAccessibilityNodeInfosByText(clickOnButton);
-		if (btn.isEmpty()) {
-			Log.i("Button not found. Trying to find by id: android:id/button1.");
-			btn = root.findAccessibilityNodeInfosByViewId("android:id/button1");
+
+		// 1. Process explicit button click requests set via autoClickOnButton()
+		if (clickOnButton != null) {
+			Log.i("Event received: ", event);
+			Log.i("Finding button by text: ", clickOnButton);
+			var btn = root.findAccessibilityNodeInfosByText(clickOnButton);
 			if (btn.isEmpty()) {
-				Log.i("Button not found.");
+				Log.i("Button not found. Trying to find by id: android:id/button1.");
+				btn = root.findAccessibilityNodeInfosByViewId("android:id/button1");
+			}
+			if (!btn.isEmpty()) {
+				Log.i("Button '", btn.get(0).getText(), "' found. Performing click.");
+				performClickNode(btn.get(0));
 				return;
 			}
 		}
-		Log.i("Button '", btn.get(0).getText(), "' found. Performing click.");
-		btn.get(0).performAction(AccessibilityNodeInfo.ACTION_CLICK);
+
+		// 2. Automatically detect and click MediaProjection consent dialog buttons across localizations
+		checkAndClickMediaProjectionConsent(root, event);
 	}
 
+	private void checkAndClickMediaProjectionConsent(AccessibilityNodeInfo root, AccessibilityEvent event) {
+		CharSequence pkg = event.getPackageName();
+		if (pkg == null) return;
+		String pkgName = pkg.toString();
+
+		// Intercept system UI dialogs where the casting/recording dialog appears
+		if ("com.android.systemui".equals(pkgName) || "android".equals(pkgName) || pkgName.contains("systemui")) {
+			String[] targetTexts = new String[]{
+					// English (US, UK, Global)
+					"Start now", "Start recording", "Allow", "Start",
+					
+					// Chinese (Simplified - PRC / Mainland)
+					"立即开始", "开始录制", "开始", "允许",
+					
+					// Chinese (Traditional - Taiwan, Hong Kong, Macau)
+					"立即開始", "開始錄製", "開始", "允許",
+
+					// South East Asia
+					"Mulai sekarang", "Izinkan", // Bahasa Indonesia
+					"Mula sekarang", "Benarkan", // Bahasa Melayu (Malaysia / Brunei)
+					"เริ่มเลย", "อนุญาต", "เริ่ม", // Thai
+					"Bắt đầu ngay", "Cho phép", "Bắt đầu", // Vietnamese
+					"Magsimula na", "Simulan ngayon", "Payagan", // Tagalog / Filipino
+
+					// Indian Subcontinent
+					"अभी शुरू करें", "अनुमति दें", "शुरू करें", // Hindi / Hindu
+					"இப்போதே தொடங்கு", "அனுமதி", // Tamil
+					
+					// Middle East (Arabic - UAE, Gulf, General)
+					"البدء الآن", "ابدأ الآن", "السماح", "بدء",
+					
+					// East Asia
+					"今すぐ開始", "許可", "開始", // Japanese
+					"지금 시작", "허용", "시작", // Korean
+
+					// European & Other Major Languages
+					"Iniciar ahora", "Iniciar grabación", "Permitir", // Spanish
+					"Commencer", "Démarrer", "Autoriser", // French
+					"Jetzt starten", "Starten", "Zulassen", // German
+					"Avvia ora", "Consenti", "Iniciar agora", "Permitir", // Italian & Portuguese
+					"Начать", "Разрешить", "Начать запись", // Russian
+					"Şimdi başlat", "İzin ver", // Turkish
+					"Nu starten", "Toestaan", "Rozpocznij teraz", "Zezwól" // Dutch & Polish
+			};
+
+			for (String text : targetTexts) {
+				var nodes = root.findAccessibilityNodeInfosByText(text);
+				if (nodes != null && !nodes.isEmpty()) {
+					for (var node : nodes) {
+						if (node != null && performClickNode(node)) {
+							Log.i("Auto-clicked MediaProjection consent button: ", text);
+							return;
+						}
+					}
+				}
+			}
+
+			// Fallback check for standard Android positive dialog button resource ID
+			var btn1 = root.findAccessibilityNodeInfosByViewId("android:id/button1");
+			if (btn1 != null && !btn1.isEmpty()) {
+				for (var node : btn1) {
+					if (node != null && performClickNode(node)) {
+						Log.i("Auto-clicked MediaProjection consent by ID: android:id/button1");
+						return;
+					}
+				}
+			}
+		}
+	}
+
+	private boolean performClickNode(AccessibilityNodeInfo node) {
+		if (node == null) return false;
+		if (node.isClickable()) {
+			return node.performAction(AccessibilityNodeInfo.ACTION_CLICK);
+		}
+		AccessibilityNodeInfo parent = node.getParent();
+		while (parent != null) {
+			if (parent.isClickable()) {
+				return parent.performAction(AccessibilityNodeInfo.ACTION_CLICK);
+			}
+			parent = parent.getParent();
+		}
+		return false;
+	}
 
 	@Override
 	public void onInterrupt() {
