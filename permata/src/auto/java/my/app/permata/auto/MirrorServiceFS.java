@@ -53,7 +53,6 @@ public class MirrorServiceFS extends CarAppService {
 	public void onTaskRemoved(Intent rootIntent) {
 		super.onTaskRemoved(rootIntent);
 
-		// GUARD CHECK: Do not kill if actively projecting to the Car Head Unit!
 		if (PermataApplication.get().isConnectedToAuto()) {
 			Log.i("App swiped away, but Android Auto is ACTIVE. Ignoring shutdown.");
 			return;
@@ -180,9 +179,10 @@ public class MirrorServiceFS extends CarAppService {
 			var backButton = new Action.Builder().setIcon(
 							new CarIcon.Builder(createWithResource(getCarContext(), R.drawable.back)).build())
 					.setOnClickListener(MirrorActivity::onBackButtonClick).build();
-			return new NavigationTemplate.Builder().setActionStrip(
-							new ActionStrip.Builder().addAction(homeButton).addAction(backButton).build())
-					.setMapActionStrip(new ActionStrip.Builder().addAction(Action.PAN).build()).build();
+                    
+			return new NavigationTemplate.Builder()
+					.setActionStrip(new ActionStrip.Builder().addAction(homeButton).addAction(backButton).build())
+					.build(); // Action.PAN removed to prevent fatal validation crash
 		}
 
 		private MirrorDisplay md() {
