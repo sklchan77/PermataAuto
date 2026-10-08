@@ -12,7 +12,6 @@ import static android.os.Build.VERSION.SDK_INT;
 import static android.os.PowerManager.ACQUIRE_CAUSES_WAKEUP;
 import static android.os.SystemClock.uptimeMillis;
 import static android.provider.Settings.System.ACCELEROMETER_ROTATION;
-import static android.provider.Settings.System.SCREEN_BRIGHTNESS;
 import static android.provider.Settings.System.USER_ROTATION;
 import static android.view.Surface.ROTATION_0;
 import static android.view.Surface.ROTATION_270;
@@ -88,7 +87,6 @@ public class MirrorDisplay {
 	private final AudioFocusRequestCompat audioFocusReq;
 	private WakeLock wakeLock;
 	private static int accel = -1;
-	private int brightness = -1;
 	private int refCounter;
 	private FutureSupplier<Session> session = Completed.cancelled();
 	private SurfaceContainer sc;
@@ -259,19 +257,6 @@ public class MirrorDisplay {
 		accel = -1;
 	}
 
-	private void dimScreen(Context ctx) {
-		if (brightness == -1) {
-			var br = Settings.System.getInt(ctx.getContentResolver(), SCREEN_BRIGHTNESS, -1);
-			brightness = (br > 0) ? br : 200;
-		}
-		setBrightness(ctx, 1);
-		if (!Build.MANUFACTURER.equalsIgnoreCase("Xiaomi")) setBrightness(ctx, 0);
-	}
-
-	private void restoreBrightness(Context ctx) {
-		if (brightness > 0) setBrightness(ctx, brightness);
-	}
-
 	@Override
 	protected void finalize() {
 		if ((ref == null) || (ref.get() == null) || (ref.get() == this)) {
@@ -289,7 +274,6 @@ public class MirrorDisplay {
 			return;
 		}
 
-		dimScreen(app);
 		disableAccelRotation(app);
 
 		var pmg = (PowerManager) app.getSystemService(POWER_SERVICE);
@@ -306,6 +290,10 @@ public class MirrorDisplay {
 				var lp =
 						new WindowManager.LayoutParams(MATCH_PARENT, MATCH_PARENT, TYPE_APPLICATION_OVERLAY,
 								OVERLAY_FLAGS, PixelFormat.TRANSPARENT);
+				// FIX: Safe, crash-proof dimming applied directly to the overlay window
+				if (!Build.MANUFACTURER.equalsIgnoreCase("Xiaomi")) {
+				    lp.screenBrightness = 0.01f;
+				}
 				var overlay = new Overlay(app);
 				wm.addView(overlay, lp);
 				this.overlay = overlay;
@@ -341,7 +329,6 @@ public class MirrorDisplay {
 			wakeLock = null;
 		}
 		setMirroringMode(app, 0);
-		restoreBrightness(app);
 		restoreAccelRotation(app);
 		ProjectionService.stop();
 
@@ -504,14 +491,6 @@ public class MirrorDisplay {
 		app.startActivity(intent);
 	}
 
-	private static void setBrightness(Context ctx, int br) {
-		try {
-			Settings.System.putInt(ctx.getContentResolver(), SCREEN_BRIGHTNESS, br);
-		} catch (SecurityException ex) {
-			Log.e(ex, "Failed to change SCREEN_BRIGHTNESS");
-		}
-	}
-
 	private static final class Session extends MediaProjection.Callback {
 		final MediaProjection mp;
 		final VirtualDisplay vd;
@@ -573,7 +552,7 @@ public class MirrorDisplay {
 			@Override
 			protected void perform() {
 				var ctx = getContext();
-				dimScreen(ctx);
+				// Brightness is now handled safely by layout params, only rotation is forced here
 				disableAccelRotation(ctx);
 			}
 		};
@@ -586,10 +565,9 @@ public class MirrorDisplay {
 		@Override
 		public boolean onTouchEvent(MotionEvent event) {
 			if (event.getToolType(0) != MotionEvent.TOOL_TYPE_FINGER) return false;
-			Log.d("Temporary restoring brightness and rotation due to event ", event);
+			Log.d("Temporary restoring rotation due to event ", event);
 			dimAndRotate.schedule(30000);
 			var ctx = getContext();
-			restoreBrightness(ctx);
 			restoreAccelRotation(ctx);
 			return false;
 		}
