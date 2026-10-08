@@ -142,7 +142,7 @@ public class MirrorServiceFS extends CarAppService {
 				scrollY = scrollStartY;
 				if (!md.motionEvent(time, time, ACTION_DOWN, scrollX, scrollY)) return;
 				scrollDownTime = time;
-				scheduleScrollUp(500);
+				scheduleScrollUp(150); // FIX: Snappy tap-after-scroll responsiveness
 			}
 			scrollX -= distanceX;
 			scrollY -= distanceY;
