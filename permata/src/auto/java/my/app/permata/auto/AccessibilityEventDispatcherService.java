@@ -39,6 +39,7 @@ import my.app.utils.log.Log;
 
 public class AccessibilityEventDispatcherService extends AccessibilityService {
 	private static String clickOnButton;
+	public static boolean isConsentGranted = false; // FIX: CPU/Battery saver flag
 	private static AccessibilityEventDispatcherService instance;
 	private final Set<Integer> windowIds =
 			(VERSION.SDK_INT < VERSION_CODES.TIRAMISU) ? Collections.emptySet() : new HashSet<>();
@@ -78,7 +79,6 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
 		if ((x < 0f) || (y < 0f)) return true;
 		ds.path.reset();
 		ds.path.moveTo(x, y);
-		// Increased duration to 50ms so Android OS registers valid touch input
 		var gb = new GestureDescription.Builder().addStroke(new StrokeDescription(ds.path, 0L, 50L));
 		return ds.dispatchGesture(gb.build(), null, null);
 	}
@@ -244,11 +244,11 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
 	public void onDestroy() {
 		super.onDestroy();
 		instance = null;
+		isConsentGranted = false; // Reset state securely on destroy
 	}
 
 	@Override
 	public void onAccessibilityEvent(AccessibilityEvent event) {
-		// OPTIMIZATION 1: Ignore all events if phone is not connected to Android Auto
 		if (!PermataApplication.get().isConnectedToAuto()) {
 			return;
 		}
@@ -262,10 +262,8 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
 			return;
 		}
 
-		// OPTIMIZATION 2: Only trigger on discrete window state transitions (ignore continuous content updates)
 		if (type != TYPE_WINDOW_STATE_CHANGED) return;
 
-		// OPTIMIZATION 3: Early package name check before parsing UI tree
 		CharSequence pkg = event.getPackageName();
 		if (pkg == null) return;
 		String pkgName = pkg.toString();
@@ -274,7 +272,6 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
 		if (root == null) return;
 
 		try {
-			// 1. Process explicit button click requests if set via autoClickOnButton()
 			if (clickOnButton != null) {
 				Log.i("Event received: ", event);
 				Log.i("Finding button by text: ", clickOnButton);
@@ -286,57 +283,42 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
 				if (!btn.isEmpty()) {
 					Log.i("Button '", btn.get(0).getText(), "' found. Performing click.");
 					performClickNode(btn.get(0));
-					clickOnButton = null; // OPTIMIZATION 4: Reset click request immediately after success
+					clickOnButton = null;
 					return;
 				}
 			}
 
-			// 2. Automatically detect and click MediaProjection consent dialog buttons across localizations
 			checkAndClickMediaProjectionConsent(root, pkgName);
 		} finally {
-			root.recycle(); // OPTIMIZATION 5: Prevent memory leaks / GC stutters
+			root.recycle(); 
 		}
 	}
 
 	private void checkAndClickMediaProjectionConsent(AccessibilityNodeInfo root, String pkgName) {
-		// Intercept system UI dialogs where the casting/recording dialog appears
+		if (isConsentGranted) return; // FIX: Prevents battery drain once consent is acquired
+		
 		if ("com.android.systemui".equals(pkgName) || "android".equals(pkgName) || pkgName.contains("systemui")) {
 			String[] targetTexts = new String[]{
-					// English (US, UK, Global)
 					"Start now", "Start recording", "Allow", "Start",
-					
-					// Chinese (Simplified - PRC / Mainland)
 					"立即开始", "开始录制", "开始", "允许",
-					
-					// Chinese (Traditional - Taiwan, Hong Kong, Macau)
 					"立即開始", "開始錄製", "開始", "允許",
-
-					// South East Asia
-					"Mulai sekarang", "Izinkan", // Bahasa Indonesia
-					"Mula sekarang", "Benarkan", // Bahasa Melayu (Malaysia / Brunei)
-					"เริ่มเลย", "อนุญาต", "เริ่ม", // Thai
-					"Bắt đầu ngay", "Cho phép", "Bắt đầu", // Vietnamese
-					"Magsimula na", "Simulan ngayon", "Payagan", // Tagalog / Filipino
-
-					// Indian Subcontinent
-					"अभी शुरू करें", "अनुमति दें", "शुरू करें", // Hindi / Hindu
-					"இப்போதே தொடங்கு", "அனுமதி", // Tamil
-					
-					// Middle East (Arabic - UAE, Gulf, General)
+					"Mulai sekarang", "Izinkan", 
+					"Mula sekarang", "Benarkan", 
+					"เริ่มเลย", "อนุญาต", "เริ่ม", 
+					"Bắt đầu ngay", "Cho phép", "Bắt đầu", 
+					"Magsimula na", "Simulan ngayon", "Payagan", 
+					"अभी शुरू करें", "अनुमति दें", "शुरू करें", 
+					"இப்போதே தொடங்கு", "அனுமதி", 
 					"البدء الآن", "ابدأ الآن", "السماح", "بدء",
-					
-					// East Asia
-					"今すぐ開始", "許可", "開始", // Japanese
-					"지금 시작", "허용", "시작", // Korean
-
-					// European & Other Major Languages
-					"Iniciar ahora", "Iniciar grabación", "Permitir", // Spanish
-					"Commencer", "Démarrer", "Autoriser", // French
-					"Jetzt starten", "Starten", "Zulassen", // German
-					"Avvia ora", "Consenti", "Iniciar agora", "Permitir", // Italian & Portuguese
-					"Начать", "Разрешить", "Начать запись", // Russian
-					"Şimdi başlat", "İzin ver", // Turkish
-					"Nu starten", "Toestaan", "Rozpocznij teraz", "Zezwól" // Dutch & Polish
+					"今すぐ開始", "許可", "開始", 
+					"지금 시작", "허용", "시작", 
+					"Iniciar ahora", "Iniciar grabación", "Permitir", 
+					"Commencer", "Démarrer", "Autoriser", 
+					"Jetzt starten", "Starten", "Zulassen", 
+					"Avvia ora", "Consenti", "Iniciar agora", "Permitir", 
+					"Начать", "Разрешить", "Начать запись", 
+					"Şimdi başlat", "İzin ver", 
+					"Nu starten", "Toestaan", "Rozpocznij teraz", "Zezwól" 
 			};
 
 			for (String text : targetTexts) {
@@ -345,18 +327,19 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
 					for (var node : nodes) {
 						if (node != null && performClickNode(node)) {
 							Log.i("Auto-clicked MediaProjection consent button: ", text);
+							isConsentGranted = true;
 							return;
 						}
 					}
 				}
 			}
 
-			// Fallback check for standard Android positive dialog button resource ID
 			var btn1 = root.findAccessibilityNodeInfosByViewId("android:id/button1");
 			if (btn1 != null && !btn1.isEmpty()) {
 				for (var node : btn1) {
 					if (node != null && performClickNode(node)) {
 						Log.i("Auto-clicked MediaProjection consent by ID: android:id/button1");
+						isConsentGranted = true;
 						return;
 					}
 				}
