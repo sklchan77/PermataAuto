@@ -181,8 +181,9 @@ public class MirrorServiceFS extends CarAppService {
 					.setOnClickListener(MirrorActivity::onBackButtonClick).build();
                     
 			return new NavigationTemplate.Builder()
+					.setMapActionStrip(new ActionStrip.Builder().addAction(Action.PAN).build())
 					.setActionStrip(new ActionStrip.Builder().addAction(homeButton).addAction(backButton).build())
-					.build(); // Action.PAN removed to prevent fatal validation crash
+					.build();
 		}
 
 		private MirrorDisplay md() {
