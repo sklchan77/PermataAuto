@@ -6,6 +6,7 @@ import static android.os.Build.VERSION.SDK_INT;
 import android.app.Activity;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
+import android.app.PendingIntent;
 import android.app.Service;
 import android.content.Context;
 import android.content.Intent;
@@ -27,6 +28,7 @@ import my.app.utils.log.Log;
 
 public class ProjectionService extends Service {
 	private static final String CAPTURE_INTENT = "CaptureIntent";
+	public static final String ACTION_STOP_PROJECTION = "my.app.permata.ACTION_STOP_PROJECTION";
 	private static Promise<MediaProjection> promise;
 
 	static FutureSupplier<MediaProjection> start() {
@@ -86,10 +88,18 @@ public class ProjectionService extends Service {
 							new NotificationChannel(chid, name, NotificationManager.IMPORTANCE_LOW));
 				}
 			}
+
+			// FIX: Emergency Kill Switch Intent
+			Intent stopIntent = new Intent(this, ProjectionService.class);
+			stopIntent.setAction(ACTION_STOP_PROJECTION);
+			PendingIntent stopPendingIntent = PendingIntent.getService(this, 0, stopIntent, PendingIntent.FLAG_IMMUTABLE);
+
 			var notif = new NotificationCompat.Builder(this, chid).setVisibility(
 							NotificationCompat.VISIBILITY_PUBLIC).setSmallIcon(R.drawable.notification)
 					.setContentTitle(name).setColorized(true).setPriority(NotificationCompat.PRIORITY_HIGH)
-					.setShowWhen(false).setOnlyAlertOnce(true).setSilent(true).build();
+					.setShowWhen(false).setOnlyAlertOnce(true).setSilent(true)
+					.addAction(R.drawable.shutdown, "Stop Mirroring", stopPendingIntent) // FIX: Kill Switch Action
+					.build();
 			if (SDK_INT >= VERSION_CODES.Q) {
 				startForeground(2, notif, FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION);
 			} else {
@@ -105,6 +115,14 @@ public class ProjectionService extends Service {
 
 	@Override
 	public int onStartCommand(Intent intent, int flags, int startId) {
+		// FIX: Process the Emergency Kill Switch
+		if (intent != null && ACTION_STOP_PROJECTION.equals(intent.getAction())) {
+			Log.i("Emergency kill switch activated. Stopping projection.");
+			stop();
+			stopSelf();
+			return START_NOT_STICKY;
+		}
+
 		var p = promise;
 		if (p != null) {
 			promise = null;
