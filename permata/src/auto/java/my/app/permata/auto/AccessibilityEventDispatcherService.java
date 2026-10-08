@@ -78,7 +78,8 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
 		if ((x < 0f) || (y < 0f)) return true;
 		ds.path.reset();
 		ds.path.moveTo(x, y);
-		var gb = new GestureDescription.Builder().addStroke(new StrokeDescription(ds.path, 0L, 1L));
+		// Increased duration to 50ms so Android OS registers valid touch input
+		var gb = new GestureDescription.Builder().addStroke(new StrokeDescription(ds.path, 0L, 50L));
 		return ds.dispatchGesture(gb.build(), null, null);
 	}
 
@@ -177,7 +178,7 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
 				p.time = eventTime;
 				path.reset();
 				path.moveTo(x, y);
-				var dur = Math.max(1L, Math.min(eventTime - downTime, getMaxGestureDuration()));
+				var dur = Math.max(50L, Math.min(eventTime - downTime, getMaxGestureDuration()));
 				p.sd = new StrokeDescription(path, 0L, dur, true);
 				addStroke(p.sd);
 			}
@@ -185,7 +186,7 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
 				if (p.sd == null) return true;
 				path.reset();
 				path.moveTo(x, y);
-				var dur = Math.max(1L, Math.min(eventTime - p.time, getMaxGestureDuration()));
+				var dur = Math.max(50L, Math.min(eventTime - p.time, getMaxGestureDuration()));
 				var sd = p.sd.continueStroke(path, 0L, dur, false);
 				p.sd = null;
 				addStroke(sd);
@@ -194,7 +195,7 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
 				path.reset();
 				path.moveTo(p.x, p.y);
 				path.lineTo(x, y);
-				var dur = Math.max(1L, Math.min(eventTime - p.time, getMaxGestureDuration()));
+				var dur = Math.max(50L, Math.min(eventTime - p.time, getMaxGestureDuration()));
 				p.x = x;
 				p.y = y;
 				p.time = eventTime;
