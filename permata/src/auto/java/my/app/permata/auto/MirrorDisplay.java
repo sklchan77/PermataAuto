@@ -7,12 +7,14 @@ import static android.content.Intent.FLAG_ACTIVITY_CLEAR_TOP;
 import static android.content.Intent.FLAG_ACTIVITY_NEW_TASK;
 import static android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE;
 import static android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT;
+import static android.content.res.Configuration.ORIENTATION_LANDSCAPE;
 import static android.os.Build.VERSION.SDK_INT;
 import static android.os.PowerManager.ACQUIRE_CAUSES_WAKEUP;
 import static android.os.SystemClock.uptimeMillis;
 import static android.provider.Settings.System.ACCELEROMETER_ROTATION;
 import static android.provider.Settings.System.USER_ROTATION;
 import static android.view.Surface.ROTATION_0;
+import static android.view.Surface.ROTATION_270;
 import static android.view.Surface.ROTATION_90;
 import static android.view.WindowManager.LayoutParams.FLAG_DISMISS_KEYGUARD;
 import static android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON;
@@ -96,6 +98,7 @@ public class MirrorDisplay {
 	private float dx;
 	private float dy;
 	private long lastInjectedTouchTime;
+	private Runnable sessionStopListener;
 
 	private MirrorDisplay() {
 		var ctx = PermataApplication.get();
@@ -124,6 +127,9 @@ public class MirrorDisplay {
 	public static void close() {
 		MirrorDisplay md;
 		if ((ref == null) || ((md = ref.get()) == null)) return;
+		
+		md.refCounter = 0; 
+		
 		var sc = md.sc;
 		md.cleanUp();
 		if (sc != null) drawMsg(sc, R.string.app_name);
@@ -134,6 +140,10 @@ public class MirrorDisplay {
 			refCounter = 0;
 			cleanUp();
 		}
+	}
+
+	public void setSessionStopListener(Runnable listener) {
+		this.sessionStopListener = listener;
 	}
 
 	public void setSurface(@NonNull SurfaceContainer sc) {
@@ -234,7 +244,6 @@ public class MirrorDisplay {
 		var a = EventDispatcher.get().getActivity();
 		var land = PermataApplication.get().isMirroringLandscape();
 		if (a != null) {
-			// SMART MATCHING: Brutally force the phone to match the car. Ignore physical sensors entirely.
 			a.setRequestedOrientation(
 					land ? SCREEN_ORIENTATION_LANDSCAPE : SCREEN_ORIENTATION_PORTRAIT);
 		}
@@ -368,6 +377,10 @@ public class MirrorDisplay {
 		
 		var amgr = (AudioManager) app.getSystemService(Context.AUDIO_SERVICE);
 		if (amgr != null) AudioManagerCompat.abandonAudioFocusRequest(amgr, audioFocusReq);
+
+		if (sessionStopListener != null) {
+			new android.os.Handler(android.os.Looper.getMainLooper()).post(sessionStopListener);
+		}
 	}
 
 	private void noSession() {
@@ -498,7 +511,6 @@ public class MirrorDisplay {
 	private Metrics metrics(@Nullable AppCompatActivity a) {
 		if (sc == null) return null;
 		
-		// SMART MATCHING: The car's aspect ratio overpowers the phone.
 		boolean isCarLandscape = sc.getWidth() > sc.getHeight();
 		
 		var m = isCarLandscape ? lMetrics : pMetrics;
@@ -510,9 +522,6 @@ public class MirrorDisplay {
 			float phoneW = size.x;
 			float phoneH = size.y;
 			
-			// Dynamic Coordinate Correction:
-			// If the OS is lagging behind our forced rotation command, virtually flip the phone 
-			// dimensions in memory so the touch matrix scaling remains mathematically flawless.
 			if (isCarLandscape && phoneW < phoneH) {
 				phoneW = size.y;
 				phoneH = size.x;
@@ -557,7 +566,6 @@ public class MirrorDisplay {
 		@Override
 		public boolean onTouchEvent(MotionEvent event) {
 			if (event.getAction() == MotionEvent.ACTION_OUTSIDE) {
-				// Prevent injected touches from the car screen from un-dimming the phone
 				if (Math.abs(uptimeMillis() - lastInjectedTouchTime) > 200) {
 					setOverlayBrightness(WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE);
 					dimAndRotate.schedule(10000);
