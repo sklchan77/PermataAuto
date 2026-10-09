@@ -35,6 +35,7 @@ import my.app.permata.PermataApplication;
 import my.app.permata.R;
 import my.app.permata.ui.activity.MainActivityDelegate;
 import my.app.utils.concurrent.ReschedulableTask;
+import my.app.utils.log.Log;
 
 /**
  * @author sklchan77
@@ -56,7 +57,14 @@ public class MirrorActivity extends CarActivity implements SurfaceHolder.Callbac
 			public boolean onTouchEvent(MotionEvent e) {
 				if (sc != null) md.setSurface(sc);
 				tb.show();
-				return md.motionEvent(e);
+
+				// FIX: Explicitly forward the raw touch event and ensure we return true for DOWN 
+				// to keep the gesture pipeline open for subsequent MOVE and UP events.
+				boolean handled = md.motionEvent(e);
+				if (e.getActionMasked() == MotionEvent.ACTION_DOWN) {
+					return true;
+				}
+				return handled;
 			}
 		};
 		s.setLayoutParams(new FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT));
@@ -69,21 +77,23 @@ public class MirrorActivity extends CarActivity implements SurfaceHolder.Callbac
 
 	@Override
 	public void onDestroy() {
-		md.release();
-		md = null;
+		if (md != null) {
+			md.release();
+			md = null;
+		}
 		super.onDestroy();
 	}
 
 	@Override
 	public void onResume() {
 		super.onResume();
-		if (sc != null) md.setSurface(sc);
+		if (sc != null && md != null) md.setSurface(sc);
 	}
 
 	@Override
 	public void onPause() {
 		super.onPause();
-		if (MirrorServiceFS.sc != null) md.setSurface(MirrorServiceFS.sc);
+		if (MirrorServiceFS.sc != null && md != null) md.setSurface(MirrorServiceFS.sc);
 	}
 
 	@Override
@@ -91,14 +101,14 @@ public class MirrorActivity extends CarActivity implements SurfaceHolder.Callbac
 		var r = h.getSurfaceFrame();
 		sc = new SurfaceContainer(h.getSurface(), r.width(), r.height(),
 				getResources().getDisplayMetrics().densityDpi);
-		md.setSurface(sc);
+		if (md != null) md.setSurface(sc);
 	}
 
 	@Override
 	public void surfaceChanged(@NonNull SurfaceHolder h, int format, int width, int height) {
 		sc = new SurfaceContainer(h.getSurface(), width, height,
 				getResources().getDisplayMetrics().densityDpi);
-		md.setSurface(sc);
+		if (md != null) md.setSurface(sc);
 	}
 
 	@Override
@@ -116,36 +126,43 @@ public class MirrorActivity extends CarActivity implements SurfaceHolder.Callbac
 
 	static void onBackButtonClick() {
 		var d = EventDispatcher.get();
-		if (!d.back()) {
+		if (d != null && !d.back()) {
 			var vm = (WindowManager) PermataApplication.get().getSystemService(WINDOW_SERVICE);
-			var size = new Point();
-			vm.getDefaultDisplay().getRealSize(size);
-			var y = size.y / 2f;
-			var time = uptimeMillis();
-			d.motionEvent(time, time, MotionEvent.ACTION_DOWN, size.x, y);
-			d.motionEvent(time, time + 10, MotionEvent.ACTION_MOVE, size.x * 0.9f, y);
-			d.motionEvent(time, time + 20, MotionEvent.ACTION_MOVE, size.x * 0.8f, y);
-			d.motionEvent(time, time + 30, MotionEvent.ACTION_MOVE, size.x * 0.7f, y);
-			d.motionEvent(time, time + 40, MotionEvent.ACTION_MOVE, size.x * 0.6f, y);
-			d.motionEvent(time, time + 50, MotionEvent.ACTION_UP, size.x * 0.5f, y);
+			if (vm != null) {
+				var size = new Point();
+				vm.getDefaultDisplay().getRealSize(size);
+				var y = size.y / 2f;
+				var time = uptimeMillis();
+				d.motionEvent(time, time, MotionEvent.ACTION_DOWN, size.x, y);
+				d.motionEvent(time, time + 10, MotionEvent.ACTION_MOVE, size.x * 0.9f, y);
+				d.motionEvent(time, time + 20, MotionEvent.ACTION_MOVE, size.x * 0.8f, y);
+				d.motionEvent(time, time + 30, MotionEvent.ACTION_MOVE, size.x * 0.7f, y);
+				d.motionEvent(time, time + 40, MotionEvent.ACTION_MOVE, size.x * 0.6f, y);
+				d.motionEvent(time, time + 50, MotionEvent.ACTION_UP, size.x * 0.5f, y);
+			}
 		}
 		disableAccelRotation();
 	}
 
 	private static void startLauncher() {
 		var ctx = PermataApplication.get();
-		Intent intent = new Intent(ctx, LauncherActivity.class);
-		intent.setFlags(FLAG_ACTIVITY_NEW_TASK | FLAG_ACTIVITY_SINGLE_TOP);
-		ctx.startActivity(intent);
+		if (ctx != null) {
+			Intent intent = new Intent(ctx, LauncherActivity.class);
+			intent.setFlags(FLAG_ACTIVITY_NEW_TASK | FLAG_ACTIVITY_SINGLE_TOP);
+			ctx.startActivity(intent);
+		}
 	}
 
 	private static void homeScreen() {
-		if (!EventDispatcher.get().home()) {
+		var d = EventDispatcher.get();
+		if (d != null && !d.home()) {
 			var ctx = PermataApplication.get();
-			Intent intent = new Intent(Intent.ACTION_MAIN);
-			intent.addCategory(Intent.CATEGORY_HOME);
-			intent.setFlags(FLAG_ACTIVITY_NEW_TASK | FLAG_ACTIVITY_SINGLE_TOP);
-			ctx.startActivity(intent);
+			if (ctx != null) {
+				Intent intent = new Intent(Intent.ACTION_MAIN);
+				intent.addCategory(Intent.CATEGORY_HOME);
+				intent.setFlags(FLAG_ACTIVITY_NEW_TASK | FLAG_ACTIVITY_SINGLE_TOP);
+				ctx.startActivity(intent);
+			}
 		}
 		disableAccelRotation();
 	}
@@ -216,8 +233,11 @@ public class MirrorActivity extends CarActivity implements SurfaceHolder.Callbac
 					downTime = uptimeMillis();
 					downX = e.getRawX();
 					downY = e.getRawY();
-					downButton = getChildAt(getButtonAt(e.getX()));
-					downButton.startAnimation(animation);
+					int btnIdx = getButtonAt(e.getX());
+					downButton = getChildAt(btnIdx);
+					if (downButton != null) {
+					    downButton.startAnimation(animation);
+					}
 					return true;
 				}
 				case MotionEvent.ACTION_MOVE -> {
