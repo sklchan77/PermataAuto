@@ -35,6 +35,7 @@ import my.app.permata.PermataApplication;
 import my.app.permata.R;
 import my.app.permata.ui.activity.MainActivityDelegate;
 import my.app.utils.concurrent.ReschedulableTask;
+import my.app.utils.log.Log;
 
 /**
  * @author sklchan77
@@ -56,7 +57,12 @@ public class MirrorActivity extends CarActivity implements SurfaceHolder.Callbac
 			public boolean onTouchEvent(MotionEvent e) {
 				if (sc != null && md != null) md.setSurface(sc);
 				tb.show();
-				return md != null && md.motionEvent(e);
+				
+				boolean handled = md != null && md.motionEvent(e);
+				if (e.getActionMasked() == MotionEvent.ACTION_DOWN) {
+					return true;
+				}
+				return handled;
 			}
 		};
 		s.setLayoutParams(new FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT));
@@ -93,7 +99,10 @@ public class MirrorActivity extends CarActivity implements SurfaceHolder.Callbac
 		var r = h.getSurfaceFrame();
 		sc = new SurfaceContainer(h.getSurface(), r.width(), r.height(),
 				getResources().getDisplayMetrics().densityDpi);
-		if (md != null) md.setSurface(sc);
+		if (md != null) {
+			md.setSurface(sc);
+			md.setSessionStopListener(this::finish);
+		}
 	}
 
 	@Override
@@ -106,9 +115,19 @@ public class MirrorActivity extends CarActivity implements SurfaceHolder.Callbac
 	@Override
 	public void surfaceDestroyed(@NonNull SurfaceHolder holder) {
 		if (sc != null) {
-			if (md != null) md.releaseSurface(sc);
+			if (md != null) {
+				md.releaseSurface(sc);
+				md.setSessionStopListener(null); 
+			}
 			sc = null;
 		}
+
+		new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(() -> {
+			if (!PermataApplication.get().isConnectedToAuto()) {
+				Log.i("Hard disconnect detected (Engine Off/Unplug). Forcing complete cleanup.");
+				MirrorDisplay.close();
+			}
+		}, 5000);
 	}
 
 	static void onHomeButtonClick() {
