@@ -113,6 +113,13 @@ public class MirrorServiceFS extends CarAppService {
 			if (sc.getSurface() == null) return;
 			MirrorServiceFS.sc = sc;
 			md.setSurface(sc);
+			
+			md.setSessionStopListener(() -> {
+				try {
+					getCarContext().finishCarApp();
+				} catch (Exception ignored) {}
+			});
+			
 			scrollStartX = sc.getWidth() / 2f;
 			scrollStartY = sc.getHeight() / 2f;
 		}
@@ -120,7 +127,15 @@ public class MirrorServiceFS extends CarAppService {
 		@Override
 		public void onSurfaceDestroyed(@NonNull SurfaceContainer sc) {
 			md.releaseSurface(MirrorServiceFS.sc);
+			md.setSessionStopListener(null);
 			MirrorServiceFS.sc = null;
+
+			new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(() -> {
+				if (!PermataApplication.get().isConnectedToAuto()) {
+					Log.i("Hard disconnect detected (Engine Off/Unplug). Forcing complete cleanup.");
+					MirrorDisplay.close();
+				}
+			}, 5000);
 		}
 
 		@Override
