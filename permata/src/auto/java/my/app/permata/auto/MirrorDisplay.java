@@ -38,6 +38,7 @@ import android.graphics.Point;
 import android.graphics.Typeface;
 import android.hardware.display.DisplayManager;
 import android.hardware.display.VirtualDisplay;
+import android.media.AudioManager;
 import android.media.projection.MediaProjection;
 import android.os.Build;
 import android.os.Build.VERSION_CODES;
@@ -58,6 +59,9 @@ import androidx.annotation.Nullable;
 import androidx.annotation.StringRes;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.car.app.SurfaceContainer;
+import androidx.media.AudioAttributesCompat;
+import androidx.media.AudioFocusRequestCompat;
+import androidx.media.AudioManagerCompat;
 
 import java.lang.ref.WeakReference;
 
@@ -79,6 +83,7 @@ public class MirrorDisplay {
 	private final int[] loc = new int[2];
 	private final Display defaultDisplay;
 	private final float scaleDiff;
+	private final AudioFocusRequestCompat audioFocusReq;
 	private WakeLock wakeLock;
 	private static int accel = -1;
 	private int refCounter;
@@ -97,6 +102,12 @@ public class MirrorDisplay {
 		var size = new Point();
 		defaultDisplay.getRealSize(size);
 		scaleDiff = Math.max(UiUtils.toPx(ctx, 20), Math.min(size.x, size.y) / 20f);
+		
+		audioFocusReq =
+				new AudioFocusRequestCompat.Builder(AudioManagerCompat.AUDIOFOCUS_GAIN).setAudioAttributes(
+								new AudioAttributesCompat.Builder().setUsage(AudioAttributesCompat.USAGE_MEDIA)
+										.setContentType(AudioAttributesCompat.CONTENT_TYPE_MUSIC).build())
+						.setWillPauseWhenDucked(false).setOnAudioFocusChangeListener(focusChange -> {}).build();
 	}
 
 	public static MirrorDisplay get() {
@@ -296,6 +307,9 @@ public class MirrorDisplay {
 		} catch (Exception err) {
 			Log.e(err, "Failed to start XposedEventDispatcherService");
 		}
+		
+		var amgr = (AudioManager) app.getSystemService(Context.AUDIO_SERVICE);
+		if (amgr != null) AudioManagerCompat.requestAudioFocus(amgr, audioFocusReq);
 
 		setMirroringMode(app, mode);
 	}
@@ -327,6 +341,9 @@ public class MirrorDisplay {
 		} catch (Exception err) {
 			Log.d(err, "Failed to stop XposedEventDispatcherService");
 		}
+		
+		var amgr = (AudioManager) app.getSystemService(Context.AUDIO_SERVICE);
+		if (amgr != null) AudioManagerCompat.abandonAudioFocusRequest(amgr, audioFocusReq);
 	}
 
 	private void noSession() {
@@ -354,14 +371,14 @@ public class MirrorDisplay {
 		if (session != p) return;
 		if (sc == null) {
 			noSession();
-			return; // FIX: Early return prevents NPE when sc is null
+			return;
 		}
 		if (p.isDone()) return;
 		ProjectionService.start().onCompletion((mp, err) -> {
 			if (session != p) return;
 			if (sc == null) {
 				noSession();
-				return; // FIX: Early return prevents calling new Session(mp, this) with null sc
+				return;
 			}
 			if (p.isDone()) return;
 			if (err != null) {
