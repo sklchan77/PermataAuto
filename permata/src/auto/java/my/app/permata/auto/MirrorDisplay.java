@@ -16,13 +16,13 @@ import static android.provider.Settings.System.USER_ROTATION;
 import static android.view.Surface.ROTATION_0;
 import static android.view.Surface.ROTATION_270;
 import static android.view.Surface.ROTATION_90;
-import static android.view.ViewGroup.LayoutParams.MATCH_PARENT;
 import static android.view.WindowManager.LayoutParams.FLAG_DISMISS_KEYGUARD;
 import static android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON;
 import static android.view.WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE;
 import static android.view.WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE;
 import static android.view.WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED;
 import static android.view.WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON;
+import static android.view.WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH;
 import static android.view.WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY;
 import static my.app.utils.function.ResultConsumer.Cancel.isCancellation;
 
@@ -49,10 +49,11 @@ import android.text.StaticLayout;
 import android.text.TextPaint;
 import android.text.TextUtils;
 import android.view.Display;
+import android.view.Gravity;
 import android.view.InputDevice;
 import android.view.MotionEvent;
-import android.view.View;
 import android.view.WindowManager;
+import android.widget.FrameLayout;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
@@ -72,13 +73,14 @@ import my.app.permata.ui.activity.MainActivityDelegate;
 import my.app.utils.async.Completed;
 import my.app.utils.async.FutureSupplier;
 import my.app.utils.async.Promise;
+import my.app.utils.concurrent.ReschedulableTask;
 import my.app.utils.log.Log;
 import my.app.utils.ui.UiUtils;
 
 public class MirrorDisplay {
 	private static final int OVERLAY_FLAGS =
-			FLAG_NOT_FOCUSABLE | FLAG_NOT_TOUCHABLE | FLAG_KEEP_SCREEN_ON | 
-			FLAG_DISMISS_KEYGUARD | FLAG_TURN_SCREEN_ON | FLAG_SHOW_WHEN_LOCKED;
+			FLAG_NOT_FOCUSABLE | FLAG_NOT_TOUCHABLE | FLAG_WATCH_OUTSIDE_TOUCH | 
+			FLAG_KEEP_SCREEN_ON | FLAG_DISMISS_KEYGUARD | FLAG_TURN_SCREEN_ON | FLAG_SHOW_WHEN_LOCKED;
 	private static WeakReference<MirrorDisplay> ref;
 	private final int[] loc = new int[2];
 	private final Display defaultDisplay;
@@ -89,11 +91,12 @@ public class MirrorDisplay {
 	private int refCounter;
 	private FutureSupplier<Session> session = Completed.cancelled();
 	private SurfaceContainer sc;
-	private View overlay;
+	private Overlay overlay;
 	private Metrics lMetrics;
 	private Metrics pMetrics;
 	private float dx;
 	private float dy;
+	private long lastInjectedTouchTime; // Filters out car screen touches from waking the phone
 
 	private MirrorDisplay() {
 		var ctx = PermataApplication.get();
@@ -178,6 +181,7 @@ public class MirrorDisplay {
 	private long downTime;
 
 	public boolean motionEvent(MotionEvent e) {
+		lastInjectedTouchTime = uptimeMillis();
 		EventDispatcher d;
 		var action = e.getAction();
 		if (action == MotionEvent.ACTION_DOWN) downTime = uptimeMillis();
@@ -217,6 +221,7 @@ public class MirrorDisplay {
 	}
 
 	public boolean motionEvent(long downTime, long eventTime, int action, float x, float y) {
+		lastInjectedTouchTime = uptimeMillis();
 		var d = translate(x, y);
 		return (d != null) && d.motionEvent(downTime, eventTime, action, dx, dy);
 	}
@@ -259,6 +264,20 @@ public class MirrorDisplay {
 		accel = -1;
 	}
 
+	private void setOverlayBrightness(float brightness) {
+		if (overlay != null) {
+			try {
+				var app = PermataApplication.get();
+				var wm = (WindowManager) app.getSystemService(WINDOW_SERVICE);
+				var lp = (WindowManager.LayoutParams) overlay.getLayoutParams();
+				lp.screenBrightness = brightness;
+				wm.updateViewLayout(overlay, lp);
+			} catch (Exception err) {
+				Log.e(err, "Failed to update overlay brightness");
+			}
+		}
+	}
+
 	@Override
 	protected void finalize() {
 		if ((ref == null) || (ref.get() == null) || (ref.get() == this)) {
@@ -289,14 +308,20 @@ public class MirrorDisplay {
 		if ((overlay == null) && (SDK_INT >= VERSION_CODES.O)) {
 			try {
 				var wm = (WindowManager) app.getSystemService(WINDOW_SERVICE);
-				var lp = new WindowManager.LayoutParams(MATCH_PARENT, MATCH_PARENT, TYPE_APPLICATION_OVERLAY,
+				// 1x1 size allows touch pass-through, but screenBrightness applies to entire display
+				var lp = new WindowManager.LayoutParams(1, 1, TYPE_APPLICATION_OVERLAY,
 								OVERLAY_FLAGS, PixelFormat.TRANSPARENT);
+				lp.gravity = Gravity.TOP | Gravity.START;
+				
 				if (!Build.MANUFACTURER.equalsIgnoreCase("Xiaomi")) {
 					lp.screenBrightness = 0.01f;
 				}
-				var v = new View(app);
+				var v = new Overlay(app);
 				wm.addView(v, lp);
 				this.overlay = v;
+				
+				// Start dim timer
+				v.dimAndRotate.schedule(10000);
 			} catch (Exception err) {
 				Log.e(err, "Failed to add overlay");
 			}
@@ -320,6 +345,7 @@ public class MirrorDisplay {
 		lMetrics = pMetrics = null;
 		var app = PermataApplication.get();
 		if (overlay != null) {
+			overlay.dimAndRotate.cancel();
 			try {
 				var wm = (WindowManager) app.getSystemService(WINDOW_SERVICE);
 				wm.removeView(overlay);
@@ -505,6 +531,35 @@ public class MirrorDisplay {
 		intent.setFlags(FLAG_ACTIVITY_NEW_TASK | FLAG_ACTIVITY_CLEAR_TASK);
 		if (mode == 0) intent.setAction(MainActivityDelegate.INTENT_ACTION_FINISH);
 		app.startActivity(intent);
+	}
+
+	private final class Overlay extends FrameLayout {
+		final ReschedulableTask dimAndRotate = new ReschedulableTask() {
+			@Override
+			protected void perform() {
+				var ctx = getContext();
+				setOverlayBrightness(0.01f);
+				disableAccelRotation(ctx);
+			}
+		};
+
+		public Overlay(@NonNull Context context) {
+			super(context);
+		}
+
+		@SuppressLint("ClickableViewAccessibility")
+		@Override
+		public boolean onTouchEvent(MotionEvent event) {
+			if (event.getAction() == MotionEvent.ACTION_OUTSIDE) {
+				// Prevent injected touches from the car screen from un-dimming the phone
+				if (Math.abs(uptimeMillis() - lastInjectedTouchTime) > 200) {
+					setOverlayBrightness(WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE);
+					dimAndRotate.schedule(10000);
+					restoreAccelRotation(getContext());
+				}
+			}
+			return false;
+		}
 	}
 
 	private static final class Session extends MediaProjection.Callback {
