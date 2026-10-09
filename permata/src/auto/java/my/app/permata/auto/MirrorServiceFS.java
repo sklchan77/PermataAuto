@@ -142,7 +142,7 @@ public class MirrorServiceFS extends CarAppService {
 				scrollY = scrollStartY;
 				if (!md.motionEvent(time, time, ACTION_DOWN, scrollX, scrollY)) return;
 				scrollDownTime = time;
-				scheduleScrollUp(150); // FIX: Snappy tap-after-scroll responsiveness
+				scheduleScrollUp(150);
 			}
 			scrollX -= distanceX;
 			scrollY -= distanceY;
@@ -181,13 +181,8 @@ public class MirrorServiceFS extends CarAppService {
 					.setOnClickListener(MirrorActivity::onBackButtonClick).build();
                     
 			return new NavigationTemplate.Builder()
-					// FIX: Merge all buttons into the MapActionStrip to force buggy head units to render it.
-					// We completely removed the separate setActionStrip.
-					.setMapActionStrip(new ActionStrip.Builder()
-							.addAction(Action.PAN)
-							.addAction(homeButton)
-							.addAction(backButton)
-							.build())
+					.setMapActionStrip(new ActionStrip.Builder().addAction(Action.PAN).build())
+					.setActionStrip(new ActionStrip.Builder().addAction(homeButton).addAction(backButton).build())
 					.build();
 		}
 
