@@ -181,8 +181,13 @@ public class MirrorServiceFS extends CarAppService {
 					.setOnClickListener(MirrorActivity::onBackButtonClick).build();
                     
 			return new NavigationTemplate.Builder()
-					.setMapActionStrip(new ActionStrip.Builder().addAction(Action.PAN).build())
-					.setActionStrip(new ActionStrip.Builder().addAction(homeButton).addAction(backButton).build())
+					// FIX: Merge all buttons into the MapActionStrip to force buggy head units to render it.
+					// We completely removed the separate setActionStrip.
+					.setMapActionStrip(new ActionStrip.Builder()
+							.addAction(Action.PAN)
+							.addAction(homeButton)
+							.addAction(backButton)
+							.build())
 					.build();
 		}
 
