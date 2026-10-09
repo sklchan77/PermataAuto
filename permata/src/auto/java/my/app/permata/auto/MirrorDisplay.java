@@ -20,7 +20,6 @@ import static android.view.ViewGroup.LayoutParams.MATCH_PARENT;
 import static android.view.WindowManager.LayoutParams.FLAG_DISMISS_KEYGUARD;
 import static android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON;
 import static android.view.WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE;
-import static android.view.WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE;
 import static android.view.WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED;
 import static android.view.WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON;
 import static android.view.WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH;
@@ -79,7 +78,7 @@ import my.app.utils.ui.UiUtils;
 public class MirrorDisplay {
 	private static final int OVERLAY_FLAGS =
 			FLAG_NOT_FOCUSABLE | FLAG_KEEP_SCREEN_ON | FLAG_DISMISS_KEYGUARD | FLAG_TURN_SCREEN_ON |
-					FLAG_SHOW_WHEN_LOCKED | FLAG_NOT_TOUCHABLE | FLAG_WATCH_OUTSIDE_TOUCH;
+					FLAG_SHOW_WHEN_LOCKED | FLAG_WATCH_OUTSIDE_TOUCH;
 	private static WeakReference<MirrorDisplay> ref;
 	private final int[] loc = new int[2];
 	private final Display defaultDisplay;
@@ -257,6 +256,20 @@ public class MirrorDisplay {
 		accel = -1;
 	}
 
+	private void setOverlayBrightness(float brightness) {
+		if (overlay != null) {
+			try {
+				var app = PermataApplication.get();
+				var wm = (WindowManager) app.getSystemService(WINDOW_SERVICE);
+				var lp = (WindowManager.LayoutParams) overlay.getLayoutParams();
+				lp.screenBrightness = brightness;
+				wm.updateViewLayout(overlay, lp);
+			} catch (Exception err) {
+				Log.e(err, "Failed to update overlay brightness");
+			}
+		}
+	}
+
 	@Override
 	protected void finalize() {
 		if ((ref == null) || (ref.get() == null) || (ref.get() == this)) {
@@ -290,9 +303,8 @@ public class MirrorDisplay {
 				var lp =
 						new WindowManager.LayoutParams(MATCH_PARENT, MATCH_PARENT, TYPE_APPLICATION_OVERLAY,
 								OVERLAY_FLAGS, PixelFormat.TRANSPARENT);
-				// FIX: Safe, crash-proof dimming applied directly to the overlay window
 				if (!Build.MANUFACTURER.equalsIgnoreCase("Xiaomi")) {
-				    lp.screenBrightness = 0.01f;
+					lp.screenBrightness = 0.01f;
 				}
 				var overlay = new Overlay(app);
 				wm.addView(overlay, lp);
@@ -552,7 +564,7 @@ public class MirrorDisplay {
 			@Override
 			protected void perform() {
 				var ctx = getContext();
-				// Brightness is now handled safely by layout params, only rotation is forced here
+				setOverlayBrightness(0.01f);
 				disableAccelRotation(ctx);
 			}
 		};
@@ -564,9 +576,8 @@ public class MirrorDisplay {
 		@SuppressLint("ClickableViewAccessibility")
 		@Override
 		public boolean onTouchEvent(MotionEvent event) {
-			if (event.getToolType(0) != MotionEvent.TOOL_TYPE_FINGER) return false;
-			Log.d("Temporary restoring rotation due to event ", event);
-			dimAndRotate.schedule(30000);
+			setOverlayBrightness(WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE);
+			dimAndRotate.schedule(10000);
 			var ctx = getContext();
 			restoreAccelRotation(ctx);
 			return false;
