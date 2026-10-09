@@ -20,9 +20,9 @@ import static android.view.ViewGroup.LayoutParams.MATCH_PARENT;
 import static android.view.WindowManager.LayoutParams.FLAG_DISMISS_KEYGUARD;
 import static android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON;
 import static android.view.WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE;
+import static android.view.WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE;
 import static android.view.WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED;
 import static android.view.WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON;
-import static android.view.WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH;
 import static android.view.WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY;
 import static my.app.utils.function.ResultConsumer.Cancel.isCancellation;
 
@@ -30,6 +30,7 @@ import android.annotation.SuppressLint;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.ActivityInfo;
+import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
 import android.graphics.PixelFormat;
@@ -37,7 +38,6 @@ import android.graphics.Point;
 import android.graphics.Typeface;
 import android.hardware.display.DisplayManager;
 import android.hardware.display.VirtualDisplay;
-import android.media.AudioManager;
 import android.media.projection.MediaProjection;
 import android.os.Build;
 import android.os.Build.VERSION_CODES;
@@ -50,17 +50,14 @@ import android.text.TextUtils;
 import android.view.Display;
 import android.view.InputDevice;
 import android.view.MotionEvent;
+import android.view.View;
 import android.view.WindowManager;
-import android.widget.FrameLayout;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.annotation.StringRes;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.car.app.SurfaceContainer;
-import androidx.media.AudioAttributesCompat;
-import androidx.media.AudioFocusRequestCompat;
-import androidx.media.AudioManagerCompat;
 
 import java.lang.ref.WeakReference;
 
@@ -71,25 +68,23 @@ import my.app.permata.ui.activity.MainActivityDelegate;
 import my.app.utils.async.Completed;
 import my.app.utils.async.FutureSupplier;
 import my.app.utils.async.Promise;
-import my.app.utils.concurrent.ReschedulableTask;
 import my.app.utils.log.Log;
 import my.app.utils.ui.UiUtils;
 
 public class MirrorDisplay {
 	private static final int OVERLAY_FLAGS =
-			FLAG_NOT_FOCUSABLE | FLAG_KEEP_SCREEN_ON | FLAG_DISMISS_KEYGUARD | FLAG_TURN_SCREEN_ON |
-					FLAG_SHOW_WHEN_LOCKED | FLAG_WATCH_OUTSIDE_TOUCH;
+			FLAG_NOT_FOCUSABLE | FLAG_NOT_TOUCHABLE | FLAG_KEEP_SCREEN_ON | 
+			FLAG_DISMISS_KEYGUARD | FLAG_TURN_SCREEN_ON | FLAG_SHOW_WHEN_LOCKED;
 	private static WeakReference<MirrorDisplay> ref;
 	private final int[] loc = new int[2];
 	private final Display defaultDisplay;
 	private final float scaleDiff;
-	private final AudioFocusRequestCompat audioFocusReq;
 	private WakeLock wakeLock;
 	private static int accel = -1;
 	private int refCounter;
 	private FutureSupplier<Session> session = Completed.cancelled();
 	private SurfaceContainer sc;
-	private Overlay overlay;
+	private View overlay;
 	private Metrics lMetrics;
 	private Metrics pMetrics;
 	private float dx;
@@ -102,11 +97,6 @@ public class MirrorDisplay {
 		var size = new Point();
 		defaultDisplay.getRealSize(size);
 		scaleDiff = Math.max(UiUtils.toPx(ctx, 20), Math.min(size.x, size.y) / 20f);
-		audioFocusReq =
-				new AudioFocusRequestCompat.Builder(AudioManagerCompat.AUDIOFOCUS_GAIN).setAudioAttributes(
-								new AudioAttributesCompat.Builder().setUsage(AudioAttributesCompat.USAGE_MEDIA)
-										.setContentType(AudioAttributesCompat.CONTENT_TYPE_MUSIC).build())
-						.setWillPauseWhenDucked(false).setOnAudioFocusChangeListener(focusChange -> {}).build();
 	}
 
 	public static MirrorDisplay get() {
@@ -127,7 +117,10 @@ public class MirrorDisplay {
 	}
 
 	public void release() {
-		if (--refCounter == 0) cleanUp();
+		if (--refCounter <= 0) {
+			refCounter = 0;
+			cleanUp();
+		}
 	}
 
 	public void setSurface(@NonNull SurfaceContainer sc) {
@@ -168,7 +161,6 @@ public class MirrorDisplay {
 
 	public void scale(float x, float y, boolean zoomIn) {
 		var d = translate(x, y);
-		Log.d(d);
 		if (d != null) d.scale(dx, dy, zoomIn ? scaleDiff : -scaleDiff);
 	}
 
@@ -256,20 +248,6 @@ public class MirrorDisplay {
 		accel = -1;
 	}
 
-	private void setOverlayBrightness(float brightness) {
-		if (overlay != null) {
-			try {
-				var app = PermataApplication.get();
-				var wm = (WindowManager) app.getSystemService(WINDOW_SERVICE);
-				var lp = (WindowManager.LayoutParams) overlay.getLayoutParams();
-				lp.screenBrightness = brightness;
-				wm.updateViewLayout(overlay, lp);
-			} catch (Exception err) {
-				Log.e(err, "Failed to update overlay brightness");
-			}
-		}
-	}
-
 	@Override
 	protected void finalize() {
 		if ((ref == null) || (ref.get() == null) || (ref.get() == this)) {
@@ -300,15 +278,14 @@ public class MirrorDisplay {
 		if ((overlay == null) && (SDK_INT >= VERSION_CODES.O)) {
 			try {
 				var wm = (WindowManager) app.getSystemService(WINDOW_SERVICE);
-				var lp =
-						new WindowManager.LayoutParams(MATCH_PARENT, MATCH_PARENT, TYPE_APPLICATION_OVERLAY,
+				var lp = new WindowManager.LayoutParams(MATCH_PARENT, MATCH_PARENT, TYPE_APPLICATION_OVERLAY,
 								OVERLAY_FLAGS, PixelFormat.TRANSPARENT);
 				if (!Build.MANUFACTURER.equalsIgnoreCase("Xiaomi")) {
 					lp.screenBrightness = 0.01f;
 				}
-				var overlay = new Overlay(app);
-				wm.addView(overlay, lp);
-				this.overlay = overlay;
+				var v = new View(app);
+				wm.addView(v, lp);
+				this.overlay = v;
 			} catch (Exception err) {
 				Log.e(err, "Failed to add overlay");
 			}
@@ -320,8 +297,6 @@ public class MirrorDisplay {
 			Log.e(err, "Failed to start XposedEventDispatcherService");
 		}
 
-		var amgr = (AudioManager) app.getSystemService(Context.AUDIO_SERVICE);
-		if (amgr != null) AudioManagerCompat.requestAudioFocus(amgr, audioFocusReq);
 		setMirroringMode(app, mode);
 	}
 
@@ -331,13 +306,16 @@ public class MirrorDisplay {
 		lMetrics = pMetrics = null;
 		var app = PermataApplication.get();
 		if (overlay != null) {
-			overlay.dimAndRotate.cancel();
-			var wm = (WindowManager) app.getSystemService(WINDOW_SERVICE);
-			wm.removeView(overlay);
+			try {
+				var wm = (WindowManager) app.getSystemService(WINDOW_SERVICE);
+				wm.removeView(overlay);
+			} catch (Exception ignored) {}
 			overlay = null;
 		}
 		if (wakeLock != null) {
-			wakeLock.release();
+			try {
+				wakeLock.release();
+			} catch (Exception ignored) {}
 			wakeLock = null;
 		}
 		setMirroringMode(app, 0);
@@ -349,9 +327,6 @@ public class MirrorDisplay {
 		} catch (Exception err) {
 			Log.d(err, "Failed to stop XposedEventDispatcherService");
 		}
-
-		var amgr = (AudioManager) app.getSystemService(Context.AUDIO_SERVICE);
-		if (amgr != null) AudioManagerCompat.abandonAudioFocusRequest(amgr, audioFocusReq);
 	}
 
 	private void noSession() {
@@ -377,11 +352,17 @@ public class MirrorDisplay {
 
 	private void createSession(Promise<Session> p) {
 		if (session != p) return;
-		if (sc == null) noSession();
+		if (sc == null) {
+			noSession();
+			return; // FIX: Early return prevents NPE when sc is null
+		}
 		if (p.isDone()) return;
 		ProjectionService.start().onCompletion((mp, err) -> {
 			if (session != p) return;
-			if (sc == null) noSession();
+			if (sc == null) {
+				noSession();
+				return; // FIX: Early return prevents calling new Session(mp, this) with null sc
+			}
 			if (p.isDone()) return;
 			if (err != null) {
 				if (isCancellation(err)) {
@@ -418,10 +399,13 @@ public class MirrorDisplay {
 	}
 
 	private static void drawMsg(SurfaceContainer sc, @StringRes int msg) {
+		if (sc == null) return;
+		var surface = sc.getSurface();
+		if (surface == null || !surface.isValid()) return;
+		Canvas c = null;
 		try {
-			var surface = sc.getSurface();
-			if (surface == null) return;
-			var c = surface.lockCanvas(null);
+			c = surface.lockCanvas(null);
+			if (c == null) return;
 			var w = sc.getWidth();
 			var h = sc.getHeight();
 			TextPaint paint = new TextPaint(Paint.ANTI_ALIAS_FLAG);
@@ -436,16 +420,19 @@ public class MirrorDisplay {
 			c.drawColor(Color.BLACK);
 			c.translate(w / 2f, h / 2f - sl.getHeight() / 2f);
 			sl.draw(c);
-			surface.unlockCanvasAndPost(c);
 		} catch (Exception err) {
 			Log.d(err, "Failed to draw message on surface");
+		} finally {
+			if (c != null && surface.isValid()) {
+				try {
+					surface.unlockCanvasAndPost(c);
+				} catch (Exception ignored) {}
+			}
 		}
 	}
 
 	private EventDispatcher dispatcher() {
-		var d = EventDispatcher.get();
-		Log.d(d);
-		return d;
+		return EventDispatcher.get();
 	}
 
 	@Nullable
@@ -512,6 +499,7 @@ public class MirrorDisplay {
 			this.mp = mp;
 			this.mdRef = new WeakReference<>(md);
 			var sc = md.sc;
+			if (sc == null) throw new IllegalArgumentException("SurfaceContainer is null");
 			var app = PermataApplication.get();
 			var name = app.getString(R.string.mirror_service_name);
 			mp.registerCallback(this, app.getHandler());
@@ -556,31 +544,6 @@ public class MirrorDisplay {
 				assert x >= 0f;
 			}
 			this.scale = scale;
-		}
-	}
-
-	private final class Overlay extends FrameLayout {
-		final ReschedulableTask dimAndRotate = new ReschedulableTask() {
-			@Override
-			protected void perform() {
-				var ctx = getContext();
-				setOverlayBrightness(0.01f);
-				disableAccelRotation(ctx);
-			}
-		};
-
-		public Overlay(@NonNull Context context) {
-			super(context);
-		}
-
-		@SuppressLint("ClickableViewAccessibility")
-		@Override
-		public boolean onTouchEvent(MotionEvent event) {
-			setOverlayBrightness(WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE);
-			dimAndRotate.schedule(10000);
-			var ctx = getContext();
-			restoreAccelRotation(ctx);
-			return false;
 		}
 	}
 }
