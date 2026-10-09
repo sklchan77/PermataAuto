@@ -5,16 +5,14 @@ import static android.content.Context.WINDOW_SERVICE;
 import static android.content.Intent.FLAG_ACTIVITY_CLEAR_TASK;
 import static android.content.Intent.FLAG_ACTIVITY_CLEAR_TOP;
 import static android.content.Intent.FLAG_ACTIVITY_NEW_TASK;
-import static android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE;
-import static android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT;
-import static android.content.res.Configuration.ORIENTATION_LANDSCAPE;
+import static android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE;
+import static android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT;
 import static android.os.Build.VERSION.SDK_INT;
 import static android.os.PowerManager.ACQUIRE_CAUSES_WAKEUP;
 import static android.os.SystemClock.uptimeMillis;
 import static android.provider.Settings.System.ACCELEROMETER_ROTATION;
 import static android.provider.Settings.System.USER_ROTATION;
 import static android.view.Surface.ROTATION_0;
-import static android.view.Surface.ROTATION_270;
 import static android.view.Surface.ROTATION_90;
 import static android.view.WindowManager.LayoutParams.FLAG_DISMISS_KEYGUARD;
 import static android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON;
@@ -52,6 +50,7 @@ import android.view.Display;
 import android.view.Gravity;
 import android.view.InputDevice;
 import android.view.MotionEvent;
+import android.view.View;
 import android.view.WindowManager;
 import android.widget.FrameLayout;
 
@@ -96,7 +95,7 @@ public class MirrorDisplay {
 	private Metrics pMetrics;
 	private float dx;
 	private float dy;
-	private long lastInjectedTouchTime; // Filters out car screen touches from waking the phone
+	private long lastInjectedTouchTime;
 
 	private MirrorDisplay() {
 		var ctx = PermataApplication.get();
@@ -235,8 +234,9 @@ public class MirrorDisplay {
 		var a = EventDispatcher.get().getActivity();
 		var land = PermataApplication.get().isMirroringLandscape();
 		if (a != null) {
+			// SMART MATCHING: Brutally force the phone to match the car. Ignore physical sensors entirely.
 			a.setRequestedOrientation(
-					land ? SCREEN_ORIENTATION_SENSOR_LANDSCAPE : SCREEN_ORIENTATION_SENSOR_PORTRAIT);
+					land ? SCREEN_ORIENTATION_LANDSCAPE : SCREEN_ORIENTATION_PORTRAIT);
 		}
 
 		try {
@@ -308,7 +308,6 @@ public class MirrorDisplay {
 		if ((overlay == null) && (SDK_INT >= VERSION_CODES.O)) {
 			try {
 				var wm = (WindowManager) app.getSystemService(WINDOW_SERVICE);
-				// 1x1 size allows touch pass-through, but screenBrightness applies to entire display
 				var lp = new WindowManager.LayoutParams(1, 1, TYPE_APPLICATION_OVERLAY,
 								OVERLAY_FLAGS, PixelFormat.TRANSPARENT);
 				lp.gravity = Gravity.TOP | Gravity.START;
@@ -320,7 +319,6 @@ public class MirrorDisplay {
 				wm.addView(v, lp);
 				this.overlay = v;
 				
-				// Start dim timer
 				v.dimAndRotate.schedule(10000);
 			} catch (Exception err) {
 				Log.e(err, "Failed to add overlay");
@@ -499,22 +497,32 @@ public class MirrorDisplay {
 	@SuppressLint("SwitchIntDef")
 	private Metrics metrics(@Nullable AppCompatActivity a) {
 		if (sc == null) return null;
-		boolean landscape;
-		if (a != null) {
-			landscape = a.getResources().getConfiguration().orientation == ORIENTATION_LANDSCAPE;
-		} else {
-			landscape = switch (defaultDisplay.getRotation()) {
-				case ROTATION_90, ROTATION_270 -> true;
-				default -> false;
-			};
-		}
-		var m = landscape ? lMetrics : pMetrics;
+		
+		// SMART MATCHING: The car's aspect ratio overpowers the phone.
+		boolean isCarLandscape = sc.getWidth() > sc.getHeight();
+		
+		var m = isCarLandscape ? lMetrics : pMetrics;
 		if (m == null) {
 			if (!session.isDoneNotFailed()) return null;
 			final Point size = new Point();
 			defaultDisplay.getRealSize(size);
-			m = new Metrics(size.x, size.y, sc.getWidth(), sc.getHeight());
-			if (landscape) lMetrics = m;
+			
+			float phoneW = size.x;
+			float phoneH = size.y;
+			
+			// Dynamic Coordinate Correction:
+			// If the OS is lagging behind our forced rotation command, virtually flip the phone 
+			// dimensions in memory so the touch matrix scaling remains mathematically flawless.
+			if (isCarLandscape && phoneW < phoneH) {
+				phoneW = size.y;
+				phoneH = size.x;
+			} else if (!isCarLandscape && phoneW > phoneH) {
+				phoneW = size.y;
+				phoneH = size.x;
+			}
+
+			m = new Metrics(phoneW, phoneH, sc.getWidth(), sc.getHeight());
+			if (isCarLandscape) lMetrics = m;
 			else pMetrics = m;
 		}
 		return m;
@@ -537,9 +545,7 @@ public class MirrorDisplay {
 		final ReschedulableTask dimAndRotate = new ReschedulableTask() {
 			@Override
 			protected void perform() {
-				var ctx = getContext();
 				setOverlayBrightness(0.01f);
-				disableAccelRotation(ctx);
 			}
 		};
 
@@ -555,7 +561,6 @@ public class MirrorDisplay {
 				if (Math.abs(uptimeMillis() - lastInjectedTouchTime) > 200) {
 					setOverlayBrightness(WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE);
 					dimAndRotate.schedule(10000);
-					restoreAccelRotation(getContext());
 				}
 			}
 			return false;
