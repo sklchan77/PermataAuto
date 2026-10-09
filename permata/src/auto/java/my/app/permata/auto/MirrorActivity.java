@@ -35,7 +35,6 @@ import my.app.permata.PermataApplication;
 import my.app.permata.R;
 import my.app.permata.ui.activity.MainActivityDelegate;
 import my.app.utils.concurrent.ReschedulableTask;
-import my.app.utils.log.Log;
 
 /**
  * @author sklchan77
@@ -55,16 +54,9 @@ public class MirrorActivity extends CarActivity implements SurfaceHolder.Callbac
 			@SuppressLint("ClickableViewAccessibility")
 			@Override
 			public boolean onTouchEvent(MotionEvent e) {
-				if (sc != null) md.setSurface(sc);
+				if (sc != null && md != null) md.setSurface(sc);
 				tb.show();
-
-				// FIX: Explicitly forward the raw touch event and ensure we return true for DOWN 
-				// to keep the gesture pipeline open for subsequent MOVE and UP events.
-				boolean handled = md.motionEvent(e);
-				if (e.getActionMasked() == MotionEvent.ACTION_DOWN) {
-					return true;
-				}
-				return handled;
+				return md != null && md.motionEvent(e);
 			}
 		};
 		s.setLayoutParams(new FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT));
@@ -236,7 +228,7 @@ public class MirrorActivity extends CarActivity implements SurfaceHolder.Callbac
 					int btnIdx = getButtonAt(e.getX());
 					downButton = getChildAt(btnIdx);
 					if (downButton != null) {
-					    downButton.startAnimation(animation);
+						downButton.startAnimation(animation);
 					}
 					return true;
 				}
