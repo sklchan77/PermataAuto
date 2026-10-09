@@ -101,7 +101,10 @@ public class MirrorActivity extends CarActivity implements SurfaceHolder.Callbac
 				getResources().getDisplayMetrics().densityDpi);
 		if (md != null) {
 			md.setSurface(sc);
-			md.setSessionStopListener(this::finish);
+			// FIX: Safely assign an empty lambda instead of this::finish
+			md.setSessionStopListener(() -> {
+				// Legacy CarActivity doesn't support programmatic closing, so we do nothing here.
+			});
 		}
 	}
 
