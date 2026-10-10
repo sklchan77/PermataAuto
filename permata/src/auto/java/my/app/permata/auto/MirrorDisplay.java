@@ -7,13 +7,13 @@ import static android.content.Intent.FLAG_ACTIVITY_CLEAR_TOP;
 import static android.content.Intent.FLAG_ACTIVITY_NEW_TASK;
 import static android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE;
 import static android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT;
-import static android.content.res.Configuration.ORIENTATION_LANDSCAPE;
 import static android.os.Build.VERSION.SDK_INT;
 import static android.os.PowerManager.ACQUIRE_CAUSES_WAKEUP;
 import static android.os.SystemClock.uptimeMillis;
 import static android.provider.Settings.System.ACCELEROMETER_ROTATION;
 import static android.provider.Settings.System.USER_ROTATION;
 import static android.view.Surface.ROTATION_0;
+import static android.view.Surface.ROTATION_180;
 import static android.view.Surface.ROTATION_270;
 import static android.view.Surface.ROTATION_90;
 import static android.view.WindowManager.LayoutParams.FLAG_DISMISS_KEYGUARD;
@@ -164,19 +164,19 @@ public class MirrorDisplay {
 		drawMsg(oldSc, R.string.app_name);
 	}
 
-	public void tap(float x, float y) {
+	public synchronized void tap(float x, float y) {
 		var d = translate(x, y);
 		if (d != null) d.tap(dx, dy);
 	}
 
-	public void scale(float x, float y, boolean zoomIn) {
+	public synchronized void scale(float x, float y, boolean zoomIn) {
 		var d = translate(x, y);
 		if (d != null) d.scale(dx, dy, zoomIn ? scaleDiff : -scaleDiff);
 	}
 
 	private long downTime;
 
-	public boolean motionEvent(MotionEvent e) {
+	public synchronized boolean motionEvent(MotionEvent e) {
 		lastInjectedTouchTime = uptimeMillis();
 		EventDispatcher d;
 		var action = e.getAction();
@@ -216,7 +216,7 @@ public class MirrorDisplay {
 		return d.motionEvent(e);
 	}
 
-	public boolean motionEvent(long downTime, long eventTime, int action, float x, float y) {
+	public synchronized boolean motionEvent(long downTime, long eventTime, int action, float x, float y) {
 		lastInjectedTouchTime = uptimeMillis();
 		var d = translate(x, y);
 		return (d != null) && d.motionEvent(downTime, eventTime, action, dx, dy);
@@ -241,6 +241,7 @@ public class MirrorDisplay {
 				var v = Settings.System.getInt(cr, ACCELEROMETER_ROTATION, -1);
 				if (v != -1) accel = v;
 			}
+			// Lock system settings to positive orientation
 			Settings.System.putInt(cr, ACCELEROMETER_ROTATION, 0);
 			Settings.System.putInt(cr, USER_ROTATION, land ? ROTATION_90 : ROTATION_0);
 		} catch (Exception err) {
@@ -328,10 +329,17 @@ public class MirrorDisplay {
 		}
 		
 		setMirroringMode(app, mode);
+		
+		// Apply root resolution adjustment safely
+		applyRootResolutionHack(true);
 	}
 
 	private void cleanUp() {
 		noSession();
+		
+		// Restore native phone display safely
+		applyRootResolutionHack(false);
+		
 		sc = null;
 		lMetrics = pMetrics = null;
 		var app = PermataApplication.get();
@@ -362,6 +370,53 @@ public class MirrorDisplay {
 		if (sessionStopListener != null) {
 			new android.os.Handler(android.os.Looper.getMainLooper()).post(sessionStopListener);
 		}
+	}
+
+	/**
+	 * Enterprise-Safe dynamic resolution morphing.
+	 * Uses ProcessBuilder for safer execution and prevents memory leaks / deadlocks.
+	 * Synchronization is handled on the MainLooper to prevent touch null-pointers.
+	 */
+	private void applyRootResolutionHack(boolean active) {
+		// 1. Capture dimensions safely on the Main thread to prevent lifecycle race conditions
+		final int surfaceWidth = sc != null ? sc.getWidth() : 0;
+		final int surfaceHeight = sc != null ? sc.getHeight() : 0;
+
+		new Thread(() -> {
+			Process p = null;
+			try {
+				if (active && surfaceWidth > 0 && surfaceHeight > 0) {
+					Point size = new Point();
+					defaultDisplay.getRealSize(size);
+					
+					int portW = Math.min(size.x, size.y);
+					int carW = Math.max(surfaceWidth, surfaceHeight);
+					int carH = Math.min(surfaceWidth, surfaceHeight);
+					
+					if (carH > 0) {
+						int targetH = (int) ((float) portW * carW / carH);
+						p = new ProcessBuilder("su", "-c", "wm size " + portW + "x" + targetH).start();
+						p.waitFor();
+						Log.i("Root Hack: Display forcefully resized to " + portW + "x" + targetH);
+					}
+				} else {
+					p = new ProcessBuilder("su", "-c", "wm size reset").start();
+					p.waitFor();
+					Log.i("Root Hack: Display forcefully reset to native physical resolution.");
+				}
+			} catch (Exception e) {
+				Log.e(e, "Root resolution hack failed.");
+			} finally {
+				// 2. Prevent Zombie Processes / Buffer Deadlocks
+				if (p != null) p.destroy();
+				
+				// 3. Thread-Safe UI Update: Nullify metrics strictly on the Main Looper 
+				// to prevent NPE crashes if the user is actively touching the screen
+				PermataApplication.get().getHandler().post(() -> {
+					lMetrics = pMetrics = null;
+				});
+			}
+		}, "Permata-Resolution-Thread").start();
 	}
 
 	private void noSession() {
@@ -476,13 +531,27 @@ public class MirrorDisplay {
 		var a = d.getActivity();
 		var m = metrics(a);
 		if (m == null) return null;
+
+		// Correct inverted/reverse rotations to prevent ghost touches
+		int rotation = defaultDisplay.getRotation();
+		float targetX = x;
+		float targetY = y;
+
+		if (rotation == ROTATION_180) { 
+			targetX = sc.getWidth() - x;
+			targetY = sc.getHeight() - y;
+		} else if (rotation == ROTATION_270) { 
+			targetX = sc.getWidth() - x;
+			targetY = sc.getHeight() - y;
+		}
+
 		if (a != null) {
 			a.getWindow().getDecorView().getLocationOnScreen(loc);
-			dx = (x - m.x) * m.scale - loc[0];
-			dy = (y - m.y) * m.scale - loc[1];
+			dx = (targetX - m.x) * m.scale - loc[0];
+			dy = (targetY - m.y) * m.scale - loc[1];
 		} else {
-			dx = (x - m.x) * m.scale;
-			dy = (y - m.y) * m.scale;
+			dx = (targetX - m.x) * m.scale;
+			dy = (targetY - m.y) * m.scale;
 		}
 		return d;
 	}
