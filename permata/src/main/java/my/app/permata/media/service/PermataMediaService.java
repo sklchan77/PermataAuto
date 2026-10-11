@@ -45,7 +45,6 @@ import androidx.core.app.ActivityCompat;
 import androidx.core.app.NotificationCompat;
 import androidx.core.app.NotificationCompat.Action;
 import androidx.core.app.NotificationManagerCompat;
-import androidx.core.content.ContextCompat;
 import androidx.media.MediaBrowserServiceCompat;
 import androidx.media.app.NotificationCompat.MediaStyle;
 import androidx.media.session.MediaButtonReceiver;
@@ -71,27 +70,20 @@ import my.app.utils.app.App;
 import my.app.utils.log.Log;
 import my.app.utils.ui.UiUtils;
 
-/**
- * @author sklchan77
- */
 public class PermataMediaService extends MediaBrowserServiceCompat {
 	public static final String ACTION_MEDIA_SERVICE = "my.app.permata.action.MediaService";
 	public static final String ACTION_HIJACK_FOCUS = "my.app.permata.action.HIJACK_FOCUS"; 
 	public static final String ACTION_WEB_MEDIA_PLAYING = "my.app.permata.action.WEB_MEDIA_PLAYING"; 
 	public static final String ACTION_WEB_MEDIA_PAUSED = "my.app.permata.action.WEB_MEDIA_PAUSED"; 
 	
-	// Enterprise Hardening: DSP Hardware Reset Broadcast Actions
 	public static final String ACTION_STOP_SILENT_ANCHOR = "my.app.permata.ACTION_STOP_SILENT_ANCHOR";
 	public static final String ACTION_START_SILENT_ANCHOR = "my.app.permata.ACTION_START_SILENT_ANCHOR";
 	
 	public static final String INTENT_ATTR_NOTIF_COLOR = "my.app.permata.notif.color";
 	public static final String DEFAULT_NOTIF_COLOR = "#3D2562";
-	private static final String CONTENT_STYLE_SUPPORTED =
-			"android.media.browse.CONTENT_STYLE_SUPPORTED";
-	private static final String CONTENT_STYLE_PLAYABLE_HINT =
-			"android.media.browse.CONTENT_STYLE_PLAYABLE_HINT";
-	private static final String CONTENT_STYLE_BROWSABLE_HINT =
-			"android.media.browse.CONTENT_STYLE_BROWSABLE_HINT";
+	private static final String CONTENT_STYLE_SUPPORTED = "android.media.browse.CONTENT_STYLE_SUPPORTED";
+	private static final String CONTENT_STYLE_PLAYABLE_HINT = "android.media.browse.CONTENT_STYLE_PLAYABLE_HINT";
+	private static final String CONTENT_STYLE_BROWSABLE_HINT = "android.media.browse.CONTENT_STYLE_BROWSABLE_HINT";
 	private static final int CONTENT_STYLE_LIST_ITEM_HINT_VALUE = 1;
 	private static final String INTENT_PREV = "my.app.permata.action.prev";
 	private static final String INTENT_RW = "my.app.permata.action.rw";
@@ -102,8 +94,7 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 	private static final String INTENT_NEXT = "my.app.permata.action.next";
 	private static final String INTENT_FAVORITE_ADD = "my.app.permata.action.favorite.add";
 	private static final String INTENT_FAVORITE_REMOVE = "my.app.permata.action.favorite.remove";
-	private static final String EXTRA_MEDIA_SEARCH_SUPPORTED =
-			"android.media.browse.SEARCH_SUPPORTED";
+	private static final String EXTRA_MEDIA_SEARCH_SUPPORTED = "android.media.browse.SEARCH_SUPPORTED";
 	private static final int NOTIF_ID = 1;
 	private static final String NOTIF_CHANNEL_ID = "Permata";
 	
@@ -162,17 +153,21 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 		notifColor = Color.parseColor(DEFAULT_NOTIF_COLOR);
 		App.get().getScheduler().schedule(lib::cleanUpPrefs, 1, TimeUnit.HOURS);
 		
-		// Enterprise Hardening: Register the DSP Anchor Receiver early in the lifecycle
 		dspAnchorReceiver = new BroadcastReceiver() {
 			@Override
 			public void onReceive(Context context, Intent intent) {
 				if (intent != null && intent.getAction() != null) {
 					if (ACTION_STOP_SILENT_ANCHOR.equals(intent.getAction())) {
-						Log.i("PermataMediaService: Received DSP Flush -> STOP Anchor");
-						stopSilentAudioAnchor();
+						Log.i("PermataMediaService: Received DSP Flush -> PAUSING Anchor (Retaining Focus)");
+						pauseSilentAudioAnchor();
+						
+						PermataApplication.get().getHandler().postDelayed(() -> {
+							Log.i("PermataMediaService: Auto-resuming Silent Anchor to protect Steering Controls.");
+							resumeSilentAudioAnchor();
+						}, 150);
 					} else if (ACTION_START_SILENT_ANCHOR.equals(intent.getAction())) {
-						Log.i("PermataMediaService: Received DSP Flush -> START Anchor");
-						startSilentAudioAnchor();
+						Log.i("PermataMediaService: Received -> START Anchor");
+						resumeSilentAudioAnchor();
 					}
 				}
 			}
@@ -181,7 +176,6 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 		dspFilter.addAction(ACTION_STOP_SILENT_ANCHOR);
 		dspFilter.addAction(ACTION_START_SILENT_ANCHOR);
 		
-		// FIX: Android 14+ Security Requirement for Context.registerReceiver
 		if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
 			registerReceiver(dspAnchorReceiver, dspFilter, Context.RECEIVER_NOT_EXPORTED);
 		} else {
@@ -259,7 +253,7 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 
 	private void onWebMediaPlaying() {
 		Log.i("PermataMediaService: Web media is actively playing.");
-		startSilentAudioAnchor();
+		resumeSilentAudioAnchor();
 		if (session != null) {
 			session.setActive(true);
 			updatePlaybackState(STATE_PLAYING);
@@ -323,7 +317,6 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 			silentAudioTrack.play();
 			isSilentTrackRunning = true;
 
-			// Non-blocking scheduled interval instead of Thread.sleep()
 			audioTaskFuture = audioExecutor.scheduleAtFixedRate(() -> {
 				AudioTrack track = silentAudioTrack;
 				if (track != null && isSilentTrackRunning) {
@@ -338,6 +331,35 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 			Log.i("PermataMediaService: Silent Audio Anchor active. AudioFocus permanently locked.");
 		} catch (Exception e) {
 			Log.e(e, "PermataMediaService: Failed to start Silent Audio Anchor.");
+		}
+	}
+
+	/**
+	 * HARDENED: Clears the DSP buffer without destroying the AudioTrack. 
+	 * Prevents Android Auto from unhooking steering wheel controls.
+	 */
+	private synchronized void pauseSilentAudioAnchor() {
+		if (silentAudioTrack != null && isSilentTrackRunning) {
+			isSilentTrackRunning = false; 
+			try {
+				silentAudioTrack.pause();
+				silentAudioTrack.flush(); 
+			} catch (Exception e) {
+				Log.e(e, "Error pausing silent track");
+			}
+		}
+	}
+
+	private synchronized void resumeSilentAudioAnchor() {
+		if (silentAudioTrack != null && !isSilentTrackRunning) {
+			try {
+				silentAudioTrack.play();
+				isSilentTrackRunning = true;
+			} catch (Exception e) {
+				Log.e(e, "Error resuming silent track");
+			}
+		} else if (silentAudioTrack == null) {
+			startSilentAudioAnchor();
 		}
 	}
 
@@ -560,7 +582,6 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 		filter.addAction(INTENT_FAVORITE_ADD);
 		filter.addAction(INTENT_FAVORITE_REMOVE);
 		
-		// FIX: Android 14+ Security Requirement for Context.registerReceiver
 		if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
 			registerReceiver(intentReceiver, filter, Context.RECEIVER_NOT_EXPORTED);
 		} else {
