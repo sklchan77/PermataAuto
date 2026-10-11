@@ -63,6 +63,7 @@ import androidx.car.app.SurfaceContainer;
 
 import java.io.File;
 import java.lang.ref.WeakReference;
+import java.util.concurrent.TimeUnit;
 
 import my.app.permata.PermataApplication;
 import my.app.permata.R;
@@ -415,12 +416,21 @@ public class MirrorDisplay {
 					if (carH > 0) {
 						int targetH = (int) ((float) portW * carW / carH);
 						p = new ProcessBuilder("su", "-c", "wm size " + portW + "x" + targetH).start();
-						p.waitFor();
+						// HARDENED: Prevent infinite deadlock if root prompts for confirmation
+						if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+							p.waitFor(3, TimeUnit.SECONDS);
+						} else {
+							p.waitFor();
+						}
 						Log.i("Root Hack: Display forcefully resized to " + portW + "x" + targetH);
 					}
 				} else {
 					p = new ProcessBuilder("su", "-c", "wm size reset").start();
-					p.waitFor();
+					if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+						p.waitFor(3, TimeUnit.SECONDS);
+					} else {
+						p.waitFor();
+					}
 					Log.i("Root Hack: Display forcefully reset to native physical resolution.");
 				}
 			} catch (Exception e) {
