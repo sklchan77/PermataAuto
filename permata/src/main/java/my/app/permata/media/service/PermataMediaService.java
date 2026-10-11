@@ -158,7 +158,7 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 			public void onReceive(Context context, Intent intent) {
 				if (intent != null && intent.getAction() != null) {
 					if (ACTION_STOP_SILENT_ANCHOR.equals(intent.getAction())) {
-						Log.i("PermataMediaService: Received DSP Flush -> PAUSING Anchor (Retaining Focus)");
+						Log.i("PermataMediaService: Received DSP Flush -> PAUSING Anchor");
 						pauseSilentAudioAnchor();
 						
 						PermataApplication.get().getHandler().postDelayed(() -> {
@@ -166,7 +166,6 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 							resumeSilentAudioAnchor();
 						}, 150);
 					} else if (ACTION_START_SILENT_ANCHOR.equals(intent.getAction())) {
-						Log.i("PermataMediaService: Received -> START Anchor");
 						resumeSilentAudioAnchor();
 					}
 				}
@@ -252,7 +251,7 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 	}
 
 	private void onWebMediaPlaying() {
-		Log.i("PermataMediaService: Web media is actively playing.");
+		Log.i("PermataMediaService: Web media actively playing.");
 		resumeSilentAudioAnchor();
 		if (session != null) {
 			session.setActive(true);
@@ -261,9 +260,11 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 	}
 
 	private void onWebMediaPaused() {
-		Log.i("PermataMediaService: Web media is paused.");
+		// HARDENED: Do NOT broadcast STATE_PAUSED to Android Auto during web media buffering. 
+		// If we tell AA we are paused, AA disconnects the steering wheel Next/Prev buttons instantly.
+		Log.i("PermataMediaService: Web media paused. Faking STATE_PLAYING to protect steering wheel controls.");
 		if (session != null) {
-			updatePlaybackState(STATE_PAUSED);
+			updatePlaybackState(STATE_PLAYING);
 		}
 	}
 
@@ -273,8 +274,12 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 			if (audioManager != null) {
 				audioManager.requestAudioFocus(
 						focusChange -> {
+							// HARDENED: Ignore GPS Voice (Transient Loss) to preserve steering lock
 							if (focusChange == AudioManager.AUDIOFOCUS_LOSS) {
+								Log.w("PermataMediaService: Permanent AudioFocus Loss. Stopping anchor.");
 								stopSilentAudioAnchor();
+							} else if (focusChange == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT || focusChange == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK) {
+								Log.i("PermataMediaService: Transient AudioFocus Loss. Preserving steering lock.");
 							}
 						}, 
 						AudioManager.STREAM_MUSIC, 
@@ -334,10 +339,6 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 		}
 	}
 
-	/**
-	 * HARDENED: Clears the DSP buffer without destroying the AudioTrack. 
-	 * Prevents Android Auto from unhooking steering wheel controls.
-	 */
 	private synchronized void pauseSilentAudioAnchor() {
 		if (silentAudioTrack != null && isSilentTrackRunning) {
 			isSilentTrackRunning = false; 
