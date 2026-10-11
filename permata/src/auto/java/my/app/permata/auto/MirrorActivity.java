@@ -37,9 +37,6 @@ import my.app.permata.ui.activity.MainActivityDelegate;
 import my.app.utils.concurrent.ReschedulableTask;
 import my.app.utils.log.Log;
 
-/**
- * @author sklchan77
- */
 public class MirrorActivity extends CarActivity implements SurfaceHolder.Callback {
 	private MirrorDisplay md;
 	private SurfaceContainer sc;
@@ -101,9 +98,8 @@ public class MirrorActivity extends CarActivity implements SurfaceHolder.Callbac
 				getResources().getDisplayMetrics().densityDpi);
 		if (md != null) {
 			md.setSurface(sc);
-			// FIX: Safely assign an empty lambda instead of this::finish
 			md.setSessionStopListener(() -> {
-				// Legacy CarActivity doesn't support programmatic closing, so we do nothing here.
+				// Legacy CarActivity fallback
 			});
 		}
 	}
@@ -199,7 +195,6 @@ public class MirrorActivity extends CarActivity implements SurfaceHolder.Callbac
 		private float downX, downY;
 		private View downButton;
 		private boolean moving;
-
 
 		public ToolBar(Context ctx) {
 			super(ctx);
