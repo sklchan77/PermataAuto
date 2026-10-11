@@ -112,6 +112,9 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 	private Bitmap defaultVideoIcon;
 
 	private AudioTrack silentAudioTrack;
+	
+	// HARDENED: Tracks the exact state of Douyin to decide whether to fight the car radio or surrender
+	private volatile boolean isWebMediaActivelyPlaying = false;
 
 	public MediaLib getLib() {
 		return lib;
@@ -153,6 +156,7 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 	@Override
 	public void onDestroy() {
 		stopSilentAudioAnchor();
+		PermataApplication.get().getHandler().removeCallbacksAndMessages(null);
 		for (PermataAddon a : AddonManager.get().getAddons()) {
 			if (a instanceof PermataMediaServiceAddon)
 				((PermataMediaServiceAddon) a).onServiceDestroy(callback);
@@ -211,12 +215,14 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 	}
 
 	private void onWebMediaPlaying() {
+		isWebMediaActivelyPlaying = true;
 		Log.i("PermataMediaService: Web media actively playing. Event-Driven Hijack engaged for IHU browsing.");
 		hijackCarAudioAndSteering();
 	}
 
 	private void onWebMediaPaused() {
-		Log.i("PermataMediaService: Web media paused. Faking STATE_PLAYING to protect steering controls until Radio requests focus.");
+		isWebMediaActivelyPlaying = false;
+		Log.i("PermataMediaService: Web media paused. Steering lock will be surrendered upon next Radio request.");
 		if (session != null) {
 			updatePlaybackState(STATE_PLAYING);
 		}
@@ -229,8 +235,17 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 				audioManager.requestAudioFocus(
 						focusChange -> {
 							if (focusChange == AudioManager.AUDIOFOCUS_LOSS) {
-								Log.w("PermataMediaService: Permanent AudioFocus Loss. Car Radio took over. Surrendering steering lock gracefully.");
-								stopSilentAudioAnchor();
+								if (isWebMediaActivelyPlaying) {
+									// The MAD Lock (3-Second Interval): Douyin is playing. The car radio tried to steal the steering wheel.
+									// Wait exactly 3 seconds and violently steal it right back.
+									Log.w("PermataMediaService: Car Radio stole focus, but Douyin is PLAYING! Counter-attacking in 3000ms...");
+									PermataApplication.get().getHandler().postDelayed(this::hijackCarAudioAndSteering, 3000);
+								} else {
+									// The Graceful Surrender: Douyin is paused or closed. 
+									// The user pressed the Car Radio button. Obey the command and surrender the wheel.
+									Log.w("PermataMediaService: Car Radio stole focus, and media is PAUSED. Surrendering gracefully.");
+									stopSilentAudioAnchor();
+								}
 							} else if (focusChange == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT || focusChange == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK) {
 								Log.i("PermataMediaService: Transient AudioFocus Loss. Preserving steering lock.");
 							}
