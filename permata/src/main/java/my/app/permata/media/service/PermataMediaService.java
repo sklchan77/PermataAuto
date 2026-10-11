@@ -211,12 +211,12 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 	}
 
 	private void onWebMediaPlaying() {
-		Log.i("PermataMediaService: Web media actively playing. Auto-stealing focus for IHU browsing.");
+		Log.i("PermataMediaService: Web media actively playing. Event-Driven Hijack engaged for IHU browsing.");
 		hijackCarAudioAndSteering();
 	}
 
 	private void onWebMediaPaused() {
-		Log.i("PermataMediaService: Web media paused. Faking STATE_PLAYING to protect steering controls.");
+		Log.i("PermataMediaService: Web media paused. Faking STATE_PLAYING to protect steering controls until Radio requests focus.");
 		if (session != null) {
 			updatePlaybackState(STATE_PLAYING);
 		}
@@ -229,7 +229,8 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 				audioManager.requestAudioFocus(
 						focusChange -> {
 							if (focusChange == AudioManager.AUDIOFOCUS_LOSS) {
-								Log.w("PermataMediaService: Permanent AudioFocus Loss detected, but IGNORING to preserve steering controls.");
+								Log.w("PermataMediaService: Permanent AudioFocus Loss. Car Radio took over. Surrendering steering lock gracefully.");
+								stopSilentAudioAnchor();
 							} else if (focusChange == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT || focusChange == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK) {
 								Log.i("PermataMediaService: Transient AudioFocus Loss. Preserving steering lock.");
 							}
@@ -243,7 +244,7 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 
 			if (session != null) {
 				session.setMetadata(new MediaMetadataCompat.Builder()
-						.putString(MediaMetadataCompat.METADATA_KEY_TITLE, "Mirroring Active")
+						.putString(MediaMetadataCompat.METADATA_KEY_TITLE, "IHU Web Mode Active")
 						.putString(MediaMetadataCompat.METADATA_KEY_ARTIST, "Permata")
 						.build());
 				
