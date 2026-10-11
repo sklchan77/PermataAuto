@@ -12,16 +12,15 @@ import static my.app.utils.ui.UiUtils.toPx;
 import android.annotation.SuppressLint;
 import android.content.Context;
 import android.content.Intent;
+import android.graphics.Color;
 import android.graphics.Point;
 import android.os.Bundle;
+import android.view.Gravity;
 import android.view.MotionEvent;
 import android.view.SurfaceHolder;
 import android.view.SurfaceView;
-import android.view.View;
 import android.view.ViewGroup;
 import android.view.WindowManager;
-import android.view.animation.Animation;
-import android.view.animation.AnimationUtils;
 import android.widget.FrameLayout;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
@@ -35,7 +34,6 @@ import com.google.android.apps.auto.sdk.CarActivity;
 import my.app.permata.PermataApplication;
 import my.app.permata.R;
 import my.app.permata.ui.activity.MainActivityDelegate;
-import my.app.utils.concurrent.ReschedulableTask;
 import my.app.utils.log.Log;
 
 public class MirrorActivity extends CarActivity implements SurfaceHolder.Callback {
@@ -48,13 +46,12 @@ public class MirrorActivity extends CarActivity implements SurfaceHolder.Callbac
 		md = MirrorDisplay.get();
 		MainActivityDelegate.setTheme(this, true);
 		var s = new SurfaceView(this);
-		var tb = new ToolBar(this);
+		var tb = new ToolBar(this); // Permanently anchored ActionStrip
 		var v = new FrameLayout(this) {
 			@SuppressLint("ClickableViewAccessibility")
 			@Override
 			public boolean onTouchEvent(MotionEvent e) {
 				if (sc != null && md != null) md.setSurface(sc);
-				tb.show();
 				
 				boolean handled = md != null && md.motionEvent(e);
 				if (e.getActionMasked() == MotionEvent.ACTION_DOWN) {
@@ -160,121 +157,51 @@ public class MirrorActivity extends CarActivity implements SurfaceHolder.Callbac
 		disableAccelRotation();
 	}
 
+	/**
+	 * HARDENED: Replaced the clunky, dragging, auto-hiding overlay with a permanent, 
+	 * instantly responsive native ActionStrip layout anchored to the top-right corner.
+	 */
 	private static final class ToolBar extends LinearLayout {
-		private final ReschedulableTask delayedHide = new ReschedulableTask() {
-			@Override
-			protected void perform() {
-				setVisibility(GONE);
-			}
-		};
-		private final float moveTolerance;
-		private final Animation animation;
-		private final float minX;
-		private final float maxX;
-		private final float minY;
-		private final float maxY;
-		private final int iconSize;
-		private long downTime;
-		private float downX, downY;
-		private View downButton;
-		private boolean moving;
-
 		public ToolBar(Context ctx) {
 			super(ctx);
-			var pad = toPx(ctx, 5);
-			var dm = ctx.getResources().getDisplayMetrics();
-			minX = pad;
-			maxX = dm.widthPixels - pad;
-			minY = pad;
-			maxY = dm.heightPixels - pad;
-			iconSize = (int) Math.max(Math.min(dm.widthPixels, dm.heightPixels) / 8f, toPx(ctx, 20));
-			setLayoutParams(new FrameLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT));
-			setX(dm.widthPixels - iconSize * 2 - pad);
-			setY(pad);
+			var pad = toPx(ctx, 8);
+			var iconSize = toPx(ctx, 48); // Standard Android touch target size
 
-			var iconPad = iconSize / 4;
-			var icons = new int[]{R.drawable.home, R.drawable.back};
-			for (var icon : icons) {
+			// Anchor top-right, mimicking native Android Auto NavigationTemplate ActionStrip
+			FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT);
+			params.gravity = Gravity.TOP | Gravity.END;
+			params.setMargins(pad, pad, pad, pad);
+			setLayoutParams(params);
+			setOrientation(LinearLayout.HORIZONTAL);
+
+			// Semi-transparent contrast background
+			setBackgroundColor(Color.parseColor("#90000000"));
+			setPadding(pad, pad, pad, pad);
+
+			int[] icons = new int[]{R.drawable.home, R.drawable.back};
+			for (int i = 0; i < icons.length; i++) {
+				var icon = icons[i];
 				var v = new AppCompatImageView(ctx);
-				addView(v);
 				v.setId(icon);
 				v.setImageResource(icon);
-				v.setBackgroundResource(R.drawable.oval_bg);
-				v.setPadding(iconPad, iconPad, iconPad, iconPad);
-				v.setLayoutParams(new LinearLayout.LayoutParams(iconSize, iconSize));
-				v.setAdjustViewBounds(true);
+				v.setPadding(pad, pad, pad, pad);
+				LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(iconSize, iconSize);
+				if (i > 0) lp.setMarginStart(pad);
+				v.setLayoutParams(lp);
 				v.setScaleType(ImageView.ScaleType.FIT_CENTER);
+				
+				// Standard click handlers (zero delay, zero dragging)
+				if (i == 0) {
+					v.setOnClickListener(view -> onHomeButtonClick());
+				} else {
+					v.setOnClickListener(view -> onBackButtonClick());
+				}
+				addView(v);
 			}
-
-			moveTolerance = toPx(ctx, 10);
-			animation = AnimationUtils.loadAnimation(ctx, my.app.utils.R.anim.button_press);
-			delayedHide.schedule(5000);
 		}
-
+		
 		void show() {
 			setVisibility(VISIBLE);
-			delayedHide.schedule(5000);
-		}
-
-		@SuppressLint("ClickableViewAccessibility")
-		@Override
-		public boolean onTouchEvent(MotionEvent e) {
-			show();
-			switch (e.getActionMasked()) {
-				case MotionEvent.ACTION_DOWN -> {
-					downTime = uptimeMillis();
-					downX = e.getRawX();
-					downY = e.getRawY();
-					int btnIdx = getButtonAt(e.getX());
-					downButton = getChildAt(btnIdx);
-					if (downButton != null) {
-						downButton.startAnimation(animation);
-					}
-					return true;
-				}
-				case MotionEvent.ACTION_MOVE -> {
-					if ((downButton != null) && ((Math.abs(e.getRawX() - downX) >= moveTolerance) ||
-							(Math.abs(e.getRawY() - downY) >= moveTolerance))) {
-						downButton.clearAnimation();
-					}
-					int w = getWidth();
-					int h = getHeight();
-					var newX = Math.max(minX, Math.min(maxX - w, e.getRawX() - w / 2f));
-					var newY = Math.max(minY, Math.min(maxY - h, e.getRawY() - h / 2f));
-					animate().x(newX).y(newY).setDuration(0).start();
-					moving = true;
-					return true;
-				}
-				case MotionEvent.ACTION_UP -> {
-					if (moving) {
-						moving = false;
-						if ((Math.abs(e.getRawX() - downX) >= moveTolerance) ||
-								(Math.abs(e.getRawY() - downY) >= moveTolerance)) {
-							return true;
-						}
-					}
-					if ((uptimeMillis() - downTime) < 400) handleClick(e.getX());
-					else handleLongClick(e.getX());
-					return true;
-				}
-				default -> {
-					return super.onTouchEvent(e);
-				}
-			}
-		}
-
-		private int getButtonAt(float x) {
-			return (x < iconSize) ? 0 : 1;
-		}
-
-		private void handleClick(float x) {
-			if (getButtonAt(x) == 0) onHomeButtonClick();
-			else onBackButtonClick();
-		}
-
-		private void handleLongClick(float x) {
-			if (getButtonAt(x) == 0) onHomeButtonClick();
-			else onBackButtonClick();
 		}
 	}
 }
