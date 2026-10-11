@@ -89,7 +89,6 @@ public class ProjectionService extends Service {
 				}
 			}
 
-			// FIX: Emergency Kill Switch Intent
 			Intent stopIntent = new Intent(this, ProjectionService.class);
 			stopIntent.setAction(ACTION_STOP_PROJECTION);
 			PendingIntent stopPendingIntent = PendingIntent.getService(this, 0, stopIntent, PendingIntent.FLAG_IMMUTABLE);
@@ -98,7 +97,7 @@ public class ProjectionService extends Service {
 							NotificationCompat.VISIBILITY_PUBLIC).setSmallIcon(R.drawable.notification)
 					.setContentTitle(name).setColorized(true).setPriority(NotificationCompat.PRIORITY_HIGH)
 					.setShowWhen(false).setOnlyAlertOnce(true).setSilent(true)
-					.addAction(R.drawable.shutdown, "Stop Mirroring", stopPendingIntent) // FIX: Kill Switch Action
+					.addAction(R.drawable.shutdown, "Stop Mirroring", stopPendingIntent) 
 					.build();
 			if (SDK_INT >= VERSION_CODES.Q) {
 				startForeground(2, notif, FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION);
@@ -115,7 +114,6 @@ public class ProjectionService extends Service {
 
 	@Override
 	public int onStartCommand(Intent intent, int flags, int startId) {
-		// FIX: Process the Emergency Kill Switch
 		if (intent != null && ACTION_STOP_PROJECTION.equals(intent.getAction())) {
 			Log.i("Emergency kill switch activated. Stopping projection.");
 			stop();
