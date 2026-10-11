@@ -158,15 +158,10 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 			public void onReceive(Context context, Intent intent) {
 				if (intent != null && intent.getAction() != null) {
 					if (ACTION_STOP_SILENT_ANCHOR.equals(intent.getAction())) {
-						Log.i("PermataMediaService: Received DSP Flush -> PAUSING Anchor");
-						pauseSilentAudioAnchor();
-						
-						PermataApplication.get().getHandler().postDelayed(() -> {
-							Log.i("PermataMediaService: Auto-resuming Silent Anchor to protect Steering Controls.");
-							resumeSilentAudioAnchor();
-						}, 150);
+						Log.i("PermataMediaService: Received DSP Flush -> Executing Micro-Reinstantiation");
+						flushSilentAudioAnchor(); 
 					} else if (ACTION_START_SILENT_ANCHOR.equals(intent.getAction())) {
-						resumeSilentAudioAnchor();
+						startSilentAudioAnchor();
 					}
 				}
 			}
@@ -232,9 +227,6 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 				hijackCarAudioAndSteering();
 				
 				// HARDENED STARTUP: Race Condition Buster
-				// Android Auto and the car head unit frequently clash over audio focus during the first 
-				// 3-5 seconds of connection. By dispatching a secondary delayed hijack, we ensure 
-				// Permata successfully re-steals focus and arms the steering buttons after the dust settles.
 				PermataApplication.get().getHandler().postDelayed(this::hijackCarAudioAndSteering, 3000);
 			} else if (ACTION_WEB_MEDIA_PLAYING.equals(action)) {
 				onWebMediaPlaying();
@@ -258,7 +250,7 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 
 	private void onWebMediaPlaying() {
 		Log.i("PermataMediaService: Web media actively playing.");
-		resumeSilentAudioAnchor();
+		startSilentAudioAnchor();
 		if (session != null) {
 			session.setActive(true);
 			updatePlaybackState(STATE_PLAYING);
@@ -293,7 +285,7 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 			startSilentAudioAnchor();
 
 			if (session != null) {
-				// HARDENED: Inject dummy metadata so Android Auto honors the media session
+				// Inject dummy metadata so Android Auto honors the media session
 				session.setMetadata(new MediaMetadataCompat.Builder()
 						.putString(MediaMetadataCompat.METADATA_KEY_TITLE, "Mirroring Active")
 						.putString(MediaMetadataCompat.METADATA_KEY_ARTIST, "Permata")
@@ -348,27 +340,44 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 		}
 	}
 
-	private synchronized void pauseSilentAudioAnchor() {
-		if (silentAudioTrack != null && isSilentTrackRunning) {
-			isSilentTrackRunning = false; 
-			try {
-				silentAudioTrack.pause();
-				silentAudioTrack.flush(); 
-			} catch (Exception e) {
-				Log.e(e, "Error pausing silent track");
-			}
-		}
-	}
+	/**
+	 * SOLUTION #2: Micro-Reinstantiation.
+	 * Synchronously destroys and recreates the AudioTrack. 
+	 * Forces the OS to dump lagged buffers without triggering Android Auto's focus-loss timeouts.
+	 */
+	private synchronized void flushSilentAudioAnchor() {
+		if (!isSilentTrackRunning || silentAudioTrack == null) return;
+		
+		try {
+			// 1. Instantly tear down the old track to dump the Android AudioFlinger buffer
+			AudioTrack oldTrack = silentAudioTrack;
+			silentAudioTrack = null; 
+			oldTrack.stop();
+			oldTrack.release();
+			
+			// 2. Immediately spin up a new track (blocks thread for ~2ms, hiding the gap from AA)
+			int sampleRate = 44100;
+			int minBufferSize = AudioTrack.getMinBufferSize(
+					sampleRate,
+					AudioFormat.CHANNEL_OUT_STEREO,
+					AudioFormat.ENCODING_PCM_16BIT
+			);
 
-	private synchronized void resumeSilentAudioAnchor() {
-		if (silentAudioTrack != null && !isSilentTrackRunning) {
-			try {
-				silentAudioTrack.play();
-				isSilentTrackRunning = true;
-			} catch (Exception e) {
-				Log.e(e, "Error resuming silent track");
-			}
-		} else if (silentAudioTrack == null) {
+			silentAudioTrack = new AudioTrack(
+					AudioManager.STREAM_MUSIC,
+					sampleRate,
+					AudioFormat.CHANNEL_OUT_STEREO,
+					AudioFormat.ENCODING_PCM_16BIT,
+					Math.max(minBufferSize, 2048),
+					AudioTrack.MODE_STREAM
+			);
+			
+			silentAudioTrack.play();
+			Log.i("PermataMediaService: Micro-Reinstantiation complete. DSP flushed.");
+		} catch (Exception e) {
+			Log.e(e, "Error during AudioTrack micro-reinstantiation");
+			// Failsafe: Restart normally if fast-track fails
+			isSilentTrackRunning = false;
 			startSilentAudioAnchor();
 		}
 	}
