@@ -109,10 +109,10 @@ public class MirrorServiceFS extends CarAppService {
 		}
 
 		@Override
-		public void onSurfaceAvailable(@NonNull SurfaceContainer sc) {
-			if (sc.getSurface() == null) return;
-			MirrorServiceFS.sc = sc;
-			md.setSurface(sc);
+		public void onSurfaceAvailable(@NonNull SurfaceContainer localSc) {
+			if (localSc.getSurface() == null) return;
+			MirrorServiceFS.sc = localSc;
+			md.setSurface(localSc);
 			
 			md.setSessionStopListener(() -> {
 				try {
@@ -120,14 +120,17 @@ public class MirrorServiceFS extends CarAppService {
 				} catch (Exception ignored) {}
 			});
 			
-			scrollStartX = sc.getWidth() / 2f;
-			scrollStartY = sc.getHeight() / 2f;
+			scrollStartX = localSc.getWidth() / 2f;
+			scrollStartY = localSc.getHeight() / 2f;
 		}
 
 		@Override
-		public void onSurfaceDestroyed(@NonNull SurfaceContainer sc) {
-			md.releaseSurface(MirrorServiceFS.sc);
-			md.setSessionStopListener(null);
+		public void onSurfaceDestroyed(@NonNull SurfaceContainer localSc) {
+			// Hardened: Release surface using localized instance instead of static reference
+			if (md != null) {
+				md.releaseSurface(localSc);
+				md.setSessionStopListener(null);
+			}
 			MirrorServiceFS.sc = null;
 
 			new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(() -> {
