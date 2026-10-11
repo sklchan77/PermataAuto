@@ -211,12 +211,8 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 	}
 
 	private void onWebMediaPlaying() {
-		Log.i("PermataMediaService: Web media actively playing.");
-		startSilentAudioAnchor();
-		if (session != null) {
-			session.setActive(true);
-			updatePlaybackState(STATE_PLAYING);
-		}
+		Log.i("PermataMediaService: Web media actively playing. Auto-stealing focus for IHU browsing.");
+		hijackCarAudioAndSteering();
 	}
 
 	private void onWebMediaPaused() {
@@ -233,7 +229,6 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 				audioManager.requestAudioFocus(
 						focusChange -> {
 							if (focusChange == AudioManager.AUDIOFOCUS_LOSS) {
-								// HARDENED: Ignore permanent focus loss from the car head unit to keep the steering lock alive.
 								Log.w("PermataMediaService: Permanent AudioFocus Loss detected, but IGNORING to preserve steering controls.");
 							} else if (focusChange == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT || focusChange == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK) {
 								Log.i("PermataMediaService: Transient AudioFocus Loss. Preserving steering lock.");
@@ -265,7 +260,7 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 		if (silentAudioTrack != null && silentAudioTrack.getPlayState() == AudioTrack.PLAYSTATE_PLAYING) return;
 		try {
 			int sampleRate = 44100;
-			int bufferSize = sampleRate * 2 * 2; // 1 second of stereo 16-bit PCM
+			int bufferSize = sampleRate * 2 * 2; 
 
 			silentAudioTrack = new AudioTrack(
 					AudioManager.STREAM_MUSIC,
