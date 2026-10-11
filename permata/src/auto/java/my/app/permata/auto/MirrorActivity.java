@@ -46,7 +46,7 @@ public class MirrorActivity extends CarActivity implements SurfaceHolder.Callbac
 		md = MirrorDisplay.get();
 		MainActivityDelegate.setTheme(this, true);
 		var s = new SurfaceView(this);
-		var tb = new ToolBar(this); // Permanently anchored ActionStrip
+		var tb = new ToolBar(this);
 		var v = new FrameLayout(this) {
 			@SuppressLint("ClickableViewAccessibility")
 			@Override
@@ -157,24 +157,19 @@ public class MirrorActivity extends CarActivity implements SurfaceHolder.Callbac
 		disableAccelRotation();
 	}
 
-	/**
-	 * HARDENED: Replaced the clunky, dragging, auto-hiding overlay with a permanent, 
-	 * instantly responsive native ActionStrip layout anchored to the top-right corner.
-	 */
 	private static final class ToolBar extends LinearLayout {
 		public ToolBar(Context ctx) {
 			super(ctx);
-			var pad = toPx(ctx, 8);
-			var iconSize = toPx(ctx, 48); // Standard Android touch target size
+			// Cast the float values to int to satisfy Android LayoutParams parameters
+			int pad = (int) toPx(ctx, 8);
+			int iconSize = (int) toPx(ctx, 48); 
 
-			// Anchor top-right, mimicking native Android Auto NavigationTemplate ActionStrip
 			FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT);
 			params.gravity = Gravity.TOP | Gravity.END;
 			params.setMargins(pad, pad, pad, pad);
 			setLayoutParams(params);
 			setOrientation(LinearLayout.HORIZONTAL);
 
-			// Semi-transparent contrast background
 			setBackgroundColor(Color.parseColor("#90000000"));
 			setPadding(pad, pad, pad, pad);
 
@@ -190,7 +185,6 @@ public class MirrorActivity extends CarActivity implements SurfaceHolder.Callbac
 				v.setLayoutParams(lp);
 				v.setScaleType(ImageView.ScaleType.FIT_CENTER);
 				
-				// Standard click handlers (zero delay, zero dragging)
 				if (i == 0) {
 					v.setOnClickListener(view -> onHomeButtonClick());
 				} else {
