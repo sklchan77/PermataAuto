@@ -85,15 +85,25 @@ public class ProjectionActivity extends ActivityBase {
 	private FutureSupplier<?> checkOverlayPermission() {
 		if (Settings.canDrawOverlays(this)) return completedVoid();
 		Log.i("Requesting ACTION_MANAGE_OVERLAY_PERMISSION permission");
-		return startActivityForResult(() -> new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-				Uri.parse("package:" + getPackageName())));
+		try {
+			return startActivityForResult(() -> new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+					Uri.parse("package:" + getPackageName())));
+		} catch (Exception e) {
+			Log.e(e, "Settings intent blocked by OS.");
+			return completedVoid();
+		}
 	}
 
 	private FutureSupplier<?> checkWriteSettingsPermission() {
 		if (Settings.System.canWrite(this)) return completedVoid();
 		Log.i("Requesting ACTION_MANAGE_WRITE_SETTINGS permission");
-		return startActivityForResult(() -> new Intent(Settings.ACTION_MANAGE_WRITE_SETTINGS,
-				Uri.parse("package:" + getPackageName())));
+		try {
+			return startActivityForResult(() -> new Intent(Settings.ACTION_MANAGE_WRITE_SETTINGS,
+					Uri.parse("package:" + getPackageName())));
+		} catch (Exception e) {
+			Log.e(e, "Settings intent blocked by OS.");
+			return completedVoid();
+		}
 	}
 
 	private FutureSupplier<?> checkAccessibilityPermission() {
@@ -101,19 +111,23 @@ public class ProjectionActivity extends ActivityBase {
 			return completedVoid();
 		Log.i("Requesting ACTION_ACCESSIBILITY_SETTINGS permission");
 		var p = new Promise<>();
-		var intent = new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS);
-		intent.setFlags(FLAG_ACTIVITY_NEW_TASK | FLAG_ACTIVITY_SINGLE_TOP);
-		startActivity(intent);
-		getContentResolver().registerContentObserver(
-				Settings.Secure.getUriFor(Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES), false,
-				new ContentObserver(PermataApplication.get().getHandler()) {
-					@Override
-					public void onChange(boolean selfChange) {
-						if (!isAccessibilityEnabled()) return;
-						getContentResolver().unregisterContentObserver(this);
-						p.complete(null);
-					}
-				});
+		try {
+			var intent = new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS);
+			intent.setFlags(FLAG_ACTIVITY_NEW_TASK | FLAG_ACTIVITY_SINGLE_TOP);
+			startActivity(intent);
+			getContentResolver().registerContentObserver(
+					Settings.Secure.getUriFor(Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES), false,
+					new ContentObserver(PermataApplication.get().getHandler()) {
+						@Override
+						public void onChange(boolean selfChange) {
+							if (!isAccessibilityEnabled()) return;
+							getContentResolver().unregisterContentObserver(this);
+							p.complete(null);
+						}
+					});
+		} catch (Exception e) {
+			p.complete(null);
+		}
 		return p;
 	}
 
