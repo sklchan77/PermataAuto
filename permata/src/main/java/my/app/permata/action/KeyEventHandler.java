@@ -541,11 +541,6 @@ public class KeyEventHandler {
 				});
 			}, 220); 
 
-			// =========================================================================================
-			// [HARDENED HTML5 BUFFER PURGE] Zero-Latency Sync 
-			// Injects a micro-seek (+0.001s) with a readyState guard to prevent DOM InvalidStateErrors.
-			// Forces the browser to instantly trash residual audio frames without hitting the OS layer.
-			// =========================================================================================
 			if (isMediaHost) {
 				wv.post(() -> {
 					if (!wv.isAttachedToWindow()) return;
