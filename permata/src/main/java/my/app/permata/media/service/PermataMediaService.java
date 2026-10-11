@@ -50,9 +50,6 @@ import androidx.media.app.NotificationCompat.MediaStyle;
 import androidx.media.session.MediaButtonReceiver;
 
 import java.util.List;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 
 import my.app.permata.BuildConfig;
@@ -75,9 +72,6 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 	public static final String ACTION_HIJACK_FOCUS = "my.app.permata.action.HIJACK_FOCUS"; 
 	public static final String ACTION_WEB_MEDIA_PLAYING = "my.app.permata.action.WEB_MEDIA_PLAYING"; 
 	public static final String ACTION_WEB_MEDIA_PAUSED = "my.app.permata.action.WEB_MEDIA_PAUSED"; 
-	
-	public static final String ACTION_STOP_SILENT_ANCHOR = "my.app.permata.ACTION_STOP_SILENT_ANCHOR";
-	public static final String ACTION_START_SILENT_ANCHOR = "my.app.permata.ACTION_START_SILENT_ANCHOR";
 	
 	public static final String INTENT_ATTR_NOTIF_COLOR = "my.app.permata.notif.color";
 	public static final String DEFAULT_NOTIF_COLOR = "#3D2562";
@@ -102,7 +96,6 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 	private MediaSessionCompat session;
 	MediaSessionCallback callback;
 	private BroadcastReceiver intentReceiver;
-	private BroadcastReceiver dspAnchorReceiver;
 	private int notifColor;
 	private PendingIntent notifContentIntent;
 	private MediaStyle notifStyle;
@@ -119,9 +112,6 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 	private Bitmap defaultVideoIcon;
 
 	private AudioTrack silentAudioTrack;
-	private volatile boolean isSilentTrackRunning = false;
-	private final ScheduledExecutorService audioExecutor = Executors.newSingleThreadScheduledExecutor();
-	private ScheduledFuture<?> audioTaskFuture;
 
 	public MediaLib getLib() {
 		return lib;
@@ -153,29 +143,6 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 		notifColor = Color.parseColor(DEFAULT_NOTIF_COLOR);
 		App.get().getScheduler().schedule(lib::cleanUpPrefs, 1, TimeUnit.HOURS);
 		
-		dspAnchorReceiver = new BroadcastReceiver() {
-			@Override
-			public void onReceive(Context context, Intent intent) {
-				if (intent != null && intent.getAction() != null) {
-					if (ACTION_STOP_SILENT_ANCHOR.equals(intent.getAction())) {
-						Log.i("PermataMediaService: Received DSP Flush -> Executing Micro-Reinstantiation");
-						flushSilentAudioAnchor(); 
-					} else if (ACTION_START_SILENT_ANCHOR.equals(intent.getAction())) {
-						startSilentAudioAnchor();
-					}
-				}
-			}
-		};
-		IntentFilter dspFilter = new IntentFilter();
-		dspFilter.addAction(ACTION_STOP_SILENT_ANCHOR);
-		dspFilter.addAction(ACTION_START_SILENT_ANCHOR);
-		
-		if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-			registerReceiver(dspAnchorReceiver, dspFilter, Context.RECEIVER_NOT_EXPORTED);
-		} else {
-			registerReceiver(dspAnchorReceiver, dspFilter);
-		}
-
 		Log.d("PermataMediaService created");
 		for (PermataAddon a : AddonManager.get().getAddons()) {
 			if (a instanceof PermataMediaServiceAddon)
@@ -186,7 +153,6 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 	@Override
 	public void onDestroy() {
 		stopSilentAudioAnchor();
-		audioExecutor.shutdownNow();
 		for (PermataAddon a : AddonManager.get().getAddons()) {
 			if (a instanceof PermataMediaServiceAddon)
 				((PermataMediaServiceAddon) a).onServiceDestroy(callback);
@@ -195,8 +161,6 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 		NotificationManagerCompat.from(this).cancel(NOTIF_ID);
 		if (intentReceiver != null) unregisterReceiver(intentReceiver);
 		intentReceiver = null;
-		if (dspAnchorReceiver != null) unregisterReceiver(dspAnchorReceiver);
-		dspAnchorReceiver = null;
 		callback.close();
 		session.release();
 		Log.d("PermataMediaService destroyed");
@@ -225,8 +189,6 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 			String action = intent.getAction();
 			if (ACTION_HIJACK_FOCUS.equals(action)) {
 				hijackCarAudioAndSteering();
-				
-				// HARDENED STARTUP: Race Condition Buster
 				PermataApplication.get().getHandler().postDelayed(this::hijackCarAudioAndSteering, 3000);
 			} else if (ACTION_WEB_MEDIA_PLAYING.equals(action)) {
 				onWebMediaPlaying();
@@ -285,7 +247,6 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 			startSilentAudioAnchor();
 
 			if (session != null) {
-				// Inject dummy metadata so Android Auto honors the media session
 				session.setMetadata(new MediaMetadataCompat.Builder()
 						.putString(MediaMetadataCompat.METADATA_KEY_TITLE, "Mirroring Active")
 						.putString(MediaMetadataCompat.METADATA_KEY_ARTIST, "Permata")
@@ -300,94 +261,38 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 		}
 	}
 
+	/**
+	 * HARDENED: Uses MODE_STATIC to infinitely loop silence at the hardware level.
+	 * Eliminates CPU thread polling, removes buffer underrun crashes, and ensures Android Auto 
+	 * never detects a break in the audio stream.
+	 */
 	private synchronized void startSilentAudioAnchor() {
-		if (isSilentTrackRunning) return;
+		if (silentAudioTrack != null && silentAudioTrack.getPlayState() == AudioTrack.PLAYSTATE_PLAYING) return;
 		try {
 			int sampleRate = 44100;
-			int minBufferSize = AudioTrack.getMinBufferSize(
-					sampleRate,
-					AudioFormat.CHANNEL_OUT_STEREO,
-					AudioFormat.ENCODING_PCM_16BIT
-			);
+			int bufferSize = sampleRate * 2 * 2; // 1 second of stereo 16-bit PCM
 
 			silentAudioTrack = new AudioTrack(
 					AudioManager.STREAM_MUSIC,
 					sampleRate,
 					AudioFormat.CHANNEL_OUT_STEREO,
 					AudioFormat.ENCODING_PCM_16BIT,
-					Math.max(minBufferSize, 2048),
-					AudioTrack.MODE_STREAM
+					bufferSize,
+					AudioTrack.MODE_STATIC
 			);
 
-			byte[] silentBuffer = new byte[Math.max(minBufferSize, 2048)];
+			byte[] silentBuffer = new byte[bufferSize];
+			silentAudioTrack.write(silentBuffer, 0, silentBuffer.length);
+			silentAudioTrack.setLoopPoints(0, sampleRate, -1); // Loop forever
 			silentAudioTrack.play();
-			isSilentTrackRunning = true;
 
-			audioTaskFuture = audioExecutor.scheduleAtFixedRate(() -> {
-				AudioTrack track = silentAudioTrack;
-				if (track != null && isSilentTrackRunning) {
-					try {
-						track.write(silentBuffer, 0, silentBuffer.length);
-					} catch (Exception e) {
-						Log.e(e, "Error in silent audio write loop");
-					}
-				}
-			}, 0, 100, TimeUnit.MILLISECONDS);
-
-			Log.i("PermataMediaService: Silent Audio Anchor active. AudioFocus permanently locked.");
+			Log.i("PermataMediaService: Hardware STATIC Audio Anchor active. Focus permanently locked.");
 		} catch (Exception e) {
 			Log.e(e, "PermataMediaService: Failed to start Silent Audio Anchor.");
 		}
 	}
 
-	/**
-	 * SOLUTION #2: Micro-Reinstantiation.
-	 * Synchronously destroys and recreates the AudioTrack. 
-	 * Forces the OS to dump lagged buffers without triggering Android Auto's focus-loss timeouts.
-	 */
-	private synchronized void flushSilentAudioAnchor() {
-		if (!isSilentTrackRunning || silentAudioTrack == null) return;
-		
-		try {
-			// 1. Instantly tear down the old track to dump the Android AudioFlinger buffer
-			AudioTrack oldTrack = silentAudioTrack;
-			silentAudioTrack = null; 
-			oldTrack.stop();
-			oldTrack.release();
-			
-			// 2. Immediately spin up a new track (blocks thread for ~2ms, hiding the gap from AA)
-			int sampleRate = 44100;
-			int minBufferSize = AudioTrack.getMinBufferSize(
-					sampleRate,
-					AudioFormat.CHANNEL_OUT_STEREO,
-					AudioFormat.ENCODING_PCM_16BIT
-			);
-
-			silentAudioTrack = new AudioTrack(
-					AudioManager.STREAM_MUSIC,
-					sampleRate,
-					AudioFormat.CHANNEL_OUT_STEREO,
-					AudioFormat.ENCODING_PCM_16BIT,
-					Math.max(minBufferSize, 2048),
-					AudioTrack.MODE_STREAM
-			);
-			
-			silentAudioTrack.play();
-			Log.i("PermataMediaService: Micro-Reinstantiation complete. DSP flushed.");
-		} catch (Exception e) {
-			Log.e(e, "Error during AudioTrack micro-reinstantiation");
-			// Failsafe: Restart normally if fast-track fails
-			isSilentTrackRunning = false;
-			startSilentAudioAnchor();
-		}
-	}
-
 	private synchronized void stopSilentAudioAnchor() {
-		isSilentTrackRunning = false;
-		if (audioTaskFuture != null) {
-			audioTaskFuture.cancel(false);
-			audioTaskFuture = null;
-		}
 		if (silentAudioTrack != null) {
 			try {
 				silentAudioTrack.stop();
@@ -433,8 +338,7 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 	}
 
 	@Override
-	public BrowserRoot onGetRoot(@NonNull String clientPackageName, int clientUid,
-															 Bundle rootHints) {
+	public BrowserRoot onGetRoot(@NonNull String clientPackageName, int clientUid, Bundle rootHints) {
 		Bundle extras = new Bundle();
 		extras.putBoolean(EXTRA_MEDIA_SEARCH_SUPPORTED, true);
 		extras.putBoolean(CONTENT_STYLE_SUPPORTED, true);
@@ -449,8 +353,7 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 	}
 
 	@Override
-	public void onLoadChildren(@NonNull String parentMediaId,
-														 @NonNull Result<List<MediaItem>> result) {
+	public void onLoadChildren(@NonNull String parentMediaId, @NonNull Result<List<MediaItem>> result) {
 		getLib().getChildren(parentMediaId, result);
 	}
 
@@ -460,8 +363,7 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 	}
 
 	@Override
-	public void onSearch(@NonNull String query, Bundle extras,
-											 @NonNull Result<List<MediaItem>> result) {
+	public void onSearch(@NonNull String query, Bundle extras, @NonNull Result<List<MediaItem>> result) {
 		getLib().search(query, result);
 	}
 
