@@ -126,7 +126,6 @@ public class MirrorServiceFS extends CarAppService {
 
 		@Override
 		public void onSurfaceDestroyed(@NonNull SurfaceContainer localSc) {
-			// Hardened: Release surface using localized instance instead of static reference
 			if (md != null) {
 				md.releaseSurface(localSc);
 				md.setSessionStopListener(null);
