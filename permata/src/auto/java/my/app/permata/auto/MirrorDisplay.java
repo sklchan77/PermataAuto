@@ -61,6 +61,7 @@ import androidx.annotation.StringRes;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.car.app.SurfaceContainer;
 
+import java.io.File;
 import java.lang.ref.WeakReference;
 
 import my.app.permata.PermataApplication;
@@ -160,7 +161,20 @@ public class MirrorDisplay {
 		if (oldSc != sc) return;
 		this.sc = null;
 		lMetrics = pMetrics = null;
-		if (session.isDoneNotFailed()) session.getOrThrow().vd.setSurface(null);
+		if (session.isDoneNotFailed()) {
+			// ENTERPRISE HARDENING: Detach VirtualDisplay asynchronously to prevent 
+			// Choreographer MainThread deadlocks (ExoPlayer 'wm0: Detaching surface timed out')
+			new Thread(() -> {
+				try {
+					Session s = session.getOrThrow();
+					if (s != null && s.vd != null) {
+						s.vd.setSurface(null);
+					}
+				} catch (Exception e) {
+					Log.e(e, "Safe VirtualDisplay detachment failed.");
+				}
+			}, "Permata-Surface-Detach").start();
+		}
 		drawMsg(oldSc, R.string.app_name);
 	}
 
@@ -241,7 +255,6 @@ public class MirrorDisplay {
 				var v = Settings.System.getInt(cr, ACCELEROMETER_ROTATION, -1);
 				if (v != -1) accel = v;
 			}
-			// Lock system settings to positive orientation
 			Settings.System.putInt(cr, ACCELEROMETER_ROTATION, 0);
 			Settings.System.putInt(cr, USER_ROTATION, land ? ROTATION_90 : ROTATION_0);
 		} catch (Exception err) {
@@ -329,15 +342,11 @@ public class MirrorDisplay {
 		}
 		
 		setMirroringMode(app, mode);
-		
-		// Apply root resolution adjustment safely
 		applyRootResolutionHack(true);
 	}
 
 	private void cleanUp() {
 		noSession();
-		
-		// Restore native phone display safely
 		applyRootResolutionHack(false);
 		
 		sc = null;
@@ -372,19 +381,36 @@ public class MirrorDisplay {
 		}
 	}
 
+	private boolean canExecuteSu() {
+		try {
+			Process p = new ProcessBuilder("which", "su").start();
+			int exitCode = p.waitFor();
+			p.destroy();
+			return exitCode == 0;
+		} catch (Exception e) {
+			return false;
+		}
+	}
+
 	/**
 	 * Enterprise-Safe dynamic resolution morphing.
-	 * Uses ProcessBuilder for safer execution and prevents memory leaks / deadlocks.
-	 * Synchronization is handled on the MainLooper to prevent touch null-pointers.
+	 * Gate-checked against missing binaries to prevent IOException spam and Process deadlocks.
 	 */
 	private void applyRootResolutionHack(boolean active) {
-		// 1. Capture dimensions safely on the Main thread to prevent lifecycle race conditions
 		final int surfaceWidth = sc != null ? sc.getWidth() : 0;
 		final int surfaceHeight = sc != null ? sc.getHeight() : 0;
 
 		new Thread(() -> {
 			Process p = null;
 			try {
+				// Gate check: Abort cleanly if device is unrooted to prevent IOExceptions
+				File su1 = new File("/system/xbin/su");
+				File su2 = new File("/system/bin/su");
+				if (!su1.exists() && !su2.exists() && !canExecuteSu()) {
+					Log.w("Root Hack skipped: Device is not rooted or 'su' is missing.");
+					return;
+				}
+
 				if (active && surfaceWidth > 0 && surfaceHeight > 0) {
 					Point size = new Point();
 					defaultDisplay.getRealSize(size);
@@ -407,11 +433,7 @@ public class MirrorDisplay {
 			} catch (Exception e) {
 				Log.e(e, "Root resolution hack failed.");
 			} finally {
-				// 2. Prevent Zombie Processes / Buffer Deadlocks
 				if (p != null) p.destroy();
-				
-				// 3. Thread-Safe UI Update: Nullify metrics strictly on the Main Looper 
-				// to prevent NPE crashes if the user is actively touching the screen
 				PermataApplication.get().getHandler().post(() -> {
 					lMetrics = pMetrics = null;
 				});
@@ -532,7 +554,6 @@ public class MirrorDisplay {
 		var m = metrics(a);
 		if (m == null) return null;
 
-		// Correct inverted/reverse rotations to prevent ghost touches
 		int rotation = defaultDisplay.getRotation();
 		float targetX = x;
 		float targetY = y;
