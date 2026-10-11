@@ -219,7 +219,7 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 			return;
 		}
 
-		Log.i("App swiped away from Recents. Killing PermataMediaService (Zombie #2).");
+		Log.i("App swiped away from Recents. Killing PermataMediaService.");
 		stopSilentAudioAnchor(); 
 		stopSelf();
 	}
@@ -230,6 +230,12 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 			String action = intent.getAction();
 			if (ACTION_HIJACK_FOCUS.equals(action)) {
 				hijackCarAudioAndSteering();
+				
+				// HARDENED STARTUP: Race Condition Buster
+				// Android Auto and the car head unit frequently clash over audio focus during the first 
+				// 3-5 seconds of connection. By dispatching a secondary delayed hijack, we ensure 
+				// Permata successfully re-steals focus and arms the steering buttons after the dust settles.
+				PermataApplication.get().getHandler().postDelayed(this::hijackCarAudioAndSteering, 3000);
 			} else if (ACTION_WEB_MEDIA_PLAYING.equals(action)) {
 				onWebMediaPlaying();
 			} else if (ACTION_WEB_MEDIA_PAUSED.equals(action)) {
@@ -260,9 +266,7 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 	}
 
 	private void onWebMediaPaused() {
-		// HARDENED: Do NOT broadcast STATE_PAUSED to Android Auto during web media buffering. 
-		// If we tell AA we are paused, AA disconnects the steering wheel Next/Prev buttons instantly.
-		Log.i("PermataMediaService: Web media paused. Faking STATE_PLAYING to protect steering wheel controls.");
+		Log.i("PermataMediaService: Web media paused. Faking STATE_PLAYING to protect steering controls.");
 		if (session != null) {
 			updatePlaybackState(STATE_PLAYING);
 		}
@@ -274,9 +278,8 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 			if (audioManager != null) {
 				audioManager.requestAudioFocus(
 						focusChange -> {
-							// HARDENED: Ignore GPS Voice (Transient Loss) to preserve steering lock
 							if (focusChange == AudioManager.AUDIOFOCUS_LOSS) {
-								Log.w("PermataMediaService: Permanent AudioFocus Loss. Stopping anchor.");
+								Log.w("PermataMediaService: Permanent AudioFocus Loss.");
 								stopSilentAudioAnchor();
 							} else if (focusChange == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT || focusChange == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK) {
 								Log.i("PermataMediaService: Transient AudioFocus Loss. Preserving steering lock.");
@@ -290,6 +293,12 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 			startSilentAudioAnchor();
 
 			if (session != null) {
+				// HARDENED: Inject dummy metadata so Android Auto honors the media session
+				session.setMetadata(new MediaMetadataCompat.Builder()
+						.putString(MediaMetadataCompat.METADATA_KEY_TITLE, "Mirroring Active")
+						.putString(MediaMetadataCompat.METADATA_KEY_ARTIST, "Permata")
+						.build());
+				
 				session.setActive(true);
 				updatePlaybackState(STATE_PLAYING);
 				Log.i("PermataMediaService: Audio Focus & Steering Buttons successfully hijacked.");
