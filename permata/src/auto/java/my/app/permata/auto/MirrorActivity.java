@@ -130,15 +130,10 @@ public class MirrorActivity extends CarActivity implements SurfaceHolder.Callbac
 		}, 5000);
 	}
 
-	/**
-	 * HARDENED: Unconditionally force the Permata LauncherActivity to the front.
-	 * Removes the flawed instance check that occasionally routed users to the phone's native launcher.
-	 */
 	static void onHomeButtonClick() {
 		var ctx = PermataApplication.get();
 		if (ctx != null) {
 			Intent intent = new Intent(ctx, LauncherActivity.class);
-			// FLAG_ACTIVITY_CLEAR_TOP ensures any old instances are cleared, providing a reliable Home return
 			intent.setFlags(FLAG_ACTIVITY_NEW_TASK | FLAG_ACTIVITY_CLEAR_TOP | FLAG_ACTIVITY_SINGLE_TOP);
 			ctx.startActivity(intent);
 		}
