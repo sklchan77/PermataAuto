@@ -6,9 +6,6 @@ import com.google.android.apps.auto.sdk.CarActivityService;
 import my.app.permata.PermataApplication;
 import my.app.utils.log.Log;
 
-/**
- * @author sklchan77
- */
 public class MirrorService extends CarActivityService {
 	private MirrorDisplay md;
 
