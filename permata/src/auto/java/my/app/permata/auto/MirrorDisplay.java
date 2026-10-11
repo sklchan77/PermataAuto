@@ -162,8 +162,6 @@ public class MirrorDisplay {
 		this.sc = null;
 		lMetrics = pMetrics = null;
 		if (session.isDoneNotFailed()) {
-			// ENTERPRISE HARDENING: Detach VirtualDisplay asynchronously to prevent 
-			// Choreographer MainThread deadlocks (ExoPlayer 'wm0: Detaching surface timed out')
 			new Thread(() -> {
 				try {
 					Session s = session.getOrThrow();
@@ -392,10 +390,6 @@ public class MirrorDisplay {
 		}
 	}
 
-	/**
-	 * Enterprise-Safe dynamic resolution morphing.
-	 * Gate-checked against missing binaries to prevent IOException spam and Process deadlocks.
-	 */
 	private void applyRootResolutionHack(boolean active) {
 		final int surfaceWidth = sc != null ? sc.getWidth() : 0;
 		final int surfaceHeight = sc != null ? sc.getHeight() : 0;
@@ -403,7 +397,6 @@ public class MirrorDisplay {
 		new Thread(() -> {
 			Process p = null;
 			try {
-				// Gate check: Abort cleanly if device is unrooted to prevent IOExceptions
 				File su1 = new File("/system/xbin/su");
 				File su2 = new File("/system/bin/su");
 				if (!su1.exists() && !su2.exists() && !canExecuteSu()) {
