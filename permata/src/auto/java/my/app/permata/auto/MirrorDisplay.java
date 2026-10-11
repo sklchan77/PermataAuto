@@ -416,7 +416,6 @@ public class MirrorDisplay {
 					if (carH > 0) {
 						int targetH = (int) ((float) portW * carW / carH);
 						p = new ProcessBuilder("su", "-c", "wm size " + portW + "x" + targetH).start();
-						// HARDENED: Prevent infinite deadlock if root prompts for confirmation
 						if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
 							p.waitFor(3, TimeUnit.SECONDS);
 						} else {
