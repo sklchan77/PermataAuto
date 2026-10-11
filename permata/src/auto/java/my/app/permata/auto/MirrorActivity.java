@@ -2,6 +2,7 @@ package my.app.permata.auto;
 
 import static android.content.Intent.FLAG_ACTIVITY_NEW_TASK;
 import static android.content.Intent.FLAG_ACTIVITY_SINGLE_TOP;
+import static android.content.Intent.FLAG_ACTIVITY_CLEAR_TOP;
 import static android.os.SystemClock.uptimeMillis;
 import static android.view.ViewGroup.LayoutParams.MATCH_PARENT;
 import static android.view.ViewGroup.LayoutParams.WRAP_CONTENT;
@@ -129,9 +130,19 @@ public class MirrorActivity extends CarActivity implements SurfaceHolder.Callbac
 		}, 5000);
 	}
 
+	/**
+	 * HARDENED: Unconditionally force the Permata LauncherActivity to the front.
+	 * Removes the flawed instance check that occasionally routed users to the phone's native launcher.
+	 */
 	static void onHomeButtonClick() {
-		if (LauncherActivity.getActiveInstance() == null) startLauncher();
-		else homeScreen();
+		var ctx = PermataApplication.get();
+		if (ctx != null) {
+			Intent intent = new Intent(ctx, LauncherActivity.class);
+			// FLAG_ACTIVITY_CLEAR_TOP ensures any old instances are cleared, providing a reliable Home return
+			intent.setFlags(FLAG_ACTIVITY_NEW_TASK | FLAG_ACTIVITY_CLEAR_TOP | FLAG_ACTIVITY_SINGLE_TOP);
+			ctx.startActivity(intent);
+		}
+		disableAccelRotation();
 	}
 
 	static void onBackButtonClick() {
@@ -149,29 +160,6 @@ public class MirrorActivity extends CarActivity implements SurfaceHolder.Callbac
 				d.motionEvent(time, time + 30, MotionEvent.ACTION_MOVE, size.x * 0.7f, y);
 				d.motionEvent(time, time + 40, MotionEvent.ACTION_MOVE, size.x * 0.6f, y);
 				d.motionEvent(time, time + 50, MotionEvent.ACTION_UP, size.x * 0.5f, y);
-			}
-		}
-		disableAccelRotation();
-	}
-
-	private static void startLauncher() {
-		var ctx = PermataApplication.get();
-		if (ctx != null) {
-			Intent intent = new Intent(ctx, LauncherActivity.class);
-			intent.setFlags(FLAG_ACTIVITY_NEW_TASK | FLAG_ACTIVITY_SINGLE_TOP);
-			ctx.startActivity(intent);
-		}
-	}
-
-	private static void homeScreen() {
-		var d = EventDispatcher.get();
-		if (d != null && !d.home()) {
-			var ctx = PermataApplication.get();
-			if (ctx != null) {
-				Intent intent = new Intent(Intent.ACTION_MAIN);
-				intent.addCategory(Intent.CATEGORY_HOME);
-				intent.setFlags(FLAG_ACTIVITY_NEW_TASK | FLAG_ACTIVITY_SINGLE_TOP);
-				ctx.startActivity(intent);
 			}
 		}
 		disableAccelRotation();
@@ -290,7 +278,7 @@ public class MirrorActivity extends CarActivity implements SurfaceHolder.Callbac
 		}
 
 		private void handleLongClick(float x) {
-			if (getButtonAt(x) == 0) homeScreen();
+			if (getButtonAt(x) == 0) onHomeButtonClick();
 			else onBackButtonClick();
 		}
 	}
