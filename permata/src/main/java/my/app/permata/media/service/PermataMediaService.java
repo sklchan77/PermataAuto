@@ -233,8 +233,8 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 				audioManager.requestAudioFocus(
 						focusChange -> {
 							if (focusChange == AudioManager.AUDIOFOCUS_LOSS) {
-								Log.w("PermataMediaService: Permanent AudioFocus Loss.");
-								stopSilentAudioAnchor();
+								// HARDENED: Ignore permanent focus loss from the car head unit to keep the steering lock alive.
+								Log.w("PermataMediaService: Permanent AudioFocus Loss detected, but IGNORING to preserve steering controls.");
 							} else if (focusChange == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT || focusChange == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK) {
 								Log.i("PermataMediaService: Transient AudioFocus Loss. Preserving steering lock.");
 							}
@@ -261,11 +261,6 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 		}
 	}
 
-	/**
-	 * HARDENED: Uses MODE_STATIC to infinitely loop silence at the hardware level.
-	 * Eliminates CPU thread polling, removes buffer underrun crashes, and ensures Android Auto 
-	 * never detects a break in the audio stream.
-	 */
 	private synchronized void startSilentAudioAnchor() {
 		if (silentAudioTrack != null && silentAudioTrack.getPlayState() == AudioTrack.PLAYSTATE_PLAYING) return;
 		try {
@@ -283,7 +278,7 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 
 			byte[] silentBuffer = new byte[bufferSize];
 			silentAudioTrack.write(silentBuffer, 0, silentBuffer.length);
-			silentAudioTrack.setLoopPoints(0, sampleRate, -1); // Loop forever
+			silentAudioTrack.setLoopPoints(0, sampleRate, -1);
 			silentAudioTrack.play();
 
 			Log.i("PermataMediaService: Hardware STATIC Audio Anchor active. Focus permanently locked.");
