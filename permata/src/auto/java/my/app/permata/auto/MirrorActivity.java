@@ -160,7 +160,6 @@ public class MirrorActivity extends CarActivity implements SurfaceHolder.Callbac
 	private static final class ToolBar extends LinearLayout {
 		public ToolBar(Context ctx) {
 			super(ctx);
-			// Cast the float values to int to satisfy Android LayoutParams parameters
 			int pad = (int) toPx(ctx, 8);
 			int iconSize = (int) toPx(ctx, 48); 
 
