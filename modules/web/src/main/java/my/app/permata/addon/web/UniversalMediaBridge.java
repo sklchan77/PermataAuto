@@ -11,6 +11,7 @@ import androidx.annotation.NonNull;
 
 import java.lang.ref.WeakReference;
 
+import my.app.permata.media.service.PermataMediaService;
 import my.app.utils.log.Log;
 
 /**
@@ -53,18 +54,18 @@ public class UniversalMediaBridge {
 
     /**
      * Notifies the PermataMediaService that web media is playing.
-     * HARDENED: Gate logic removed. ALL play events are forwarded to the service so it can 
-     * actively counter-attack if the car radio secretly stole Audio Focus in the background.
+     * HARDENED: Uses Explicit Component Intent to guarantee delivery to PermataMediaService,
+     * bypassing AndroidManifest implicit routing limitations.
      */
     private void stealAudioFocus() {
         Context context = contextRef.get();
         if (context == null) return;
 
-        Log.i("[JavaBridge]", TAG + ": Delegating Play State to PermataMediaService.");
+        Log.i("[JavaBridge]", TAG + ": Delegating Play State explicitly to PermataMediaService.");
 
         try {
-            Intent intent = new Intent("my.app.permata.action.WEB_MEDIA_PLAYING");
-            intent.setPackage(context.getPackageName());
+            Intent intent = new Intent(context, PermataMediaService.class);
+            intent.setAction(PermataMediaService.ACTION_WEB_MEDIA_PLAYING);
             context.startService(intent);
         } catch (Exception e) {
             Log.e(e, "[JavaBridge]", TAG + ": Failed to delegate PLAY state.");
@@ -73,16 +74,17 @@ public class UniversalMediaBridge {
 
     /**
      * Notifies the PermataMediaService that web media has paused (after 5000ms delay).
+     * HARDENED: Uses Explicit Component Intent to guarantee delivery.
      */
     private void doReleaseAudioFocus() {
         Context context = contextRef.get();
         if (context == null) return;
 
-        Log.i("[JavaBridge]", TAG + ": Delegating Pause State to PermataMediaService.");
+        Log.i("[JavaBridge]", TAG + ": Delegating Pause State explicitly to PermataMediaService.");
 
         try {
-            Intent intent = new Intent("my.app.permata.action.WEB_MEDIA_PAUSED");
-            intent.setPackage(context.getPackageName());
+            Intent intent = new Intent(context, PermataMediaService.class);
+            intent.setAction(PermataMediaService.ACTION_WEB_MEDIA_PAUSED);
             context.startService(intent);
         } catch (Exception e) {
             Log.e(e, "[JavaBridge]", TAG + ": Failed to delegate PAUSE state.");
