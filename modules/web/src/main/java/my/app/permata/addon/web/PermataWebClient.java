@@ -56,22 +56,55 @@ public class PermataWebClient extends WebViewClientCompat {
 		v.pageLoaded(url);
 		f.onSuccess(a -> a.fireBroadcastEvent(FRAGMENT_CONTENT_CHANGED));
 
-		// === MEDIA SESSION JAVASCRIPT INJECTION ===
-		// Hooks into Chromium's active MediaSession (created by TikTok/Instagram players)
-		// Routes the steering wheel Next/Prev requests back to our Java client via a dummy URL
+		// === MEDIA SESSION & EVENT OBSERVER INJECTION ===
 		if (!isYoutubeUri(Uri.parse(url))) {
+			// 1. Hardware MediaSession mapping for steering wheel inputs
 			String js = "try { " +
 				"  if (!window.__permataFrame) { " +
 				"    window.__permataFrame = document.createElement('iframe'); " +
 				"    window.__permataFrame.style.display = 'none'; " +
 				"    document.body.appendChild(window.__permataFrame); " +
 				"  } " +
-				"  navigator.mediaSession.setActionHandler('nexttrack', () => { window.__permataFrame.src = 'permata://scroll/next'; }); " +
-				"  navigator.mediaSession.setActionHandler('previoustrack', () => { window.__permataFrame.src = 'permata://scroll/prev'; }); " +
+				"  if (navigator.mediaSession) {" +
+				"    navigator.mediaSession.setActionHandler('nexttrack', () => { window.__permataFrame.src = 'permata://scroll/next'; }); " +
+				"    navigator.mediaSession.setActionHandler('previoustrack', () => { window.__permataFrame.src = 'permata://scroll/prev'; }); " +
+				"  }" +
 				"} catch(e) {}";
 			view.evaluateJavascript(js, null);
+
+			// 2. HARDENED DOM MutationObserver to catch all dynamic HTML5 <video> tags.
+			// This ensures AndroidMediaBridge is notified the exact millisecond Douyin/TikTok plays a video.
+			String mediaObserverJs = "(function() { " +
+				"  if (window.__permataMediaObserverAttached) return; " +
+				"  window.__permataMediaObserverAttached = true; " +
+				"  function bindVideo(v) { " +
+				"    if (!v.__permataBound) { " +
+				"      v.__permataBound = true; " +
+				"      v.addEventListener('play', function() { if(window.AndroidMediaBridge) window.AndroidMediaBridge.onMediaPlay(); }); " +
+				"      v.addEventListener('playing', function() { if(window.AndroidMediaBridge) window.AndroidMediaBridge.onMediaPlay(); }); " +
+				"      v.addEventListener('pause', function() { if(window.AndroidMediaBridge) window.AndroidMediaBridge.onMediaPause(); }); " +
+				"    } " +
+				"  } " +
+				"  function scanAndBind(node) { " +
+				"    if (node.tagName && node.tagName.toLowerCase() === 'video') bindVideo(node); " +
+				"    if (node.querySelectorAll) { " +
+				"      var vids = node.querySelectorAll('video'); " +
+				"      for (var i = 0; i < vids.length; i++) bindVideo(vids[i]); " +
+				"    } " +
+				"  } " +
+				"  scanAndBind(document); " +
+				"  var observer = new MutationObserver(function(mutations) { " +
+				"    mutations.forEach(function(mut) { " +
+				"      if (mut.addedNodes) { " +
+				"        for (var j = 0; j < mut.addedNodes.length; j++) scanAndBind(mut.addedNodes[j]); " +
+				"      } " +
+				"    }); " +
+				"  }); " +
+				"  if (document.body) observer.observe(document.body, { childList: true, subtree: true }); " +
+				"})();";
+			view.evaluateJavascript(mediaObserverJs, null);
 		}
-		// ==========================================
+		// ================================================
 	}
 
 	@Override
@@ -109,7 +142,6 @@ public class PermataWebClient extends WebViewClientCompat {
 		}
 
 		// === FIX FOR ERR_UNKNOWN_URL_SCHEME CRASH ===
-		// Block deep links like snssdk1128:// which halt the view
 		if (scheme != null && !scheme.startsWith("http") && !scheme.equals("file") && !scheme.equals("content") && !scheme.equals("permata")) {
 			Log.i("Blocked unsupported URL scheme to prevent web crash: " + url.toString());
 			return true; 
