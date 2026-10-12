@@ -116,11 +116,8 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 	private Bitmap defaultAudioIcon;
 	private Bitmap defaultVideoIcon;
 
-	// HARDENED: Dedicated thread and atomic references for ANR prevention
 	private ExecutorService audioHardwareExecutor;
 	private final AtomicReference<AudioTrack> silentAudioTrackRef = new AtomicReference<>(null);
-	
-	// HARDENED: Holds focus listener reference to cleanly abandon on teardown
 	private AudioManager.OnAudioFocusChangeListener focusChangeListener;
 
 	public MediaLib getLib() {
@@ -169,19 +166,13 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 			@Override
 			public void onReceive(Context context, Intent intent) {
 				String action = intent.getAction();
-				Log.w("PermataMediaService: Watchdog triggered by OS Event: " + action);
-				
-				// If USB drops, Audio routes to noisy, or Car Mode exits -> Trigger Nuclear Teardown
 				if (AudioManager.ACTION_AUDIO_BECOMING_NOISY.equals(action) || 
 					UiModeManager.ACTION_EXIT_CAR_MODE.equals(action) ||
 					Intent.ACTION_POWER_DISCONNECTED.equals(action)) {
-					
-					Log.w("PermataMediaService: Physical connection loss detected! Engaging Zombie Kill-Switch.");
 					executeNuclearTeardown();
 				}
 			}
 		};
-
 		IntentFilter filter = new IntentFilter();
 		filter.addAction(AudioManager.ACTION_AUDIO_BECOMING_NOISY);
 		filter.addAction(UiModeManager.ACTION_EXIT_CAR_MODE);
@@ -196,17 +187,12 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 			session.setActive(false);
 			updatePlaybackState(STATE_STOPPED);
 		}
-		stopSelf(); // Forces the service to die, triggering onDestroy()
+		stopSelf();
 	}
 
 	@Override
 	public void onDestroy() {
-		Log.w("PermataMediaService: onDestroy() engaged. Running aggressive cleanup.");
-		
-		// 1. Stop all hardware interactions
 		executeNuclearTeardown();
-		
-		// 2. Unregister OS Receivers
 		if (intentReceiver != null) {
 			unregisterReceiver(intentReceiver);
 			intentReceiver = null;
@@ -215,8 +201,6 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 			unregisterReceiver(carDisconnectReceiver);
 			carDisconnectReceiver = null;
 		}
-
-		// 3. Thread Teardown with ANR safety
 		if (audioHardwareExecutor != null) {
 			audioHardwareExecutor.shutdown();
 			try {
@@ -228,15 +212,11 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 			}
 			audioHardwareExecutor = null;
 		}
-
 		PermataApplication.get().getHandler().removeCallbacksAndMessages(null);
-
 		for (PermataAddon a : AddonManager.get().getAddons()) {
 			if (a instanceof PermataMediaServiceAddon)
 				((PermataMediaServiceAddon) a).onServiceDestroy(callback);
 		}
-
-		// 4. Session & Callback Cleanup
 		if (callback != null) {
 			callback.close();
 			callback = null;
@@ -245,28 +225,16 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 			session.release();
 			session = null;
 		}
-
-		// 5. Explicit GC Severing (Zero Memory Leak)
 		lib = null;
 		focusChangeListener = null;
 		NotificationManagerCompat.from(this).cancel(NOTIF_ID);
-
 		super.onDestroy();
-		Log.d("PermataMediaService successfully destroyed and purged from memory.");
 	}
 
 	@Override
 	public void onTaskRemoved(Intent rootIntent) {
 		super.onTaskRemoved(rootIntent);
-
-		boolean isAutoConnected = PermataApplication.get().isConnectedToAuto();
-
-		if (isAutoConnected) {
-			Log.i("App swiped away, but Auto is physically connected. Ignoring shutdown.");
-			return;
-		}
-
-		Log.w("App swiped away from Recents. Engaging Zombie Kill-Switch.");
+		if (PermataApplication.get().isConnectedToAuto()) return;
 		executeNuclearTeardown();
 	}
 
@@ -299,12 +267,10 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 	}
 
 	private void onWebMediaPlaying() {
-		Log.i("PermataMediaService: Web media actively playing. Event-Driven Hijack engaged for IHU browsing.");
 		hijackCarAudioAndSteering();
 	}
 
 	private void onWebMediaPaused() {
-		Log.i("PermataMediaService: Web media paused. God-Mode Active: Retaining focus shield to prevent Chromium auto-pause.");
 		if (session != null) {
 			updatePlaybackState(STATE_PLAYING);
 		}
@@ -313,22 +279,35 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 	private void hijackCarAudioAndSteering() {
 		if (audioHardwareExecutor == null || audioHardwareExecutor.isShutdown()) return;
 		
-		// Offload AudioManager requests to prevent Main Thread blocking
+		// Update UI metadata instantly to keep controls responsive
+		if (session != null) {
+			session.setMetadata(new MediaMetadataCompat.Builder()
+					.putString(MediaMetadataCompat.METADATA_KEY_TITLE, "IHU Web Mode Active")
+					.putString(MediaMetadataCompat.METADATA_KEY_ARTIST, "Permata")
+					.build());
+			session.setActive(true);
+			updatePlaybackState(STATE_PLAYING);
+		}
+
 		audioHardwareExecutor.execute(() -> {
 			try {
+				// HARDENED: Audio Pipeline Crash Prevention
+				// If the anchor is already actively playing, we already securely hold the OS Audio Focus.
+				// We MUST return here to prevent spamming AudioManager and crashing AudioFlinger during fast reel scrolls.
+				AudioTrack currentTrack = silentAudioTrackRef.get();
+				if (currentTrack != null && currentTrack.getPlayState() == AudioTrack.PLAYSTATE_PLAYING) {
+					return;
+				}
+
 				AudioManager audioManager = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
 				if (audioManager != null) {
 					if (focusChangeListener == null) {
 						focusChangeListener = focusChange -> {
 							if (focusChange == AudioManager.AUDIOFOCUS_LOSS) {
-								// GOD MODE: We refuse to acknowledge the loss or stop the anchor.
-								Log.w("PermataMediaService: Car Radio stole focus. GOD MODE Active: Ignoring loss. Anchor remains active.");
-							} else if (focusChange == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT || focusChange == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK) {
-								Log.i("PermataMediaService: Transient AudioFocus Loss. Preserving steering lock.");
+								Log.w("PermataMediaService: Car Radio stole focus. GOD MODE Active: Ignoring loss.");
 							}
 						};
 					}
-					
 					audioManager.requestAudioFocus(
 							focusChangeListener, 
 							AudioManager.STREAM_MUSIC, 
@@ -336,22 +315,42 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 					);
 				}
 
-				startSilentAudioAnchor();
-
-				if (session != null) {
-					session.setMetadata(new MediaMetadataCompat.Builder()
-							.putString(MediaMetadataCompat.METADATA_KEY_TITLE, "IHU Web Mode Active")
-							.putString(MediaMetadataCompat.METADATA_KEY_ARTIST, "Permata")
-							.build());
-					
-					session.setActive(true);
-					updatePlaybackState(STATE_PLAYING);
-					Log.i("PermataMediaService: Audio Focus & Steering Buttons successfully hijacked.");
-				}
+				startSilentAudioAnchorInternal();
 			} catch (Exception e) {
 				Log.e(e, "PermataMediaService: Failed to execute audio hijack.");
 			}
 		});
+	}
+
+	// Internal track starter to prevent redundant executor queues
+	private void startSilentAudioAnchorInternal() {
+		try {
+			int sampleRate = 44100;
+			int bufferSize = sampleRate * 2 * 2; 
+
+			AudioTrack newTrack = new AudioTrack(
+					AudioManager.STREAM_MUSIC,
+					sampleRate,
+					AudioFormat.CHANNEL_OUT_STEREO,
+					AudioFormat.ENCODING_PCM_16BIT,
+					bufferSize,
+					AudioTrack.MODE_STATIC
+			);
+
+			byte[] silentBuffer = new byte[bufferSize];
+			newTrack.write(silentBuffer, 0, silentBuffer.length);
+			newTrack.setLoopPoints(0, sampleRate, -1);
+			newTrack.play();
+
+			AudioTrack oldTrack = silentAudioTrackRef.getAndSet(newTrack);
+			if (oldTrack != null) {
+				oldTrack.stop();
+				oldTrack.release();
+			}
+			Log.i("PermataMediaService: Hardware STATIC Audio Anchor active.");
+		} catch (Exception e) {
+			Log.e(e, "PermataMediaService: Failed to start Silent Audio Anchor.");
+		}
 	}
 
 	private void releaseAudioFocus() {
@@ -360,61 +359,16 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 				AudioManager audioManager = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
 				if (audioManager != null) {
 					audioManager.abandonAudioFocus(focusChangeListener);
-					Log.i("PermataMediaService: Audio Focus explicitly abandoned.");
 				}
 			} catch (Exception ignored) {}
 		}
 	}
 
-	private void startSilentAudioAnchor() {
-		if (audioHardwareExecutor == null || audioHardwareExecutor.isShutdown()) return;
-		
-		audioHardwareExecutor.execute(() -> {
-			AudioTrack currentTrack = silentAudioTrackRef.get();
-			if (currentTrack != null && currentTrack.getPlayState() == AudioTrack.PLAYSTATE_PLAYING) {
-				return; // Already actively shielding
-			}
-			
-			try {
-				int sampleRate = 44100;
-				int bufferSize = sampleRate * 2 * 2; 
-
-				AudioTrack newTrack = new AudioTrack(
-						AudioManager.STREAM_MUSIC,
-						sampleRate,
-						AudioFormat.CHANNEL_OUT_STEREO,
-						AudioFormat.ENCODING_PCM_16BIT,
-						bufferSize,
-						AudioTrack.MODE_STATIC
-				);
-
-				byte[] silentBuffer = new byte[bufferSize];
-				newTrack.write(silentBuffer, 0, silentBuffer.length);
-				newTrack.setLoopPoints(0, sampleRate, -1);
-				newTrack.play();
-
-				AudioTrack oldTrack = silentAudioTrackRef.getAndSet(newTrack);
-				if (oldTrack != null) {
-					oldTrack.stop();
-					oldTrack.release();
-				}
-
-				Log.i("PermataMediaService: Hardware STATIC Audio Anchor active. Focus permanently locked.");
-			} catch (Exception e) {
-				Log.e(e, "PermataMediaService: Failed to start Silent Audio Anchor.");
-			}
-		});
-	}
-
 	private void stopSilentAudioAnchor() {
 		if (audioHardwareExecutor == null || audioHardwareExecutor.isShutdown()) {
-			// Direct fallback if executor is already tearing down
 			AudioTrack track = silentAudioTrackRef.getAndSet(null);
 			if (track != null) {
-				try {
-					track.stop();
-					track.release();
-				} catch (Exception ignored) {}
+				try { track.stop(); track.release(); } catch (Exception ignored) {}
 			}
 			return;
 		}
@@ -422,11 +376,7 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 		audioHardwareExecutor.execute(() -> {
 			AudioTrack track = silentAudioTrackRef.getAndSet(null);
 			if (track != null) {
-				try {
-					track.stop();
-					track.release();
-					Log.i("PermataMediaService: Silent Audio Anchor successfully released.");
-				} catch (Exception ignored) {}
+				try { track.stop(); track.release(); } catch (Exception ignored) {}
 			}
 		});
 	}
@@ -519,7 +469,6 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 
 	private Notification createNotification(int st, PlayableItem i) {
 		notificationInit();
-
 		Context ctx = this;
 		if (session == null) return new NotificationCompat.Builder(ctx, NOTIF_CHANNEL_ID).build();
 		MediaControllerCompat controller = session.getController();
@@ -546,7 +495,6 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 					largeIcon = defaultAudioIcon;
 				}
 			}
-
 			builder.setLargeIcon(largeIcon);
 		}
 
@@ -574,13 +522,11 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 	@SuppressLint("UnspecifiedRegisterReceiverFlag")
 	public void notificationInit() {
 		if (notifContentIntent != null) return;
-
 		try {
 			Intent i = new Intent(this, Class.forName("my.app.permata.ui.activity.MainActivity"));
 			notifContentIntent =
 					PendingIntent.getActivity(this, 0, i, FLAG_IMMUTABLE | FLAG_UPDATE_CURRENT);
 		} catch (ClassNotFoundException ex) {
-			Log.e(ex);
 			if (session != null) {
 				notifContentIntent = session.getController().getSessionActivity();
 			}
