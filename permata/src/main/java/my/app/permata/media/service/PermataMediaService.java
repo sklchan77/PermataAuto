@@ -267,6 +267,17 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 	}
 
 	private void onWebMediaPlaying() {
+		// SYSTEM STREAM VOLUME MAXING (100% Digital Output Level)
+		try {
+			AudioManager am = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
+			if (am != null) {
+				int maxVol = am.getStreamMaxVolume(AudioManager.STREAM_MUSIC);
+				am.setStreamVolume(AudioManager.STREAM_MUSIC, maxVol, 0); // 0 prevents UI volume popup overlay
+			}
+		} catch (Exception e) {
+			Log.e(e, "PermataMediaService: Failed to maximize STREAM_MUSIC volume.");
+		}
+		
 		hijackCarAudioAndSteering();
 	}
 
@@ -279,7 +290,6 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 	private void hijackCarAudioAndSteering() {
 		if (audioHardwareExecutor == null || audioHardwareExecutor.isShutdown()) return;
 		
-		// Update UI metadata instantly to keep controls responsive
 		if (session != null) {
 			session.setMetadata(new MediaMetadataCompat.Builder()
 					.putString(MediaMetadataCompat.METADATA_KEY_TITLE, "IHU Web Mode Active")
@@ -291,9 +301,6 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 
 		audioHardwareExecutor.execute(() -> {
 			try {
-				// HARDENED: Audio Pipeline Crash Prevention
-				// If the anchor is already actively playing, we already securely hold the OS Audio Focus.
-				// We MUST return here to prevent spamming AudioManager and crashing AudioFlinger during fast reel scrolls.
 				AudioTrack currentTrack = silentAudioTrackRef.get();
 				if (currentTrack != null && currentTrack.getPlayState() == AudioTrack.PLAYSTATE_PLAYING) {
 					return;
@@ -322,7 +329,6 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 		});
 	}
 
-	// Internal track starter to prevent redundant executor queues
 	private void startSilentAudioAnchorInternal() {
 		try {
 			int sampleRate = 44100;
