@@ -72,51 +72,57 @@ public class PermataWebClient extends WebViewClientCompat {
 				"} catch(e) {}";
 			view.evaluateJavascript(js, null);
 
-			// 2. HARDENED DOM MutationObserver (Ghost-Pause Immune)
-			// Modifies the observer to strictly verify that the video emitting the event is actually 
-			// visible on the screen, ignoring hidden background buffer pauses from Douyin's engine.
+			// 2. INTERSECTION OBSERVER (Ghost-Pause Immune)
 			String mediaObserverJs = "(function() { " +
 				"  if (window.__permataMediaObserverAttached) return; " +
 				"  window.__permataMediaObserverAttached = true; " +
-				"  function isVisible(el) { " +
-				"    if (!el) return false; " +
-				"    var rect = el.getBoundingClientRect(); " +
-				"    return (rect.top >= 0 && rect.left >= 0 && " +
-				"            rect.bottom <= (window.innerHeight || document.documentElement.clientHeight) && " +
-				"            rect.right <= (window.innerWidth || document.documentElement.clientWidth)); " +
+				"  var activeVideo = null; " +
+				"  function onPlayHandler() { if(window.AndroidMediaBridge) window.AndroidMediaBridge.onMediaPlay(); } " +
+				"  function onPauseHandler() { " +
+				"      if (this === activeVideo && window.AndroidMediaBridge) { " +
+				"          window.AndroidMediaBridge.onMediaPause(); " +
+				"      } " +
 				"  } " +
-				"  function bindVideo(v) { " +
-				"    if (!v.__permataBound) { " +
-				"      v.__permataBound = true; " +
-				"      v.addEventListener('play', function(e) { " +
-				"         if(window.AndroidMediaBridge) window.AndroidMediaBridge.onMediaPlay(); " +
-				"      }); " +
-				"      v.addEventListener('playing', function(e) { " +
-				"         if(window.AndroidMediaBridge) window.AndroidMediaBridge.onMediaPlay(); " +
-				"      }); " +
-				"      v.addEventListener('pause', function(e) { " +
-				"         if (isVisible(e.target) && window.AndroidMediaBridge) { " +
-				"             window.AndroidMediaBridge.onMediaPause(); " +
-				"         } " +
-				"      }); " +
-				"    } " +
-				"  } " +
+				"  var intObserver = new IntersectionObserver((entries) => { " +
+				"    entries.forEach(entry => { " +
+				"      var v = entry.target; " +
+				"      if (entry.isIntersecting && entry.intersectionRatio > 0.7) { " +
+				"        activeVideo = v; " +
+				"        v.addEventListener('play', onPlayHandler); " +
+				"        v.addEventListener('playing', onPlayHandler); " +
+				"        v.addEventListener('pause', onPauseHandler); " +
+				"      } else { " +
+				"        if (activeVideo === v) activeVideo = null; " +
+				"        v.removeEventListener('play', onPlayHandler); " +
+				"        v.removeEventListener('playing', onPlayHandler); " +
+				"        v.removeEventListener('pause', onPauseHandler); " +
+				"      } " +
+				"    }); " +
+				"  }, { threshold: [0.0, 0.7] }); " +
 				"  function scanAndBind(node) { " +
-				"    if (node.tagName && node.tagName.toLowerCase() === 'video') bindVideo(node); " +
+				"    if (node.tagName && node.tagName.toLowerCase() === 'video' && !node.__permataObserved) { " +
+				"      node.__permataObserved = true; " +
+				"      intObserver.observe(node); " +
+				"    } " +
 				"    if (node.querySelectorAll) { " +
 				"      var vids = node.querySelectorAll('video'); " +
-				"      for (var i = 0; i < vids.length; i++) bindVideo(vids[i]); " +
+				"      for (var i = 0; i < vids.length; i++) { " +
+				"        if (!vids[i].__permataObserved) { " +
+				"          vids[i].__permataObserved = true; " +
+				"          intObserver.observe(vids[i]); " +
+				"        } " +
+				"      } " +
 				"    } " +
 				"  } " +
 				"  scanAndBind(document); " +
-				"  var observer = new MutationObserver(function(mutations) { " +
+				"  var mutObserver = new MutationObserver(function(mutations) { " +
 				"    mutations.forEach(function(mut) { " +
 				"      if (mut.addedNodes) { " +
 				"        for (var j = 0; j < mut.addedNodes.length; j++) scanAndBind(mut.addedNodes[j]); " +
 				"      } " +
 				"    }); " +
 				"  }); " +
-				"  if (document.body) observer.observe(document.body, { childList: true, subtree: true }); " +
+				"  if (document.body) mutObserver.observe(document.body, { childList: true, subtree: true }); " +
 				"})();";
 			view.evaluateJavascript(mediaObserverJs, null);
 		}
@@ -153,6 +159,32 @@ public class PermataWebClient extends WebViewClientCompat {
 			MotionEvent upEvent = MotionEvent.obtain(downTime, upTime, MotionEvent.ACTION_UP, centerX, endY, 0);
 			view.dispatchTouchEvent(upEvent);
 			upEvent.recycle();
+
+			// === SELF-HEALING REDUNDANT UN-PAUSE WATCHDOG ===
+			// Triggers 3 seconds after the swipe. Scans the DOM for the video taking up the most 
+			// vertical screen space and forcefully hits play() to defeat intermittent engine pauses.
+			view.postDelayed(() -> {
+				Log.i("PermataWebClient: Executing 3-second redundant un-pause watchdog.");
+				String forcePlayJs = "(function() { " +
+					"  var vids = document.querySelectorAll('video'); " +
+					"  var maxVis = 0; " +
+					"  var targetVid = null; " +
+					"  var wh = window.innerHeight || document.documentElement.clientHeight; " +
+					"  for (var i = 0; i < vids.length; i++) { " +
+					"    var rect = vids[i].getBoundingClientRect(); " +
+					"    var visHeight = Math.min(rect.bottom, wh) - Math.max(rect.top, 0); " +
+					"    if (visHeight > maxVis) { " +
+					"      maxVis = visHeight; " +
+					"      targetVid = vids[i]; " +
+					"    } " +
+					"  } " +
+					"  if (targetVid && targetVid.paused) { " +
+					"    targetVid.play().catch(e => {}); " +
+					"  } " +
+					"})();";
+				view.evaluateJavascript(forcePlayJs, null);
+			}, 3000); // Wait 3000ms. You can tweak this value if 3 seconds feels too slow.
+			// =================================================
 
 			return true; 
 		}
