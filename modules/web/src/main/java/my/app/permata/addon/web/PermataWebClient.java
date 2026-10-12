@@ -24,7 +24,7 @@ import my.app.utils.log.Log;
 
 /**
  * Production-hardened WebClient.
- * Features: JS debounce, God-Mode DOM Surgery (Decoder Release), and Cold-Start Grace Period.
+ * Features: JS debounce, God-Mode DOM Surgery (Decoder Release), and Aggressive Cold-Start Audio Enforcer.
  */
 public class PermataWebClient extends WebViewClientCompat {
     BooleanConsumer loading;
@@ -72,7 +72,7 @@ public class PermataWebClient extends WebViewClientCompat {
                 "} catch(e) {}";
             view.evaluateJavascript(js, null);
 
-            // 2. HARDENED INTERSECTION OBSERVER WITH 3-SECOND COLD-START GRACE PERIOD
+            // 2. HARDENED INTERSECTION OBSERVER WITH 3-SECOND AUDIO ENFORCER
             String mediaObserverJs = "(function() { " +
                 "  if (window.__permataMediaObserverAttached) return; " +
                 "  window.__permataMediaObserverAttached = true; " +
@@ -81,8 +81,22 @@ public class PermataWebClient extends WebViewClientCompat {
                 "  var pauseDebounce = null; " +
                 "  var isColdStartGrace = true; " +
                 "  " +
+                "  /* Aggressive loop to defeat SPA auto-muting mechanisms during cold start */ " +
+                "  var audioEnforcer = setInterval(function() { " +
+                "      if (activeVideo) { " +
+                "          if (activeVideo.muted) { activeVideo.muted = false; activeVideo.volume = 1.0; } " +
+                "          if (activeVideo.paused) { " +
+                "              var p = activeVideo.play(); " +
+                "              if (p) p.catch(function(e) {}); " +
+                "          } " +
+                "      } " +
+                "  }, 200); " +
+                "  " +
                 "  /* 3.0-second immunity window strictly on initial page load */ " +
-                "  setTimeout(function() { isColdStartGrace = false; }, 3000); " +
+                "  setTimeout(function() { " +
+                "      isColdStartGrace = false; " +
+                "      clearInterval(audioEnforcer); " +
+                "  }, 3000); " +
                 "  " +
                 "  function onPlayHandler() { " +
                 "      if (playDebounce) clearTimeout(playDebounce); " +
