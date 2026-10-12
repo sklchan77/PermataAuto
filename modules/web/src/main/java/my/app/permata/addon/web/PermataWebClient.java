@@ -56,7 +56,6 @@ public class PermataWebClient extends WebViewClientCompat {
 		v.pageLoaded(url);
 		f.onSuccess(a -> a.fireBroadcastEvent(FRAGMENT_CONTENT_CHANGED));
 
-		// === MEDIA SESSION & EVENT OBSERVER INJECTION ===
 		if (!isYoutubeUri(Uri.parse(url))) {
 			// 1. Hardware MediaSession mapping for steering wheel inputs
 			String js = "try { " +
@@ -72,9 +71,7 @@ public class PermataWebClient extends WebViewClientCompat {
 				"} catch(e) {}";
 			view.evaluateJavascript(js, null);
 
-			// 2. INTERSECTION OBSERVER (Ghost-Pause Immune)
-			// Uses native IntersectionObserver to strictly bind media events ONLY to videos
-			// that dominate the viewport (>70% visible). Background or sliding videos are ignored.
+			// 2. INTERSECTION OBSERVER (Anti-Audio-Racing Enforcer)
 			String mediaObserverJs = "(function() { " +
 				"  if (window.__permataMediaObserverAttached) return; " +
 				"  window.__permataMediaObserverAttached = true; " +
@@ -88,11 +85,19 @@ public class PermataWebClient extends WebViewClientCompat {
 				"  var intObserver = new IntersectionObserver((entries) => { " +
 				"    entries.forEach(entry => { " +
 				"      var v = entry.target; " +
-				"      if (entry.isIntersecting && entry.intersectionRatio > 0.7) { " +
+				"      if (entry.isIntersecting && entry.intersectionRatio > 0.6) { " +
 				"        activeVideo = v; " +
 				"        v.addEventListener('play', onPlayHandler); " +
 				"        v.addEventListener('playing', onPlayHandler); " +
 				"        v.addEventListener('pause', onPauseHandler); " +
+				"        " +
+				"        /* ANTI-RACING: Aggressively mute all off-screen videos FB/IG failed to mute */ " +
+				"        var allVids = document.querySelectorAll('video'); " +
+				"        for (var i = 0; i < allVids.length; i++) { " +
+				"          if (allVids[i] !== v && !allVids[i].paused) { " +
+				"            allVids[i].pause(); " +
+				"          } " +
+				"        } " +
 				"      } else { " +
 				"        if (activeVideo === v) activeVideo = null; " +
 				"        v.removeEventListener('play', onPlayHandler); " +
@@ -100,7 +105,7 @@ public class PermataWebClient extends WebViewClientCompat {
 				"        v.removeEventListener('pause', onPauseHandler); " +
 				"      } " +
 				"    }); " +
-				"  }, { threshold: [0.0, 0.7] }); " +
+				"  }, { threshold: [0.0, 0.6] }); " +
 				"  function scanAndBind(node) { " +
 				"    if (node.tagName && node.tagName.toLowerCase() === 'video' && !node.__permataObserved) { " +
 				"      node.__permataObserved = true; " +
@@ -128,7 +133,6 @@ public class PermataWebClient extends WebViewClientCompat {
 				"})();";
 			view.evaluateJavascript(mediaObserverJs, null);
 		}
-		// ================================================
 	}
 
 	@Override
@@ -165,7 +169,6 @@ public class PermataWebClient extends WebViewClientCompat {
 			return true; 
 		}
 
-		// === FIX FOR ERR_UNKNOWN_URL_SCHEME CRASH ===
 		if (scheme != null && !scheme.startsWith("http") && !scheme.equals("file") && !scheme.equals("content") && !scheme.equals("permata")) {
 			Log.i("Blocked unsupported URL scheme to prevent web crash: " + url.toString());
 			return true; 
