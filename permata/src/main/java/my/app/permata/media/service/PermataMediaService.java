@@ -32,6 +32,7 @@ import android.os.Binder;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.IBinder;
+import android.os.SystemClock;
 import android.support.v4.media.MediaBrowserCompat.MediaItem;
 import android.support.v4.media.MediaDescriptionCompat;
 import android.support.v4.media.MediaMetadataCompat;
@@ -119,6 +120,7 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 	private ExecutorService audioHardwareExecutor;
 	private final AtomicReference<AudioTrack> silentAudioTrackRef = new AtomicReference<>(null);
 	private AudioManager.OnAudioFocusChangeListener focusChangeListener;
+    private long lastWebMediaPlayingTime = 0; // Throttle state
 
 	public MediaLib getLib() {
 		return lib;
@@ -267,20 +269,21 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 	}
 
 	private void onWebMediaPlaying() {
-		// SYSTEM STREAM VOLUME MAXING (100% Digital Output Level) - ONLY FOR ANDROID AUTO
+        long now = SystemClock.uptimeMillis();
+        // Hardware IPC Debounce - Reject deadlocking parallel requests 
+        if (now - lastWebMediaPlayingTime < 300) {
+            return;
+        }
+        lastWebMediaPlayingTime = now;
+
 		if (PermataApplication.get().isConnectedToAuto()) {
 			try {
 				AudioManager am = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
 				if (am != null) {
 					int maxVol = am.getStreamMaxVolume(AudioManager.STREAM_MUSIC);
-					am.setStreamVolume(AudioManager.STREAM_MUSIC, maxVol, 0); // 0 prevents UI volume popup overlay
-					Log.i("PermataMediaService: Android Auto connected. STREAM_MUSIC volume maximized.");
+					am.setStreamVolume(AudioManager.STREAM_MUSIC, maxVol, 0); 
 				}
-			} catch (Exception e) {
-				Log.e(e, "PermataMediaService: Failed to maximize STREAM_MUSIC volume.");
-			}
-		} else {
-			Log.i("PermataMediaService: Phone mode detected. Leaving volume at user preference.");
+			} catch (Exception ignored) {}
 		}
 		
 		hijackCarAudioAndSteering();
@@ -358,10 +361,7 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 				oldTrack.stop();
 				oldTrack.release();
 			}
-			Log.i("PermataMediaService: Hardware STATIC Audio Anchor active.");
-		} catch (Exception e) {
-			Log.e(e, "PermataMediaService: Failed to start Silent Audio Anchor.");
-		}
+		} catch (Exception ignored) {}
 	}
 
 	private void releaseAudioFocus() {
