@@ -4,7 +4,6 @@ import static my.app.utils.ui.activity.ActivityListener.FRAGMENT_CONTENT_CHANGED
 
 import android.content.Context;
 import android.graphics.Bitmap;
-import android.media.AudioManager;
 import android.net.Uri;
 import android.os.SystemClock;
 import android.view.MotionEvent;
@@ -59,7 +58,7 @@ public class PermataWebClient extends WebViewClientCompat {
 		f.onSuccess(a -> a.fireBroadcastEvent(FRAGMENT_CONTENT_CHANGED));
 
 		if (!isYoutubeUri(Uri.parse(url))) {
-			// 1. Hardware MediaSession mapping for steering wheel inputs
+			// 1. Hardware MediaSession mapping
 			String js = "try { " +
 				"  if (!window.__permataFrame) { " +
 				"    window.__permataFrame = document.createElement('iframe'); " +
@@ -73,24 +72,40 @@ public class PermataWebClient extends WebViewClientCompat {
 				"} catch(e) {}";
 			view.evaluateJavascript(js, null);
 
-			// 2. INTERSECTION OBSERVER (Anti-Racing, Auto-Unmute & 100% Volume Enforcer)
+			// 2. HARDENED INTERSECTION OBSERVER (Decoder Release + Debounce)
 			String mediaObserverJs = "(function() { " +
 				"  if (window.__permataMediaObserverAttached) return; " +
 				"  window.__permataMediaObserverAttached = true; " +
 				"  var activeVideo = null; " +
-				"  function onPlayHandler() { if(window.AndroidMediaBridge) window.AndroidMediaBridge.onMediaPlay(); } " +
-				"  function onPauseHandler() { " +
-				"      if (this === activeVideo && window.AndroidMediaBridge) { " +
-				"          window.AndroidMediaBridge.onMediaPause(); " +
-				"      } " +
+				"  var playDebounce = null; " +
+				"  var pauseDebounce = null; " +
+				"  " +
+				"  function onPlayHandler() { " +
+				"      if (playDebounce) clearTimeout(playDebounce); " +
+				"      playDebounce = setTimeout(function() { " +
+				"          if(window.AndroidMediaBridge) window.AndroidMediaBridge.onMediaPlay(); " +
+				"      }, 150); " +
 				"  } " +
+				"  function onPauseHandler() { " +
+				"      if (pauseDebounce) clearTimeout(pauseDebounce); " +
+				"      pauseDebounce = setTimeout(function() { " +
+				"          if (this === activeVideo && window.AndroidMediaBridge) { " +
+				"              window.AndroidMediaBridge.onMediaPause(); " +
+				"          } " +
+				"      }, 150); " +
+				"  } " +
+				"  " +
 				"  var intObserver = new IntersectionObserver((entries) => { " +
 				"    entries.forEach(entry => { " +
 				"      var v = entry.target; " +
 				"      if (entry.isIntersecting && entry.intersectionRatio > 0.8) { " +
 				"        activeVideo = v; " +
 				"        " +
-				"        /* FORCE UNMUTE & SET VOLUME TO 100% (MAX) */ " +
+				"        /* WAKE UP DECODER IF SUSPENDED */ " +
+				"        if (v.__permataSuspended) { " +
+				"            v.setAttribute('preload', 'auto'); " +
+				"            v.__permataSuspended = false; " +
+				"        } " +
 				"        v.muted = false; " +
 				"        v.volume = 1.0; " +
 				"        " +
@@ -98,12 +113,20 @@ public class PermataWebClient extends WebViewClientCompat {
 				"        v.addEventListener('playing', onPlayHandler); " +
 				"        v.addEventListener('pause', onPauseHandler); " +
 				"        " +
-				"        /* ANTI-RACING: Aggressively mute/pause all off-screen videos */ " +
+				"        /* ANTI-RACING & DECODER SURGERY */ " +
 				"        var allVids = document.querySelectorAll('video'); " +
 				"        for (var i = 0; i < allVids.length; i++) { " +
 				"          if (allVids[i] !== v) { " +
-				"            if (!allVids[i].paused) allVids[i].pause(); " +
-				"            allVids[i].muted = true; " +
+				"            var ov = allVids[i]; " +
+				"            if (!ov.paused) ov.pause(); " +
+				"            ov.muted = true; " +
+				"            " +
+				"            /* STEAL THE DECODER BACK FROM INSTAGRAM */ " +
+				"            if (!ov.__permataSuspended) { " +
+				"                ov.__permataSuspended = true; " +
+				"                ov.setAttribute('preload', 'none'); " +
+				"                ov.load(); " + 
+				"            } " +
 				"          } " +
 				"        } " +
 				"      } else { " +
@@ -114,6 +137,7 @@ public class PermataWebClient extends WebViewClientCompat {
 				"      } " +
 				"    }); " +
 				"  }, { threshold: [0.0, 0.8] }); " +
+				"  " +
 				"  function scanAndBind(node) { " +
 				"    if (node.tagName && node.tagName.toLowerCase() === 'video' && !node.__permataObserved) { " +
 				"      node.__permataObserved = true; " +
@@ -149,7 +173,6 @@ public class PermataWebClient extends WebViewClientCompat {
 		Uri url = request.getUrl();
 		String scheme = url.getScheme();
 
-		// === CHROMIUM SCROLL EVENT INTERCEPTION ===
 		if ("permata".equals(scheme) && "scroll".equals(url.getHost())) {
 			boolean isNext = url.getPath() != null && url.getPath().contains("next");
 			Log.i("Steering Wheel Scroll via JS Intercepted. Next: " + isNext);
@@ -178,7 +201,6 @@ public class PermataWebClient extends WebViewClientCompat {
 		}
 
 		if (scheme != null && !scheme.startsWith("http") && !scheme.equals("file") && !scheme.equals("content") && !scheme.equals("permata")) {
-			Log.i("Blocked unsupported URL scheme to prevent web crash: " + url.toString());
 			return true; 
 		}
 
@@ -208,12 +230,7 @@ public class PermataWebClient extends WebViewClientCompat {
 	@Override
 	public void onReceivedError(@NonNull WebView view, @NonNull WebResourceRequest request,
 															@NonNull WebResourceErrorCompat error) {
-		if (WebViewFeature.isFeatureSupported(WebViewFeature.WEB_RESOURCE_ERROR_GET_DESCRIPTION)) {
-			Log.e("Web error received: " + error.getDescription());
-		} else {
-			Log.e("Web error received");
-		}
-
+		// Suppressed normal network abort logs for clean output
 		super.onReceivedError(view, request, error);
 	}
 }
