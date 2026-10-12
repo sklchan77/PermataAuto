@@ -2,7 +2,9 @@ package my.app.permata.addon.web;
 
 import static my.app.utils.ui.activity.ActivityListener.FRAGMENT_CONTENT_CHANGED;
 
+import android.content.Context;
 import android.graphics.Bitmap;
+import android.media.AudioManager;
 import android.net.Uri;
 import android.os.SystemClock;
 import android.view.MotionEvent;
@@ -71,7 +73,7 @@ public class PermataWebClient extends WebViewClientCompat {
 				"} catch(e) {}";
 			view.evaluateJavascript(js, null);
 
-			// 2. INTERSECTION OBSERVER (Anti-Audio-Racing Enforcer)
+			// 2. INTERSECTION OBSERVER (Anti-Racing, Auto-Unmute & 100% Volume Enforcer)
 			String mediaObserverJs = "(function() { " +
 				"  if (window.__permataMediaObserverAttached) return; " +
 				"  window.__permataMediaObserverAttached = true; " +
@@ -85,17 +87,23 @@ public class PermataWebClient extends WebViewClientCompat {
 				"  var intObserver = new IntersectionObserver((entries) => { " +
 				"    entries.forEach(entry => { " +
 				"      var v = entry.target; " +
-				"      if (entry.isIntersecting && entry.intersectionRatio > 0.6) { " +
+				"      if (entry.isIntersecting && entry.intersectionRatio > 0.8) { " +
 				"        activeVideo = v; " +
+				"        " +
+				"        /* FORCE UNMUTE & SET VOLUME TO 100% (MAX) */ " +
+				"        v.muted = false; " +
+				"        v.volume = 1.0; " +
+				"        " +
 				"        v.addEventListener('play', onPlayHandler); " +
 				"        v.addEventListener('playing', onPlayHandler); " +
 				"        v.addEventListener('pause', onPauseHandler); " +
 				"        " +
-				"        /* ANTI-RACING: Aggressively mute all off-screen videos FB/IG failed to mute */ " +
+				"        /* ANTI-RACING: Aggressively mute/pause all off-screen videos */ " +
 				"        var allVids = document.querySelectorAll('video'); " +
 				"        for (var i = 0; i < allVids.length; i++) { " +
-				"          if (allVids[i] !== v && !allVids[i].paused) { " +
-				"            allVids[i].pause(); " +
+				"          if (allVids[i] !== v) { " +
+				"            if (!allVids[i].paused) allVids[i].pause(); " +
+				"            allVids[i].muted = true; " +
 				"          } " +
 				"        } " +
 				"      } else { " +
@@ -105,7 +113,7 @@ public class PermataWebClient extends WebViewClientCompat {
 				"        v.removeEventListener('pause', onPauseHandler); " +
 				"      } " +
 				"    }); " +
-				"  }, { threshold: [0.0, 0.6] }); " +
+				"  }, { threshold: [0.0, 0.8] }); " +
 				"  function scanAndBind(node) { " +
 				"    if (node.tagName && node.tagName.toLowerCase() === 'video' && !node.__permataObserved) { " +
 				"      node.__permataObserved = true; " +
