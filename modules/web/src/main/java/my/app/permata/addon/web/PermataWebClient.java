@@ -13,7 +13,6 @@ import android.webkit.WebView;
 import androidx.annotation.NonNull;
 import androidx.webkit.WebResourceErrorCompat;
 import androidx.webkit.WebViewClientCompat;
-import androidx.webkit.WebViewFeature;
 
 import my.app.permata.addon.web.yt.YoutubeFragment;
 import my.app.permata.ui.activity.MainActivityDelegate;
@@ -24,213 +23,218 @@ import my.app.utils.function.BooleanConsumer;
 import my.app.utils.log.Log;
 
 /**
- * @author sklchan77
+ * Production-hardened WebClient.
+ * Features: JS debounce, God-Mode DOM Surgery (Decoder Release), and Cold-Start Grace Period.
  */
 public class PermataWebClient extends WebViewClientCompat {
-	BooleanConsumer loading;
+    BooleanConsumer loading;
 
-	@Override
-	public void onPageStarted(WebView view, String url, Bitmap favicon) {
-		if (loading != null) {
-			loading.accept(true);
-		} else {
-			MainActivityDelegate.getActivityDelegate(view.getContext())
-					.onSuccess(a -> a.setContentLoading(new Promise<>()));
-		}
-		super.onPageStarted(view, url, favicon);
-	}
+    @Override
+    public void onPageStarted(WebView view, String url, Bitmap favicon) {
+        if (loading != null) {
+            loading.accept(true);
+        } else {
+            MainActivityDelegate.getActivityDelegate(view.getContext())
+                    .onSuccess(a -> a.setContentLoading(new Promise<>()));
+        }
+        super.onPageStarted(view, url, favicon);
+    }
 
-	@Override
-	public void onPageFinished(WebView view, String url) {
-		PermataWebView v = (PermataWebView) view;
-		FutureSupplier<MainActivityDelegate> f =
-				MainActivityDelegate.getActivityDelegate(v.getContext());
-		f.onSuccess(a -> a.setContentLoading(Completed.completedVoid()));
+    @Override
+    public void onPageFinished(WebView view, String url) {
+        PermataWebView v = (PermataWebView) view;
+        FutureSupplier<MainActivityDelegate> f =
+                MainActivityDelegate.getActivityDelegate(v.getContext());
+        f.onSuccess(a -> a.setContentLoading(Completed.completedVoid()));
 
-		if (loading != null) {
-			loading.accept(false);
-			loading = null;
-		}
+        if (loading != null) {
+            loading.accept(false);
+            loading = null;
+        }
 
-		super.onPageFinished(view, url);
-		((PermataWebView) view).hideKeyboard();
-		v.pageLoaded(url);
-		f.onSuccess(a -> a.fireBroadcastEvent(FRAGMENT_CONTENT_CHANGED));
+        super.onPageFinished(view, url);
+        ((PermataWebView) view).hideKeyboard();
+        v.pageLoaded(url);
+        f.onSuccess(a -> a.fireBroadcastEvent(FRAGMENT_CONTENT_CHANGED));
 
-		if (!isYoutubeUri(Uri.parse(url))) {
-			// 1. Hardware MediaSession mapping
-			String js = "try { " +
-				"  if (!window.__permataFrame) { " +
-				"    window.__permataFrame = document.createElement('iframe'); " +
-				"    window.__permataFrame.style.display = 'none'; " +
-				"    document.body.appendChild(window.__permataFrame); " +
-				"  } " +
-				"  if (navigator.mediaSession) {" +
-				"    navigator.mediaSession.setActionHandler('nexttrack', () => { window.__permataFrame.src = 'permata://scroll/next'; }); " +
-				"    navigator.mediaSession.setActionHandler('previoustrack', () => { window.__permataFrame.src = 'permata://scroll/prev'; }); " +
-				"  }" +
-				"} catch(e) {}";
-			view.evaluateJavascript(js, null);
+        if (!isYoutubeUri(Uri.parse(url))) {
+            // 1. Hardware MediaSession mapping for steering wheel controls
+            String js = "try { " +
+                "  if (!window.__permataFrame) { " +
+                "    window.__permataFrame = document.createElement('iframe'); " +
+                "    window.__permataFrame.style.display = 'none'; " +
+                "    document.body.appendChild(window.__permataFrame); " +
+                "  } " +
+                "  if (navigator.mediaSession) {" +
+                "    navigator.mediaSession.setActionHandler('nexttrack', () => { window.__permataFrame.src = 'permata://scroll/next'; }); " +
+                "    navigator.mediaSession.setActionHandler('previoustrack', () => { window.__permataFrame.src = 'permata://scroll/prev'; }); " +
+                "  }" +
+                "} catch(e) {}";
+            view.evaluateJavascript(js, null);
 
-			// 2. HARDENED INTERSECTION OBSERVER (Decoder Release + Debounce)
-			String mediaObserverJs = "(function() { " +
-				"  if (window.__permataMediaObserverAttached) return; " +
-				"  window.__permataMediaObserverAttached = true; " +
-				"  var activeVideo = null; " +
-				"  var playDebounce = null; " +
-				"  var pauseDebounce = null; " +
-				"  " +
-				"  function onPlayHandler() { " +
-				"      if (playDebounce) clearTimeout(playDebounce); " +
-				"      playDebounce = setTimeout(function() { " +
-				"          if(window.AndroidMediaBridge) window.AndroidMediaBridge.onMediaPlay(); " +
-				"      }, 150); " +
-				"  } " +
-				"  function onPauseHandler() { " +
-				"      if (pauseDebounce) clearTimeout(pauseDebounce); " +
-				"      pauseDebounce = setTimeout(function() { " +
-				"          if (this === activeVideo && window.AndroidMediaBridge) { " +
-				"              window.AndroidMediaBridge.onMediaPause(); " +
-				"          } " +
-				"      }, 150); " +
-				"  } " +
-				"  " +
-				"  var intObserver = new IntersectionObserver((entries) => { " +
-				"    entries.forEach(entry => { " +
-				"      var v = entry.target; " +
-				"      if (entry.isIntersecting && entry.intersectionRatio > 0.8) { " +
-				"        activeVideo = v; " +
-				"        " +
-				"        /* WAKE UP DECODER IF SUSPENDED */ " +
-				"        if (v.__permataSuspended) { " +
-				"            v.setAttribute('preload', 'auto'); " +
-				"            v.__permataSuspended = false; " +
-				"        } " +
-				"        v.muted = false; " +
-				"        v.volume = 1.0; " +
-				"        " +
-				"        v.addEventListener('play', onPlayHandler); " +
-				"        v.addEventListener('playing', onPlayHandler); " +
-				"        v.addEventListener('pause', onPauseHandler); " +
-				"        " +
-				"        /* ANTI-RACING & DECODER SURGERY */ " +
-				"        var allVids = document.querySelectorAll('video'); " +
-				"        for (var i = 0; i < allVids.length; i++) { " +
-				"          if (allVids[i] !== v) { " +
-				"            var ov = allVids[i]; " +
-				"            if (!ov.paused) ov.pause(); " +
-				"            ov.muted = true; " +
-				"            " +
-				"            /* STEAL THE DECODER BACK FROM INSTAGRAM */ " +
-				"            if (!ov.__permataSuspended) { " +
-				"                ov.__permataSuspended = true; " +
-				"                ov.setAttribute('preload', 'none'); " +
-				"                ov.load(); " + 
-				"            } " +
-				"          } " +
-				"        } " +
-				"      } else { " +
-				"        if (activeVideo === v) activeVideo = null; " +
-				"        v.removeEventListener('play', onPlayHandler); " +
-				"        v.removeEventListener('playing', onPlayHandler); " +
-				"        v.removeEventListener('pause', onPauseHandler); " +
-				"      } " +
-				"    }); " +
-				"  }, { threshold: [0.0, 0.8] }); " +
-				"  " +
-				"  function scanAndBind(node) { " +
-				"    if (node.tagName && node.tagName.toLowerCase() === 'video' && !node.__permataObserved) { " +
-				"      node.__permataObserved = true; " +
-				"      intObserver.observe(node); " +
-				"    } " +
-				"    if (node.querySelectorAll) { " +
-				"      var vids = node.querySelectorAll('video'); " +
-				"      for (var i = 0; i < vids.length; i++) { " +
-				"        if (!vids[i].__permataObserved) { " +
-				"          vids[i].__permataObserved = true; " +
-				"          intObserver.observe(vids[i]); " +
-				"        } " +
-				"      } " +
-				"    } " +
-				"  } " +
-				"  scanAndBind(document); " +
-				"  var mutObserver = new MutationObserver(function(mutations) { " +
-				"    mutations.forEach(function(mut) { " +
-				"      if (mut.addedNodes) { " +
-				"        for (var j = 0; j < mut.addedNodes.length; j++) scanAndBind(mut.addedNodes[j]); " +
-				"      } " +
-				"    }); " +
-				"  }); " +
-				"  if (document.body) mutObserver.observe(document.body, { childList: true, subtree: true }); " +
-				"})();";
-			view.evaluateJavascript(mediaObserverJs, null);
-		}
-	}
+            // 2. HARDENED INTERSECTION OBSERVER WITH 3-SECOND COLD-START GRACE PERIOD
+            String mediaObserverJs = "(function() { " +
+                "  if (window.__permataMediaObserverAttached) return; " +
+                "  window.__permataMediaObserverAttached = true; " +
+                "  var activeVideo = null; " +
+                "  var playDebounce = null; " +
+                "  var pauseDebounce = null; " +
+                "  var isColdStartGrace = true; " +
+                "  " +
+                "  /* 3.0-second immunity window strictly on initial page load */ " +
+                "  setTimeout(function() { isColdStartGrace = false; }, 3000); " +
+                "  " +
+                "  function onPlayHandler() { " +
+                "      if (playDebounce) clearTimeout(playDebounce); " +
+                "      playDebounce = setTimeout(function() { " +
+                "          if(window.AndroidMediaBridge) window.AndroidMediaBridge.onMediaPlay(); " +
+                "      }, 150); " +
+                "  } " +
+                "  function onPauseHandler() { " +
+                "      if (isColdStartGrace) return; /* Suppress accidental pauses during initialization */ " +
+                "      if (pauseDebounce) clearTimeout(pauseDebounce); " +
+                "      pauseDebounce = setTimeout(function() { " +
+                "          if (this === activeVideo && window.AndroidMediaBridge) { " +
+                "              window.AndroidMediaBridge.onMediaPause(); " +
+                "          } " +
+                "      }, 150); " +
+                "  } " +
+                "  " +
+                "  /* Lower threshold (0.5) to prevent layout jitter from falsely pausing */ " +
+                "  var intObserver = new IntersectionObserver((entries) => { " +
+                "    entries.forEach(entry => { " +
+                "      var v = entry.target; " +
+                "      if (entry.isIntersecting && entry.intersectionRatio > 0.5) { " +
+                "        activeVideo = v; " +
+                "        " +
+                "        /* Wake up decoder if previously suspended */ " +
+                "        if (v.__permataSuspended) { " +
+                "            v.setAttribute('preload', 'auto'); " +
+                "            v.__permataSuspended = false; " +
+                "        } " +
+                "        v.muted = false; " +
+                "        v.volume = 1.0; " +
+                "        " +
+                "        v.addEventListener('play', onPlayHandler); " +
+                "        v.addEventListener('playing', onPlayHandler); " +
+                "        v.addEventListener('pause', onPauseHandler); " +
+                "        " +
+                "        /* Decoder Surgery: Steal hardware decoders from background videos */ " +
+                "        var allVids = document.querySelectorAll('video'); " +
+                "        for (var i = 0; i < allVids.length; i++) { " +
+                "          if (allVids[i] !== v) { " +
+                "            var ov = allVids[i]; " +
+                "            if (!ov.paused && !isColdStartGrace) ov.pause(); " +
+                "            ov.muted = true; " +
+                "            " +
+                "            if (!ov.__permataSuspended && !isColdStartGrace) { " +
+                "                ov.__permataSuspended = true; " +
+                "                ov.setAttribute('preload', 'none'); " +
+                "                ov.load(); " + 
+                "            } " +
+                "          } " +
+                "        } " +
+                "      } else if (!isColdStartGrace) { " +
+                "        if (activeVideo === v) activeVideo = null; " +
+                "        v.removeEventListener('play', onPlayHandler); " +
+                "        v.removeEventListener('playing', onPlayHandler); " +
+                "        v.removeEventListener('pause', onPauseHandler); " +
+                "      } " +
+                "    }); " +
+                "  }, { threshold: [0.0, 0.5] }); " +
+                "  " +
+                "  function scanAndBind(node) { " +
+                "    if (node.tagName && node.tagName.toLowerCase() === 'video' && !node.__permataObserved) { " +
+                "      node.__permataObserved = true; " +
+                "      intObserver.observe(node); " +
+                "    } " +
+                "    if (node.querySelectorAll) { " +
+                "      var vids = node.querySelectorAll('video'); " +
+                "      for (var i = 0; i < vids.length; i++) { " +
+                "        if (!vids[i].__permataObserved) { " +
+                "          vids[i].__permataObserved = true; " +
+                "          intObserver.observe(vids[i]); " +
+                "        } " +
+                "      } " +
+                "    } " +
+                "  } " +
+                "  scanAndBind(document); " +
+                "  var mutObserver = new MutationObserver(function(mutations) { " +
+                "    mutations.forEach(function(mut) { " +
+                "      if (mut.addedNodes) { " +
+                "        for (var j = 0; j < mut.addedNodes.length; j++) scanAndBind(mut.addedNodes[j]); " +
+                "      } " +
+                "    }); " +
+                "  }); " +
+                "  if (document.body) mutObserver.observe(document.body, { childList: true, subtree: true }); " +
+                "})();";
+            view.evaluateJavascript(mediaObserverJs, null);
+        }
+    }
 
-	@Override
-	public boolean shouldOverrideUrlLoading(@NonNull WebView view,
-																					@NonNull WebResourceRequest request) {
-		Uri url = request.getUrl();
-		String scheme = url.getScheme();
+    @Override
+    public boolean shouldOverrideUrlLoading(@NonNull WebView view,
+                                            @NonNull WebResourceRequest request) {
+        Uri url = request.getUrl();
+        String scheme = url.getScheme();
 
-		if ("permata".equals(scheme) && "scroll".equals(url.getHost())) {
-			boolean isNext = url.getPath() != null && url.getPath().contains("next");
-			Log.i("Steering Wheel Scroll via JS Intercepted. Next: " + isNext);
+        if ("permata".equals(scheme) && "scroll".equals(url.getHost())) {
+            boolean isNext = url.getPath() != null && url.getPath().contains("next");
 
-			float centerX = view.getWidth() / 2f;
-			float startY = isNext ? (view.getHeight() * 0.8f) : (view.getHeight() * 0.2f);
-			float endY = isNext ? (view.getHeight() * 0.2f) : (view.getHeight() * 0.8f);
+            float centerX = view.getWidth() / 2f;
+            float startY = isNext ? (view.getHeight() * 0.8f) : (view.getHeight() * 0.2f);
+            float endY = isNext ? (view.getHeight() * 0.2f) : (view.getHeight() * 0.8f);
 
-			long downTime = SystemClock.uptimeMillis();
-			
-			MotionEvent downEvent = MotionEvent.obtain(downTime, downTime, MotionEvent.ACTION_DOWN, centerX, startY, 0);
-			view.dispatchTouchEvent(downEvent);
-			downEvent.recycle();
+            long downTime = SystemClock.uptimeMillis();
+            
+            MotionEvent downEvent = MotionEvent.obtain(downTime, downTime, MotionEvent.ACTION_DOWN, centerX, startY, 0);
+            view.dispatchTouchEvent(downEvent);
+            downEvent.recycle();
 
-			long moveTime = downTime + 30;
-			MotionEvent moveEvent = MotionEvent.obtain(downTime, moveTime, MotionEvent.ACTION_MOVE, centerX, endY, 0);
-			view.dispatchTouchEvent(moveEvent);
-			moveEvent.recycle();
+            long moveTime = downTime + 30;
+            MotionEvent moveEvent = MotionEvent.obtain(downTime, moveTime, MotionEvent.ACTION_MOVE, centerX, endY, 0);
+            view.dispatchTouchEvent(moveEvent);
+            moveEvent.recycle();
 
-			long upTime = moveTime + 30;
-			MotionEvent upEvent = MotionEvent.obtain(downTime, upTime, MotionEvent.ACTION_UP, centerX, endY, 0);
-			view.dispatchTouchEvent(upEvent);
-			upEvent.recycle();
+            long upTime = moveTime + 30;
+            MotionEvent upEvent = MotionEvent.obtain(downTime, upTime, MotionEvent.ACTION_UP, centerX, endY, 0);
+            view.dispatchTouchEvent(upEvent);
+            upEvent.recycle();
 
-			return true; 
-		}
+            return true; 
+        }
 
-		if (scheme != null && !scheme.startsWith("http") && !scheme.equals("file") && !scheme.equals("content") && !scheme.equals("permata")) {
-			return true; 
-		}
+        if (scheme != null && !scheme.startsWith("http") && !scheme.equals("file") && !scheme.equals("content") && !scheme.equals("permata")) {
+            return true; 
+        }
 
-		if (isYoutubeUri(url)) {
-			try {
-				MainActivityDelegate a =
-						MainActivityDelegate.getActivityDelegate(view.getContext()).peek();
-				if (a == null) return false;
-				if (!(a.showFragment(my.app.permata.R.id.youtube_fragment) instanceof YoutubeFragment f))
-					return false;
-				f.loadUrl(url.toString());
-				return true;
-			} catch (IllegalArgumentException ex) {
-				Log.d(ex);
-			}
-		}
+        if (isYoutubeUri(url)) {
+            try {
+                MainActivityDelegate a =
+                        MainActivityDelegate.getActivityDelegate(view.getContext()).peek();
+                if (a == null) return false;
+                if (!(a.showFragment(my.app.permata.R.id.youtube_fragment) instanceof YoutubeFragment f))
+                    return false;
+                f.loadUrl(url.toString());
+                return true;
+            } catch (IllegalArgumentException ex) {
+                Log.d(ex);
+            }
+        }
 
-		return false;
-	}
+        return false;
+    }
 
-	public static boolean isYoutubeUri(Uri uri) {
-		String host = uri.getHost();
-		return ((host != null) && ((host.endsWith("youtube.com") && !host.endsWith("tv.youtube.com")) ||
-				host.equals("youtu.be")));
-	}
+    public static boolean isYoutubeUri(Uri uri) {
+        String host = uri.getHost();
+        return ((host != null) && ((host.endsWith("youtube.com") && !host.endsWith("tv.youtube.com")) ||
+                host.equals("youtu.be")));
+    }
 
-	@Override
-	public void onReceivedError(@NonNull WebView view, @NonNull WebResourceRequest request,
-															@NonNull WebResourceErrorCompat error) {
-		// Suppressed normal network abort logs for clean output
-		super.onReceivedError(view, request, error);
-	}
+    @Override
+    public void onReceivedError(@NonNull WebView view, @NonNull WebResourceRequest request,
+                                @NonNull WebResourceErrorCompat error) {
+        // Suppress benign network aborts from the logs to keep it clean
+        super.onReceivedError(view, request, error);
+    }
 }
