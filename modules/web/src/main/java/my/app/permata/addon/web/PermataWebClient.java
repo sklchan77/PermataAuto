@@ -73,6 +73,8 @@ public class PermataWebClient extends WebViewClientCompat {
 			view.evaluateJavascript(js, null);
 
 			// 2. INTERSECTION OBSERVER (Ghost-Pause Immune)
+			// Uses native IntersectionObserver to strictly bind media events ONLY to videos
+			// that dominate the viewport (>70% visible). Background or sliding videos are ignored.
 			String mediaObserverJs = "(function() { " +
 				"  if (window.__permataMediaObserverAttached) return; " +
 				"  window.__permataMediaObserverAttached = true; " +
@@ -159,32 +161,6 @@ public class PermataWebClient extends WebViewClientCompat {
 			MotionEvent upEvent = MotionEvent.obtain(downTime, upTime, MotionEvent.ACTION_UP, centerX, endY, 0);
 			view.dispatchTouchEvent(upEvent);
 			upEvent.recycle();
-
-			// === SELF-HEALING REDUNDANT UN-PAUSE WATCHDOG ===
-			// Triggers 3 seconds after the swipe. Scans the DOM for the video taking up the most 
-			// vertical screen space and forcefully hits play() to defeat intermittent engine pauses.
-			view.postDelayed(() -> {
-				Log.i("PermataWebClient: Executing 3-second redundant un-pause watchdog.");
-				String forcePlayJs = "(function() { " +
-					"  var vids = document.querySelectorAll('video'); " +
-					"  var maxVis = 0; " +
-					"  var targetVid = null; " +
-					"  var wh = window.innerHeight || document.documentElement.clientHeight; " +
-					"  for (var i = 0; i < vids.length; i++) { " +
-					"    var rect = vids[i].getBoundingClientRect(); " +
-					"    var visHeight = Math.min(rect.bottom, wh) - Math.max(rect.top, 0); " +
-					"    if (visHeight > maxVis) { " +
-					"      maxVis = visHeight; " +
-					"      targetVid = vids[i]; " +
-					"    } " +
-					"  } " +
-					"  if (targetVid && targetVid.paused) { " +
-					"    targetVid.play().catch(e => {}); " +
-					"  } " +
-					"})();";
-				view.evaluateJavascript(forcePlayJs, null);
-			}, 3000); // Wait 3000ms. You can tweak this value if 3 seconds feels too slow.
-			// =================================================
 
 			return true; 
 		}
