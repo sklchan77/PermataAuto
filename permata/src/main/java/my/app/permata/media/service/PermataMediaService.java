@@ -267,15 +267,20 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 	}
 
 	private void onWebMediaPlaying() {
-		// SYSTEM STREAM VOLUME MAXING (100% Digital Output Level)
-		try {
-			AudioManager am = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
-			if (am != null) {
-				int maxVol = am.getStreamMaxVolume(AudioManager.STREAM_MUSIC);
-				am.setStreamVolume(AudioManager.STREAM_MUSIC, maxVol, 0); // 0 prevents UI volume popup overlay
+		// SYSTEM STREAM VOLUME MAXING (100% Digital Output Level) - ONLY FOR ANDROID AUTO
+		if (PermataApplication.get().isConnectedToAuto()) {
+			try {
+				AudioManager am = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
+				if (am != null) {
+					int maxVol = am.getStreamMaxVolume(AudioManager.STREAM_MUSIC);
+					am.setStreamVolume(AudioManager.STREAM_MUSIC, maxVol, 0); // 0 prevents UI volume popup overlay
+					Log.i("PermataMediaService: Android Auto connected. STREAM_MUSIC volume maximized.");
+				}
+			} catch (Exception e) {
+				Log.e(e, "PermataMediaService: Failed to maximize STREAM_MUSIC volume.");
 			}
-		} catch (Exception e) {
-			Log.e(e, "PermataMediaService: Failed to maximize STREAM_MUSIC volume.");
+		} else {
+			Log.i("PermataMediaService: Phone mode detected. Leaving volume at user preference.");
 		}
 		
 		hijackCarAudioAndSteering();
