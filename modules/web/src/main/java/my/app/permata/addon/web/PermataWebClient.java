@@ -72,17 +72,33 @@ public class PermataWebClient extends WebViewClientCompat {
 				"} catch(e) {}";
 			view.evaluateJavascript(js, null);
 
-			// 2. HARDENED DOM MutationObserver to catch all dynamic HTML5 <video> tags.
-			// This ensures AndroidMediaBridge is notified the exact millisecond Douyin/TikTok plays a video.
+			// 2. HARDENED DOM MutationObserver (Ghost-Pause Immune)
+			// Modifies the observer to strictly verify that the video emitting the event is actually 
+			// visible on the screen, ignoring hidden background buffer pauses from Douyin's engine.
 			String mediaObserverJs = "(function() { " +
 				"  if (window.__permataMediaObserverAttached) return; " +
 				"  window.__permataMediaObserverAttached = true; " +
+				"  function isVisible(el) { " +
+				"    if (!el) return false; " +
+				"    var rect = el.getBoundingClientRect(); " +
+				"    return (rect.top >= 0 && rect.left >= 0 && " +
+				"            rect.bottom <= (window.innerHeight || document.documentElement.clientHeight) && " +
+				"            rect.right <= (window.innerWidth || document.documentElement.clientWidth)); " +
+				"  } " +
 				"  function bindVideo(v) { " +
 				"    if (!v.__permataBound) { " +
 				"      v.__permataBound = true; " +
-				"      v.addEventListener('play', function() { if(window.AndroidMediaBridge) window.AndroidMediaBridge.onMediaPlay(); }); " +
-				"      v.addEventListener('playing', function() { if(window.AndroidMediaBridge) window.AndroidMediaBridge.onMediaPlay(); }); " +
-				"      v.addEventListener('pause', function() { if(window.AndroidMediaBridge) window.AndroidMediaBridge.onMediaPause(); }); " +
+				"      v.addEventListener('play', function(e) { " +
+				"         if(window.AndroidMediaBridge) window.AndroidMediaBridge.onMediaPlay(); " +
+				"      }); " +
+				"      v.addEventListener('playing', function(e) { " +
+				"         if(window.AndroidMediaBridge) window.AndroidMediaBridge.onMediaPlay(); " +
+				"      }); " +
+				"      v.addEventListener('pause', function(e) { " +
+				"         if (isVisible(e.target) && window.AndroidMediaBridge) { " +
+				"             window.AndroidMediaBridge.onMediaPause(); " +
+				"         } " +
+				"      }); " +
 				"    } " +
 				"  } " +
 				"  function scanAndBind(node) { " +
