@@ -16,6 +16,7 @@ import android.app.Notification;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
+import android.app.UiModeManager;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
@@ -50,7 +51,10 @@ import androidx.media.app.NotificationCompat.MediaStyle;
 import androidx.media.session.MediaButtonReceiver;
 
 import java.util.List;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 
 import my.app.permata.BuildConfig;
 import my.app.permata.PermataApplication;
@@ -96,6 +100,7 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 	private MediaSessionCompat session;
 	MediaSessionCallback callback;
 	private BroadcastReceiver intentReceiver;
+	private BroadcastReceiver carDisconnectReceiver;
 	private int notifColor;
 	private PendingIntent notifContentIntent;
 	private MediaStyle notifStyle;
@@ -111,10 +116,12 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 	private Bitmap defaultAudioIcon;
 	private Bitmap defaultVideoIcon;
 
-	private AudioTrack silentAudioTrack;
+	// HARDENED: Dedicated thread and atomic references for ANR prevention
+	private ExecutorService audioHardwareExecutor;
+	private final AtomicReference<AudioTrack> silentAudioTrackRef = new AtomicReference<>(null);
 	
-	// HARDENED: Tracks the exact state of Douyin to decide whether to fight the car radio or surrender
-	private volatile boolean isWebMediaActivelyPlaying = false;
+	// HARDENED: Holds focus listener reference to cleanly abandon on teardown
+	private AudioManager.OnAudioFocusChangeListener focusChangeListener;
 
 	public MediaLib getLib() {
 		return lib;
@@ -125,6 +132,8 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 	public void onCreate() {
 		super.onCreate();
 		Context ctx = this;
+		audioHardwareExecutor = Executors.newSingleThreadExecutor();
+		
 		lib = new DefaultMediaLib(PermataApplication.get());
 		session = new MediaSessionCompat(this, "PermataMediaService");
 		setSessionToken(session.getSessionToken());
@@ -145,6 +154,8 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 				PendingIntent.getBroadcast(ctx, 0, mediaButtonIntent, FLAG_IMMUTABLE));
 		notifColor = Color.parseColor(DEFAULT_NOTIF_COLOR);
 		App.get().getScheduler().schedule(lib::cleanUpPrefs, 1, TimeUnit.HOURS);
+
+		registerCarDisconnectWatchdog();
 		
 		Log.d("PermataMediaService created");
 		for (PermataAddon a : AddonManager.get().getAddons()) {
@@ -153,38 +164,110 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 		}
 	}
 
+	private void registerCarDisconnectWatchdog() {
+		carDisconnectReceiver = new BroadcastReceiver() {
+			@Override
+			public void onReceive(Context context, Intent intent) {
+				String action = intent.getAction();
+				Log.w("PermataMediaService: Watchdog triggered by OS Event: " + action);
+				
+				// If USB drops, Audio routes to noisy, or Car Mode exits -> Trigger Nuclear Teardown
+				if (AudioManager.ACTION_AUDIO_BECOMING_NOISY.equals(action) || 
+					UiModeManager.ACTION_EXIT_CAR_MODE.equals(action) ||
+					Intent.ACTION_POWER_DISCONNECTED.equals(action)) {
+					
+					Log.w("PermataMediaService: Physical connection loss detected! Engaging Zombie Kill-Switch.");
+					executeNuclearTeardown();
+				}
+			}
+		};
+
+		IntentFilter filter = new IntentFilter();
+		filter.addAction(AudioManager.ACTION_AUDIO_BECOMING_NOISY);
+		filter.addAction(UiModeManager.ACTION_EXIT_CAR_MODE);
+		filter.addAction(Intent.ACTION_POWER_DISCONNECTED);
+		registerReceiver(carDisconnectReceiver, filter);
+	}
+
+	private void executeNuclearTeardown() {
+		stopSilentAudioAnchor();
+		releaseAudioFocus();
+		if (session != null) {
+			session.setActive(false);
+			updatePlaybackState(STATE_STOPPED);
+		}
+		stopSelf(); // Forces the service to die, triggering onDestroy()
+	}
+
 	@Override
 	public void onDestroy() {
-		stopSilentAudioAnchor();
+		Log.w("PermataMediaService: onDestroy() engaged. Running aggressive cleanup.");
+		
+		// 1. Stop all hardware interactions
+		executeNuclearTeardown();
+		
+		// 2. Unregister OS Receivers
+		if (intentReceiver != null) {
+			unregisterReceiver(intentReceiver);
+			intentReceiver = null;
+		}
+		if (carDisconnectReceiver != null) {
+			unregisterReceiver(carDisconnectReceiver);
+			carDisconnectReceiver = null;
+		}
+
+		// 3. Thread Teardown with ANR safety
+		if (audioHardwareExecutor != null) {
+			audioHardwareExecutor.shutdown();
+			try {
+				if (!audioHardwareExecutor.awaitTermination(800, TimeUnit.MILLISECONDS)) {
+					audioHardwareExecutor.shutdownNow();
+				}
+			} catch (InterruptedException e) {
+				audioHardwareExecutor.shutdownNow();
+			}
+			audioHardwareExecutor = null;
+		}
+
 		PermataApplication.get().getHandler().removeCallbacksAndMessages(null);
+
 		for (PermataAddon a : AddonManager.get().getAddons()) {
 			if (a instanceof PermataMediaServiceAddon)
 				((PermataMediaServiceAddon) a).onServiceDestroy(callback);
 		}
-		super.onDestroy();
+
+		// 4. Session & Callback Cleanup
+		if (callback != null) {
+			callback.close();
+			callback = null;
+		}
+		if (session != null) {
+			session.release();
+			session = null;
+		}
+
+		// 5. Explicit GC Severing (Zero Memory Leak)
+		lib = null;
+		focusChangeListener = null;
 		NotificationManagerCompat.from(this).cancel(NOTIF_ID);
-		if (intentReceiver != null) unregisterReceiver(intentReceiver);
-		intentReceiver = null;
-		callback.close();
-		session.release();
-		Log.d("PermataMediaService destroyed");
+
+		super.onDestroy();
+		Log.d("PermataMediaService successfully destroyed and purged from memory.");
 	}
 
 	@Override
 	public void onTaskRemoved(Intent rootIntent) {
 		super.onTaskRemoved(rootIntent);
 
-		boolean isPlaying = callback != null && callback.isPlaying();
 		boolean isAutoConnected = PermataApplication.get().isConnectedToAuto();
 
-		if (isPlaying || isAutoConnected) {
-			Log.i("App swiped away, but Media is playing or Auto is connected. Ignoring shutdown.");
+		if (isAutoConnected) {
+			Log.i("App swiped away, but Auto is physically connected. Ignoring shutdown.");
 			return;
 		}
 
-		Log.i("App swiped away from Recents. Killing PermataMediaService.");
-		stopSilentAudioAnchor(); 
-		stopSelf();
+		Log.w("App swiped away from Recents. Engaging Zombie Kill-Switch.");
+		executeNuclearTeardown();
 	}
 
 	@Override
@@ -193,14 +276,15 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 			String action = intent.getAction();
 			if (ACTION_HIJACK_FOCUS.equals(action)) {
 				hijackCarAudioAndSteering();
-				PermataApplication.get().getHandler().postDelayed(this::hijackCarAudioAndSteering, 3000);
 			} else if (ACTION_WEB_MEDIA_PLAYING.equals(action)) {
 				onWebMediaPlaying();
 			} else if (ACTION_WEB_MEDIA_PAUSED.equals(action)) {
 				onWebMediaPaused();
 			}
 		}
-		MediaButtonReceiver.handleIntent(session, intent);
+		if (session != null) {
+			MediaButtonReceiver.handleIntent(session, intent);
+		}
 		return super.onStartCommand(intent, flags, startId);
 	}
 	
@@ -215,98 +299,136 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 	}
 
 	private void onWebMediaPlaying() {
-		isWebMediaActivelyPlaying = true;
 		Log.i("PermataMediaService: Web media actively playing. Event-Driven Hijack engaged for IHU browsing.");
 		hijackCarAudioAndSteering();
 	}
 
 	private void onWebMediaPaused() {
-		isWebMediaActivelyPlaying = false;
-		Log.i("PermataMediaService: Web media paused. Steering lock will be surrendered upon next Radio request.");
+		Log.i("PermataMediaService: Web media paused. God-Mode Active: Retaining focus shield to prevent Chromium auto-pause.");
 		if (session != null) {
 			updatePlaybackState(STATE_PLAYING);
 		}
 	}
 
 	private void hijackCarAudioAndSteering() {
-		try {
-			AudioManager audioManager = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
-			if (audioManager != null) {
-				audioManager.requestAudioFocus(
-						focusChange -> {
+		if (audioHardwareExecutor == null || audioHardwareExecutor.isShutdown()) return;
+		
+		// Offload AudioManager requests to prevent Main Thread blocking
+		audioHardwareExecutor.execute(() -> {
+			try {
+				AudioManager audioManager = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
+				if (audioManager != null) {
+					if (focusChangeListener == null) {
+						focusChangeListener = focusChange -> {
 							if (focusChange == AudioManager.AUDIOFOCUS_LOSS) {
-								if (isWebMediaActivelyPlaying) {
-									// The MAD Lock (3-Second Interval): Douyin is playing. The car radio tried to steal the steering wheel.
-									// Wait exactly 3 seconds and violently steal it right back.
-									Log.w("PermataMediaService: Car Radio stole focus, but Douyin is PLAYING! Counter-attacking in 3000ms...");
-									PermataApplication.get().getHandler().postDelayed(this::hijackCarAudioAndSteering, 3000);
-								} else {
-									// The Graceful Surrender: Douyin is paused or closed. 
-									// The user pressed the Car Radio button. Obey the command and surrender the wheel.
-									Log.w("PermataMediaService: Car Radio stole focus, and media is PAUSED. Surrendering gracefully.");
-									stopSilentAudioAnchor();
-								}
+								// GOD MODE: We refuse to acknowledge the loss or stop the anchor.
+								Log.w("PermataMediaService: Car Radio stole focus. GOD MODE Active: Ignoring loss. Anchor remains active.");
 							} else if (focusChange == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT || focusChange == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK) {
 								Log.i("PermataMediaService: Transient AudioFocus Loss. Preserving steering lock.");
 							}
-						}, 
-						AudioManager.STREAM_MUSIC, 
-						AudioManager.AUDIOFOCUS_GAIN
-				);
-			}
+						};
+					}
+					
+					audioManager.requestAudioFocus(
+							focusChangeListener, 
+							AudioManager.STREAM_MUSIC, 
+							AudioManager.AUDIOFOCUS_GAIN
+					);
+				}
 
-			startSilentAudioAnchor();
+				startSilentAudioAnchor();
 
-			if (session != null) {
-				session.setMetadata(new MediaMetadataCompat.Builder()
-						.putString(MediaMetadataCompat.METADATA_KEY_TITLE, "IHU Web Mode Active")
-						.putString(MediaMetadataCompat.METADATA_KEY_ARTIST, "Permata")
-						.build());
-				
-				session.setActive(true);
-				updatePlaybackState(STATE_PLAYING);
-				Log.i("PermataMediaService: Audio Focus & Steering Buttons successfully hijacked.");
+				if (session != null) {
+					session.setMetadata(new MediaMetadataCompat.Builder()
+							.putString(MediaMetadataCompat.METADATA_KEY_TITLE, "IHU Web Mode Active")
+							.putString(MediaMetadataCompat.METADATA_KEY_ARTIST, "Permata")
+							.build());
+					
+					session.setActive(true);
+					updatePlaybackState(STATE_PLAYING);
+					Log.i("PermataMediaService: Audio Focus & Steering Buttons successfully hijacked.");
+				}
+			} catch (Exception e) {
+				Log.e(e, "PermataMediaService: Failed to execute audio hijack.");
 			}
-		} catch (Exception e) {
-			Log.e(e, "PermataMediaService: Failed to execute audio hijack.");
-		}
+		});
 	}
 
-	private synchronized void startSilentAudioAnchor() {
-		if (silentAudioTrack != null && silentAudioTrack.getPlayState() == AudioTrack.PLAYSTATE_PLAYING) return;
-		try {
-			int sampleRate = 44100;
-			int bufferSize = sampleRate * 2 * 2; 
-
-			silentAudioTrack = new AudioTrack(
-					AudioManager.STREAM_MUSIC,
-					sampleRate,
-					AudioFormat.CHANNEL_OUT_STEREO,
-					AudioFormat.ENCODING_PCM_16BIT,
-					bufferSize,
-					AudioTrack.MODE_STATIC
-			);
-
-			byte[] silentBuffer = new byte[bufferSize];
-			silentAudioTrack.write(silentBuffer, 0, silentBuffer.length);
-			silentAudioTrack.setLoopPoints(0, sampleRate, -1);
-			silentAudioTrack.play();
-
-			Log.i("PermataMediaService: Hardware STATIC Audio Anchor active. Focus permanently locked.");
-		} catch (Exception e) {
-			Log.e(e, "PermataMediaService: Failed to start Silent Audio Anchor.");
-		}
-	}
-
-	private synchronized void stopSilentAudioAnchor() {
-		if (silentAudioTrack != null) {
+	private void releaseAudioFocus() {
+		if (focusChangeListener != null) {
 			try {
-				silentAudioTrack.stop();
-				silentAudioTrack.release();
+				AudioManager audioManager = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
+				if (audioManager != null) {
+					audioManager.abandonAudioFocus(focusChangeListener);
+					Log.i("PermataMediaService: Audio Focus explicitly abandoned.");
+				}
 			} catch (Exception ignored) {}
-			silentAudioTrack = null;
-			Log.i("PermataMediaService: Silent Audio Anchor stopped.");
 		}
+	}
+
+	private void startSilentAudioAnchor() {
+		if (audioHardwareExecutor == null || audioHardwareExecutor.isShutdown()) return;
+		
+		audioHardwareExecutor.execute(() -> {
+			AudioTrack currentTrack = silentAudioTrackRef.get();
+			if (currentTrack != null && currentTrack.getPlayState() == AudioTrack.PLAYSTATE_PLAYING) {
+				return; // Already actively shielding
+			}
+			
+			try {
+				int sampleRate = 44100;
+				int bufferSize = sampleRate * 2 * 2; 
+
+				AudioTrack newTrack = new AudioTrack(
+						AudioManager.STREAM_MUSIC,
+						sampleRate,
+						AudioFormat.CHANNEL_OUT_STEREO,
+						AudioFormat.ENCODING_PCM_16BIT,
+						bufferSize,
+						AudioTrack.MODE_STATIC
+				);
+
+				byte[] silentBuffer = new byte[bufferSize];
+				newTrack.write(silentBuffer, 0, silentBuffer.length);
+				newTrack.setLoopPoints(0, sampleRate, -1);
+				newTrack.play();
+
+				AudioTrack oldTrack = silentAudioTrackRef.getAndSet(newTrack);
+				if (oldTrack != null) {
+					oldTrack.stop();
+					oldTrack.release();
+				}
+
+				Log.i("PermataMediaService: Hardware STATIC Audio Anchor active. Focus permanently locked.");
+			} catch (Exception e) {
+				Log.e(e, "PermataMediaService: Failed to start Silent Audio Anchor.");
+			}
+		});
+	}
+
+	private void stopSilentAudioAnchor() {
+		if (audioHardwareExecutor == null || audioHardwareExecutor.isShutdown()) {
+			// Direct fallback if executor is already tearing down
+			AudioTrack track = silentAudioTrackRef.getAndSet(null);
+			if (track != null) {
+				try {
+					track.stop();
+					track.release();
+				} catch (Exception ignored) {}
+			}
+			return;
+		}
+
+		audioHardwareExecutor.execute(() -> {
+			AudioTrack track = silentAudioTrackRef.getAndSet(null);
+			if (track != null) {
+				try {
+					track.stop();
+					track.release();
+					Log.i("PermataMediaService: Silent Audio Anchor successfully released.");
+				} catch (Exception ignored) {}
+			}
+		});
 	}
 
 	private void updatePlaybackState(int state) {
@@ -399,6 +521,7 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 		notificationInit();
 
 		Context ctx = this;
+		if (session == null) return new NotificationCompat.Builder(ctx, NOTIF_CHANNEL_ID).build();
 		MediaControllerCompat controller = session.getController();
 		MediaMetadataCompat mediaMetadata = controller.getMetadata();
 		NotificationCompat.Builder builder =
@@ -414,8 +537,8 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 			builder.setContentTitle(description.getTitle()).setContentText(description.getSubtitle())
 					.setSubText(description.getDescription());
 
-			if (callback.isDefaultImage(largeIcon)) {
-				if (i.isVideo()) {
+			if (callback != null && callback.isDefaultImage(largeIcon)) {
+				if (i != null && i.isVideo()) {
 					if (defaultVideoIcon == null) defaultVideoIcon = createLargeIcon(R.drawable.video);
 					largeIcon = defaultVideoIcon;
 				} else {
@@ -458,7 +581,9 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 					PendingIntent.getActivity(this, 0, i, FLAG_IMMUTABLE | FLAG_UPDATE_CURRENT);
 		} catch (ClassNotFoundException ex) {
 			Log.e(ex);
-			notifContentIntent = session.getController().getSessionActivity();
+			if (session != null) {
+				notifContentIntent = session.getController().getSessionActivity();
+			}
 		}
 
 		actionPrev = new Action(R.drawable.prev, getString(R.string.prev), pi(INTENT_PREV));
@@ -471,9 +596,11 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 				new Action(R.drawable.favorite, getString(R.string.favorites_add), pi(INTENT_FAVORITE_ADD));
 		actionFavRm =
 				new Action(R.drawable.favorite, getString(R.string.favorites_remove), pi(INTENT_FAVORITE_REMOVE));
-		notifStyle = new MediaStyle()
-				.setMediaSession(session.getSessionToken())
-				.setShowActionsInCompactView(0, 2, 4);
+		if (session != null) {
+			notifStyle = new MediaStyle()
+					.setMediaSession(session.getSessionToken())
+					.setShowActionsInCompactView(0, 2, 4);
+		}
 
 		if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
 			NotificationChannel channel = new NotificationChannel(
@@ -492,7 +619,7 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 		intentReceiver = new BroadcastReceiver() {
 			@Override
 			public void onReceive(Context context, Intent intent) {
-				if (intent != null && intent.getAction() != null) {
+				if (intent != null && intent.getAction() != null && callback != null) {
 					callback.onCustomAction(intent.getAction(), intent.getExtras());
 				}
 			}
