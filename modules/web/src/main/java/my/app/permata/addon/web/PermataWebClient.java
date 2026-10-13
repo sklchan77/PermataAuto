@@ -25,7 +25,7 @@ import my.app.utils.log.Log;
 /**
  * Production-hardened WebClient.
  * Features: JS debounce, God-Mode DOM Surgery (Decoder Release), 
- * Staggered Cold-Start Sequence, and Per-Media Unmute Enforcer.
+ * Platform-Specific Staggered Cold-Start Sequence, and Per-Media Unmute Enforcer.
  */
 public class PermataWebClient extends WebViewClientCompat {
     BooleanConsumer loading;
@@ -73,7 +73,7 @@ public class PermataWebClient extends WebViewClientCompat {
                 "} catch(e) {}";
             view.evaluateJavascript(js, null);
 
-            // 2. HARDENED OBSERVER WITH STAGGERED START & PER-MEDIA UNMUTE
+            // 2. HARDENED OBSERVER WITH PLATFORM-SPECIFIC COLD-START TIMELINES
             String mediaObserverJs = "(function() { " +
                 "  if (window.__permataMediaObserverAttached) return; " +
                 "  window.__permataMediaObserverAttached = true; " +
@@ -83,31 +83,26 @@ public class PermataWebClient extends WebViewClientCompat {
                 "  var isColdStartGrace = true; " +
                 "  var isDouyinHost = window.location.hostname.indexOf('douyin.com') !== -1; " +
                 "  " +
-                "  /* --- STAGGERED COLD START TIMELINE --- */ " +
-                "  /* 1. End Immunity at 2.0s */ " +
-                "  setTimeout(function() { isColdStartGrace = false; }, 2000); " +
-                "  /* 2. Force Unmute at 2.5s */ " +
-                "  setTimeout(function() { " +
-                "      if (activeVideo) { activeVideo.muted = false; activeVideo.volume = 1.0; } " +
-                "  }, 2500); " +
-                "  /* 3. Force Play at 3.0s */ " +
-                "  setTimeout(function() { " +
-                "      if (activeVideo && activeVideo.paused) { " +
-                "          var p = activeVideo.play(); " +
-                "          if (p) p.catch(function(e) {}); " +
-                "      } " +
-                "  }, 3000); " +
-                "  /* 4. Douyin-Specific Late-Load Override at 5.5s and 6.0s */ " +
+                "  /* --- STAGGERED COLD START TIMELINES --- */ " +
+                "  var graceTime = isDouyinHost ? 3000 : 2000; " +
+                "  setTimeout(function() { isColdStartGrace = false; }, graceTime); " +
+                "  " +
                 "  if (isDouyinHost) { " +
-                "      setTimeout(function() { " +
-                "          if (activeVideo) { activeVideo.muted = false; activeVideo.volume = 1.0; } " +
-                "      }, 5500); " +
-                "      setTimeout(function() { " +
-                "          if (activeVideo && activeVideo.paused) { " +
-                "              var p = activeVideo.play(); " +
-                "              if (p) p.catch(function(e) {}); " +
-                "          } " +
-                "      }, 6000); " +
+                "      /* Aggressive Douyin 8-Second Timeline */ " +
+                "      setTimeout(function() { if (activeVideo) { activeVideo.muted = false; activeVideo.volume = 1.0; } }, 3500); " +
+                "      setTimeout(function() { if (activeVideo && activeVideo.paused) { var p = activeVideo.play(); if (p) p.catch(function(e) {}); } }, 4000); " +
+                "      setTimeout(function() { if (activeVideo) { activeVideo.muted = false; activeVideo.volume = 1.0; } }, 4500); " +
+                "      setTimeout(function() { if (activeVideo && activeVideo.paused) { var p = activeVideo.play(); if (p) p.catch(function(e) {}); } }, 5000); " +
+                "      setTimeout(function() { if (activeVideo) { activeVideo.muted = false; activeVideo.volume = 1.0; } }, 5500); " +
+                "      setTimeout(function() { if (activeVideo && activeVideo.paused) { var p = activeVideo.play(); if (p) p.catch(function(e) {}); } }, 6000); " +
+                "      setTimeout(function() { if (activeVideo) { activeVideo.muted = false; activeVideo.volume = 1.0; } }, 6500); " +
+                "      setTimeout(function() { if (activeVideo && activeVideo.paused) { var p = activeVideo.play(); if (p) p.catch(function(e) {}); } }, 7000); " +
+                "      setTimeout(function() { if (activeVideo) { activeVideo.muted = false; activeVideo.volume = 1.0; } }, 7500); " +
+                "      setTimeout(function() { if (activeVideo && activeVideo.paused) { var p = activeVideo.play(); if (p) p.catch(function(e) {}); } }, 8000); " +
+                "  } else { " +
+                "      /* Standard Timeline for IG, FB, TikTok */ " +
+                "      setTimeout(function() { if (activeVideo) { activeVideo.muted = false; activeVideo.volume = 1.0; } }, 2500); " +
+                "      setTimeout(function() { if (activeVideo && activeVideo.paused) { var p = activeVideo.play(); if (p) p.catch(function(e) {}); } }, 3000); " +
                 "  } " +
                 "  " +
                 "  function onPlayHandler() { " +
