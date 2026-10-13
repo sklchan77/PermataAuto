@@ -25,7 +25,7 @@ import my.app.utils.log.Log;
 /**
  * Production-hardened WebClient.
  * Features: JS debounce, God-Mode DOM Surgery (Decoder Release), 
- * Platform-Specific Staggered Cold-Start Sequence, and Per-Media Unmute Enforcer.
+ * Clean 3.0s Cold-Start Grace Period, and Per-Media Unmute Enforcer.
  */
 public class PermataWebClient extends WebViewClientCompat {
     BooleanConsumer loading;
@@ -73,7 +73,7 @@ public class PermataWebClient extends WebViewClientCompat {
                 "} catch(e) {}";
             view.evaluateJavascript(js, null);
 
-            // 2. HARDENED OBSERVER WITH PLATFORM-SPECIFIC COLD-START TIMELINES
+            // 2. HARDENED OBSERVER WITH CLEAN 3.0s COLD-START GRACE PERIOD
             String mediaObserverJs = "(function() { " +
                 "  if (window.__permataMediaObserverAttached) return; " +
                 "  window.__permataMediaObserverAttached = true; " +
@@ -83,27 +83,9 @@ public class PermataWebClient extends WebViewClientCompat {
                 "  var isColdStartGrace = true; " +
                 "  var isDouyinHost = window.location.hostname.indexOf('douyin.com') !== -1; " +
                 "  " +
-                "  /* --- STAGGERED COLD START TIMELINES --- */ " +
-                "  var graceTime = isDouyinHost ? 3000 : 2000; " +
-                "  setTimeout(function() { isColdStartGrace = false; }, graceTime); " +
-                "  " +
-                "  if (isDouyinHost) { " +
-                "      /* Aggressive Douyin 8-Second Timeline */ " +
-                "      setTimeout(function() { if (activeVideo) { activeVideo.muted = false; activeVideo.volume = 1.0; } }, 3500); " +
-                "      setTimeout(function() { if (activeVideo && activeVideo.paused) { var p = activeVideo.play(); if (p) p.catch(function(e) {}); } }, 4000); " +
-                "      setTimeout(function() { if (activeVideo) { activeVideo.muted = false; activeVideo.volume = 1.0; } }, 4500); " +
-                "      setTimeout(function() { if (activeVideo && activeVideo.paused) { var p = activeVideo.play(); if (p) p.catch(function(e) {}); } }, 5000); " +
-                "      setTimeout(function() { if (activeVideo) { activeVideo.muted = false; activeVideo.volume = 1.0; } }, 5500); " +
-                "      setTimeout(function() { if (activeVideo && activeVideo.paused) { var p = activeVideo.play(); if (p) p.catch(function(e) {}); } }, 6000); " +
-                "      setTimeout(function() { if (activeVideo) { activeVideo.muted = false; activeVideo.volume = 1.0; } }, 6500); " +
-                "      setTimeout(function() { if (activeVideo && activeVideo.paused) { var p = activeVideo.play(); if (p) p.catch(function(e) {}); } }, 7000); " +
-                "      setTimeout(function() { if (activeVideo) { activeVideo.muted = false; activeVideo.volume = 1.0; } }, 7500); " +
-                "      setTimeout(function() { if (activeVideo && activeVideo.paused) { var p = activeVideo.play(); if (p) p.catch(function(e) {}); } }, 8000); " +
-                "  } else { " +
-                "      /* Standard Timeline for IG, FB, TikTok */ " +
-                "      setTimeout(function() { if (activeVideo) { activeVideo.muted = false; activeVideo.volume = 1.0; } }, 2500); " +
-                "      setTimeout(function() { if (activeVideo && activeVideo.paused) { var p = activeVideo.play(); if (p) p.catch(function(e) {}); } }, 3000); " +
-                "  } " +
+                "  /* --- CLEAN COLD START GRACE PERIOD --- */ " +
+                "  /* Immunity window (3.0s) strictly for initialization and settlement */ " +
+                "  setTimeout(function() { isColdStartGrace = false; }, 3000); " +
                 "  " +
                 "  function onPlayHandler() { " +
                 "      if (playDebounce) clearTimeout(playDebounce); " +
@@ -124,7 +106,9 @@ public class PermataWebClient extends WebViewClientCompat {
                 "  var intObserver = new IntersectionObserver((entries) => { " +
                 "    entries.forEach(entry => { " +
                 "      var v = entry.target; " +
-                "      if (entry.isIntersecting && entry.intersectionRatio > 0.5) { " +
+                "      /* Skip threshold ratio check for Douyin during cold start grace period */ " +
+                "      var isValidIntersect = (isDouyinHost && isColdStartGrace) ? entry.isIntersecting : (entry.isIntersecting && entry.intersectionRatio > 0.5); " +
+                "      if (isValidIntersect) { " +
                 "        var isNewMedia = (activeVideo !== v); " +
                 "        activeVideo = v; " +
                 "        " +
