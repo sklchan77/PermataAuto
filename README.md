@@ -38,13 +38,13 @@
 
 **Do not use the browser display while driving.**
 
-Looking at a screen while the vehicle is in motion is distracting and may be illegal where you live. Permata Auto is intended for use when the vehicle is **safely parked**, or for a **passenger display only** where local law allows.
+Looking at a screen while your vehicle is in motion is a severe distraction and may be illegal in your jurisdiction. Permata Auto Media Player is intended for use only when the vehicle is **safely parked** or strictly as a **passenger display**, where permitted by local law.
 
-- By default, the display is blocked while in motion for your protection.
-- **Display in Motion** (allowing the display while moving) may conflict with local traffic laws.
+- For your protection, the display is blocked by default while the vehicle is in motion.
+- Enabling **Display in Motion** may violate local traffic regulations.
 - You are solely responsible for complying with all applicable laws.
-- We strongly advise against enabling Display in Motion unless you are a passenger and the law permits it.
-- Display use should only happen while the vehicle is **safely parked**, unless you accept full responsibility for passenger use under local rules.
+- We strongly advise against enabling Display in Motion unless you are a passenger legally permitted to use a screen.
+- The display should only be used while the vehicle is **safely parked**, unless you **accept full legal responsibility** for passenger use.
 
 ---
 
