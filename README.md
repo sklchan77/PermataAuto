@@ -51,8 +51,8 @@ Looking at a screen while the vehicle is in motion is distracting and may be ill
 ## ⚠️ Important notices
 
 - This app is a workaround-style experience. It can stop working after OS or Android Auto changes.
-- Features and availability depend on your device, car, and region
-- Use at your own risk
+- Features and availability depend on your device, car, and region.
+- ❗️ Use at your own risk!
 
 ---
 
