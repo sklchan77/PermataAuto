@@ -52,7 +52,7 @@ Looking at a screen while your vehicle is in motion is a severe distraction and 
 
 - This app functions as an unofficial workaround and may stop working following OS or Android Auto updates.
 - Feature availability depends on your specific device, vehicle, and region.
-- ‼️Use at your own risk.‼️
+- ‼️**Use at your own risk.**‼️
 
 ---
 
