@@ -81,6 +81,7 @@ public class PermataWebClient extends WebViewClientCompat {
                 "  var playDebounce = null; " +
                 "  var pauseDebounce = null; " +
                 "  var isColdStartGrace = true; " +
+                "  var isDouyinHost = window.location.hostname.indexOf('douyin.com') !== -1; " +
                 "  " +
                 "  /* --- STAGGERED COLD START TIMELINE --- */ " +
                 "  /* 1. End Immunity at 2.0s */ " +
@@ -96,6 +97,18 @@ public class PermataWebClient extends WebViewClientCompat {
                 "          if (p) p.catch(function(e) {}); " +
                 "      } " +
                 "  }, 3000); " +
+                "  /* 4. Douyin-Specific Late-Load Override at 5.5s and 6.0s */ " +
+                "  if (isDouyinHost) { " +
+                "      setTimeout(function() { " +
+                "          if (activeVideo) { activeVideo.muted = false; activeVideo.volume = 1.0; } " +
+                "      }, 5500); " +
+                "      setTimeout(function() { " +
+                "          if (activeVideo && activeVideo.paused) { " +
+                "              var p = activeVideo.play(); " +
+                "              if (p) p.catch(function(e) {}); " +
+                "          } " +
+                "      }, 6000); " +
+                "  } " +
                 "  " +
                 "  function onPlayHandler() { " +
                 "      if (playDebounce) clearTimeout(playDebounce); " +
