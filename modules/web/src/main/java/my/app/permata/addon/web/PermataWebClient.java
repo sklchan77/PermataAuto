@@ -24,7 +24,8 @@ import my.app.utils.log.Log;
 
 /**
  * Production-hardened WebClient.
- * Features: JS debounce, God-Mode DOM Surgery (Decoder Release), and Aggressive Cold-Start Audio Enforcer.
+ * Features: JS debounce, God-Mode DOM Surgery (Decoder Release), 
+ * Staggered Cold-Start Sequence, and Per-Media Unmute Enforcer.
  */
 public class PermataWebClient extends WebViewClientCompat {
     BooleanConsumer loading;
@@ -72,7 +73,7 @@ public class PermataWebClient extends WebViewClientCompat {
                 "} catch(e) {}";
             view.evaluateJavascript(js, null);
 
-            // 2. HARDENED INTERSECTION OBSERVER WITH 3-SECOND AUDIO ENFORCER
+            // 2. HARDENED OBSERVER WITH STAGGERED START & PER-MEDIA UNMUTE
             String mediaObserverJs = "(function() { " +
                 "  if (window.__permataMediaObserverAttached) return; " +
                 "  window.__permataMediaObserverAttached = true; " +
@@ -81,21 +82,19 @@ public class PermataWebClient extends WebViewClientCompat {
                 "  var pauseDebounce = null; " +
                 "  var isColdStartGrace = true; " +
                 "  " +
-                "  /* Aggressive loop to defeat SPA auto-muting mechanisms during cold start */ " +
-                "  var audioEnforcer = setInterval(function() { " +
-                "      if (activeVideo) { " +
-                "          if (activeVideo.muted) { activeVideo.muted = false; activeVideo.volume = 1.0; } " +
-                "          if (activeVideo.paused) { " +
-                "              var p = activeVideo.play(); " +
-                "              if (p) p.catch(function(e) {}); " +
-                "          } " +
-                "      } " +
-                "  }, 200); " +
-                "  " +
-                "  /* 3.0-second immunity window strictly on initial page load */ " +
+                "  /* --- STAGGERED COLD START TIMELINE --- */ " +
+                "  /* 1. End Immunity at 2.0s */ " +
+                "  setTimeout(function() { isColdStartGrace = false; }, 2000); " +
+                "  /* 2. Force Unmute at 2.5s */ " +
                 "  setTimeout(function() { " +
-                "      isColdStartGrace = false; " +
-                "      clearInterval(audioEnforcer); " +
+                "      if (activeVideo) { activeVideo.muted = false; activeVideo.volume = 1.0; } " +
+                "  }, 2500); " +
+                "  /* 3. Force Play at 3.0s */ " +
+                "  setTimeout(function() { " +
+                "      if (activeVideo && activeVideo.paused) { " +
+                "          var p = activeVideo.play(); " +
+                "          if (p) p.catch(function(e) {}); " +
+                "      } " +
                 "  }, 3000); " +
                 "  " +
                 "  function onPlayHandler() { " +
@@ -114,11 +113,11 @@ public class PermataWebClient extends WebViewClientCompat {
                 "      }, 150); " +
                 "  } " +
                 "  " +
-                "  /* Lower threshold (0.5) to prevent layout jitter from falsely pausing */ " +
                 "  var intObserver = new IntersectionObserver((entries) => { " +
                 "    entries.forEach(entry => { " +
                 "      var v = entry.target; " +
                 "      if (entry.isIntersecting && entry.intersectionRatio > 0.5) { " +
+                "        var isNewMedia = (activeVideo !== v); " +
                 "        activeVideo = v; " +
                 "        " +
                 "        /* Wake up decoder if previously suspended */ " +
@@ -126,8 +125,15 @@ public class PermataWebClient extends WebViewClientCompat {
                 "            v.setAttribute('preload', 'auto'); " +
                 "            v.__permataSuspended = false; " +
                 "        } " +
-                "        v.muted = false; " +
-                "        v.volume = 1.0; " +
+                "        " +
+                "        /* --- PER-MEDIA CHANGE UNMUTE ENFORCER (FB/IG Defense) --- */ " +
+                "        if (isNewMedia) { " +
+                "            v.muted = false; " +
+                "            v.volume = 1.0; " +
+                "            /* Backup micro-timers to override SPA React render cycles */ " +
+                "            setTimeout(function() { if (activeVideo === v) { v.muted = false; v.volume = 1.0; } }, 100); " +
+                "            setTimeout(function() { if (activeVideo === v) { v.muted = false; v.volume = 1.0; } }, 400); " +
+                "        } " +
                 "        " +
                 "        v.addEventListener('play', onPlayHandler); " +
                 "        v.addEventListener('playing', onPlayHandler); " +
@@ -248,7 +254,6 @@ public class PermataWebClient extends WebViewClientCompat {
     @Override
     public void onReceivedError(@NonNull WebView view, @NonNull WebResourceRequest request,
                                 @NonNull WebResourceErrorCompat error) {
-        // Suppress benign network aborts from the logs to keep it clean
         super.onReceivedError(view, request, error);
     }
 }
