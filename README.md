@@ -34,6 +34,28 @@
 
 ---
 
+## ‼️ Safety and driving disclaimer
+
+**Do not use the browser display while driving.**
+
+Looking at a screen while the vehicle is in motion is distracting and may be illegal where you live. Permata Auto is intended for use when the vehicle is **safely parked**, or for a **passenger display only** where local law allows.
+
+- By default, the display is blocked while in motion for your protection.
+- **Display in Motion** (allowing the display while moving) may conflict with local traffic laws.
+- You are solely responsible for complying with all applicable laws.
+- We strongly advise against enabling Display in Motion unless you are a passenger and the law permits it.
+- Display use should only happen while the vehicle is **safely parked**, unless you accept full responsibility for passenger use under local rules.
+
+---
+
+## ⚠️ Important notices
+
+- This app is a workaround-style experience. It can stop working after OS or Android Auto changes.
+- Features and availability depend on your device, car, and region
+- Use at your own risk
+
+---
+
 ## 🤝 Acknowledgments
 
 Special thanks to **Andrey Pavlenko** for the unwavering commitment to releasing this source code openly. This dedication keeps localized open-source development alive, secure, and accessible for everyone.
