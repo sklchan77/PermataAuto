@@ -120,7 +120,7 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 	private ExecutorService audioHardwareExecutor;
 	private final AtomicReference<AudioTrack> silentAudioTrackRef = new AtomicReference<>(null);
 	private AudioManager.OnAudioFocusChangeListener focusChangeListener;
-    private long lastWebMediaPlayingTime = 0; // Throttle state
+    private long lastWebMediaPlayingTime = 0;
 
 	public MediaLib getLib() {
 		return lib;
@@ -204,14 +204,8 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 			carDisconnectReceiver = null;
 		}
 		if (audioHardwareExecutor != null) {
-			audioHardwareExecutor.shutdown();
-			try {
-				if (!audioHardwareExecutor.awaitTermination(800, TimeUnit.MILLISECONDS)) {
-					audioHardwareExecutor.shutdownNow();
-				}
-			} catch (InterruptedException e) {
-				audioHardwareExecutor.shutdownNow();
-			}
+            // INSTANT KILL: Do not use awaitTermination() on the Main Thread
+			audioHardwareExecutor.shutdownNow();
 			audioHardwareExecutor = null;
 		}
 		PermataApplication.get().getHandler().removeCallbacksAndMessages(null);
