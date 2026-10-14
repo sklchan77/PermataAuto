@@ -37,7 +37,7 @@ public class UniversalMediaBridge {
     @JavascriptInterface
     public void onMediaPlay() {
         Log.i("[JavaBridge]", TAG + ": Universal HTML5 Media PLAY detected.");
-        // 1. Cancel any pending focus release immediately (user is scrolling feeds)
+        // 1. Cancel any pending focus release immediately from the JS Bridge Thread
         mainHandler.removeCallbacks(focusReleaseRunnable);
         // 2. Delegate to service to dynamically lock steering controls
         mainHandler.post(this::stealAudioFocus);
@@ -58,6 +58,10 @@ public class UniversalMediaBridge {
      * bypassing AndroidManifest implicit routing limitations.
      */
     private void stealAudioFocus() {
+        // EXTRA SAFEGUARD: Purge callbacks directly on the Main Looper 
+        // to prevent any 5000ms pause commands from firing late during fast scrolling.
+        mainHandler.removeCallbacks(focusReleaseRunnable);
+
         Context context = contextRef.get();
         if (context == null) return;
 
