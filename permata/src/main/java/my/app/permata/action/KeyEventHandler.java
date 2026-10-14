@@ -422,15 +422,15 @@ public class KeyEventHandler {
     private static void executeHardwareTouchSwipe(final View touchTarget, boolean up, final String hostTag, final String contextLog) {
         if (touchTarget == null || !touchTarget.isAttachedToWindow()) return;
         
-        // GUARD: Prevent concurrent native touch dispatches from confusing the WebView
         if (!isHardwareSwiping.compareAndSet(false, true)) {
             Log.w(hostTag + " Swipe sequence already in progress. Dropping overlapping dispatch.");
             return;
         }
 
+        // Use a guaranteed Main Looper Handler instead of View.postDelayed to prevent deadlocks
+        final android.os.Handler guaranteedHandler = new android.os.Handler(android.os.Looper.getMainLooper());
         final float actionX = touchTarget.getWidth() * 0.50f; 
         final float centerY = touchTarget.getHeight() / 2f;
-        
         float span = touchTarget.getHeight() * 0.60f; 
         final float yStart = up ? (centerY - span / 2f) : (centerY + span / 2f);
         final float yEnd = up ? (centerY + span / 2f) : (centerY - span / 2f);
@@ -451,7 +451,7 @@ public class KeyEventHandler {
                 final float currentY = yStart + (yEnd - yStart) * linearT;
                 final long moveTime = startTime + (long) (swipeDuration * linearT);
                 
-                touchTarget.postDelayed(() -> {
+                guaranteedHandler.postDelayed(() -> {
                     if (touchTarget.isAttachedToWindow() && touchTarget.getVisibility() == View.VISIBLE) {
                         MotionEvent eventMove = MotionEvent.obtain(startTime, moveTime, MotionEvent.ACTION_MOVE, actionX, currentY, 0);
                         eventMove.setSource(InputDevice.SOURCE_TOUCHSCREEN); 
@@ -461,7 +461,8 @@ public class KeyEventHandler {
                 }, (long) (swipeDuration * linearT));
             }
 
-            touchTarget.postDelayed(() -> {
+            // GUARANTEED UNLOCK: Runs independent of View attachment state
+            guaranteedHandler.postDelayed(() -> {
                 try {
                     if (touchTarget.isAttachedToWindow() && touchTarget.getVisibility() == View.VISIBLE) {
                         long endTime = startTime + swipeDuration + 10;
@@ -469,17 +470,16 @@ public class KeyEventHandler {
                         eventUp.setSource(InputDevice.SOURCE_TOUCHSCREEN); 
                         touchTarget.dispatchTouchEvent(eventUp);
                         eventUp.recycle();
-                        Log.i("[REACTION] " + hostTag + contextLog + " Concluded (ACTION_UP). Duration: " + swipeDuration + "ms | Steps: " + stepCount);
+                        Log.i("[REACTION] " + hostTag + contextLog + " Concluded.");
                     }
                 } finally {
-                    // Release the lock
                     isHardwareSwiping.set(false);
                 }
             }, swipeDuration + 10);
 
         } catch (Exception e) {
             Log.e(e, "[REACTION] " + hostTag + contextLog + " failed with Exception.");
-            isHardwareSwiping.set(false); // Release lock on error
+            isHardwareSwiping.set(false); 
         }
     }
 
