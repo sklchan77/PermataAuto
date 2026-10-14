@@ -147,8 +147,14 @@ public class PermataCarAppService extends CarAppService {
 
         private void mountWebKitPresentation(Surface surface) {
             try {
-                // Use application context to satisfy Window Manager constraints
                 Context appCtx = my.app.permata.PermataApplication.get();
+                
+                // GUARD: Prevent VirtualDisplay collision with MirrorDisplay
+                if (((my.app.permata.PermataApplication) appCtx).isMirroringMode()) {
+                    android.util.Log.w("PermataVideo", "Mirror mode is active. Aborting WebKit Presentation to prevent GPU choke and VirtualDisplay collision.");
+                    return;
+                }
+
                 DisplayManager dm = (DisplayManager) appCtx.getSystemService(Context.DISPLAY_SERVICE);
                 
                 virtualDisplay = dm.createVirtualDisplay(
@@ -161,7 +167,6 @@ public class PermataCarAppService extends CarAppService {
                 webKitPresentation = new Presentation(appCtx, virtualDisplay.getDisplay());
                 
                 // --- MOUNT WEBKIT UI HERE ---
-                // We create a visible fallback layout so you can confirm the window renders
                 LinearLayout layout = new LinearLayout(appCtx);
                 layout.setBackgroundColor(Color.parseColor("#121212"));
                 layout.setGravity(Gravity.CENTER);
@@ -176,7 +181,6 @@ public class PermataCarAppService extends CarAppService {
                 webKitPresentation.setContentView(layout);
                 // -----------------------------
 
-                // Requires SYSTEM_ALERT_WINDOW permission (which your manifest already has)
                 webKitPresentation.getWindow().setType(android.view.WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY);
                 webKitPresentation.show();
                 android.util.Log.i("PermataVideo", "WebKit Presentation mounted successfully.");
