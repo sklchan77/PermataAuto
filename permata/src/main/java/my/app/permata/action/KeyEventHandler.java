@@ -25,6 +25,7 @@ import java.util.Collections;
 import java.util.Map;
 import java.util.WeakHashMap;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 
 import my.app.permata.media.service.MediaSessionCallback;
@@ -42,6 +43,8 @@ public class KeyEventHandler {
     private static volatile long lastGlobalActionTime = 0L;
     
     private static final AtomicLong swipeSessionId = new AtomicLong(0);
+    // GUARD: Prevents overlapping hardware touch dispatches during the 170ms swipe window
+    private static final AtomicBoolean isHardwareSwiping = new AtomicBoolean(false);
     
     private static final Map<Class<?>, Method> webViewMethodCache = new ConcurrentHashMap<>();
     private static final Map<View, Long> scrollTimestamps = Collections.synchronizedMap(new WeakHashMap<>());
@@ -418,6 +421,12 @@ public class KeyEventHandler {
 
     private static void executeHardwareTouchSwipe(final View touchTarget, boolean up, final String hostTag, final String contextLog) {
         if (touchTarget == null || !touchTarget.isAttachedToWindow()) return;
+        
+        // GUARD: Prevent concurrent native touch dispatches from confusing the WebView
+        if (!isHardwareSwiping.compareAndSet(false, true)) {
+            Log.w(hostTag + " Swipe sequence already in progress. Dropping overlapping dispatch.");
+            return;
+        }
 
         final float actionX = touchTarget.getWidth() * 0.50f; 
         final float centerY = touchTarget.getHeight() / 2f;
@@ -453,18 +462,24 @@ public class KeyEventHandler {
             }
 
             touchTarget.postDelayed(() -> {
-                if (touchTarget.isAttachedToWindow() && touchTarget.getVisibility() == View.VISIBLE) {
-                    long endTime = startTime + swipeDuration + 10;
-                    MotionEvent eventUp = MotionEvent.obtain(startTime, endTime, MotionEvent.ACTION_UP, actionX, yEnd, 0);
-                    eventUp.setSource(InputDevice.SOURCE_TOUCHSCREEN); 
-                    touchTarget.dispatchTouchEvent(eventUp);
-                    eventUp.recycle();
-                    Log.i("[REACTION] " + hostTag + contextLog + " Concluded (ACTION_UP). Duration: " + swipeDuration + "ms | Steps: " + stepCount);
+                try {
+                    if (touchTarget.isAttachedToWindow() && touchTarget.getVisibility() == View.VISIBLE) {
+                        long endTime = startTime + swipeDuration + 10;
+                        MotionEvent eventUp = MotionEvent.obtain(startTime, endTime, MotionEvent.ACTION_UP, actionX, yEnd, 0);
+                        eventUp.setSource(InputDevice.SOURCE_TOUCHSCREEN); 
+                        touchTarget.dispatchTouchEvent(eventUp);
+                        eventUp.recycle();
+                        Log.i("[REACTION] " + hostTag + contextLog + " Concluded (ACTION_UP). Duration: " + swipeDuration + "ms | Steps: " + stepCount);
+                    }
+                } finally {
+                    // Release the lock
+                    isHardwareSwiping.set(false);
                 }
             }, swipeDuration + 10);
 
         } catch (Exception e) {
             Log.e(e, "[REACTION] " + hostTag + contextLog + " failed with Exception.");
+            isHardwareSwiping.set(false); // Release lock on error
         }
     }
 
