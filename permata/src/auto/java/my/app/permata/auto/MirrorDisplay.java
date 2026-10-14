@@ -395,7 +395,9 @@ public class MirrorDisplay {
 		final int surfaceWidth = sc != null ? sc.getWidth() : 0;
 		final int surfaceHeight = sc != null ? sc.getHeight() : 0;
 
-		Runnable resolutionTask = () -> {
+        // NEVER execute ProcessBuilder.waitFor() on the Main Thread.
+        // Always wrap in a background thread to prevent ANRs.
+		new Thread(() -> {
 			Process p = null;
 			try {
 				File su1 = new File("/system/xbin/su");
@@ -424,7 +426,6 @@ public class MirrorDisplay {
 						Log.i("Root Hack: Display forcefully resized to " + portW + "x" + targetH);
 					}
 				} else {
-					// SYNCHRONOUS DIRECT EXECUTION: Guaranteed delivery before Su.shutdown()
 					p = new ProcessBuilder("su", "-c", "wm size reset").start();
 					if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
 						p.waitFor(3, TimeUnit.SECONDS);
@@ -441,15 +442,7 @@ public class MirrorDisplay {
 					lMetrics = pMetrics = null;
 				});
 			}
-		};
-
-		if (active) {
-			// Run background thread when activating
-			new Thread(resolutionTask, "Permata-Resolution-Thread").start();
-		} else {
-			// Run SYNCHRONOUSLY on the current thread during cleanup to prevent race condition
-			resolutionTask.run();
-		}
+		}, "Permata-Resolution-Thread").start();
 	}
 
 	private void noSession() {
