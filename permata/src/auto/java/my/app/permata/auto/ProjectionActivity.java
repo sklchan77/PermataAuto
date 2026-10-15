@@ -26,6 +26,7 @@ import my.app.utils.ui.activity.AppActivity;
 public class ProjectionActivity extends ActivityBase {
 	private static Promise<Intent> promise;
 	private static boolean starting;
+	private ContentObserver accessibilityObserver; // Patch: Prevent Zombie Leak
 
 	static FutureSupplier<Intent> start() {
 		if (promise != null) promise.cancel();
@@ -51,6 +52,11 @@ public class ProjectionActivity extends ActivityBase {
 	protected void onDestroy() {
 		super.onDestroy();
 		if (promise != null) promise.cancel();
+		// Patch: Clean up dangling observer to prevent memory leak
+		if (accessibilityObserver != null) {
+			getContentResolver().unregisterContentObserver(accessibilityObserver);
+			accessibilityObserver = null;
+		}
 	}
 
 	@Override
@@ -115,16 +121,19 @@ public class ProjectionActivity extends ActivityBase {
 			var intent = new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS);
 			intent.setFlags(FLAG_ACTIVITY_NEW_TASK | FLAG_ACTIVITY_SINGLE_TOP);
 			startActivity(intent);
+			
+			accessibilityObserver = new ContentObserver(PermataApplication.get().getHandler()) {
+				@Override
+				public void onChange(boolean selfChange) {
+					if (!isAccessibilityEnabled()) return;
+					getContentResolver().unregisterContentObserver(this);
+					accessibilityObserver = null;
+					p.complete(null);
+				}
+			};
 			getContentResolver().registerContentObserver(
 					Settings.Secure.getUriFor(Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES), false,
-					new ContentObserver(PermataApplication.get().getHandler()) {
-						@Override
-						public void onChange(boolean selfChange) {
-							if (!isAccessibilityEnabled()) return;
-							getContentResolver().unregisterContentObserver(this);
-							p.complete(null);
-						}
-					});
+					accessibilityObserver);
 		} catch (Exception e) {
 			p.complete(null);
 		}
