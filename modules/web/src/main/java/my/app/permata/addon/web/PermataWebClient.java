@@ -25,7 +25,7 @@ import my.app.utils.log.Log;
 /**
  * Production-hardened WebClient.
  * Features: JS debounce, God-Mode DOM Surgery (Decoder Release), 
- * Clean 3.0s Cold-Start Grace Period, and Per-Media Unmute Enforcer.
+ * Clean 3.0s Cold-Start Grace Period, and Universal Audio Pipeline Reset.
  */
 public class PermataWebClient extends WebViewClientCompat {
     BooleanConsumer loading;
@@ -73,7 +73,7 @@ public class PermataWebClient extends WebViewClientCompat {
                 "} catch(e) {}";
             view.evaluateJavascript(js, null);
 
-            // 2. HARDENED OBSERVER WITH 3.0s GRACE PERIOD
+            // 2. HARDENED UNIVERSAL OBSERVER WITH 3.0s GRACE PERIOD
             String mediaObserverJs = "(function() { " +
                 "  if (window.__permataMediaObserverAttached) return; " +
                 "  window.__permataMediaObserverAttached = true; " +
@@ -81,10 +81,9 @@ public class PermataWebClient extends WebViewClientCompat {
                 "  var playDebounce = null; " +
                 "  var pauseDebounce = null; " +
                 "  var isColdStartGrace = true; " +
-                "  var isDouyinHost = window.location.hostname.indexOf('douyin.com') !== -1; " +
                 "  " +
                 "  /* --- CLEAN COLD START GRACE PERIOD --- */ " +
-                "  /* Immunity window (3.0s) strictly for initialization and settlement */ " +
+                "  /* Immunity window (3.0s) strictly for initialization and settlement across all SPAs */ " +
                 "  setTimeout(function() { isColdStartGrace = false; }, 3000); " +
                 "  " +
                 "  function onPlayHandler() { " +
@@ -106,8 +105,8 @@ public class PermataWebClient extends WebViewClientCompat {
                 "  var intObserver = new IntersectionObserver((entries) => { " +
                 "    entries.forEach(entry => { " +
                 "      var v = entry.target; " +
-                "      /* Skip threshold ratio check for Douyin during cold start grace period */ " +
-                "      var isValidIntersect = (isDouyinHost && isColdStartGrace) ? entry.isIntersecting : (entry.isIntersecting && entry.intersectionRatio > 0.5); " +
+                "      /* UNIVERSAL DETECTION: Leniency during cold start, strict 50% threshold after */ " +
+                "      var isValidIntersect = isColdStartGrace ? entry.isIntersecting : (entry.isIntersecting && entry.intersectionRatio > 0.5); " +
                 "      if (isValidIntersect) { " +
                 "        var isNewMedia = (activeVideo !== v); " +
                 "        activeVideo = v; " +
@@ -118,11 +117,23 @@ public class PermataWebClient extends WebViewClientCompat {
                 "            v.__permataSuspended = false; " +
                 "        } " +
                 "        " +
-                "        /* --- PER-MEDIA CHANGE UNMUTE ENFORCER (FB/IG Defense) --- */ " +
+                "        /* --- UNIVERSAL PER-MEDIA CHANGE UNMUTE ENFORCER & AUDIO PIPELINE RESET --- */ " +
                 "        if (isNewMedia) { " +
                 "            v.muted = false; " +
                 "            v.volume = 1.0; " +
-                "            /* Backup micro-timers to override SPA React render cycles */ " +
+                "            " +
+                "            /* AUDIO PIPELINE RESET: Force hardware decoder sync universally */ " +
+                "            var playPromise = v.play(); " +
+                "            if (playPromise !== undefined) { " +
+                "                playPromise.then(function() { " +
+                "                    /* Micro-seek triggers an instant buffer flush (safe for all HTML5 video) */ " +
+                "                    if (activeVideo === v && v.currentTime !== undefined) { " +
+                "                        v.currentTime += 0.0001; " +
+                "                    } " +
+                "                }).catch(function(e){}); " +
+                "            } " +
+                "            " +
+                "            /* Backup micro-timers to override SPA React/Vue render cycles (FB/IG/TikTok) */ " +
                 "            setTimeout(function() { if (activeVideo === v) { v.muted = false; v.volume = 1.0; } }, 100); " +
                 "            setTimeout(function() { if (activeVideo === v) { v.muted = false; v.volume = 1.0; } }, 400); " +
                 "        } " +
@@ -155,6 +166,7 @@ public class PermataWebClient extends WebViewClientCompat {
                 "    }); " +
                 "  }, { threshold: [0.0, 0.5] }); " +
                 "  " +
+                "  /* UNIVERSAL BINDING: Dynamically attach to all infinite-scroll injected videos */ " +
                 "  function scanAndBind(node) { " +
                 "    if (node.tagName && node.tagName.toLowerCase() === 'video' && !node.__permataObserved) { " +
                 "      node.__permataObserved = true; " +
