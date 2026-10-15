@@ -25,7 +25,7 @@ import my.app.utils.log.Log;
 /**
  * Production-hardened WebClient.
  * Features: JS debounce, God-Mode DOM Surgery (Decoder Release), 
- * Clean 3.0s Cold-Start Grace Period, Douyin Unmute Sequence, and Per-Media Unmute Enforcer.
+ * Clean 3.0s Cold-Start Grace Period, and Per-Media Unmute Enforcer.
  */
 public class PermataWebClient extends WebViewClientCompat {
     BooleanConsumer loading;
@@ -73,7 +73,7 @@ public class PermataWebClient extends WebViewClientCompat {
                 "} catch(e) {}";
             view.evaluateJavascript(js, null);
 
-            // 2. HARDENED OBSERVER WITH 3.0s GRACE PERIOD & DOUYIN UNMUTE SEQUENCE
+            // 2. HARDENED OBSERVER WITH 3.0s GRACE PERIOD
             String mediaObserverJs = "(function() { " +
                 "  if (window.__permataMediaObserverAttached) return; " +
                 "  window.__permataMediaObserverAttached = true; " +
@@ -86,20 +86,6 @@ public class PermataWebClient extends WebViewClientCompat {
                 "  /* --- CLEAN COLD START GRACE PERIOD --- */ " +
                 "  /* Immunity window (3.0s) strictly for initialization and settlement */ " +
                 "  setTimeout(function() { isColdStartGrace = false; }, 3000); " +
-                "  " +
-                "  /* --- DOUYIN FIRST VIDEO UNMUTE SEQUENCE --- */ " +
-                "  if (isDouyinHost) { " +
-                "      setTimeout(function() { if (activeVideo) { activeVideo.muted = false; activeVideo.volume = 1.0; } }, 3500); " +
-                "      setTimeout(function() { if (activeVideo) { activeVideo.muted = false; activeVideo.volume = 1.0; } }, 4000); " +
-                "      setTimeout(function() { if (activeVideo) { activeVideo.muted = false; activeVideo.volume = 1.0; } }, 4500); " +
-                "      setTimeout(function() { if (activeVideo) { activeVideo.muted = false; activeVideo.volume = 1.0; } }, 5000); " +
-                "      setTimeout(function() { if (activeVideo) { activeVideo.muted = false; activeVideo.volume = 1.0; } }, 5500); " +
-                "      setTimeout(function() { if (activeVideo) { activeVideo.muted = false; activeVideo.volume = 1.0; } }, 6000); " +
-                "      setTimeout(function() { if (activeVideo) { activeVideo.muted = false; activeVideo.volume = 1.0; } }, 6500); " +
-                "      setTimeout(function() { if (activeVideo) { activeVideo.muted = false; activeVideo.volume = 1.0; } }, 7000); " +
-                "      setTimeout(function() { if (activeVideo) { activeVideo.muted = false; activeVideo.volume = 1.0; } }, 7500); " +
-                "      setTimeout(function() { if (activeVideo) { activeVideo.muted = false; activeVideo.volume = 1.0; } }, 8000); " +
-                "  } " +
                 "  " +
                 "  function onPlayHandler() { " +
                 "      if (playDebounce) clearTimeout(playDebounce); " +
