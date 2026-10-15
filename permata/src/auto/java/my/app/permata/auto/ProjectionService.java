@@ -4,6 +4,7 @@ import static android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJE
 import static android.os.Build.VERSION.SDK_INT;
 
 import android.app.Activity;
+import android.app.ForegroundServiceStartNotAllowedException;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
@@ -50,7 +51,17 @@ public class ProjectionService extends Service {
 					if (SDK_INT >= VERSION_CODES.O) ctx.startForegroundService(intent);
 					else ctx.startService(intent);
 				} catch (Exception startErr) {
-					Log.e(startErr, "Failed to start ProjectionService");
+					// Patch: Handle Android 12+ Foreground Service restrictions
+					if (SDK_INT >= VERSION_CODES.S && startErr instanceof ForegroundServiceStartNotAllowedException) {
+						Log.e(startErr, "Foreground restriction blocked projection. App must be in foreground.");
+						new android.os.Handler(android.os.Looper.getMainLooper()).post(() -> {
+							android.widget.Toast.makeText(PermataApplication.get(), 
+								"Please open the Permata app on your phone to start mirroring", 
+								android.widget.Toast.LENGTH_LONG).show();
+						});
+					} else {
+						Log.e(startErr, "Failed to start ProjectionService");
+					}
 					promise = null;
 					p.completeExceptionally(startErr);
 				}
