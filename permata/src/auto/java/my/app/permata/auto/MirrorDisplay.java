@@ -248,29 +248,36 @@ public class MirrorDisplay {
 					land ? SCREEN_ORIENTATION_LANDSCAPE : SCREEN_ORIENTATION_PORTRAIT);
 		}
 
-		try {
-			var cr = ctx.getContentResolver();
-			if (accel == -1) {
-				var v = Settings.System.getInt(cr, ACCELEROMETER_ROTATION, -1);
-				if (v != -1) accel = v;
+		// Patch: Fire-and-forget background thread to avoid Main Thread ANR
+		new Thread(() -> {
+			try {
+				var cr = ctx.getContentResolver();
+				if (accel == -1) {
+					var v = Settings.System.getInt(cr, ACCELEROMETER_ROTATION, -1);
+					if (v != -1) accel = v;
+				}
+				Settings.System.putInt(cr, ACCELEROMETER_ROTATION, 0);
+				Settings.System.putInt(cr, USER_ROTATION, land ? ROTATION_90 : ROTATION_0);
+			} catch (Exception err) {
+				Log.e(err);
 			}
-			Settings.System.putInt(cr, ACCELEROMETER_ROTATION, 0);
-			Settings.System.putInt(cr, USER_ROTATION, land ? ROTATION_90 : ROTATION_0);
-		} catch (Exception err) {
-			Log.e(err);
-		}
+		}, "Permata-Rotation-Lock").start();
 	}
 
 	private static void restoreAccelRotation(Context ctx) {
 		var a = EventDispatcher.get().getActivity();
 		if (a != null) a.setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_SENSOR);
 		if (accel == -1) return;
-		try {
-			Settings.System.putInt(ctx.getContentResolver(), ACCELEROMETER_ROTATION, accel);
-		} catch (Exception err) {
-			Log.e(err);
-		}
-		accel = -1;
+		
+		// Patch: Fire-and-forget background thread to avoid Main Thread ANR
+		new Thread(() -> {
+			try {
+				Settings.System.putInt(ctx.getContentResolver(), ACCELEROMETER_ROTATION, accel);
+			} catch (Exception err) {
+				Log.e(err);
+			}
+			accel = -1;
+		}, "Permata-Rotation-Unlock").start();
 	}
 
 	private void setOverlayBrightness(float brightness) {
