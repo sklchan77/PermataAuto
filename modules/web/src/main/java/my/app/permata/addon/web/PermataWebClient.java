@@ -24,8 +24,8 @@ import my.app.utils.log.Log;
 
 /**
  * Production-hardened WebClient.
- * Features: JS debounce, God-Mode DOM Surgery (Decoder Release), 
- * Clean 3.0s Cold-Start Grace Period, and Universal Audio Pipeline Reset.
+ * Features: JS debounce, God-Mode DOM Surgery with Blob/MSE Safety, 
+ * and Universal Audio Pipeline Reset. (Cold-Start Grace Period Removed)
  */
 public class PermataWebClient extends WebViewClientCompat {
     BooleanConsumer loading;
@@ -73,18 +73,13 @@ public class PermataWebClient extends WebViewClientCompat {
                 "} catch(e) {}";
             view.evaluateJavascript(js, null);
 
-            // 2. HARDENED UNIVERSAL OBSERVER WITH 3.0s GRACE PERIOD
+            // 2. LEAN UNIVERSAL OBSERVER (No Grace Period, Strict Thresholds)
             String mediaObserverJs = "(function() { " +
                 "  if (window.__permataMediaObserverAttached) return; " +
                 "  window.__permataMediaObserverAttached = true; " +
                 "  var activeVideo = null; " +
                 "  var playDebounce = null; " +
                 "  var pauseDebounce = null; " +
-                "  var isColdStartGrace = true; " +
-                "  " +
-                "  /* --- CLEAN COLD START GRACE PERIOD --- */ " +
-                "  /* Immunity window (3.0s) strictly for initialization and settlement across all SPAs */ " +
-                "  setTimeout(function() { isColdStartGrace = false; }, 3000); " +
                 "  " +
                 "  function onPlayHandler() { " +
                 "      if (playDebounce) clearTimeout(playDebounce); " +
@@ -93,7 +88,6 @@ public class PermataWebClient extends WebViewClientCompat {
                 "      }, 150); " +
                 "  } " +
                 "  function onPauseHandler() { " +
-                "      if (isColdStartGrace) return; /* Suppress accidental pauses during initialization */ " +
                 "      if (pauseDebounce) clearTimeout(pauseDebounce); " +
                 "      pauseDebounce = setTimeout(function() { " +
                 "          if (this === activeVideo && window.AndroidMediaBridge) { " +
@@ -105,8 +99,8 @@ public class PermataWebClient extends WebViewClientCompat {
                 "  var intObserver = new IntersectionObserver((entries) => { " +
                 "    entries.forEach(entry => { " +
                 "      var v = entry.target; " +
-                "      /* UNIVERSAL DETECTION: Leniency during cold start, strict 50% threshold after */ " +
-                "      var isValidIntersect = isColdStartGrace ? entry.isIntersecting : (entry.isIntersecting && entry.intersectionRatio > 0.5); " +
+                "      /* STRICT DETECTION: Enforce 50% threshold immediately */ " +
+                "      var isValidIntersect = (entry.isIntersecting && entry.intersectionRatio > 0.5); " +
                 "      if (isValidIntersect) { " +
                 "        var isNewMedia = (activeVideo !== v); " +
                 "        activeVideo = v; " +
@@ -142,22 +136,34 @@ public class PermataWebClient extends WebViewClientCompat {
                 "        v.addEventListener('playing', onPlayHandler); " +
                 "        v.addEventListener('pause', onPauseHandler); " +
                 "        " +
-                "        /* Decoder Surgery: Steal hardware decoders from background videos */ " +
+                "        /* Decoder Surgery: Steal hardware decoders from background videos safely */ " +
                 "        var allVids = document.querySelectorAll('video'); " +
                 "        for (var i = 0; i < allVids.length; i++) { " +
                 "          if (allVids[i] !== v) { " +
                 "            var ov = allVids[i]; " +
-                "            if (!ov.paused && !isColdStartGrace) ov.pause(); " +
+                "            if (!ov.paused) ov.pause(); " +
                 "            ov.muted = true; " +
                 "            " +
-                "            if (!ov.__permataSuspended && !isColdStartGrace) { " +
+                "            if (!ov.__permataSuspended) { " +
                 "                ov.__permataSuspended = true; " +
-                "                ov.setAttribute('preload', 'none'); " +
-                "                ov.load(); " + 
+                "                " +
+                "                /* CRITICAL FIX: Check if the video uses MSE (Blob URLs) */ " +
+                "                var currentSource = ov.currentSrc || ov.src || ''; " +
+                "                var isBlob = currentSource.indexOf('blob:') === 0; " +
+                "                " +
+                "                if (!isBlob) { " +
+                "                    /* Safe to flush standard MP4 decoders */ " +
+                "                    ov.setAttribute('preload', 'none'); " +
+                "                    ov.load(); " +
+                "                } else { " +
+                "                    /* For IG/TikTok MSE, just strip preload to stop network fetching. " +
+                "                       DO NOT execute load() or it will fatal-crash the React thread. */ " +
+                "                    ov.setAttribute('preload', 'none'); " +
+                "                } " +
                 "            } " +
                 "          } " +
                 "        } " +
-                "      } else if (!isColdStartGrace) { " +
+                "      } else { " +
                 "        if (activeVideo === v) activeVideo = null; " +
                 "        v.removeEventListener('play', onPlayHandler); " +
                 "        v.removeEventListener('playing', onPlayHandler); " +
