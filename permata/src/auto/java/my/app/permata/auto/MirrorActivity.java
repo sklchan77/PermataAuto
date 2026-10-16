@@ -121,7 +121,7 @@ public class MirrorActivity extends CarActivity implements SurfaceHolder.Callbac
 
 		new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(() -> {
 			if (!PermataApplication.get().isConnectedToAuto()) {
-				Log.i("Hard disconnect detected (Engine Off/Unplug). Forcing complete cleanup.");
+				Log.i("Hard disconnect detected. Forcing complete cleanup.");
 				MirrorDisplay.close();
 			}
 		}, 5000);
@@ -139,21 +139,8 @@ public class MirrorActivity extends CarActivity implements SurfaceHolder.Callbac
 
 	static void onBackButtonClick() {
 		var d = EventDispatcher.get();
-		// Implementation: Explicitly use directBack() to bypass Window Focus trapping
-		if (d != null && !d.directBack()) {
-			var vm = (WindowManager) PermataApplication.get().getSystemService(Context.WINDOW_SERVICE);
-			if (vm != null) {
-				var size = new Point();
-				vm.getDefaultDisplay().getRealSize(size);
-				var y = size.y / 2f;
-				var time = uptimeMillis();
-				d.motionEvent(time, time, MotionEvent.ACTION_DOWN, size.x, y);
-				d.motionEvent(time, time + 10, MotionEvent.ACTION_MOVE, size.x * 0.9f, y);
-				d.motionEvent(time, time + 20, MotionEvent.ACTION_MOVE, size.x * 0.8f, y);
-				d.motionEvent(time, time + 30, MotionEvent.ACTION_MOVE, size.x * 0.7f, y);
-				d.motionEvent(time, time + 40, MotionEvent.ACTION_MOVE, size.x * 0.6f, y);
-				d.motionEvent(time, time + 50, MotionEvent.ACTION_UP, size.x * 0.5f, y);
-			}
+		if (d != null) {
+			d.directBack(); // Executes the explicit IPC back command
 		}
 		disableAccelRotation();
 	}
