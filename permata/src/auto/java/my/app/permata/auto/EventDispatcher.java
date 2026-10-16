@@ -37,6 +37,9 @@ abstract class EventDispatcher {
 	}
 
 	public abstract boolean back();
+	
+	// Added: Force bypass Activity Context checks
+	public abstract boolean directBack();
 
 	public abstract boolean home();
 
@@ -67,6 +70,12 @@ abstract class EventDispatcher {
 		public boolean back() {
 			return XposedEventDispatcherService.dispatchBackEvent() ||
 					AccessibilityDispatcher.get().back();
+		}
+
+		@Override
+		public boolean directBack() {
+			return XposedEventDispatcherService.dispatchBackEvent() ||
+					AccessibilityDispatcher.get().directBack();
 		}
 
 		@Override
@@ -117,6 +126,12 @@ abstract class EventDispatcher {
 			//noinspection deprecation
 			a.onBackPressed();
 			return true;
+		}
+
+		@Override
+		public boolean directBack() {
+			// Bypass Activity Focus entirely for MirrorService Floating UI
+			return AccessibilityDispatcher.get().directBack();
 		}
 
 		@Override
@@ -196,6 +211,13 @@ abstract class EventDispatcher {
 		}
 
 		@Override
+		public boolean directBack() {
+			if (AccessibilityEventDispatcherService.dispatchBack()) return true;
+			var d = SuDispatcher.get();
+			return (d != null) && d.back();
+		}
+
+		@Override
 		public boolean home() {
 			if (AccessibilityEventDispatcherService.dispatchHome()) return true;
 			var d = SuDispatcher.get();
@@ -232,7 +254,6 @@ abstract class EventDispatcher {
 
 	private static final class SuDispatcher extends EventDispatcher {
 		static FutureSupplier<SuDispatcher> instance = completedNull();
-		private final StringBuilder sb = new StringBuilder();
 		private final Su su;
 
 		SuDispatcher(Su su) {this.su = su;}
@@ -248,22 +269,25 @@ abstract class EventDispatcher {
 		}
 
 		@Override
+		public boolean directBack() {
+			return keyEvent(KeyEvent.KEYCODE_BACK);
+		}
+
+		@Override
 		public boolean home() {
 			return keyEvent(KeyEvent.KEYCODE_HOME);
 		}
 
 		private boolean keyEvent(int code) {
-			sb.setLength(0);
-			sb.append("cmd input keyevent ").append(code);
-			su.exec(sb.toString());
+			// Thread Safe Execution
+			su.exec("cmd input keyevent " + code);
 			return true;
 		}
 
 		@Override
 		public boolean tap(float x, float y) {
-			sb.setLength(0);
-			sb.append("cmd input tap ").append((int) x).append(' ').append((int) y);
-			su.exec(sb.toString());
+			// Thread Safe Execution
+			su.exec("cmd input tap " + (int) x + " " + (int) y);
 			return true;
 		}
 
@@ -284,10 +308,8 @@ abstract class EventDispatcher {
 					return false;
 				}
 			}
-			sb.setLength(0);
-			sb.append("cmd input motionevent ").append(a);
-			sb.append((int) x).append(' ').append((int) y);
-			su.exec(sb.toString());
+			// Thread Safe Execution
+			su.exec("cmd input motionevent " + a + (int) x + " " + (int) y);
 			return true;
 		}
 	}
