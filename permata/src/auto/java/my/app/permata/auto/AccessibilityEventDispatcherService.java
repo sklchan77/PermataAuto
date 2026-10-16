@@ -292,6 +292,7 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
 
 		if (type != TYPE_WINDOW_STATE_CHANGED) return;
 
+		// Fast fail check to preserve CPU
 		if (isConsentGranted && clickOnButton == null) return;
 
 		CharSequence pkg = event.getPackageName();
