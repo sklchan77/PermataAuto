@@ -10,6 +10,7 @@ import static my.app.utils.async.Completed.completed;
 import static my.app.utils.async.Completed.completedNull;
 
 import android.content.Context;
+import android.content.Intent;
 import android.os.Build;
 import android.view.KeyEvent;
 import android.view.MotionEvent;
@@ -38,7 +39,6 @@ abstract class EventDispatcher {
 
 	public abstract boolean back();
 	
-	// Added: Force bypass Activity Context checks
 	public abstract boolean directBack();
 
 	public abstract boolean home();
@@ -130,7 +130,6 @@ abstract class EventDispatcher {
 
 		@Override
 		public boolean directBack() {
-			// Bypass Activity Focus entirely for MirrorService Floating UI
 			return AccessibilityDispatcher.get().directBack();
 		}
 
@@ -205,21 +204,35 @@ abstract class EventDispatcher {
 
 		@Override
 		public boolean back() {
-			if (AccessibilityEventDispatcherService.dispatchBack()) return true;
-			var d = SuDispatcher.get();
-			return (d != null) && d.back();
+			return directBack();
 		}
 
 		@Override
 		public boolean directBack() {
 			if (AccessibilityEventDispatcherService.dispatchBack()) return true;
+			
+			// IPC Bypass: Deliver broadcast if we are in the isolated Car Process
+			var ctx = PermataApplication.get();
+			if (ctx != null) {
+				ctx.sendBroadcast(new Intent("my.app.permata.ACTION_GLOBAL_BACK"));
+				return true;
+			}
+			
 			var d = SuDispatcher.get();
-			return (d != null) && d.back();
+			return (d != null) && d.directBack();
 		}
 
 		@Override
 		public boolean home() {
 			if (AccessibilityEventDispatcherService.dispatchHome()) return true;
+			
+			// IPC Bypass for Home Button
+			var ctx = PermataApplication.get();
+			if (ctx != null) {
+				ctx.sendBroadcast(new Intent("my.app.permata.ACTION_GLOBAL_HOME"));
+				return true;
+			}
+			
 			var d = SuDispatcher.get();
 			return (d != null) && d.home();
 		}
@@ -279,14 +292,12 @@ abstract class EventDispatcher {
 		}
 
 		private boolean keyEvent(int code) {
-			// Thread Safe Execution
 			su.exec("cmd input keyevent " + code);
 			return true;
 		}
 
 		@Override
 		public boolean tap(float x, float y) {
-			// Thread Safe Execution
 			su.exec("cmd input tap " + (int) x + " " + (int) y);
 			return true;
 		}
@@ -308,7 +319,6 @@ abstract class EventDispatcher {
 					return false;
 				}
 			}
-			// Thread Safe Execution
 			su.exec("cmd input motionevent " + a + (int) x + " " + (int) y);
 			return true;
 		}
