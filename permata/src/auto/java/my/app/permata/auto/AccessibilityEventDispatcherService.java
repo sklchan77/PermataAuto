@@ -17,6 +17,10 @@ import static android.view.accessibility.AccessibilityWindowInfo.TYPE_INPUT_METH
 import android.accessibilityservice.AccessibilityService;
 import android.accessibilityservice.GestureDescription;
 import android.accessibilityservice.GestureDescription.StrokeDescription;
+import android.content.BroadcastReceiver;
+import android.content.Context;
+import android.content.Intent;
+import android.content.IntentFilter;
 import android.graphics.Path;
 import android.os.Build.VERSION;
 import android.os.Build.VERSION_CODES;
@@ -46,6 +50,17 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
 	private final Path path = new Path();
 	private GestureDescription.Builder gb;
 	private Pointer[] pointers = new Pointer[]{new Pointer()};
+
+	private final BroadcastReceiver commandReceiver = new BroadcastReceiver() {
+		@Override
+		public void onReceive(Context context, Intent intent) {
+			if ("my.app.permata.ACTION_GLOBAL_BACK".equals(intent.getAction())) {
+				performGlobalAction(GLOBAL_ACTION_BACK);
+			} else if ("my.app.permata.ACTION_GLOBAL_HOME".equals(intent.getAction())) {
+				performGlobalAction(GLOBAL_ACTION_HOME);
+			}
+		}
+	};
 
 	static int getWindowCount() {
 		var ds = instance;
@@ -235,9 +250,19 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
 	public void onCreate() {
 		super.onCreate();
 		instance = this;
-		if (VERSION.SDK_INT < VERSION_CODES.TIRAMISU) return;
-		windowIds.clear();
-		windowIds.addAll(listWindows());
+		if (VERSION.SDK_INT >= VERSION_CODES.TIRAMISU) {
+			windowIds.clear();
+			windowIds.addAll(listWindows());
+		}
+		
+		IntentFilter filter = new IntentFilter();
+		filter.addAction("my.app.permata.ACTION_GLOBAL_BACK");
+		filter.addAction("my.app.permata.ACTION_GLOBAL_HOME");
+		if (VERSION.SDK_INT >= VERSION_CODES.TIRAMISU) {
+			registerReceiver(commandReceiver, filter, Context.RECEIVER_NOT_EXPORTED);
+		} else {
+			registerReceiver(commandReceiver, filter);
+		}
 	}
 
 	@Override
@@ -245,6 +270,9 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
 		super.onDestroy();
 		instance = null;
 		isConsentGranted = false; 
+		try {
+			unregisterReceiver(commandReceiver);
+		} catch (Exception ignored) {}
 	}
 
 	@Override
@@ -264,7 +292,6 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
 
 		if (type != TYPE_WINDOW_STATE_CHANGED) return;
 
-		// Architecture Upgrade: Immediate fast-fail return to prevent intense CPU drain
 		if (isConsentGranted && clickOnButton == null) return;
 
 		CharSequence pkg = event.getPackageName();
@@ -367,7 +394,6 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
 
 	@Override
 	public void onInterrupt() {
-		// Cleanly prevent orphaned window ID memory leaks on service interrupt
 		if (VERSION.SDK_INT >= VERSION_CODES.TIRAMISU) {
 			windowIds.clear();
 		}
