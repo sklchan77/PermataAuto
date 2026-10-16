@@ -162,8 +162,7 @@ public class MirrorDisplay {
 		var oldSc = this.sc;
 		if (oldSc != sc) return;
 		
-		// Fix: Synchronous draw immediately paints the black UI over the canvas 
-		// before it detaches or before CarApp destroys the rendering pipeline.
+		// Synchronous draw paints the black UI over the canvas before detachment
 		drawMsg(oldSc, R.string.app_name);
 		
 		this.sc = null;
