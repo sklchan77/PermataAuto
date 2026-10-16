@@ -211,10 +211,12 @@ abstract class EventDispatcher {
 		public boolean directBack() {
 			if (AccessibilityEventDispatcherService.dispatchBack()) return true;
 			
-			// IPC Bypass: Deliver broadcast if we are in the isolated Car Process
+			// IPC Bypass: Deliver targeted explicit broadcast if in the isolated Car Process
 			var ctx = PermataApplication.get();
 			if (ctx != null) {
-				ctx.sendBroadcast(new Intent("my.app.permata.ACTION_GLOBAL_BACK"));
+				Intent intent = new Intent("my.app.permata.ACTION_GLOBAL_BACK");
+				intent.setPackage(ctx.getPackageName()); // Micro-optimization for OS security/speed
+				ctx.sendBroadcast(intent);
 				return true;
 			}
 			
@@ -229,7 +231,9 @@ abstract class EventDispatcher {
 			// IPC Bypass for Home Button
 			var ctx = PermataApplication.get();
 			if (ctx != null) {
-				ctx.sendBroadcast(new Intent("my.app.permata.ACTION_GLOBAL_HOME"));
+				Intent intent = new Intent("my.app.permata.ACTION_GLOBAL_HOME");
+				intent.setPackage(ctx.getPackageName()); // Micro-optimization for OS security/speed
+				ctx.sendBroadcast(intent);
 				return true;
 			}
 			
