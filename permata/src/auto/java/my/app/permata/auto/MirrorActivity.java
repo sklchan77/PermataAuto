@@ -127,29 +127,6 @@ public class MirrorActivity extends CarActivity implements SurfaceHolder.Callbac
 		}, 5000);
 	}
 
-	@Override
-	public void onBackPressed() {
-		// The injected back press hit the car screen by mistake.
-		// Catch it, and force the physical edge-swipe gesture onto the phone.
-		var d = EventDispatcher.get();
-		if (d != null) {
-			var vm = (WindowManager) PermataApplication.get().getSystemService(Context.WINDOW_SERVICE);
-			if (vm != null) {
-				var size = new Point();
-				vm.getDefaultDisplay().getRealSize(size);
-				var y = size.y / 2f;
-				var time = uptimeMillis();
-				d.motionEvent(time, time, MotionEvent.ACTION_DOWN, size.x - 1, y);
-				d.motionEvent(time, time + 10, MotionEvent.ACTION_MOVE, size.x * 0.9f, y);
-				d.motionEvent(time, time + 20, MotionEvent.ACTION_MOVE, size.x * 0.8f, y);
-				d.motionEvent(time, time + 30, MotionEvent.ACTION_MOVE, size.x * 0.7f, y);
-				d.motionEvent(time, time + 40, MotionEvent.ACTION_MOVE, size.x * 0.6f, y);
-				d.motionEvent(time, time + 50, MotionEvent.ACTION_UP, size.x * 0.5f, y);
-			}
-		}
-		super.onBackPressed();
-	}
-
 	static void onHomeButtonClick() {
 		var ctx = PermataApplication.get();
 		if (ctx != null) {
@@ -162,7 +139,8 @@ public class MirrorActivity extends CarActivity implements SurfaceHolder.Callbac
 
 	static void onBackButtonClick() {
 		var d = EventDispatcher.get();
-		if (d != null && !d.back()) {
+		// Implementation: Explicitly use directBack() to bypass Window Focus trapping
+		if (d != null && !d.directBack()) {
 			var vm = (WindowManager) PermataApplication.get().getSystemService(Context.WINDOW_SERVICE);
 			if (vm != null) {
 				var size = new Point();
