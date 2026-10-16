@@ -120,8 +120,9 @@ public class MirrorDisplay {
 		if ((ref == null) || ((md = ref.get()) == null)) return;
 		md.refCounter = 0; 
 		var sc = md.sc;
+		// Execute synchronous draw BEFORE cleanup to guarantee canvas flush
+		if (sc != null) drawMsg(sc, R.string.app_name); 
 		md.cleanUp();
-		if (sc != null) drawMsg(sc, R.string.app_name);
 	}
 
 	public void release() {
@@ -160,6 +161,11 @@ public class MirrorDisplay {
 	public void releaseSurface(@NonNull SurfaceContainer sc) {
 		var oldSc = this.sc;
 		if (oldSc != sc) return;
+		
+		// Fix: Synchronous draw immediately paints the black UI over the canvas 
+		// before it detaches or before CarApp destroys the rendering pipeline.
+		drawMsg(oldSc, R.string.app_name);
+		
 		this.sc = null;
 		lMetrics = pMetrics = null;
 		if (session.isDoneNotFailed()) {
@@ -174,7 +180,6 @@ public class MirrorDisplay {
 				}
 			}, "Permata-Surface-Detach").start();
 		}
-		drawMsg(oldSc, R.string.app_name);
 	}
 
 	public synchronized void tap(float x, float y) {
@@ -248,7 +253,6 @@ public class MirrorDisplay {
 					land ? SCREEN_ORIENTATION_LANDSCAPE : SCREEN_ORIENTATION_PORTRAIT);
 		}
 
-		// Patch: Fire-and-forget background thread to avoid Main Thread ANR
 		new Thread(() -> {
 			try {
 				var cr = ctx.getContentResolver();
@@ -269,7 +273,6 @@ public class MirrorDisplay {
 		if (a != null) a.setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_SENSOR);
 		if (accel == -1) return;
 		
-		// Patch: Fire-and-forget background thread to avoid Main Thread ANR
 		new Thread(() -> {
 			try {
 				Settings.System.putInt(ctx.getContentResolver(), ACCELEROMETER_ROTATION, accel);
@@ -402,8 +405,6 @@ public class MirrorDisplay {
 		final int surfaceWidth = sc != null ? sc.getWidth() : 0;
 		final int surfaceHeight = sc != null ? sc.getHeight() : 0;
 
-        // NEVER execute ProcessBuilder.waitFor() on the Main Thread.
-        // Always wrap in a background thread to prevent ANRs.
 		new Thread(() -> {
 			Process p = null;
 			try {
