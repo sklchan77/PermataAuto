@@ -39,7 +39,7 @@ import my.app.utils.log.Log;
 
 public class AccessibilityEventDispatcherService extends AccessibilityService {
 	private static String clickOnButton;
-	public static boolean isConsentGranted = false; // FIX: CPU/Battery saver flag
+	public static boolean isConsentGranted = false;
 	private static AccessibilityEventDispatcherService instance;
 	private final Set<Integer> windowIds =
 			(VERSION.SDK_INT < VERSION_CODES.TIRAMISU) ? Collections.emptySet() : new HashSet<>();
@@ -244,7 +244,7 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
 	public void onDestroy() {
 		super.onDestroy();
 		instance = null;
-		isConsentGranted = false; // Reset state securely on destroy
+		isConsentGranted = false; 
 	}
 
 	@Override
@@ -263,6 +263,9 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
 		}
 
 		if (type != TYPE_WINDOW_STATE_CHANGED) return;
+
+		// Architecture Upgrade: Immediate fast-fail return to prevent intense CPU drain
+		if (isConsentGranted && clickOnButton == null) return;
 
 		CharSequence pkg = event.getPackageName();
 		if (pkg == null) return;
@@ -295,7 +298,7 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
 	}
 
 	private void checkAndClickMediaProjectionConsent(AccessibilityNodeInfo root, String pkgName) {
-		if (isConsentGranted) return; // FIX: Prevents battery drain once consent is acquired
+		if (isConsentGranted) return; 
 		
 		if ("com.android.systemui".equals(pkgName) || "android".equals(pkgName) || pkgName.contains("systemui")) {
 			String[] targetTexts = new String[]{
@@ -364,6 +367,10 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
 
 	@Override
 	public void onInterrupt() {
+		// Cleanly prevent orphaned window ID memory leaks on service interrupt
+		if (VERSION.SDK_INT >= VERSION_CODES.TIRAMISU) {
+			windowIds.clear();
+		}
 	}
 
 	private List<Integer> listWindows() {
