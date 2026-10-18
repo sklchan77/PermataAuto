@@ -88,6 +88,11 @@ public class MirrorDisplay {
 	private SurfaceContainer sc;
 	private Overlay overlay;
 	private Metrics currentMetrics; 
+	
+	// Object Pools to prevent 60fps GC memory thrashing (Zero Garbage)
+	private MotionEvent.PointerProperties[] reusableProps;
+	private MotionEvent.PointerCoords[] reusableCoords;
+	
 	private float dx;
 	private float dy;
 	private long lastInjectedTouchTime;
@@ -100,6 +105,14 @@ public class MirrorDisplay {
 		var size = new Point();
 		defaultDisplay.getRealSize(size);
 		scaleDiff = Math.max(UiUtils.toPx(ctx, 20), Math.min(size.x, size.y) / 20f);
+
+		// Pre-allocate pools for up to 10 simultaneous fingers
+		reusableProps = new MotionEvent.PointerProperties[10];
+		reusableCoords = new MotionEvent.PointerCoords[10];
+		for (int i = 0; i < 10; i++) {
+			reusableProps[i] = new MotionEvent.PointerProperties();
+			reusableCoords[i] = new MotionEvent.PointerCoords();
+		}
 	}
 
 	public static MirrorDisplay get() {
@@ -204,24 +217,31 @@ public class MirrorDisplay {
 			var m = metrics(a);
 			if (m == null) return false;
 			if (a != null) a.getWindow().getDecorView().getLocationOnScreen(loc);
-			var props = new MotionEvent.PointerProperties[cnt];
-			var coords = new MotionEvent.PointerCoords[cnt];
-			for (int i = 0; i < cnt; i++) {
-				props[i] = new MotionEvent.PointerProperties();
-				e.getPointerProperties(i, props[i]);
-				var c = coords[i] = new MotionEvent.PointerCoords();
-				e.getPointerCoords(i, c);
-				if (a != null) {
-					c.x = (c.x - m.x) * m.scale - loc[0];
-					c.y = (c.y - m.y) * m.scale - loc[1];
-				} else {
-					c.x = (c.x - m.x) * m.scale;
-					c.y = (c.y - m.y) * m.scale;
+			
+			// Dynamic pool expansion (Failsafe)
+			if (cnt > reusableProps.length) {
+				reusableProps = new MotionEvent.PointerProperties[cnt];
+				reusableCoords = new MotionEvent.PointerCoords[cnt];
+				for (int i = 0; i < cnt; i++) {
+					reusableProps[i] = new MotionEvent.PointerProperties();
+					reusableCoords[i] = new MotionEvent.PointerCoords();
 				}
 			}
-			e = MotionEvent.obtain(downTime, uptimeMillis(), action, cnt, props, coords,
-					e.getMetaState(),
-					e.getButtonState(), e.getXPrecision(), e.getYPrecision(), e.getDeviceId(),
+
+			// Reuse pre-allocated memory (Zero Garbage)
+			for (int i = 0; i < cnt; i++) {
+				e.getPointerProperties(i, reusableProps[i]);
+				e.getPointerCoords(i, reusableCoords[i]);
+				if (a != null) {
+					reusableCoords[i].x = (reusableCoords[i].x - m.x) * m.scale - loc[0];
+					reusableCoords[i].y = (reusableCoords[i].y - m.y) * m.scale - loc[1];
+				} else {
+					reusableCoords[i].x = (reusableCoords[i].x - m.x) * m.scale;
+					reusableCoords[i].y = (reusableCoords[i].y - m.y) * m.scale;
+				}
+			}
+			e = MotionEvent.obtain(downTime, uptimeMillis(), action, cnt, reusableProps, reusableCoords,
+					e.getMetaState(), e.getButtonState(), e.getXPrecision(), e.getYPrecision(), e.getDeviceId(),
 					e.getEdgeFlags(), InputDevice.SOURCE_TOUCHSCREEN, e.getFlags());
 		}
 		return d.motionEvent(e);
@@ -564,7 +584,6 @@ public class MirrorDisplay {
 			dy = (targetY - m.y) * m.scale;
 		}
 		
-		// Defense in Depth constraint
 		if (dx < 0) dx = 0;
 		if (dx > m.phoneW) dx = m.phoneW;
 		if (dy < 0) dy = 0;
@@ -594,6 +613,21 @@ public class MirrorDisplay {
 
 	private void setMirroringMode(PermataApplication app, int mode) {
 		app.setMirroringMode(mode);
+		
+		if (mode == 0) {
+			// Architecture Fix: Silent Teardown
+			try {
+				var main = MainActivity.getActiveInstance();
+				if (main != null) main.finish();
+				
+				var launcher = LauncherActivity.getActiveInstance();
+				if (launcher != null) launcher.finish();
+			} catch (Exception err) {
+				Log.e(err, "Failed to finish activities silently during teardown");
+			}
+			return;
+		}
+
 		var intent = new Intent(app, MainActivity.class);
 		intent.setAction(MainActivityDelegate.INTENT_ACTION_FINISH);
 		intent.setFlags(FLAG_ACTIVITY_NEW_TASK | FLAG_ACTIVITY_CLEAR_TOP);
@@ -601,7 +635,6 @@ public class MirrorDisplay {
 
 		intent = new Intent(app, LauncherActivity.class);
 		intent.setFlags(FLAG_ACTIVITY_NEW_TASK | FLAG_ACTIVITY_CLEAR_TASK);
-		if (mode == 0) intent.setAction(MainActivityDelegate.INTENT_ACTION_FINISH);
 		app.startActivity(intent);
 	}
 
