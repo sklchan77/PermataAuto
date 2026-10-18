@@ -93,7 +93,7 @@ public class MirrorDisplay {
 	private Metrics lMetrics;
 	private Metrics pMetrics;
 	
-	// Zero Garbage Object Pools
+	// Object Pools to prevent 60fps GC memory thrashing
 	private MotionEvent.PointerProperties[] reusableProps;
 	private MotionEvent.PointerCoords[] reusableCoords;
 	
@@ -110,7 +110,7 @@ public class MirrorDisplay {
 		defaultDisplay.getRealSize(size);
 		scaleDiff = Math.max(UiUtils.toPx(ctx, 20), Math.min(size.x, size.y) / 20f);
 		
-		// Pre-allocate pools for multi-touch (up to 10 fingers)
+		// Pre-allocate pools for up to 10 fingers
 		reusableProps = new MotionEvent.PointerProperties[10];
 		reusableCoords = new MotionEvent.PointerCoords[10];
 		for (int i = 0; i < 10; i++) {
@@ -234,6 +234,7 @@ public class MirrorDisplay {
 				}
 			}
 
+			// Reuse pre-allocated memory to stop GC stutter
 			for (int i = 0; i < cnt; i++) {
 				e.getPointerProperties(i, reusableProps[i]);
 				e.getPointerCoords(i, reusableCoords[i]);
@@ -265,10 +266,15 @@ public class MirrorDisplay {
 
 	private static void disableAccelRotation(Context ctx) {
 		var a = EventDispatcher.get().getActivity();
-		var land = PermataApplication.get().isMirroringLandscape();
+		
+		// Requirement Fix: Dynamically match phone rotation to Car Screen orientation
+		// This guarantees `translate()` matrix math matches physical phone bounds
+		MirrorDisplay md = (ref != null) ? ref.get() : null;
+		boolean isCarLandscape = (md != null && md.sc != null) ? (md.sc.getWidth() > md.sc.getHeight()) : PermataApplication.get().isMirroringLandscape();
+
 		if (a != null) {
 			a.setRequestedOrientation(
-					land ? SCREEN_ORIENTATION_LANDSCAPE : SCREEN_ORIENTATION_PORTRAIT);
+					isCarLandscape ? SCREEN_ORIENTATION_LANDSCAPE : SCREEN_ORIENTATION_PORTRAIT);
 		}
 
 		new Thread(() -> {
@@ -279,7 +285,9 @@ public class MirrorDisplay {
 					if (v != -1) accel = v;
 				}
 				Settings.System.putInt(cr, ACCELEROMETER_ROTATION, 0);
-				Settings.System.putInt(cr, USER_ROTATION, land ? ROTATION_90 : ROTATION_0);
+				
+				// Enforce STRICT positive orientation to prevent 180/270 upside-down mirroring
+				Settings.System.putInt(cr, USER_ROTATION, isCarLandscape ? ROTATION_90 : ROTATION_0);
 			} catch (Exception err) {
 				Log.e(err);
 			}
