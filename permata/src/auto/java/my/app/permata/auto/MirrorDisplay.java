@@ -13,8 +13,6 @@ import static android.os.SystemClock.uptimeMillis;
 import static android.provider.Settings.System.ACCELEROMETER_ROTATION;
 import static android.provider.Settings.System.USER_ROTATION;
 import static android.view.Surface.ROTATION_0;
-import static android.view.Surface.ROTATION_180;
-import static android.view.Surface.ROTATION_270;
 import static android.view.Surface.ROTATION_90;
 import static android.view.WindowManager.LayoutParams.FLAG_DISMISS_KEYGUARD;
 import static android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON;
@@ -24,7 +22,6 @@ import static android.view.WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED;
 import static android.view.WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON;
 import static android.view.WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH;
 import static android.view.WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY;
-import static my.app.utils.function.ResultConsumer.Cancel.isCancellation;
 
 import android.annotation.SuppressLint;
 import android.content.Context;
@@ -90,8 +87,7 @@ public class MirrorDisplay {
 	private FutureSupplier<Session> session = Completed.cancelled();
 	private SurfaceContainer sc;
 	private Overlay overlay;
-	private Metrics lMetrics;
-	private Metrics pMetrics;
+	private Metrics currentMetrics; 
 	private float dx;
 	private float dy;
 	private long lastInjectedTouchTime;
@@ -120,7 +116,6 @@ public class MirrorDisplay {
 		if ((ref == null) || ((md = ref.get()) == null)) return;
 		md.refCounter = 0; 
 		var sc = md.sc;
-		// Execute synchronous draw BEFORE cleanup to guarantee canvas flush
 		if (sc != null) drawMsg(sc, R.string.app_name); 
 		md.cleanUp();
 	}
@@ -140,7 +135,7 @@ public class MirrorDisplay {
 		var oldSc = this.sc;
 		if (oldSc == sc) return;
 		this.sc = sc;
-		lMetrics = pMetrics = null;
+		currentMetrics = null; 
 		if (session.isDoneNotFailed()) {
 			try {
 				var vd = this.session.getOrThrow().vd;
@@ -162,11 +157,10 @@ public class MirrorDisplay {
 		var oldSc = this.sc;
 		if (oldSc != sc) return;
 		
-		// Synchronous draw paints the black UI over the canvas before detachment
 		drawMsg(oldSc, R.string.app_name);
 		
 		this.sc = null;
-		lMetrics = pMetrics = null;
+		currentMetrics = null; 
 		if (session.isDoneNotFailed()) {
 			new Thread(() -> {
 				try {
@@ -259,6 +253,7 @@ public class MirrorDisplay {
 					var v = Settings.System.getInt(cr, ACCELEROMETER_ROTATION, -1);
 					if (v != -1) accel = v;
 				}
+				// Force logically positive orientations (anti-upside-down constraint)
 				Settings.System.putInt(cr, ACCELEROMETER_ROTATION, 0);
 				Settings.System.putInt(cr, USER_ROTATION, land ? ROTATION_90 : ROTATION_0);
 			} catch (Exception err) {
@@ -358,7 +353,7 @@ public class MirrorDisplay {
 		applyRootResolutionHack(false);
 		
 		sc = null;
-		lMetrics = pMetrics = null;
+		currentMetrics = null;
 		var app = PermataApplication.get();
 		if (overlay != null) {
 			overlay.dimAndRotate.cancel();
@@ -410,7 +405,6 @@ public class MirrorDisplay {
 				File su1 = new File("/system/xbin/su");
 				File su2 = new File("/system/bin/su");
 				if (!su1.exists() && !su2.exists() && !canExecuteSu()) {
-					Log.w("Root Hack skipped: Device is not rooted or 'su' is missing.");
 					return;
 				}
 
@@ -430,7 +424,6 @@ public class MirrorDisplay {
 						} else {
 							p.waitFor();
 						}
-						Log.i("Root Hack: Display forcefully resized to " + portW + "x" + targetH);
 					}
 				} else {
 					p = new ProcessBuilder("su", "-c", "wm size reset").start();
@@ -439,14 +432,13 @@ public class MirrorDisplay {
 					} else {
 						p.waitFor();
 					}
-					Log.i("Root Hack: Display forcefully reset to native physical resolution.");
 				}
 			} catch (Exception e) {
 				Log.e(e, "Root resolution hack failed.");
 			} finally {
 				if (p != null) p.destroy();
 				PermataApplication.get().getHandler().post(() -> {
-					lMetrics = pMetrics = null;
+					currentMetrics = null; 
 				});
 			}
 		}, "Permata-Resolution-Thread").start();
@@ -464,7 +456,6 @@ public class MirrorDisplay {
 		session = p;
 		createSession(p);
 		p.onSuccess(s -> {
-			Log.i("Session created: ", s);
 			session = Completed.completed(s);
 			started();
 		});
@@ -493,16 +484,13 @@ public class MirrorDisplay {
 					cleanUp();
 					return;
 				}
-				Log.e(err, "Failed to create media projection");
 				retryCreateSession(p);
 			} else if (mp == null) {
-				Log.e("Failed to create media projection");
 				retryCreateSession(p);
 			} else {
 				try {
 					p.complete(new Session(mp, this));
 				} catch (Exception ex) {
-					Log.e(ex, "Failed to create media projection");
 					retryCreateSession(p);
 				}
 			}
@@ -512,7 +500,6 @@ public class MirrorDisplay {
 	private void retryCreateSession(Promise<Session> p) {
 		PermataApplication.get().getHandler().schedule(() -> {
 			if (p.isDone()) return;
-			Log.i("Retrying to create media projection");
 			createSession(p);
 		}, 3000);
 	}
@@ -565,17 +552,8 @@ public class MirrorDisplay {
 		var m = metrics(a);
 		if (m == null) return null;
 
-		int rotation = defaultDisplay.getRotation();
 		float targetX = x;
 		float targetY = y;
-
-		if (rotation == ROTATION_180) { 
-			targetX = sc.getWidth() - x;
-			targetY = sc.getHeight() - y;
-		} else if (rotation == ROTATION_270) { 
-			targetX = sc.getWidth() - x;
-			targetY = sc.getHeight() - y;
-		}
 
 		if (a != null) {
 			a.getWindow().getDecorView().getLocationOnScreen(loc);
@@ -585,38 +563,33 @@ public class MirrorDisplay {
 			dx = (targetX - m.x) * m.scale;
 			dy = (targetY - m.y) * m.scale;
 		}
+		
+		// Defense in Depth constraint
+		if (dx < 0) dx = 0;
+		if (dx > m.phoneW) dx = m.phoneW;
+		if (dy < 0) dy = 0;
+		if (dy > m.phoneH) dy = m.phoneH;
+
 		return d;
 	}
 
 	@Nullable
 	@SuppressLint("SwitchIntDef")
 	private Metrics metrics(@Nullable AppCompatActivity a) {
-		if (sc == null) return null;
+		if (sc == null || !session.isDoneNotFailed()) return null;
 		
-		boolean isCarLandscape = sc.getWidth() > sc.getHeight();
+		final Point size = new Point();
+		defaultDisplay.getRealSize(size); 
 		
-		var m = isCarLandscape ? lMetrics : pMetrics;
-		if (m == null) {
-			if (!session.isDoneNotFailed()) return null;
-			final Point size = new Point();
-			defaultDisplay.getRealSize(size);
-			
-			float phoneW = size.x;
-			float phoneH = size.y;
-			
-			if (isCarLandscape && phoneW < phoneH) {
-				phoneW = size.y;
-				phoneH = size.x;
-			} else if (!isCarLandscape && phoneW > phoneH) {
-				phoneW = size.y;
-				phoneH = size.x;
-			}
-
-			m = new Metrics(phoneW, phoneH, sc.getWidth(), sc.getHeight());
-			if (isCarLandscape) lMetrics = m;
-			else pMetrics = m;
+		float phoneW = size.x;
+		float phoneH = size.y;
+		
+		if (currentMetrics != null && currentMetrics.phoneW == phoneW && currentMetrics.phoneH == phoneH) {
+			return currentMetrics;
 		}
-		return m;
+
+		currentMetrics = new Metrics(phoneW, phoneH, sc.getWidth(), sc.getHeight());
+		return currentMetrics;
 	}
 
 	private void setMirroringMode(PermataApplication app, int mode) {
@@ -673,7 +646,6 @@ public class MirrorDisplay {
 			vd = mp.createVirtualDisplay(name, sc.getWidth(), sc.getHeight(), sc.getDpi(),
 					DisplayManager.VIRTUAL_DISPLAY_FLAG_OWN_CONTENT_ONLY, sc.getSurface(), null, null);
 			if (vd == null) throw new RuntimeException("Failed to create VirtualDisplay");
-			Log.i("VirtualDisplay created");
 		}
 
 		@Override
@@ -681,7 +653,6 @@ public class MirrorDisplay {
 			close();
 			var md = mdRef.get();
 			if (md == null) return;
-			Log.i("Media projection stopped");
 			md.cleanUp();
 		}
 
@@ -693,24 +664,28 @@ public class MirrorDisplay {
 	}
 
 	private static final class Metrics {
+		final float phoneW;
+		final float phoneH;
 		final float x;
 		final float y;
 		final float scale;
 
 		Metrics(float dw, float dh, float sw, float sh) {
-			var scale = dw / sw;
-			var scaleH = dh / scale;
-			if (scaleH <= sh) {
-				x = 0f;
-				y = (sh - scaleH) / 2f;
-				assert y >= 0f;
+			this.phoneW = dw;
+			this.phoneH = dh;
+			
+			float screenAspect = sw / sh;
+			float phoneAspect = dw / dh;
+			
+			if (phoneAspect > screenAspect) {
+				this.scale = dw / sw;
+				this.x = 0f;
+				this.y = (sh - (dh / this.scale)) / 2f;
 			} else {
-				scale = dh / sh;
-				y = 0f;
-				x = (sw - (dw / scale)) / 2;
-				assert x >= 0f;
+				this.scale = dh / sh;
+				this.y = 0f;
+				this.x = (sw - (dw / this.scale)) / 2f;
 			}
-			this.scale = scale;
 		}
 	}
 }
