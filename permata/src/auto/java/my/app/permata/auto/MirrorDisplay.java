@@ -93,7 +93,7 @@ public class MirrorDisplay {
 	private Metrics lMetrics;
 	private Metrics pMetrics;
 	
-	// Object Pools to prevent 60fps GC memory thrashing
+	// Zero Garbage Object Pools
 	private MotionEvent.PointerProperties[] reusableProps;
 	private MotionEvent.PointerCoords[] reusableCoords;
 	
@@ -266,15 +266,10 @@ public class MirrorDisplay {
 
 	private static void disableAccelRotation(Context ctx) {
 		var a = EventDispatcher.get().getActivity();
-		
-		// Requirement Fix: Dynamically match phone rotation to Car Screen orientation
-		// This guarantees `translate()` matrix math matches physical phone bounds
-		MirrorDisplay md = (ref != null) ? ref.get() : null;
-		boolean isCarLandscape = (md != null && md.sc != null) ? (md.sc.getWidth() > md.sc.getHeight()) : PermataApplication.get().isMirroringLandscape();
-
+		var land = PermataApplication.get().isMirroringLandscape();
 		if (a != null) {
 			a.setRequestedOrientation(
-					isCarLandscape ? SCREEN_ORIENTATION_LANDSCAPE : SCREEN_ORIENTATION_PORTRAIT);
+					land ? SCREEN_ORIENTATION_LANDSCAPE : SCREEN_ORIENTATION_PORTRAIT);
 		}
 
 		new Thread(() -> {
@@ -285,9 +280,7 @@ public class MirrorDisplay {
 					if (v != -1) accel = v;
 				}
 				Settings.System.putInt(cr, ACCELEROMETER_ROTATION, 0);
-				
-				// Enforce STRICT positive orientation to prevent 180/270 upside-down mirroring
-				Settings.System.putInt(cr, USER_ROTATION, isCarLandscape ? ROTATION_90 : ROTATION_0);
+				Settings.System.putInt(cr, USER_ROTATION, land ? ROTATION_90 : ROTATION_0);
 			} catch (Exception err) {
 				Log.e(err);
 			}
@@ -612,6 +605,18 @@ public class MirrorDisplay {
 			dx = (targetX - m.x) * m.scale;
 			dy = (targetY - m.y) * m.scale;
 		}
+		
+		// --- 100% SAFE FIX: Boundary Clamping ---
+		// Prevents the OS from dropping edge touches (like the back button)
+		// without altering your working scale matrix.
+		Point size = new Point();
+		defaultDisplay.getRealSize(size);
+		if (dx < 0) dx = 0;
+		if (dy < 0) dy = 0;
+		if (dx > size.x) dx = size.x;
+		if (dy > size.y) dy = size.y;
+		// ----------------------------------------
+
 		return d;
 	}
 
