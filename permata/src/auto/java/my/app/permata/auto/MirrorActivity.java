@@ -115,6 +115,7 @@ public class MirrorActivity extends CarActivity implements SurfaceHolder.Callbac
 		if (sc != null) {
 			if (md != null) {
 				md.releaseSurface(sc);
+				// PRODUCTION FENCE: Nullify the listener to prevent Activity zombies
 				md.setSessionStopListener(null); 
 			}
 			sc = null;
@@ -146,12 +147,17 @@ public class MirrorActivity extends CarActivity implements SurfaceHolder.Callbac
 		disableAccelRotation();
 	}
 
+	// --- PRODUCTION FENCE: Wrapped IPC in try-catch to prevent ANR/Force Close
 	static void onResizeButtonClick(MirrorActivity activity) {
-		Intent intent = new Intent(Intent.ACTION_MAIN);
-		intent.setComponent(new ComponentName(activity, MirrorServiceFS.class));
-		intent.addCategory("androidx.car.app.category.NAVIGATION");
-		intent.setFlags(FLAG_ACTIVITY_NEW_TASK);
-		activity.startActivity(intent);
+		try {
+			Intent intent = new Intent(Intent.ACTION_MAIN);
+			intent.setComponent(new ComponentName(activity, MirrorServiceFS.class));
+			intent.addCategory("androidx.car.app.category.NAVIGATION");
+			intent.setFlags(FLAG_ACTIVITY_NEW_TASK);
+			activity.startActivity(intent);
+		} catch (Exception e) {
+			Log.e(e, "Android Auto Host rejected Soft Hand-Off to MirrorServiceFS");
+		}
 	}
 
 	private static final class ToolBar extends LinearLayout {
