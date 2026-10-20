@@ -10,6 +10,7 @@ import static my.app.permata.auto.MirrorDisplay.disableAccelRotation;
 import static my.app.utils.ui.UiUtils.toPx;
 
 import android.annotation.SuppressLint;
+import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
 import android.graphics.Color;
@@ -145,6 +146,14 @@ public class MirrorActivity extends CarActivity implements SurfaceHolder.Callbac
 		disableAccelRotation();
 	}
 
+	static void onResizeButtonClick(MirrorActivity activity) {
+		Intent intent = new Intent(Intent.ACTION_MAIN);
+		intent.setComponent(new ComponentName(activity, MirrorServiceFS.class));
+		intent.addCategory("androidx.car.app.category.NAVIGATION");
+		intent.setFlags(FLAG_ACTIVITY_NEW_TASK);
+		activity.startActivity(intent);
+	}
+
 	private static final class ToolBar extends LinearLayout {
 		public ToolBar(Context ctx) {
 			super(ctx);
@@ -160,7 +169,8 @@ public class MirrorActivity extends CarActivity implements SurfaceHolder.Callbac
 			setBackgroundColor(Color.parseColor("#90000000"));
 			setPadding(pad, pad, pad, pad);
 
-			int[] icons = new int[]{R.drawable.home, R.drawable.back};
+			int[] icons = new int[]{R.drawable.home, R.drawable.back, R.drawable.mirror_fs};
+			
 			for (int i = 0; i < icons.length; i++) {
 				var icon = icons[i];
 				var v = new AppCompatImageView(ctx);
@@ -174,8 +184,10 @@ public class MirrorActivity extends CarActivity implements SurfaceHolder.Callbac
 				
 				if (i == 0) {
 					v.setOnClickListener(view -> onHomeButtonClick());
-				} else {
+				} else if (i == 1) {
 					v.setOnClickListener(view -> onBackButtonClick());
+				} else {
+					v.setOnClickListener(view -> onResizeButtonClick((MirrorActivity) ctx));
 				}
 				addView(v);
 			}
