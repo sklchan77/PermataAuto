@@ -129,6 +129,7 @@ public class MirrorServiceFS extends CarAppService {
 		public void onSurfaceDestroyed(@NonNull SurfaceContainer localSc) {
 			if (md != null) {
 				md.releaseSurface(localSc);
+				// PRODUCTION FENCE: Nullify the listener to prevent Activity zombies
 				md.setSessionStopListener(null);
 			}
 			MirrorServiceFS.sc = null;
@@ -198,13 +199,18 @@ public class MirrorServiceFS extends CarAppService {
 							new CarIcon.Builder(createWithResource(getCarContext(), R.drawable.back)).build())
 					.setOnClickListener(MirrorActivity::onBackButtonClick).build();
 			
+			// --- PRODUCTION FENCE: Wrapped IPC in try-catch to prevent ANR/Force Close
 			var resizeButton = new Action.Builder().setIcon(
 							new CarIcon.Builder(createWithResource(getCarContext(), R.drawable.mirror)).build())
 					.setOnClickListener(() -> {
-						Intent intent = new Intent(Intent.ACTION_MAIN);
-						intent.setComponent(new ComponentName(getCarContext(), MirrorService.class));
-						intent.addCategory("com.google.android.gms.car.category.CATEGORY_PROJECTION");
-						getCarContext().startCarApp(intent);
+						try {
+							Intent intent = new Intent(Intent.ACTION_MAIN);
+							intent.setComponent(new ComponentName(getCarContext(), MirrorService.class));
+							intent.addCategory("com.google.android.gms.car.category.CATEGORY_PROJECTION");
+							getCarContext().startCarApp(intent);
+						} catch (Exception e) {
+							Log.e(e, "Android Auto Host rejected Soft Hand-Off to MirrorService");
+						}
 					}).build();
                     
 			return new NavigationTemplate.Builder()
