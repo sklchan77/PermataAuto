@@ -6,6 +6,7 @@ import static android.view.MotionEvent.ACTION_MOVE;
 import static android.view.MotionEvent.ACTION_UP;
 import static androidx.core.graphics.drawable.IconCompat.createWithResource;
 
+import android.content.ComponentName;
 import android.content.Intent;
 
 import androidx.annotation.NonNull;
@@ -196,10 +197,23 @@ public class MirrorServiceFS extends CarAppService {
 			var backButton = new Action.Builder().setIcon(
 							new CarIcon.Builder(createWithResource(getCarContext(), R.drawable.back)).build())
 					.setOnClickListener(MirrorActivity::onBackButtonClick).build();
+			
+			var resizeButton = new Action.Builder().setIcon(
+							new CarIcon.Builder(createWithResource(getCarContext(), R.drawable.mirror)).build())
+					.setOnClickListener(() -> {
+						Intent intent = new Intent(Intent.ACTION_MAIN);
+						intent.setComponent(new ComponentName(getCarContext(), MirrorService.class));
+						intent.addCategory("com.google.android.gms.car.category.CATEGORY_PROJECTION");
+						getCarContext().startCarApp(intent);
+					}).build();
                     
 			return new NavigationTemplate.Builder()
 					.setMapActionStrip(new ActionStrip.Builder().addAction(Action.PAN).build())
-					.setActionStrip(new ActionStrip.Builder().addAction(homeButton).addAction(backButton).build())
+					.setActionStrip(new ActionStrip.Builder()
+							.addAction(homeButton)
+							.addAction(backButton)
+							.addAction(resizeButton)
+							.build())
 					.build();
 		}
 
