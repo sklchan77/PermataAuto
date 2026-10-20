@@ -129,7 +129,6 @@ public class MirrorServiceFS extends CarAppService {
 		public void onSurfaceDestroyed(@NonNull SurfaceContainer localSc) {
 			if (md != null) {
 				md.releaseSurface(localSc);
-				// PRODUCTION FENCE: Nullify the listener to prevent Activity zombies
 				md.setSessionStopListener(null);
 			}
 			MirrorServiceFS.sc = null;
@@ -199,9 +198,8 @@ public class MirrorServiceFS extends CarAppService {
 							new CarIcon.Builder(createWithResource(getCarContext(), R.drawable.back)).build())
 					.setOnClickListener(MirrorActivity::onBackButtonClick).build();
 			
-			// --- PRODUCTION FENCE: Wrapped IPC in try-catch to prevent ANR/Force Close
 			var resizeButton = new Action.Builder().setIcon(
-							new CarIcon.Builder(createWithResource(getCarContext(), R.drawable.mirror)).build())
+							new CarIcon.Builder(createWithResource(getCarContext(), R.drawable.fullscreen_exit)).build())
 					.setOnClickListener(() -> {
 						try {
 							Intent intent = new Intent(Intent.ACTION_MAIN);
