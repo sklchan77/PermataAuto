@@ -115,7 +115,6 @@ public class MirrorActivity extends CarActivity implements SurfaceHolder.Callbac
 		if (sc != null) {
 			if (md != null) {
 				md.releaseSurface(sc);
-				// PRODUCTION FENCE: Nullify the listener to prevent Activity zombies
 				md.setSessionStopListener(null); 
 			}
 			sc = null;
@@ -147,7 +146,6 @@ public class MirrorActivity extends CarActivity implements SurfaceHolder.Callbac
 		disableAccelRotation();
 	}
 
-	// --- PRODUCTION FENCE: Wrapped IPC in try-catch to prevent ANR/Force Close
 	static void onResizeButtonClick(MirrorActivity activity) {
 		try {
 			Intent intent = new Intent(Intent.ACTION_MAIN);
@@ -175,7 +173,7 @@ public class MirrorActivity extends CarActivity implements SurfaceHolder.Callbac
 			setBackgroundColor(Color.parseColor("#90000000"));
 			setPadding(pad, pad, pad, pad);
 
-			int[] icons = new int[]{R.drawable.home, R.drawable.back, R.drawable.mirror_fs};
+			int[] icons = new int[]{R.drawable.home, R.drawable.back, R.drawable.fullscreen};
 			
 			for (int i = 0; i < icons.length; i++) {
 				var icon = icons[i];
