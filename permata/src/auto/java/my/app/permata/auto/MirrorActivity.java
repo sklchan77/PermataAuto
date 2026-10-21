@@ -145,25 +145,16 @@ public class MirrorActivity extends CarActivity implements SurfaceHolder.Callbac
 		disableAccelRotation();
 	}
 
-	// --- SURGICAL FIX: Target MirrorServiceFS as a Navigation CarAppService ---
+	// --- ENTERPRISE FIX: Native Stack-Popping Hand-Off ---
 	static void onResizeButtonClick(MirrorActivity activity) {
 		try {
-			Intent intent = new Intent();
-			intent.setComponent(new ComponentName(activity, MirrorServiceFS.class));
-			intent.setAction("androidx.car.app.CarAppService");
-			intent.addCategory("androidx.car.app.category.NAVIGATION");
-			intent.addFlags(FLAG_ACTIVITY_NEW_TASK);
-			activity.startActivity(intent);
+			// Since MirrorServiceFS (Modern) launched this MirrorActivity (Legacy), 
+			// the Modern app is sitting directly beneath this in the Car's Activity Stack. 
+			// Finishing this legacy activity cleanly pops the stack, 
+			// seamlessly returning the user to the underlying Full-Screen session!
+			activity.finish();
 		} catch (Exception e) {
-			Log.e(e, "CarActivity failed explicit launch, trying Intent fallback...");
-			try {
-				Intent fallbackIntent = new Intent(Intent.ACTION_VIEW, Uri.parse("permata://fullscreen"));
-				fallbackIntent.setPackage(activity.getPackageName());
-				fallbackIntent.addFlags(FLAG_ACTIVITY_NEW_TASK);
-				activity.startActivity(fallbackIntent);
-			} catch (Exception ex) {
-				Log.e(ex, "Android Auto Host completely rejected transition to MirrorServiceFS");
-			}
+			Log.e(e, "Failed to execute Soft Hand-Off stack pop to Full-Screen");
 		}
 	}
 
