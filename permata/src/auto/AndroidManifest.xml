@@ -56,12 +56,6 @@
                 <action android:name="androidx.car.app.CarAppService" />
                 <category android:name="androidx.car.app.category.NAVIGATION" />
             </intent-filter>
-            <!-- NEW: Deep Link to catch the jump from MirrorActivity -->
-            <intent-filter>
-                <action android:name="android.intent.action.VIEW" />
-                <category android:name="android.intent.category.DEFAULT" />
-                <data android:scheme="permata" android:host="fullscreen" />
-            </intent-filter>
         </service>
 
         <!-- CarService: Legacy Split-Screen App -->
@@ -88,12 +82,6 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="com.google.android.gms.car.category.CATEGORY_PROJECTION" />
                 <category android:name="com.google.android.gms.car.category.CATEGORY_PROJECTION_OEM" />
-            </intent-filter>
-            <!-- NEW: Deep Link to catch the jump from MirrorServiceFS (if ever needed) -->
-            <intent-filter>
-                <action android:name="android.intent.action.VIEW" />
-                <category android:name="android.intent.category.DEFAULT" />
-                <data android:scheme="permata" android:host="splitscreen" />
             </intent-filter>
         </service>
 
