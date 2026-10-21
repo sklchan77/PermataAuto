@@ -10,6 +10,7 @@ import static my.app.permata.auto.MirrorDisplay.disableAccelRotation;
 import static my.app.utils.ui.UiUtils.toPx;
 
 import android.annotation.SuppressLint;
+import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
 import android.graphics.Color;
@@ -143,13 +144,36 @@ public class MirrorActivity extends CarActivity implements SurfaceHolder.Callbac
 		disableAccelRotation();
 	}
 
-	// --- ULTIMATE ENTERPRISE FIX: The Universal Stack Pop ---
+	// --- THE MAGIC BULLET: Force Launching via CarPendingIntent ---
 	static void onResizeButtonClick(MirrorActivity activity) {
-		try {
-			Log.i("Soft Hand-Off: Closing Split-Screen to reveal background or return to AA Home.");
+		if (MirrorServiceFS.sc != null) {
+			// HOT SWAP: The Full-Screen app is alive underneath. Instantly pop the stack.
+			Log.i("Soft Hand-Off: Hot swap to background Full-Screen session.");
 			activity.finish();
-		} catch (Exception e) {
-			Log.e(e, "Failed to execute Soft Hand-Off stack pop.");
+		} else {
+			// COLD START: Force the Android Auto Host to launch the Service directly.
+			Log.i("Cold Start detected: Using CarPendingIntent to bypass the sandbox.");
+			try {
+				Intent intent = new Intent(Intent.ACTION_VIEW);
+				intent.setComponent(new ComponentName(activity, MirrorServiceFS.class));
+				
+				// Generate the special Android Auto backdoor token
+				android.app.PendingIntent pi = androidx.car.app.CarPendingIntent.getCarApp(
+						activity, 
+						0, 
+						intent, 
+						android.app.PendingIntent.FLAG_IMMUTABLE | android.app.PendingIntent.FLAG_UPDATE_CURRENT
+				);
+				
+				// Fire the token directly to the Android Auto Host
+				pi.send();
+				
+				// Close the Split-Screen window immediately so the Full-Screen session can take over
+				activity.finish();
+			} catch (Exception e) {
+				Log.e(e, "CarPendingIntent launch failed, falling back to Home.");
+				onHomeButtonClick();
+			}
 		}
 	}
 
