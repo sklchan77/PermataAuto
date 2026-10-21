@@ -10,11 +10,9 @@ import static my.app.permata.auto.MirrorDisplay.disableAccelRotation;
 import static my.app.utils.ui.UiUtils.toPx;
 
 import android.annotation.SuppressLint;
-import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
 import android.graphics.Color;
-import android.net.Uri;
 import android.os.Bundle;
 import android.view.Gravity;
 import android.view.MotionEvent;
@@ -145,16 +143,13 @@ public class MirrorActivity extends CarActivity implements SurfaceHolder.Callbac
 		disableAccelRotation();
 	}
 
-	// --- ENTERPRISE FIX: Native Stack-Popping Hand-Off ---
+	// --- ULTIMATE ENTERPRISE FIX: The Universal Stack Pop ---
 	static void onResizeButtonClick(MirrorActivity activity) {
 		try {
-			// Since MirrorServiceFS (Modern) launched this MirrorActivity (Legacy), 
-			// the Modern app is sitting directly beneath this in the Car's Activity Stack. 
-			// Finishing this legacy activity cleanly pops the stack, 
-			// seamlessly returning the user to the underlying Full-Screen session!
+			Log.i("Soft Hand-Off: Closing Split-Screen to reveal background or return to AA Home.");
 			activity.finish();
 		} catch (Exception e) {
-			Log.e(e, "Failed to execute Soft Hand-Off stack pop to Full-Screen");
+			Log.e(e, "Failed to execute Soft Hand-Off stack pop.");
 		}
 	}
 
@@ -180,7 +175,10 @@ public class MirrorActivity extends CarActivity implements SurfaceHolder.Callbac
 				var v = new AppCompatImageView(ctx);
 				v.setId(icon);
 				v.setImageResource(icon);
+				
+				// --- REQUIRED: Forces the black XML vector to render white ---
 				v.setColorFilter(Color.WHITE); 
+				
 				v.setPadding(pad, pad, pad, pad);
 				LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(iconSize, iconSize);
 				if (i > 0) lp.setMarginStart(pad);
