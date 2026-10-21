@@ -180,6 +180,7 @@ public class MirrorActivity extends CarActivity implements SurfaceHolder.Callbac
 				var v = new AppCompatImageView(ctx);
 				v.setId(icon);
 				v.setImageResource(icon);
+				v.setColorFilter(Color.WHITE); 
 				v.setPadding(pad, pad, pad, pad);
 				LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(iconSize, iconSize);
 				if (i > 0) lp.setMarginStart(pad);
