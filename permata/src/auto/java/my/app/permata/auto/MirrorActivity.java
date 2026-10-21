@@ -14,14 +14,13 @@ import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
 import android.graphics.Color;
-import android.graphics.Point;
+import android.net.Uri;
 import android.os.Bundle;
 import android.view.Gravity;
 import android.view.MotionEvent;
 import android.view.SurfaceHolder;
 import android.view.SurfaceView;
 import android.view.ViewGroup;
-import android.view.WindowManager;
 import android.widget.FrameLayout;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
@@ -141,20 +140,19 @@ public class MirrorActivity extends CarActivity implements SurfaceHolder.Callbac
 	static void onBackButtonClick() {
 		var d = EventDispatcher.get();
 		if (d != null) {
-			d.directBack(); // Executes the explicit IPC back command
+			d.directBack();
 		}
 		disableAccelRotation();
 	}
 
+	// --- FIXED: Uses Deep Link to bridge forward to the modern service ---
 	static void onResizeButtonClick(MirrorActivity activity) {
 		try {
-			Intent intent = new Intent(Intent.ACTION_MAIN);
-			intent.setComponent(new ComponentName(activity, MirrorServiceFS.class));
-			intent.addCategory("androidx.car.app.category.NAVIGATION");
+			Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse("permata://fullscreen"));
 			intent.setFlags(FLAG_ACTIVITY_NEW_TASK);
 			activity.startActivity(intent);
 		} catch (Exception e) {
-			Log.e(e, "Android Auto Host rejected Soft Hand-Off to MirrorServiceFS");
+			Log.e(e, "Android Auto Host rejected Deep Link to MirrorServiceFS");
 		}
 	}
 
@@ -180,7 +178,10 @@ public class MirrorActivity extends CarActivity implements SurfaceHolder.Callbac
 				var v = new AppCompatImageView(ctx);
 				v.setId(icon);
 				v.setImageResource(icon);
+				
+				// --- FIXED: Forces the black XML vector to render white ---
 				v.setColorFilter(Color.WHITE); 
+				
 				v.setPadding(pad, pad, pad, pad);
 				LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(iconSize, iconSize);
 				if (i > 0) lp.setMarginStart(pad);
