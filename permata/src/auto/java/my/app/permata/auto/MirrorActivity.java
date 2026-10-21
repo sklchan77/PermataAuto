@@ -145,14 +145,25 @@ public class MirrorActivity extends CarActivity implements SurfaceHolder.Callbac
 		disableAccelRotation();
 	}
 
-	// --- FIXED: Uses Deep Link to bridge forward to the modern service ---
+	// --- SURGICAL FIX: Target MirrorServiceFS as a Navigation CarAppService ---
 	static void onResizeButtonClick(MirrorActivity activity) {
 		try {
-			Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse("permata://fullscreen"));
-			intent.setFlags(FLAG_ACTIVITY_NEW_TASK);
+			Intent intent = new Intent();
+			intent.setComponent(new ComponentName(activity, MirrorServiceFS.class));
+			intent.setAction("androidx.car.app.CarAppService");
+			intent.addCategory("androidx.car.app.category.NAVIGATION");
+			intent.addFlags(FLAG_ACTIVITY_NEW_TASK);
 			activity.startActivity(intent);
 		} catch (Exception e) {
-			Log.e(e, "Android Auto Host rejected Deep Link to MirrorServiceFS");
+			Log.e(e, "CarActivity failed explicit launch, trying Intent fallback...");
+			try {
+				Intent fallbackIntent = new Intent(Intent.ACTION_VIEW, Uri.parse("permata://fullscreen"));
+				fallbackIntent.setPackage(activity.getPackageName());
+				fallbackIntent.addFlags(FLAG_ACTIVITY_NEW_TASK);
+				activity.startActivity(fallbackIntent);
+			} catch (Exception ex) {
+				Log.e(ex, "Android Auto Host completely rejected transition to MirrorServiceFS");
+			}
 		}
 	}
 
@@ -178,10 +189,7 @@ public class MirrorActivity extends CarActivity implements SurfaceHolder.Callbac
 				var v = new AppCompatImageView(ctx);
 				v.setId(icon);
 				v.setImageResource(icon);
-				
-				// --- FIXED: Forces the black XML vector to render white ---
 				v.setColorFilter(Color.WHITE); 
-				
 				v.setPadding(pad, pad, pad, pad);
 				LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(iconSize, iconSize);
 				if (i > 0) lp.setMarginStart(pad);
