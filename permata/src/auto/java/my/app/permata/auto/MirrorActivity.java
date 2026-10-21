@@ -10,7 +10,6 @@ import static my.app.permata.auto.MirrorDisplay.disableAccelRotation;
 import static my.app.utils.ui.UiUtils.toPx;
 
 import android.annotation.SuppressLint;
-import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
 import android.graphics.Color;
@@ -144,34 +143,27 @@ public class MirrorActivity extends CarActivity implements SurfaceHolder.Callbac
 		disableAccelRotation();
 	}
 
-	// --- THE MAGIC BULLET: Force Launching via CarPendingIntent ---
+	// --- COMPILER SAFE FIX: IPC Stack Pop & Phone Context Deep Link ---
 	static void onResizeButtonClick(MirrorActivity activity) {
 		if (MirrorServiceFS.sc != null) {
-			// HOT SWAP: The Full-Screen app is alive underneath. Instantly pop the stack.
+			// HOT SWAP: Pop the stack using the proven Back dispatcher
 			Log.i("Soft Hand-Off: Hot swap to background Full-Screen session.");
-			activity.finish();
+			var d = EventDispatcher.get();
+			if (d != null) d.directBack();
 		} else {
-			// COLD START: Force the Android Auto Host to launch the Service directly.
-			Log.i("Cold Start detected: Using CarPendingIntent to bypass the sandbox.");
+			// COLD START: Use Phone Context to fire deep link outside the sandbox
+			Log.i("Cold Start detected: Launching via Phone Context deep link.");
 			try {
-				Intent intent = new Intent(Intent.ACTION_VIEW);
-				intent.setComponent(new ComponentName(activity, MirrorServiceFS.class));
+				Context ctx = PermataApplication.get();
+				Intent intent = new Intent(Intent.ACTION_VIEW, android.net.Uri.parse("permata://fullscreen"));
+				intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+				ctx.startActivity(intent);
 				
-				// Generate the special Android Auto backdoor token
-				android.app.PendingIntent pi = androidx.car.app.CarPendingIntent.getCarApp(
-						activity, 
-						0, 
-						intent, 
-						android.app.PendingIntent.FLAG_IMMUTABLE | android.app.PendingIntent.FLAG_UPDATE_CURRENT
-				);
-				
-				// Fire the token directly to the Android Auto Host
-				pi.send();
-				
-				// Close the Split-Screen window immediately so the Full-Screen session can take over
-				activity.finish();
+				// Pop the Split-Screen window immediately so Full-Screen takes over
+				var d = EventDispatcher.get();
+				if (d != null) d.directBack();
 			} catch (Exception e) {
-				Log.e(e, "CarPendingIntent launch failed, falling back to Home.");
+				Log.e(e, "Deep link launch failed, falling back to Home.");
 				onHomeButtonClick();
 			}
 		}
@@ -200,7 +192,6 @@ public class MirrorActivity extends CarActivity implements SurfaceHolder.Callbac
 				v.setId(icon);
 				v.setImageResource(icon);
 				
-				// --- REQUIRED: Forces the black XML vector to render white ---
 				v.setColorFilter(Color.WHITE); 
 				
 				v.setPadding(pad, pad, pad, pad);
