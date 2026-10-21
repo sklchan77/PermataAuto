@@ -606,16 +606,26 @@ public class MirrorDisplay {
 			dy = (targetY - m.y) * m.scale;
 		}
 		
-		// --- 100% SAFE FIX: Boundary Clamping ---
-		// Prevents the OS from dropping edge touches (like the back button)
-		// without altering your working scale matrix.
+		// --- 100% SAFE FIX: Orientation-Aware Boundary Clamping ---
 		Point size = new Point();
 		defaultDisplay.getRealSize(size);
+		
+		int maxX = size.x;
+		int maxY = size.y;
+		
+		if (sc != null && sc.getWidth() > sc.getHeight()) { // Landscape
+			maxX = Math.max(size.x, size.y);
+			maxY = Math.min(size.x, size.y);
+		} else { // Portrait
+			maxX = Math.min(size.x, size.y);
+			maxY = Math.max(size.x, size.y);
+		}
+
 		if (dx < 0) dx = 0;
 		if (dy < 0) dy = 0;
-		if (dx > size.x) dx = size.x;
-		if (dy > size.y) dy = size.y;
-		// ----------------------------------------
+		if (dx > maxX) dx = maxX;
+		if (dy > maxY) dy = maxY;
+		// ----------------------------------------------------------
 
 		return d;
 	}
