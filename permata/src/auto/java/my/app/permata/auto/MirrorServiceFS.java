@@ -204,6 +204,9 @@ public class MirrorServiceFS extends CarAppService {
 						Log.i("User triggered manual shutdown from Full-Screen toolbar.");
 						MirrorDisplay.close();
 						try {
+							// --- FIX: Instantly clear the frozen frame by handing the screen back to Maps/Waze ---
+							Intent mapIntent = new Intent(CarContext.ACTION_NAVIGATE, android.net.Uri.parse("geo:0,0"));
+							getCarContext().startCarApp(mapIntent);
 							getCarContext().finishCarApp();
 						} catch (Exception ignored) {}
 					}).build();
