@@ -143,6 +143,12 @@ public class MirrorActivity extends CarActivity implements SurfaceHolder.Callbac
 		disableAccelRotation();
 	}
 
+	static void onExitButtonClick(MirrorActivity activity) {
+		Log.i("User triggered manual shutdown from Split-Screen toolbar.");
+		MirrorDisplay.close();
+		activity.finish();
+	}
+
 	private static final class ToolBar extends LinearLayout {
 		public ToolBar(Context ctx) {
 			super(ctx);
@@ -158,14 +164,17 @@ public class MirrorActivity extends CarActivity implements SurfaceHolder.Callbac
 			setBackgroundColor(Color.parseColor("#90000000"));
 			setPadding(pad, pad, pad, pad);
 
-			int[] icons = new int[]{R.drawable.home, R.drawable.back};
+			int[] icons = new int[]{R.drawable.home, R.drawable.back, R.drawable.shutdown};
 			
 			for (int i = 0; i < icons.length; i++) {
 				var icon = icons[i];
 				var v = new AppCompatImageView(ctx);
 				v.setId(icon);
 				v.setImageResource(icon);
+				
+				// Automatically applies the white color filter to the transparent shutdown XML
 				v.setColorFilter(Color.WHITE); 
+				
 				v.setPadding(pad, pad, pad, pad);
 				LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(iconSize, iconSize);
 				if (i > 0) lp.setMarginStart(pad);
@@ -176,6 +185,8 @@ public class MirrorActivity extends CarActivity implements SurfaceHolder.Callbac
 					v.setOnClickListener(view -> onHomeButtonClick());
 				} else if (i == 1) {
 					v.setOnClickListener(view -> onBackButtonClick());
+				} else if (i == 2) {
+					v.setOnClickListener(view -> onExitButtonClick((MirrorActivity) ctx));
 				}
 				addView(v);
 			}
