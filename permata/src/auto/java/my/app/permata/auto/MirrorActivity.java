@@ -143,32 +143,6 @@ public class MirrorActivity extends CarActivity implements SurfaceHolder.Callbac
 		disableAccelRotation();
 	}
 
-	// --- COMPILER SAFE FIX: IPC Stack Pop & Phone Context Deep Link ---
-	static void onResizeButtonClick(MirrorActivity activity) {
-		if (MirrorServiceFS.sc != null) {
-			// HOT SWAP: Pop the stack using the proven Back dispatcher
-			Log.i("Soft Hand-Off: Hot swap to background Full-Screen session.");
-			var d = EventDispatcher.get();
-			if (d != null) d.directBack();
-		} else {
-			// COLD START: Use Phone Context to fire deep link outside the sandbox
-			Log.i("Cold Start detected: Launching via Phone Context deep link.");
-			try {
-				Context ctx = PermataApplication.get();
-				Intent intent = new Intent(Intent.ACTION_VIEW, android.net.Uri.parse("permata://fullscreen"));
-				intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-				ctx.startActivity(intent);
-				
-				// Pop the Split-Screen window immediately so Full-Screen takes over
-				var d = EventDispatcher.get();
-				if (d != null) d.directBack();
-			} catch (Exception e) {
-				Log.e(e, "Deep link launch failed, falling back to Home.");
-				onHomeButtonClick();
-			}
-		}
-	}
-
 	private static final class ToolBar extends LinearLayout {
 		public ToolBar(Context ctx) {
 			super(ctx);
@@ -184,16 +158,14 @@ public class MirrorActivity extends CarActivity implements SurfaceHolder.Callbac
 			setBackgroundColor(Color.parseColor("#90000000"));
 			setPadding(pad, pad, pad, pad);
 
-			int[] icons = new int[]{R.drawable.home, R.drawable.back, R.drawable.fullscreen};
+			int[] icons = new int[]{R.drawable.home, R.drawable.back};
 			
 			for (int i = 0; i < icons.length; i++) {
 				var icon = icons[i];
 				var v = new AppCompatImageView(ctx);
 				v.setId(icon);
 				v.setImageResource(icon);
-				
 				v.setColorFilter(Color.WHITE); 
-				
 				v.setPadding(pad, pad, pad, pad);
 				LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(iconSize, iconSize);
 				if (i > 0) lp.setMarginStart(pad);
@@ -204,8 +176,6 @@ public class MirrorActivity extends CarActivity implements SurfaceHolder.Callbac
 					v.setOnClickListener(view -> onHomeButtonClick());
 				} else if (i == 1) {
 					v.setOnClickListener(view -> onBackButtonClick());
-				} else {
-					v.setOnClickListener(view -> onResizeButtonClick((MirrorActivity) ctx));
 				}
 				addView(v);
 			}
