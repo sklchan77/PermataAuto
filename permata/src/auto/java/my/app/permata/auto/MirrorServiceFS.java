@@ -193,15 +193,27 @@ public class MirrorServiceFS extends CarAppService {
 			var homeButton = new Action.Builder().setIcon(
 							new CarIcon.Builder(createWithResource(getCarContext(), R.drawable.home)).build())
 					.setOnClickListener(MirrorActivity::onHomeButtonClick).build();
+					
 			var backButton = new Action.Builder().setIcon(
 							new CarIcon.Builder(createWithResource(getCarContext(), R.drawable.back)).build())
 					.setOnClickListener(MirrorActivity::onBackButtonClick).build();
+					
+			var exitButton = new Action.Builder().setIcon(
+							new CarIcon.Builder(createWithResource(getCarContext(), R.drawable.shutdown)).build())
+					.setOnClickListener(() -> {
+						Log.i("User triggered manual shutdown from Full-Screen toolbar.");
+						MirrorDisplay.close();
+						try {
+							getCarContext().finishCarApp();
+						} catch (Exception ignored) {}
+					}).build();
 			
 			return new NavigationTemplate.Builder()
 					.setMapActionStrip(new ActionStrip.Builder().addAction(Action.PAN).build())
 					.setActionStrip(new ActionStrip.Builder()
 							.addAction(homeButton)
 							.addAction(backButton)
+							.addAction(exitButton)
 							.build())
 					.build();
 		}
