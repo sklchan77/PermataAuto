@@ -93,7 +93,7 @@ public class MirrorDisplay {
 	private Metrics lMetrics;
 	private Metrics pMetrics;
 	
-	// Zero Garbage Object Pools
+	// ENTERPRISE POOLING: Zero GC allocation touch coordinate arrays
 	private MotionEvent.PointerProperties[] reusableProps;
 	private MotionEvent.PointerCoords[] reusableCoords;
 	
@@ -101,6 +101,7 @@ public class MirrorDisplay {
 	private float dy;
 	private long lastInjectedTouchTime;
 	private Runnable sessionStopListener;
+	private long downTime;
 
 	private MirrorDisplay() {
 		var ctx = PermataApplication.get();
@@ -110,7 +111,7 @@ public class MirrorDisplay {
 		defaultDisplay.getRealSize(size);
 		scaleDiff = Math.max(UiUtils.toPx(ctx, 20), Math.min(size.x, size.y) / 20f);
 		
-		// Pre-allocate pools for up to 10 fingers
+		// Pre-allocate pools for up to 10 fingers to eliminate GC thrashing during drags
 		reusableProps = new MotionEvent.PointerProperties[10];
 		reusableCoords = new MotionEvent.PointerCoords[10];
 		for (int i = 0; i < 10; i++) {
@@ -133,7 +134,6 @@ public class MirrorDisplay {
 		if ((ref == null) || ((md = ref.get()) == null)) return;
 		md.refCounter = 0; 
 		var sc = md.sc;
-		// Execute synchronous draw BEFORE cleanup to guarantee canvas flush
 		if (sc != null) drawMsg(sc, R.string.app_name); 
 		md.cleanUp();
 	}
@@ -175,7 +175,6 @@ public class MirrorDisplay {
 		var oldSc = this.sc;
 		if (oldSc != sc) return;
 		
-		// Synchronous draw paints the black UI over the canvas before detachment
 		drawMsg(oldSc, R.string.app_name);
 		
 		this.sc = null;
@@ -204,40 +203,54 @@ public class MirrorDisplay {
 		if (d != null) d.scale(dx, dy, zoomIn ? scaleDiff : -scaleDiff);
 	}
 
-	private long downTime;
-
 	public synchronized boolean motionEvent(MotionEvent e) {
 		lastInjectedTouchTime = uptimeMillis();
 		EventDispatcher d;
 		var action = e.getAction();
 		if (action == MotionEvent.ACTION_DOWN) downTime = uptimeMillis();
 		var cnt = e.getPointerCount();
+		
+		// Dynamic pool expansion for edge cases
+		if (cnt > reusableProps.length) {
+			reusableProps = new MotionEvent.PointerProperties[cnt];
+			reusableCoords = new MotionEvent.PointerCoords[cnt];
+			for (int i = 0; i < cnt; i++) {
+				reusableProps[i] = new MotionEvent.PointerProperties();
+				reusableCoords[i] = new MotionEvent.PointerCoords();
+			}
+		}
+
 		if (cnt == 1) {
 			d = translate(e.getX(), e.getY());
 			if (d == null) return false;
-			e = MotionEvent.obtain(downTime, uptimeMillis(), e.getAction(), dx, dy, 0);
-			e.setSource(InputDevice.SOURCE_TOUCHSCREEN);
+			
+			e.getPointerProperties(0, reusableProps[0]);
+			e.getPointerCoords(0, reusableCoords[0]);
+			
+			// --- UNIVERSAL FIX: Force physical finger properties for OS Velocity Trackers ---
+			reusableProps[0].toolType = MotionEvent.TOOL_TYPE_FINGER;
+			reusableCoords[0].x = dx;
+			reusableCoords[0].y = dy;
+			if (reusableCoords[0].pressure <= 0.01f) reusableCoords[0].pressure = 1.0f;
+			if (reusableCoords[0].size <= 0.01f) reusableCoords[0].size = 1.0f;
+			
+			e = MotionEvent.obtain(downTime, uptimeMillis(), action, 1, reusableProps, reusableCoords,
+					e.getMetaState(), e.getButtonState(), e.getXPrecision(), e.getYPrecision(), e.getDeviceId(),
+					e.getEdgeFlags(), InputDevice.SOURCE_TOUCHSCREEN, e.getFlags());
 		} else {
 			d = dispatcher();
 			var a = d.getActivity();
 			var m = metrics(a);
 			if (m == null) return false;
 			if (a != null) a.getWindow().getDecorView().getLocationOnScreen(loc);
-			
-			// Dynamic pool expansion
-			if (cnt > reusableProps.length) {
-				reusableProps = new MotionEvent.PointerProperties[cnt];
-				reusableCoords = new MotionEvent.PointerCoords[cnt];
-				for (int i = 0; i < cnt; i++) {
-					reusableProps[i] = new MotionEvent.PointerProperties();
-					reusableCoords[i] = new MotionEvent.PointerCoords();
-				}
-			}
 
-			// Reuse pre-allocated memory to stop GC stutter
 			for (int i = 0; i < cnt; i++) {
 				e.getPointerProperties(i, reusableProps[i]);
 				e.getPointerCoords(i, reusableCoords[i]);
+				
+				// --- UNIVERSAL FIX: Apply physical properties to multi-touch arrays ---
+				reusableProps[i].toolType = MotionEvent.TOOL_TYPE_FINGER;
+				
 				if (a != null) {
 					reusableCoords[i].x = (reusableCoords[i].x - m.x) * m.scale - loc[0];
 					reusableCoords[i].y = (reusableCoords[i].y - m.y) * m.scale - loc[1];
@@ -245,6 +258,9 @@ public class MirrorDisplay {
 					reusableCoords[i].x = (reusableCoords[i].x - m.x) * m.scale;
 					reusableCoords[i].y = (reusableCoords[i].y - m.y) * m.scale;
 				}
+				
+				if (reusableCoords[i].pressure <= 0.01f) reusableCoords[i].pressure = 1.0f;
+				if (reusableCoords[i].size <= 0.01f) reusableCoords[i].size = 1.0f;
 			}
 			e = MotionEvent.obtain(downTime, uptimeMillis(), action, cnt, reusableProps, reusableCoords,
 					e.getMetaState(), e.getButtonState(), e.getXPrecision(), e.getYPrecision(), e.getDeviceId(),
@@ -256,7 +272,23 @@ public class MirrorDisplay {
 	public synchronized boolean motionEvent(long downTime, long eventTime, int action, float x, float y) {
 		lastInjectedTouchTime = uptimeMillis();
 		var d = translate(x, y);
-		return (d != null) && d.motionEvent(downTime, eventTime, action, dx, dy);
+		if (d == null) return false;
+		
+		// --- UNIVERSAL FIX: Construct a flawless synthetic touch for Full-Screen mode (MirrorScreen) ---
+		reusableProps[0].clear();
+		reusableProps[0].id = 0;
+		reusableProps[0].toolType = MotionEvent.TOOL_TYPE_FINGER;
+		
+		reusableCoords[0].clear();
+		reusableCoords[0].x = dx;
+		reusableCoords[0].y = dy;
+		reusableCoords[0].pressure = 1.0f;
+		reusableCoords[0].size = 1.0f;
+		
+		MotionEvent e = MotionEvent.obtain(downTime, eventTime, action, 1, reusableProps, reusableCoords,
+				0, 0, 1.0f, 1.0f, 0, 0, InputDevice.SOURCE_TOUCHSCREEN, 0);
+				
+		return d.motionEvent(e);
 	}
 
 	public static void disableAccelRotation() {
