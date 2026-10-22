@@ -143,10 +143,12 @@ public class MirrorActivity extends CarActivity implements SurfaceHolder.Callbac
 		disableAccelRotation();
 	}
 
-	static void onExitButtonClick(MirrorActivity activity) {
+	static void onExitButtonClick() {
 		Log.i("User triggered manual shutdown from Split-Screen toolbar.");
 		MirrorDisplay.close();
-		activity.finish();
+		// Legacy CarActivity cannot be destroyed directly. 
+		// Routing back to the main menu cleanly clears the dead mirroring UI.
+		onHomeButtonClick();
 	}
 
 	private static final class ToolBar extends LinearLayout {
@@ -186,7 +188,7 @@ public class MirrorActivity extends CarActivity implements SurfaceHolder.Callbac
 				} else if (i == 1) {
 					v.setOnClickListener(view -> onBackButtonClick());
 				} else if (i == 2) {
-					v.setOnClickListener(view -> onExitButtonClick((MirrorActivity) ctx));
+					v.setOnClickListener(view -> onExitButtonClick());
 				}
 				addView(v);
 			}
