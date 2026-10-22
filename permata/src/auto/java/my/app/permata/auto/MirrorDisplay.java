@@ -133,8 +133,10 @@ public class MirrorDisplay {
 		MirrorDisplay md;
 		if ((ref == null) || ((md = ref.get()) == null)) return;
 		md.refCounter = 0; 
-		var sc = md.sc;
-		if (sc != null) drawMsg(sc, R.string.app_name); 
+		
+		// [COMMENTED OUT]: Prevents black canvas flash on disconnect
+		// if (sc != null) drawMsg(sc, R.string.app_name); 
+		
 		md.cleanUp();
 	}
 
@@ -168,6 +170,9 @@ public class MirrorDisplay {
 		} else {
 			createSession();
 		}
+		
+		// It is safe to leave this one active, as it only paints a placeholder
+		// if the surface switches unexpectedly before the video stream starts.
 		if (oldSc != null) drawMsg(oldSc, R.string.app_name);
 	}
 
@@ -175,7 +180,8 @@ public class MirrorDisplay {
 		var oldSc = this.sc;
 		if (oldSc != sc) return;
 		
-		drawMsg(oldSc, R.string.app_name);
+		// [COMMENTED OUT]: Prevents black canvas flash on disconnect
+		// drawMsg(oldSc, R.string.app_name);
 		
 		this.sc = null;
 		lMetrics = pMetrics = null;
@@ -695,15 +701,20 @@ public class MirrorDisplay {
 
 	private void setMirroringMode(PermataApplication app, int mode) {
 		app.setMirroringMode(mode);
+		
+		// Clean up the phone-side Activity
 		var intent = new Intent(app, MainActivity.class);
 		intent.setAction(MainActivityDelegate.INTENT_ACTION_FINISH);
 		intent.setFlags(FLAG_ACTIVITY_NEW_TASK | FLAG_ACTIVITY_CLEAR_TOP);
 		app.startActivity(intent);
 
-		intent = new Intent(app, LauncherActivity.class);
-		intent.setFlags(FLAG_ACTIVITY_NEW_TASK | FLAG_ACTIVITY_CLEAR_TASK);
-		if (mode == 0) intent.setAction(MainActivityDelegate.INTENT_ACTION_FINISH);
-		app.startActivity(intent);
+		// --- FIX: Never launch the car activity during teardown (mode == 0) ---
+		// Doing so forces Android Auto to wake the app back up, creating a restart loop.
+		if (mode > 0) {
+			intent = new Intent(app, LauncherActivity.class);
+			intent.setFlags(FLAG_ACTIVITY_NEW_TASK | FLAG_ACTIVITY_CLEAR_TASK);
+			app.startActivity(intent);
+		}
 	}
 
 	private final class Overlay extends FrameLayout {
