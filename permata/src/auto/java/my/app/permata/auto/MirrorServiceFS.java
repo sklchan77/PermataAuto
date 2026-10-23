@@ -114,23 +114,18 @@ public class MirrorServiceFS extends CarAppService {
 			MirrorServiceFS.sc = localSc;
 			md.setSurface(localSc);
 			
-			// --- FIX: Restore finishCarApp() to ensure a Cold Start (100% Full Screen) on next launch ---
-			// The drawMsg() in MirrorDisplay will ensure it freezes on a clean black screen before dying.
-			md.setSessionStopListener(() -> {
-				try {
-					getCarContext().finishCarApp();
-				} catch (Exception ignored) {}
-			});
-			
 			scrollStartX = localSc.getWidth() / 2f;
 			scrollStartY = localSc.getHeight() / 2f;
 		}
 
 		@Override
 		public void onSurfaceDestroyed(@NonNull SurfaceContainer localSc) {
+			Log.i("MirrorServiceFS: Surface destroyed. Terminating UI and Projection cleanly.");
+			
+			// --- FIX: Execute full teardown ONLY after Android Auto has unmounted the surface ---
 			if (md != null) {
 				md.releaseSurface(localSc);
-				md.setSessionStopListener(null);
+				MirrorDisplay.close(); 
 			}
 			MirrorServiceFS.sc = null;
 
@@ -203,9 +198,9 @@ public class MirrorServiceFS extends CarAppService {
 			var exitButton = new Action.Builder().setIcon(
 							new CarIcon.Builder(createWithResource(getCarContext(), R.drawable.shutdown)).build())
 					.setOnClickListener(() -> {
-						Log.i("User triggered manual shutdown from Full-Screen toolbar.");
-						// --- FIX: Just close the video projection and let the black screen render ---
-						MirrorDisplay.close();
+						Log.i("User triggered manual shutdown from Full-Screen toolbar. Executing clean finishCarApp.");
+						// --- FIX: DO NOT call MirrorDisplay.close() here! Let Gearhead close the app first. ---
+						getCarContext().finishCarApp();
 					}).build();
 			
 			return new NavigationTemplate.Builder()
