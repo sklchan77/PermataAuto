@@ -145,10 +145,9 @@ public class MirrorActivity extends CarActivity implements SurfaceHolder.Callbac
 
 	static void onExitButtonClick() {
 		Log.i("User triggered manual shutdown from Split-Screen toolbar.");
+		
+		// --- FIX: Just close the feed to trigger the black screen, do not force-route to Launcher ---
 		MirrorDisplay.close();
-		// Legacy CarActivity cannot be destroyed directly. 
-		// Routing back to the main menu cleanly clears the dead mirroring UI.
-		onHomeButtonClick();
 	}
 
 	private static final class ToolBar extends LinearLayout {
@@ -173,8 +172,6 @@ public class MirrorActivity extends CarActivity implements SurfaceHolder.Callbac
 				var v = new AppCompatImageView(ctx);
 				v.setId(icon);
 				v.setImageResource(icon);
-				
-				// Automatically applies the white color filter to the transparent shutdown XML
 				v.setColorFilter(Color.WHITE); 
 				
 				v.setPadding(pad, pad, pad, pad);
