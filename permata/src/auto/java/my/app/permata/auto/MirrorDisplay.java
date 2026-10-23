@@ -24,7 +24,6 @@ import static android.view.WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED;
 import static android.view.WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON;
 import static android.view.WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH;
 import static android.view.WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY;
-import static my.app.utils.function.ResultConsumer.Cancel.isCancellation;
 
 import android.annotation.SuppressLint;
 import android.content.Context;
@@ -51,7 +50,6 @@ import android.view.Display;
 import android.view.Gravity;
 import android.view.InputDevice;
 import android.view.MotionEvent;
-import android.view.View;
 import android.view.WindowManager;
 import android.widget.FrameLayout;
 
@@ -93,10 +91,11 @@ public class MirrorDisplay {
 	private Metrics lMetrics;
 	private Metrics pMetrics;
 	
-	// Touch optimization caches
+	// Touch optimization caches (Zero GC Churn)
 	private MotionEvent.PointerProperties[] reusableProps;
 	private MotionEvent.PointerCoords[] reusableCoords;
 	private int cachedRotation = -1;
+	private final Point cachedSize = new Point();
 	private boolean cacheValid = false;
 	
 	private float dx;
@@ -112,6 +111,13 @@ public class MirrorDisplay {
 		var size = new Point();
 		defaultDisplay.getRealSize(size);
 		scaleDiff = Math.max(UiUtils.toPx(ctx, 20), Math.min(size.x, size.y) / 20f);
+		
+		reusableProps = new MotionEvent.PointerProperties[10];
+		reusableCoords = new MotionEvent.PointerCoords[10];
+		for (int i = 0; i < 10; i++) {
+			reusableProps[i] = new MotionEvent.PointerProperties();
+			reusableCoords[i] = new MotionEvent.PointerCoords();
+		}
 	}
 
 	public static MirrorDisplay get() {
@@ -208,64 +214,83 @@ public class MirrorDisplay {
 		
 		if (actionMasked == MotionEvent.ACTION_DOWN) {
 			downTime = uptimeMillis();
-			cacheValid = false; // Force cache refresh on initial touch
+			cacheValid = false; 
 		}
 		
 		var cnt = e.getPointerCount();
-
-		if (cnt == 1) {
-			d = translate(e.getX(), e.getY(), actionMasked);
-			if (d == null) return false;
-			
-			// RESTORED: Lightweight native touch injection to prevent Android Auto touch desync
-			e = MotionEvent.obtain(downTime, uptimeMillis(), e.getAction(), dx, dy, 0);
-			e.setSource(InputDevice.SOURCE_TOUCHSCREEN);
-		} else {
-			d = dispatcher();
-			var a = d.getActivity();
-			var m = metrics(a);
-			if (m == null) return false;
-			
-			if (actionMasked == MotionEvent.ACTION_DOWN || actionMasked == MotionEvent.ACTION_POINTER_DOWN || !cacheValid) {
-				if (a != null) a.getWindow().getDecorView().getLocationOnScreen(loc);
-				else { loc[0] = 0; loc[1] = 0; }
-				cacheValid = true;
-			}
-			
-			if (reusableProps == null || cnt > reusableProps.length) {
-				reusableProps = new MotionEvent.PointerProperties[cnt];
-				reusableCoords = new MotionEvent.PointerCoords[cnt];
-				for (int i = 0; i < cnt; i++) {
-					reusableProps[i] = new MotionEvent.PointerProperties();
-					reusableCoords[i] = new MotionEvent.PointerCoords();
-				}
-			}
-
+		if (cnt > reusableProps.length) {
+			reusableProps = new MotionEvent.PointerProperties[cnt];
+			reusableCoords = new MotionEvent.PointerCoords[cnt];
 			for (int i = 0; i < cnt; i++) {
-				e.getPointerProperties(i, reusableProps[i]);
-				var c = reusableCoords[i];
-				e.getPointerCoords(i, c);
-				
-				if (a != null) {
-					c.x = (c.x - m.x) * m.scale - loc[0];
-					c.y = (c.y - m.y) * m.scale - loc[1];
-				} else {
-					c.x = (c.x - m.x) * m.scale;
-					c.y = (c.y - m.y) * m.scale;
-				}
+				reusableProps[i] = new MotionEvent.PointerProperties();
+				reusableCoords[i] = new MotionEvent.PointerCoords();
 			}
-			e = MotionEvent.obtain(downTime, uptimeMillis(), e.getAction(), cnt, reusableProps, reusableCoords,
-					e.getMetaState(), e.getButtonState(), e.getXPrecision(), e.getYPrecision(), e.getDeviceId(),
-					e.getEdgeFlags(), InputDevice.SOURCE_TOUCHSCREEN, e.getFlags());
 		}
-		
-		boolean result = d.motionEvent(e);
-		
-		// Invalidate cache immediately when fingers leave the screen
-		if (actionMasked == MotionEvent.ACTION_UP || actionMasked == MotionEvent.ACTION_CANCEL) {
-			cacheValid = false;
+
+		MotionEvent clonedEvent = null;
+		boolean result = false;
+
+		try {
+			if (cnt == 1) {
+				d = translate(e.getX(), e.getY(), actionMasked);
+				if (d == null) return false;
+				
+				e.getPointerProperties(0, reusableProps[0]);
+				e.getPointerCoords(0, reusableCoords[0]);
+				
+				reusableProps[0].toolType = MotionEvent.TOOL_TYPE_FINGER;
+				reusableCoords[0].x = dx;
+				reusableCoords[0].y = dy;
+				if (reusableCoords[0].pressure <= 0.01f) reusableCoords[0].pressure = 1.0f;
+				if (reusableCoords[0].size <= 0.01f) reusableCoords[0].size = 1.0f;
+				
+				clonedEvent = MotionEvent.obtain(downTime, uptimeMillis(), e.getAction(), 1, reusableProps, reusableCoords,
+						e.getMetaState(), e.getButtonState(), e.getXPrecision(), e.getYPrecision(), e.getDeviceId(),
+						e.getEdgeFlags(), InputDevice.SOURCE_TOUCHSCREEN, e.getFlags());
+			} else {
+				d = dispatcher();
+				var a = d.getActivity();
+				var m = metrics(a);
+				if (m == null) return false;
+				
+				if (actionMasked == MotionEvent.ACTION_DOWN || actionMasked == MotionEvent.ACTION_POINTER_DOWN || !cacheValid) {
+					if (a != null) a.getWindow().getDecorView().getLocationOnScreen(loc);
+					else { loc[0] = 0; loc[1] = 0; }
+					cacheValid = true;
+				}
+
+				for (int i = 0; i < cnt; i++) {
+					e.getPointerProperties(i, reusableProps[i]);
+					e.getPointerCoords(i, reusableCoords[i]);
+					
+					reusableProps[i].toolType = MotionEvent.TOOL_TYPE_FINGER;
+					
+					if (a != null) {
+						reusableCoords[i].x = (reusableCoords[i].x - m.x) * m.scale - loc[0];
+						reusableCoords[i].y = (reusableCoords[i].y - m.y) * m.scale - loc[1];
+					} else {
+						reusableCoords[i].x = (reusableCoords[i].x - m.x) * m.scale;
+						reusableCoords[i].y = (reusableCoords[i].y - m.y) * m.scale;
+					}
+					
+					if (reusableCoords[i].pressure <= 0.01f) reusableCoords[i].pressure = 1.0f;
+					if (reusableCoords[i].size <= 0.01f) reusableCoords[i].size = 1.0f;
+				}
+				clonedEvent = MotionEvent.obtain(downTime, uptimeMillis(), e.getAction(), cnt, reusableProps, reusableCoords,
+						e.getMetaState(), e.getButtonState(), e.getXPrecision(), e.getYPrecision(), e.getDeviceId(),
+						e.getEdgeFlags(), InputDevice.SOURCE_TOUCHSCREEN, e.getFlags());
+			}
+			
+			if (clonedEvent != null) {
+				result = d.motionEvent(clonedEvent);
+			}
+		} finally {
+			// ENTERPRISE HARDENING: Strictly enforce MotionEvent memory recycling to prevent GC Churn
+			if (clonedEvent != null) clonedEvent.recycle();
+			if (actionMasked == MotionEvent.ACTION_UP || actionMasked == MotionEvent.ACTION_CANCEL) {
+				cacheValid = false;
+			}
 		}
-		
 		return result;
 	}
 
@@ -277,11 +302,30 @@ public class MirrorDisplay {
 		var d = translate(x, y, action);
 		if (d == null) return false;
 		
-		// RESTORED: Let EventDispatcher natively handle touch timing to prevent drops
-		boolean result = d.motionEvent(downTime, eventTime, action, dx, dy);
-		
-		if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) {
-			cacheValid = false;
+		boolean result = false;
+		MotionEvent e = null;
+
+		try {
+			reusableProps[0].clear();
+			reusableProps[0].id = 0;
+			reusableProps[0].toolType = MotionEvent.TOOL_TYPE_FINGER;
+			
+			reusableCoords[0].clear();
+			reusableCoords[0].x = dx;
+			reusableCoords[0].y = dy;
+			reusableCoords[0].pressure = 1.0f;
+			reusableCoords[0].size = 1.0f;
+			
+			e = MotionEvent.obtain(downTime, eventTime, action, 1, reusableProps, reusableCoords,
+					0, 0, 1.0f, 1.0f, 0, 0, InputDevice.SOURCE_TOUCHSCREEN, 0);
+					
+			result = d.motionEvent(e);
+		} finally {
+			// ENTERPRISE HARDENING: Strictly enforce MotionEvent memory recycling
+			if (e != null) e.recycle();
+			if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) {
+				cacheValid = false;
+			}
 		}
 		
 		return result;
@@ -294,9 +338,9 @@ public class MirrorDisplay {
 		var m = metrics(a);
 		if (m == null) return null;
 
-		// --- OPTIMIZATION: Only query hardware/OS coordinates on ACTION_DOWN ---
 		if (action == MotionEvent.ACTION_DOWN || !cacheValid) {
 			cachedRotation = defaultDisplay.getRotation();
+			defaultDisplay.getRealSize(cachedSize);
 			if (a != null) {
 				a.getWindow().getDecorView().getLocationOnScreen(loc);
 			} else {
@@ -324,8 +368,6 @@ public class MirrorDisplay {
 			dx = (targetX - m.x) * m.scale;
 			dy = (targetY - m.y) * m.scale;
 		}
-		
-		// REMOVED ARTIFICIAL CLAMPING: Allow floating window boundaries to stretch natively.
 		
 		return d;
 	}
@@ -459,12 +501,15 @@ public class MirrorDisplay {
 			} catch (Exception ignored) {}
 			overlay = null;
 		}
+		
+		// ENTERPRISE HARDENING: Prevent WakeLock Under-locked Zombie Exception
 		if (wakeLock != null) {
 			try {
-				wakeLock.release();
+				if (wakeLock.isHeld()) wakeLock.release();
 			} catch (Exception ignored) {}
 			wakeLock = null;
 		}
+		
 		setMirroringMode(app, 0);
 		restoreAccelRotation(app);
 		ProjectionService.stop();
@@ -535,6 +580,7 @@ public class MirrorDisplay {
 			} catch (Exception e) {
 				Log.e(e, "Root resolution hack failed.");
 			} finally {
+				// ENTERPRISE HARDENING: Guarantee process destruction to prevent zombie thread locks
 				if (p != null) p.destroy();
 				PermataApplication.get().getHandler().post(() -> {
 					lMetrics = pMetrics = null;
