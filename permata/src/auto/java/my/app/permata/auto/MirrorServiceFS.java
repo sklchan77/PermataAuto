@@ -114,9 +114,12 @@ public class MirrorServiceFS extends CarAppService {
 			MirrorServiceFS.sc = localSc;
 			md.setSurface(localSc);
 			
-			// --- FIX: Do NOT call finishCarApp() when surface closes to avoid restart loops ---
+			// --- FIX: Restore finishCarApp() to ensure a Cold Start (100% Full Screen) on next launch ---
+			// The drawMsg() in MirrorDisplay will ensure it freezes on a clean black screen before dying.
 			md.setSessionStopListener(() -> {
-				Log.i("MirrorServiceFS: Session stopped. Remaining on placeholder screen.");
+				try {
+					getCarContext().finishCarApp();
+				} catch (Exception ignored) {}
 			});
 			
 			scrollStartX = localSc.getWidth() / 2f;
