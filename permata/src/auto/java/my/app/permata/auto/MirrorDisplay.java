@@ -97,7 +97,6 @@ public class MirrorDisplay {
 	private MotionEvent.PointerProperties[] reusableProps;
 	private MotionEvent.PointerCoords[] reusableCoords;
 	private int cachedRotation = -1;
-	private final Point cachedSize = new Point();
 	private boolean cacheValid = false;
 	
 	private float dx;
@@ -113,13 +112,6 @@ public class MirrorDisplay {
 		var size = new Point();
 		defaultDisplay.getRealSize(size);
 		scaleDiff = Math.max(UiUtils.toPx(ctx, 20), Math.min(size.x, size.y) / 20f);
-		
-		reusableProps = new MotionEvent.PointerProperties[10];
-		reusableCoords = new MotionEvent.PointerCoords[10];
-		for (int i = 0; i < 10; i++) {
-			reusableProps[i] = new MotionEvent.PointerProperties();
-			reusableCoords[i] = new MotionEvent.PointerCoords();
-		}
 	}
 
 	public static MirrorDisplay get() {
@@ -220,32 +212,14 @@ public class MirrorDisplay {
 		}
 		
 		var cnt = e.getPointerCount();
-		
-		if (cnt > reusableProps.length) {
-			reusableProps = new MotionEvent.PointerProperties[cnt];
-			reusableCoords = new MotionEvent.PointerCoords[cnt];
-			for (int i = 0; i < cnt; i++) {
-				reusableProps[i] = new MotionEvent.PointerProperties();
-				reusableCoords[i] = new MotionEvent.PointerCoords();
-			}
-		}
 
 		if (cnt == 1) {
 			d = translate(e.getX(), e.getY(), actionMasked);
 			if (d == null) return false;
 			
-			e.getPointerProperties(0, reusableProps[0]);
-			e.getPointerCoords(0, reusableCoords[0]);
-			
-			reusableProps[0].toolType = MotionEvent.TOOL_TYPE_FINGER;
-			reusableCoords[0].x = dx;
-			reusableCoords[0].y = dy;
-			if (reusableCoords[0].pressure <= 0.01f) reusableCoords[0].pressure = 1.0f;
-			if (reusableCoords[0].size <= 0.01f) reusableCoords[0].size = 1.0f;
-			
-			e = MotionEvent.obtain(downTime, uptimeMillis(), e.getAction(), 1, reusableProps, reusableCoords,
-					e.getMetaState(), e.getButtonState(), e.getXPrecision(), e.getYPrecision(), e.getDeviceId(),
-					e.getEdgeFlags(), InputDevice.SOURCE_TOUCHSCREEN, e.getFlags());
+			// RESTORED: Lightweight native touch injection to prevent Android Auto touch desync
+			e = MotionEvent.obtain(downTime, uptimeMillis(), e.getAction(), dx, dy, 0);
+			e.setSource(InputDevice.SOURCE_TOUCHSCREEN);
 		} else {
 			d = dispatcher();
 			var a = d.getActivity();
@@ -257,23 +231,28 @@ public class MirrorDisplay {
 				else { loc[0] = 0; loc[1] = 0; }
 				cacheValid = true;
 			}
+			
+			if (reusableProps == null || cnt > reusableProps.length) {
+				reusableProps = new MotionEvent.PointerProperties[cnt];
+				reusableCoords = new MotionEvent.PointerCoords[cnt];
+				for (int i = 0; i < cnt; i++) {
+					reusableProps[i] = new MotionEvent.PointerProperties();
+					reusableCoords[i] = new MotionEvent.PointerCoords();
+				}
+			}
 
 			for (int i = 0; i < cnt; i++) {
 				e.getPointerProperties(i, reusableProps[i]);
-				e.getPointerCoords(i, reusableCoords[i]);
-				
-				reusableProps[i].toolType = MotionEvent.TOOL_TYPE_FINGER;
+				var c = reusableCoords[i];
+				e.getPointerCoords(i, c);
 				
 				if (a != null) {
-					reusableCoords[i].x = (reusableCoords[i].x - m.x) * m.scale - loc[0];
-					reusableCoords[i].y = (reusableCoords[i].y - m.y) * m.scale - loc[1];
+					c.x = (c.x - m.x) * m.scale - loc[0];
+					c.y = (c.y - m.y) * m.scale - loc[1];
 				} else {
-					reusableCoords[i].x = (reusableCoords[i].x - m.x) * m.scale;
-					reusableCoords[i].y = (reusableCoords[i].y - m.y) * m.scale;
+					c.x = (c.x - m.x) * m.scale;
+					c.y = (c.y - m.y) * m.scale;
 				}
-				
-				if (reusableCoords[i].pressure <= 0.01f) reusableCoords[i].pressure = 1.0f;
-				if (reusableCoords[i].size <= 0.01f) reusableCoords[i].size = 1.0f;
 			}
 			e = MotionEvent.obtain(downTime, uptimeMillis(), e.getAction(), cnt, reusableProps, reusableCoords,
 					e.getMetaState(), e.getButtonState(), e.getXPrecision(), e.getYPrecision(), e.getDeviceId(),
@@ -293,27 +272,13 @@ public class MirrorDisplay {
 	public synchronized boolean motionEvent(long downTime, long eventTime, int action, float x, float y) {
 		lastInjectedTouchTime = uptimeMillis();
 		
-		if (action == MotionEvent.ACTION_DOWN) {
-			cacheValid = false;
-		}
+		if (action == MotionEvent.ACTION_DOWN) cacheValid = false;
 		
 		var d = translate(x, y, action);
 		if (d == null) return false;
 		
-		reusableProps[0].clear();
-		reusableProps[0].id = 0;
-		reusableProps[0].toolType = MotionEvent.TOOL_TYPE_FINGER;
-		
-		reusableCoords[0].clear();
-		reusableCoords[0].x = dx;
-		reusableCoords[0].y = dy;
-		reusableCoords[0].pressure = 1.0f;
-		reusableCoords[0].size = 1.0f;
-		
-		MotionEvent e = MotionEvent.obtain(downTime, eventTime, action, 1, reusableProps, reusableCoords,
-				0, 0, 1.0f, 1.0f, 0, 0, InputDevice.SOURCE_TOUCHSCREEN, 0);
-				
-		boolean result = d.motionEvent(e);
+		// RESTORED: Let EventDispatcher natively handle touch timing to prevent drops
+		boolean result = d.motionEvent(downTime, eventTime, action, dx, dy);
 		
 		if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) {
 			cacheValid = false;
@@ -332,7 +297,6 @@ public class MirrorDisplay {
 		// --- OPTIMIZATION: Only query hardware/OS coordinates on ACTION_DOWN ---
 		if (action == MotionEvent.ACTION_DOWN || !cacheValid) {
 			cachedRotation = defaultDisplay.getRotation();
-			defaultDisplay.getRealSize(cachedSize);
 			if (a != null) {
 				a.getWindow().getDecorView().getLocationOnScreen(loc);
 			} else {
@@ -361,22 +325,8 @@ public class MirrorDisplay {
 			dy = (targetY - m.y) * m.scale;
 		}
 		
-		int maxX = cachedSize.x;
-		int maxY = cachedSize.y;
+		// REMOVED ARTIFICIAL CLAMPING: Allow floating window boundaries to stretch natively.
 		
-		if (sc != null && sc.getWidth() > sc.getHeight()) { 
-			maxX = Math.max(cachedSize.x, cachedSize.y);
-			maxY = Math.min(cachedSize.x, cachedSize.y);
-		} else { 
-			maxX = Math.min(cachedSize.x, cachedSize.y);
-			maxY = Math.max(cachedSize.x, cachedSize.y);
-		}
-
-		if (dx < 0) dx = 0;
-		if (dy < 0) dy = 0;
-		if (dx > maxX) dx = maxX;
-		if (dy > maxY) dy = maxY;
-
 		return d;
 	}
 
