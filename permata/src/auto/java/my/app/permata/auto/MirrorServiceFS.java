@@ -122,7 +122,6 @@ public class MirrorServiceFS extends CarAppService {
 		public void onSurfaceDestroyed(@NonNull SurfaceContainer localSc) {
 			Log.i("MirrorServiceFS: Surface destroyed. Terminating UI and Projection cleanly.");
 			
-			// --- FIX: Execute full teardown ONLY after Android Auto has unmounted the surface ---
 			if (md != null) {
 				md.releaseSurface(localSc);
 				MirrorDisplay.close(); 
@@ -156,7 +155,7 @@ public class MirrorServiceFS extends CarAppService {
 				scrollY = scrollStartY;
 				if (!md.motionEvent(time, time, ACTION_DOWN, scrollX, scrollY)) return;
 				scrollDownTime = time;
-				scheduleScrollUp(150);
+				scheduleScrollUp(500); // <-- RESTORED TIMEOUT: Prevents drags from dropping during video load
 			}
 			scrollX -= distanceX;
 			scrollY -= distanceY;
@@ -199,7 +198,6 @@ public class MirrorServiceFS extends CarAppService {
 							new CarIcon.Builder(createWithResource(getCarContext(), R.drawable.shutdown)).build())
 					.setOnClickListener(() -> {
 						Log.i("User triggered manual shutdown from Full-Screen toolbar. Executing clean finishCarApp.");
-						// --- FIX: DO NOT call MirrorDisplay.close() here! Let Gearhead close the app first. ---
 						getCarContext().finishCarApp();
 					}).build();
 			
