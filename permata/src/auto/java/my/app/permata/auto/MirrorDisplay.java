@@ -93,7 +93,6 @@ public class MirrorDisplay {
 	private Metrics lMetrics;
 	private Metrics pMetrics;
 	
-	// ENTERPRISE POOLING: Zero GC allocation touch coordinate arrays
 	private MotionEvent.PointerProperties[] reusableProps;
 	private MotionEvent.PointerCoords[] reusableCoords;
 	
@@ -111,7 +110,6 @@ public class MirrorDisplay {
 		defaultDisplay.getRealSize(size);
 		scaleDiff = Math.max(UiUtils.toPx(ctx, 20), Math.min(size.x, size.y) / 20f);
 		
-		// Pre-allocate pools for up to 10 fingers to eliminate GC thrashing during drags
 		reusableProps = new MotionEvent.PointerProperties[10];
 		reusableCoords = new MotionEvent.PointerCoords[10];
 		for (int i = 0; i < 10; i++) {
@@ -134,8 +132,8 @@ public class MirrorDisplay {
 		if ((ref == null) || ((md = ref.get()) == null)) return;
 		md.refCounter = 0; 
 		
-		// [COMMENTED OUT]: Prevents black canvas flash on disconnect
-		// if (sc != null) drawMsg(sc, R.string.app_name); 
+		// --- FIX: Restore the black "Permata Auto" placeholder screen upon exit ---
+		if (md.sc != null) drawMsg(md.sc, R.string.app_name); 
 		
 		md.cleanUp();
 	}
@@ -171,8 +169,6 @@ public class MirrorDisplay {
 			createSession();
 		}
 		
-		// It is safe to leave this one active, as it only paints a placeholder
-		// if the surface switches unexpectedly before the video stream starts.
 		if (oldSc != null) drawMsg(oldSc, R.string.app_name);
 	}
 
@@ -180,8 +176,8 @@ public class MirrorDisplay {
 		var oldSc = this.sc;
 		if (oldSc != sc) return;
 		
-		// [COMMENTED OUT]: Prevents black canvas flash on disconnect
-		// drawMsg(oldSc, R.string.app_name);
+		// --- FIX: Ensure surface turns black on release ---
+		drawMsg(oldSc, R.string.app_name);
 		
 		this.sc = null;
 		lMetrics = pMetrics = null;
@@ -216,7 +212,6 @@ public class MirrorDisplay {
 		if (action == MotionEvent.ACTION_DOWN) downTime = uptimeMillis();
 		var cnt = e.getPointerCount();
 		
-		// Dynamic pool expansion for edge cases
 		if (cnt > reusableProps.length) {
 			reusableProps = new MotionEvent.PointerProperties[cnt];
 			reusableCoords = new MotionEvent.PointerCoords[cnt];
@@ -233,7 +228,6 @@ public class MirrorDisplay {
 			e.getPointerProperties(0, reusableProps[0]);
 			e.getPointerCoords(0, reusableCoords[0]);
 			
-			// --- UNIVERSAL FIX: Force physical finger properties for OS Velocity Trackers ---
 			reusableProps[0].toolType = MotionEvent.TOOL_TYPE_FINGER;
 			reusableCoords[0].x = dx;
 			reusableCoords[0].y = dy;
@@ -254,7 +248,6 @@ public class MirrorDisplay {
 				e.getPointerProperties(i, reusableProps[i]);
 				e.getPointerCoords(i, reusableCoords[i]);
 				
-				// --- UNIVERSAL FIX: Apply physical properties to multi-touch arrays ---
 				reusableProps[i].toolType = MotionEvent.TOOL_TYPE_FINGER;
 				
 				if (a != null) {
@@ -280,7 +273,6 @@ public class MirrorDisplay {
 		var d = translate(x, y);
 		if (d == null) return false;
 		
-		// --- UNIVERSAL FIX: Construct a flawless synthetic touch for Full-Screen mode (MirrorScreen) ---
 		reusableProps[0].clear();
 		reusableProps[0].id = 0;
 		reusableProps[0].toolType = MotionEvent.TOOL_TYPE_FINGER;
@@ -644,17 +636,16 @@ public class MirrorDisplay {
 			dy = (targetY - m.y) * m.scale;
 		}
 		
-		// --- 100% SAFE FIX: Orientation-Aware Boundary Clamping ---
 		Point size = new Point();
 		defaultDisplay.getRealSize(size);
 		
 		int maxX = size.x;
 		int maxY = size.y;
 		
-		if (sc != null && sc.getWidth() > sc.getHeight()) { // Landscape
+		if (sc != null && sc.getWidth() > sc.getHeight()) { 
 			maxX = Math.max(size.x, size.y);
 			maxY = Math.min(size.x, size.y);
-		} else { // Portrait
+		} else { 
 			maxX = Math.min(size.x, size.y);
 			maxY = Math.max(size.x, size.y);
 		}
@@ -663,7 +654,6 @@ public class MirrorDisplay {
 		if (dy < 0) dy = 0;
 		if (dx > maxX) dx = maxX;
 		if (dy > maxY) dy = maxY;
-		// ----------------------------------------------------------
 
 		return d;
 	}
@@ -702,14 +692,11 @@ public class MirrorDisplay {
 	private void setMirroringMode(PermataApplication app, int mode) {
 		app.setMirroringMode(mode);
 		
-		// Clean up the phone-side Activity
 		var intent = new Intent(app, MainActivity.class);
 		intent.setAction(MainActivityDelegate.INTENT_ACTION_FINISH);
 		intent.setFlags(FLAG_ACTIVITY_NEW_TASK | FLAG_ACTIVITY_CLEAR_TOP);
 		app.startActivity(intent);
 
-		// --- FIX: Never launch the car activity during teardown (mode == 0) ---
-		// Doing so forces Android Auto to wake the app back up, creating a restart loop.
 		if (mode > 0) {
 			intent = new Intent(app, LauncherActivity.class);
 			intent.setFlags(FLAG_ACTIVITY_NEW_TASK | FLAG_ACTIVITY_CLEAR_TASK);
