@@ -114,10 +114,9 @@ public class MirrorServiceFS extends CarAppService {
 			MirrorServiceFS.sc = localSc;
 			md.setSurface(localSc);
 			
+			// --- FIX: Do NOT call finishCarApp() when surface closes to avoid restart loops ---
 			md.setSessionStopListener(() -> {
-				try {
-					getCarContext().finishCarApp();
-				} catch (Exception ignored) {}
+				Log.i("MirrorServiceFS: Session stopped. Remaining on placeholder screen.");
 			});
 			
 			scrollStartX = localSc.getWidth() / 2f;
@@ -202,13 +201,8 @@ public class MirrorServiceFS extends CarAppService {
 							new CarIcon.Builder(createWithResource(getCarContext(), R.drawable.shutdown)).build())
 					.setOnClickListener(() -> {
 						Log.i("User triggered manual shutdown from Full-Screen toolbar.");
+						// --- FIX: Just close the video projection and let the black screen render ---
 						MirrorDisplay.close();
-						try {
-							// --- FIX: Instantly clear the frozen frame by handing the screen back to Maps/Waze ---
-							Intent mapIntent = new Intent(CarContext.ACTION_NAVIGATE, android.net.Uri.parse("geo:0,0"));
-							getCarContext().startCarApp(mapIntent);
-							getCarContext().finishCarApp();
-						} catch (Exception ignored) {}
 					}).build();
 			
 			return new NavigationTemplate.Builder()
