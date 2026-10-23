@@ -24,6 +24,7 @@ import static android.view.WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED;
 import static android.view.WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON;
 import static android.view.WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH;
 import static android.view.WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY;
+import static my.app.utils.function.ResultConsumer.Cancel.isCancellation;
 
 import android.annotation.SuppressLint;
 import android.content.Context;
@@ -285,7 +286,6 @@ public class MirrorDisplay {
 				result = d.motionEvent(clonedEvent);
 			}
 		} finally {
-			// ENTERPRISE HARDENING: Strictly enforce MotionEvent memory recycling to prevent GC Churn
 			if (clonedEvent != null) clonedEvent.recycle();
 			if (actionMasked == MotionEvent.ACTION_UP || actionMasked == MotionEvent.ACTION_CANCEL) {
 				cacheValid = false;
@@ -321,7 +321,6 @@ public class MirrorDisplay {
 					
 			result = d.motionEvent(e);
 		} finally {
-			// ENTERPRISE HARDENING: Strictly enforce MotionEvent memory recycling
 			if (e != null) e.recycle();
 			if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) {
 				cacheValid = false;
@@ -502,7 +501,6 @@ public class MirrorDisplay {
 			overlay = null;
 		}
 		
-		// ENTERPRISE HARDENING: Prevent WakeLock Under-locked Zombie Exception
 		if (wakeLock != null) {
 			try {
 				if (wakeLock.isHeld()) wakeLock.release();
@@ -580,7 +578,6 @@ public class MirrorDisplay {
 			} catch (Exception e) {
 				Log.e(e, "Root resolution hack failed.");
 			} finally {
-				// ENTERPRISE HARDENING: Guarantee process destruction to prevent zombie thread locks
 				if (p != null) p.destroy();
 				PermataApplication.get().getHandler().post(() -> {
 					lMetrics = pMetrics = null;
