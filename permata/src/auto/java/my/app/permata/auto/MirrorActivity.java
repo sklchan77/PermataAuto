@@ -98,9 +98,7 @@ public class MirrorActivity extends CarActivity implements SurfaceHolder.Callbac
 				getResources().getDisplayMetrics().densityDpi);
 		if (md != null) {
 			md.setSurface(sc);
-			md.setSessionStopListener(() -> {
-				// Legacy CarActivity fallback
-			});
+			// --- FIX: Removed obsolete md.setSessionStopListener() here ---
 		}
 	}
 
@@ -116,7 +114,7 @@ public class MirrorActivity extends CarActivity implements SurfaceHolder.Callbac
 		if (sc != null) {
 			if (md != null) {
 				md.releaseSurface(sc);
-				md.setSessionStopListener(null); 
+				// --- FIX: Removed obsolete md.setSessionStopListener(null) here ---
 			}
 			sc = null;
 		}
@@ -183,7 +181,6 @@ public class MirrorActivity extends CarActivity implements SurfaceHolder.Callbac
 			iconSize = (int) Math.max(Math.min(dm.widthPixels, dm.heightPixels) / 8f, toPx(ctx, 20));
 			setLayoutParams(new FrameLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT));
 			
-			// Adjust starting X position to account for 3 buttons instead of 2
 			setX(dm.widthPixels - (iconSize * 3) - (pad * 2));
 			setY(pad);
 
@@ -264,7 +261,6 @@ public class MirrorActivity extends CarActivity implements SurfaceHolder.Callbac
 			}
 		}
 
-		// Fixed Dynamic Math: Supports 3 buttons calculating space + padding
 		private int getButtonAt(float x) {
 			int buttonWidthWithPad = iconSize + pad;
 			int index = (int) (x / buttonWidthWithPad);
