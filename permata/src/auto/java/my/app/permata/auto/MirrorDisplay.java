@@ -320,7 +320,6 @@ public class MirrorDisplay {
 		return result;
 	}
 
-	// --- FIX: RESTORED ORIGINAL MATHEMATICALLY ACCURATE TRANSLATE LOGIC ---
 	@Nullable
 	private EventDispatcher translate(float x, float y, int action) {
 		var d = dispatcher();
@@ -347,32 +346,6 @@ public class MirrorDisplay {
 		}
 		
 		return d;
-	}
-
-	// --- FIX: RESTORED ORIGINAL MATHEMATICALLY ACCURATE METRICS LOGIC ---
-	@Nullable
-	@SuppressLint("SwitchIntDef")
-	private Metrics metrics(@Nullable AppCompatActivity a) {
-		if (sc == null) return null;
-		boolean landscape;
-		if (a != null) {
-			landscape = a.getResources().getConfiguration().orientation == ORIENTATION_LANDSCAPE;
-		} else {
-			landscape = switch (defaultDisplay.getRotation()) {
-				case ROTATION_90, ROTATION_270 -> true;
-				default -> false;
-			};
-		}
-		var m = landscape ? lMetrics : pMetrics;
-		if (m == null) {
-			if (!session.isDoneNotFailed()) return null;
-			final Point size = new Point();
-			defaultDisplay.getRealSize(size);
-			m = new Metrics(size.x, size.y, sc.getWidth(), sc.getHeight());
-			if (landscape) lMetrics = m;
-			else pMetrics = m;
-		}
-		return m;
 	}
 
 	public static void disableAccelRotation() {
@@ -426,6 +399,14 @@ public class MirrorDisplay {
 		if (brightness > 0) setBrightness(ctx, brightness);
 	}
 
+	private static void setBrightness(Context ctx, int br) {
+		try {
+			Settings.System.putInt(ctx.getContentResolver(), SCREEN_BRIGHTNESS, br);
+		} catch (SecurityException ex) {
+			Log.e(ex, "Failed to change SCREEN_BRIGHTNESS");
+		}
+	}
+
 	@Override
 	protected void finalize() {
 		if ((ref == null) || (ref.get() == null) || (ref.get() == this)) {
@@ -463,6 +444,9 @@ public class MirrorDisplay {
 				var overlay = new Overlay(app);
 				wm.addView(overlay, lp);
 				this.overlay = overlay;
+				
+				// Updated from 10000 to 15000
+				overlay.dimAndRotate.schedule(15000);
 			} catch (Exception err) {
 				Log.e(err, "Failed to add overlay");
 			}
@@ -610,6 +594,31 @@ public class MirrorDisplay {
 		return d;
 	}
 
+	@Nullable
+	@SuppressLint("SwitchIntDef")
+	private Metrics metrics(@Nullable AppCompatActivity a) {
+		if (sc == null) return null;
+		boolean landscape;
+		if (a != null) {
+			landscape = a.getResources().getConfiguration().orientation == ORIENTATION_LANDSCAPE;
+		} else {
+			landscape = switch (defaultDisplay.getRotation()) {
+				case ROTATION_90, ROTATION_270 -> true;
+				default -> false;
+			};
+		}
+		var m = landscape ? lMetrics : pMetrics;
+		if (m == null) {
+			if (!session.isDoneNotFailed()) return null;
+			final Point size = new Point();
+			defaultDisplay.getRealSize(size);
+			m = new Metrics(size.x, size.y, sc.getWidth(), sc.getHeight());
+			if (landscape) lMetrics = m;
+			else pMetrics = m;
+		}
+		return m;
+	}
+
 	private void setMirroringMode(PermataApplication app, int mode) {
 		app.setMirroringMode(mode);
 		var intent = new Intent(app, MainActivity.class);
@@ -698,7 +707,10 @@ public class MirrorDisplay {
 		public boolean onTouchEvent(MotionEvent event) {
 			if (event.getToolType(0) != MotionEvent.TOOL_TYPE_FINGER) return false;
 			Log.d("Temporary restoring brightness and rotation due to event ", event);
-			dimAndRotate.schedule(30000);
+			
+			// Updated from 30000 to 15000
+			dimAndRotate.schedule(15000);
+			
 			var ctx = getContext();
 			restoreBrightness(ctx);
 			restoreAccelRotation(ctx);
