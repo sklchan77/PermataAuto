@@ -120,11 +120,10 @@ public class MirrorServiceFS extends CarAppService {
 
 		@Override
 		public void onSurfaceDestroyed(@NonNull SurfaceContainer localSc) {
-			Log.i("MirrorServiceFS: Surface destroyed. Terminating UI and Projection cleanly.");
+			Log.i("MirrorServiceFS: Surface destroyed.");
 			
 			if (md != null) {
 				md.releaseSurface(localSc);
-				MirrorDisplay.close(); 
 			}
 			MirrorServiceFS.sc = null;
 
@@ -155,7 +154,7 @@ public class MirrorServiceFS extends CarAppService {
 				scrollY = scrollStartY;
 				if (!md.motionEvent(time, time, ACTION_DOWN, scrollX, scrollY)) return;
 				scrollDownTime = time;
-				scheduleScrollUp(500); // <-- RESTORED TIMEOUT: Prevents drags from dropping during video load
+				scheduleScrollUp(500);
 			}
 			scrollX -= distanceX;
 			scrollY -= distanceY;
@@ -197,8 +196,8 @@ public class MirrorServiceFS extends CarAppService {
 			var exitButton = new Action.Builder().setIcon(
 							new CarIcon.Builder(createWithResource(getCarContext(), R.drawable.shutdown)).build())
 					.setOnClickListener(() -> {
-						Log.i("User triggered manual shutdown from Full-Screen toolbar. Executing clean finishCarApp.");
-						getCarContext().finishCarApp();
+						Log.i("User triggered manual shutdown. Parking on black screen to avoid restart loop.");
+						MirrorDisplay.close(); 
 					}).build();
 			
 			return new NavigationTemplate.Builder()
