@@ -15,7 +15,6 @@ import static android.provider.Settings.System.ACCELEROMETER_ROTATION;
 import static android.provider.Settings.System.SCREEN_BRIGHTNESS;
 import static android.provider.Settings.System.USER_ROTATION;
 import static android.view.Surface.ROTATION_0;
-import static android.view.Surface.ROTATION_180;
 import static android.view.Surface.ROTATION_270;
 import static android.view.Surface.ROTATION_90;
 import static android.view.ViewGroup.LayoutParams.MATCH_PARENT;
@@ -52,6 +51,7 @@ import android.text.StaticLayout;
 import android.text.TextPaint;
 import android.text.TextUtils;
 import android.view.Display;
+import android.view.Gravity;
 import android.view.InputDevice;
 import android.view.MotionEvent;
 import android.view.WindowManager;
@@ -98,11 +98,9 @@ public class MirrorDisplay {
 	private Metrics lMetrics;
 	private Metrics pMetrics;
 	
-	// Touch optimization caches (Zero GC Churn)
+	// Touch optimization caches
 	private MotionEvent.PointerProperties[] reusableProps;
 	private MotionEvent.PointerCoords[] reusableCoords;
-	private int cachedRotation = -1;
-	private final Point cachedSize = new Point();
 	private boolean cacheValid = false;
 	
 	private float dx;
@@ -322,6 +320,7 @@ public class MirrorDisplay {
 		return result;
 	}
 
+	// --- FIX: RESTORED ORIGINAL MATHEMATICALLY ACCURATE TRANSLATE LOGIC ---
 	@Nullable
 	private EventDispatcher translate(float x, float y, int action) {
 		var d = dispatcher();
@@ -330,8 +329,6 @@ public class MirrorDisplay {
 		if (m == null) return null;
 
 		if (action == MotionEvent.ACTION_DOWN || !cacheValid) {
-			cachedRotation = defaultDisplay.getRotation();
-			defaultDisplay.getRealSize(cachedSize);
 			if (a != null) {
 				a.getWindow().getDecorView().getLocationOnScreen(loc);
 			} else {
@@ -341,26 +338,41 @@ public class MirrorDisplay {
 			cacheValid = true;
 		}
 
-		float targetX = x;
-		float targetY = y;
-
-		if (cachedRotation == ROTATION_180) { 
-			targetX = sc.getWidth() - x;
-			targetY = sc.getHeight() - y;
-		} else if (cachedRotation == ROTATION_270) { 
-			targetX = sc.getWidth() - x;
-			targetY = sc.getHeight() - y;
-		}
-
 		if (a != null) {
-			dx = (targetX - m.x) * m.scale - loc[0];
-			dy = (targetY - m.y) * m.scale - loc[1];
+			dx = (x - m.x) * m.scale - loc[0];
+			dy = (y - m.y) * m.scale - loc[1];
 		} else {
-			dx = (targetX - m.x) * m.scale;
-			dy = (targetY - m.y) * m.scale;
+			dx = (x - m.x) * m.scale;
+			dy = (y - m.y) * m.scale;
 		}
 		
 		return d;
+	}
+
+	// --- FIX: RESTORED ORIGINAL MATHEMATICALLY ACCURATE METRICS LOGIC ---
+	@Nullable
+	@SuppressLint("SwitchIntDef")
+	private Metrics metrics(@Nullable AppCompatActivity a) {
+		if (sc == null) return null;
+		boolean landscape;
+		if (a != null) {
+			landscape = a.getResources().getConfiguration().orientation == ORIENTATION_LANDSCAPE;
+		} else {
+			landscape = switch (defaultDisplay.getRotation()) {
+				case ROTATION_90, ROTATION_270 -> true;
+				default -> false;
+			};
+		}
+		var m = landscape ? lMetrics : pMetrics;
+		if (m == null) {
+			if (!session.isDoneNotFailed()) return null;
+			final Point size = new Point();
+			defaultDisplay.getRealSize(size);
+			m = new Metrics(size.x, size.y, sc.getWidth(), sc.getHeight());
+			if (landscape) lMetrics = m;
+			else pMetrics = m;
+		}
+		return m;
 	}
 
 	public static void disableAccelRotation() {
@@ -598,31 +610,6 @@ public class MirrorDisplay {
 		return d;
 	}
 
-	@Nullable
-	@SuppressLint("SwitchIntDef")
-	private Metrics metrics(@Nullable AppCompatActivity a) {
-		if (sc == null) return null;
-		boolean landscape;
-		if (a != null) {
-			landscape = a.getResources().getConfiguration().orientation == ORIENTATION_LANDSCAPE;
-		} else {
-			landscape = switch (defaultDisplay.getRotation()) {
-				case ROTATION_90, ROTATION_270 -> true;
-				default -> false;
-			};
-		}
-		var m = landscape ? lMetrics : pMetrics;
-		if (m == null) {
-			if (!session.isDoneNotFailed()) return null;
-			final Point size = new Point();
-			defaultDisplay.getRealSize(size);
-			m = new Metrics(size.x, size.y, sc.getWidth(), sc.getHeight());
-			if (landscape) lMetrics = m;
-			else pMetrics = m;
-		}
-		return m;
-	}
-
 	private void setMirroringMode(PermataApplication app, int mode) {
 		app.setMirroringMode(mode);
 		var intent = new Intent(app, MainActivity.class);
@@ -634,14 +621,6 @@ public class MirrorDisplay {
 		intent.setFlags(FLAG_ACTIVITY_NEW_TASK | FLAG_ACTIVITY_CLEAR_TASK);
 		if (mode == 0) intent.setAction(MainActivityDelegate.INTENT_ACTION_FINISH);
 		app.startActivity(intent);
-	}
-
-	private static void setBrightness(Context ctx, int br) {
-		try {
-			Settings.System.putInt(ctx.getContentResolver(), SCREEN_BRIGHTNESS, br);
-		} catch (SecurityException ex) {
-			Log.e(ex, "Failed to change SCREEN_BRIGHTNESS");
-		}
 	}
 
 	private static final class Session extends MediaProjection.Callback {
