@@ -731,11 +731,10 @@ public class MirrorDisplay {
 		intent.setFlags(FLAG_ACTIVITY_NEW_TASK | FLAG_ACTIVITY_CLEAR_TOP);
 		app.startActivity(intent);
 
-		if (mode > 0) {
-			intent = new Intent(app, LauncherActivity.class);
-			intent.setFlags(FLAG_ACTIVITY_NEW_TASK | FLAG_ACTIVITY_CLEAR_TASK);
-			app.startActivity(intent);
-		}
+		intent = new Intent(app, LauncherActivity.class);
+		intent.setFlags(FLAG_ACTIVITY_NEW_TASK | FLAG_ACTIVITY_CLEAR_TASK);
+		if (mode == 0) intent.setAction(MainActivityDelegate.INTENT_ACTION_FINISH);
+		app.startActivity(intent);
 	}
 
 	private final class Overlay extends FrameLayout {
