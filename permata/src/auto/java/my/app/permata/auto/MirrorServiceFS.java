@@ -22,6 +22,8 @@ import androidx.car.app.model.ActionStrip;
 import androidx.car.app.model.CarIcon;
 import androidx.car.app.model.Template;
 import androidx.car.app.navigation.model.NavigationTemplate;
+import androidx.car.app.navigation.model.PanModeDelegate;
+import androidx.car.app.navigation.model.PanModeListener;
 import androidx.car.app.validation.HostValidator;
 
 import my.app.permata.PermataApplication;
@@ -101,6 +103,9 @@ public class MirrorServiceFS extends CarAppService {
 		private long scrollDownTime;
 		private long scrollMoveTime;
 		private Cancellable scrollUp;
+		
+		// Flag to track if we are actively in a gesture
+		private boolean isPanning = false;
 
 		MirrorScreen(@NonNull CarContext ctx) {
 			super(ctx);
@@ -114,6 +119,7 @@ public class MirrorServiceFS extends CarAppService {
 			MirrorServiceFS.sc = localSc;
 			md.setSurface(localSc);
 			
+			// Anchor swipes to the dead center of the screen to avoid edge-gesture theft
 			scrollStartX = localSc.getWidth() / 2f;
 			scrollStartY = localSc.getHeight() / 2f;
 		}
@@ -140,6 +146,7 @@ public class MirrorServiceFS extends CarAppService {
 			if (scrollUp != null) {
 				scrollUp.cancel();
 				scrollUp = null;
+				isPanning = false;
 			}
 			md().tap(x, y);
 		}
@@ -149,13 +156,27 @@ public class MirrorServiceFS extends CarAppService {
 			var md = md();
 			var time = uptimeMillis();
 			scrollMoveTime = time;
-			if (scrollUp == null) {
+			
+			if (!isPanning || scrollUp == null) {
+				isPanning = true;
+				// Re-anchor to center on new gesture
+				if (MirrorServiceFS.sc != null) {
+					scrollStartX = MirrorServiceFS.sc.getWidth() / 2f;
+					scrollStartY = MirrorServiceFS.sc.getHeight() / 2f;
+				}
 				scrollX = scrollStartX;
 				scrollY = scrollStartY;
-				if (!md.motionEvent(time, time, ACTION_DOWN, scrollX, scrollY)) return;
+				
+				if (!md.motionEvent(time, time, ACTION_DOWN, scrollX, scrollY)) {
+					isPanning = false;
+					return;
+				}
 				scrollDownTime = time;
-				scheduleScrollUp(500);
+				
+				// Increased timeout slightly to bridge Android Auto's native gesture stutters
+				scheduleScrollUp(750); 
 			}
+			
 			scrollX -= distanceX;
 			scrollY -= distanceY;
 			md.motionEvent(scrollDownTime, time, ACTION_MOVE, scrollX, scrollY);
@@ -170,6 +191,7 @@ public class MirrorServiceFS extends CarAppService {
 					scheduleScrollUp(end - time);
 				} else {
 					scrollUp = null;
+					isPanning = false;
 					md().motionEvent(scrollDownTime, time, ACTION_UP, scrollX, scrollY);
 				}
 			}, delay);
@@ -200,7 +222,14 @@ public class MirrorServiceFS extends CarAppService {
 						MirrorDisplay.close(); 
 					}).build();
 			
+			// Override Android Auto's focus controller by actively declaring a PanModeListener.
+			// This signals the host OS that our app handles raw panning gestures.
+			PanModeListener panModeListener = isPanningMode -> {
+				Log.d("Pan Mode toggled: " + isPanningMode);
+			};
+			
 			return new NavigationTemplate.Builder()
+					.setPanModeListener(panModeListener)
 					.setMapActionStrip(new ActionStrip.Builder().addAction(Action.PAN).build())
 					.setActionStrip(new ActionStrip.Builder()
 							.addAction(homeButton)
