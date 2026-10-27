@@ -90,7 +90,6 @@ public class MirrorDisplay {
 	private final AudioFocusRequestCompat audioFocusReq;
 	private WakeLock wakeLock;
 	
-	// MULTI-THREADING SAFETY MUTEX & STATE FLAGS (Zero Racing Guarantee)
 	private static final Object DB_LOCK = new Object();
 	private static volatile boolean isRotationLocked = false;
 	private static volatile boolean isDimmed = false;
@@ -105,7 +104,6 @@ public class MirrorDisplay {
 	private Metrics lMetrics;
 	private Metrics pMetrics;
 	
-	// Touch optimization caches
 	private MotionEvent.PointerProperties[] reusableProps;
 	private MotionEvent.PointerCoords[] reusableCoords;
 	private volatile boolean cacheValid = false;
@@ -570,7 +568,7 @@ public class MirrorDisplay {
 	private void createSession(Promise<Session> p) {
 		if (session != p) return;
 		if (sc == null) noSession();
-		if (p.isDone()) return; // FIX: Restored correct method call here
+		if (p.isDone()) return; 
 		ProjectionService.start().onCompletion((mp, err) -> {
 			if (session != p) return;
 			if (sc == null) noSession();
@@ -641,6 +639,7 @@ public class MirrorDisplay {
 		return d;
 	}
 
+	// --- FIX PART 1: The Geometry Swap ---
 	@Nullable
 	@SuppressLint("SwitchIntDef")
 	private Metrics metrics(@Nullable AppCompatActivity a) {
@@ -659,7 +658,21 @@ public class MirrorDisplay {
 			if (!session.isDoneNotFailed()) return null;
 			final Point size = new Point();
 			defaultDisplay.getRealSize(size);
-			m = new Metrics(size.x, size.y, sc.getWidth(), sc.getHeight());
+			
+			// Detect if Android is incorrectly reporting portrait hardware dimensions while in landscape mode
+			float realWidth = size.x;
+			float realHeight = size.y;
+			if (landscape && realWidth < realHeight) {
+				// Swap dimensions to fix Landscape Touch Offsets and bottom-half dead zones
+				realWidth = size.y;
+				realHeight = size.x;
+			} else if (!landscape && realWidth > realHeight) {
+				// Fallback safety: swap if it reports landscape dimensions while in portrait
+				realWidth = size.y;
+				realHeight = size.x;
+			}
+
+			m = new Metrics(realWidth, realHeight, sc.getWidth(), sc.getHeight());
 			if (landscape) lMetrics = m;
 			else pMetrics = m;
 		}
