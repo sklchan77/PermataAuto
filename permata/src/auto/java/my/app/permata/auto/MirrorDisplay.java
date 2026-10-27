@@ -568,7 +568,7 @@ public class MirrorDisplay {
 	private void createSession(Promise<Session> p) {
 		if (session != p) return;
 		if (sc == null) noSession();
-		if (p.isDone()) return; 
+		if (p.isDone()) return;
 		ProjectionService.start().onCompletion((mp, err) -> {
 			if (session != p) return;
 			if (sc == null) noSession();
@@ -639,7 +639,6 @@ public class MirrorDisplay {
 		return d;
 	}
 
-	// --- FIX PART 1: The Geometry Swap ---
 	@Nullable
 	@SuppressLint("SwitchIntDef")
 	private Metrics metrics(@Nullable AppCompatActivity a) {
@@ -659,15 +658,12 @@ public class MirrorDisplay {
 			final Point size = new Point();
 			defaultDisplay.getRealSize(size);
 			
-			// Detect if Android is incorrectly reporting portrait hardware dimensions while in landscape mode
 			float realWidth = size.x;
 			float realHeight = size.y;
 			if (landscape && realWidth < realHeight) {
-				// Swap dimensions to fix Landscape Touch Offsets and bottom-half dead zones
 				realWidth = size.y;
 				realHeight = size.x;
 			} else if (!landscape && realWidth > realHeight) {
-				// Fallback safety: swap if it reports landscape dimensions while in portrait
 				realWidth = size.y;
 				realHeight = size.x;
 			}
