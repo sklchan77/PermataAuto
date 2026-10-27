@@ -22,7 +22,6 @@ import androidx.car.app.model.ActionStrip;
 import androidx.car.app.model.CarIcon;
 import androidx.car.app.model.Template;
 import androidx.car.app.navigation.model.NavigationTemplate;
-import androidx.car.app.navigation.model.PanModeDelegate;
 import androidx.car.app.navigation.model.PanModeListener;
 import androidx.car.app.validation.HostValidator;
 
@@ -48,6 +47,7 @@ public class MirrorServiceFS extends CarAppService {
 			md.release();
 			md = null;
 		}
+		sc = null; // GUARANTEE: Prevent static memory leaks (zombies) on teardown
 		super.onDestroy();
 	}
 
@@ -104,7 +104,6 @@ public class MirrorServiceFS extends CarAppService {
 		private long scrollMoveTime;
 		private Cancellable scrollUp;
 		
-		// Flag to track if we are actively in a gesture
 		private boolean isPanning = false;
 
 		MirrorScreen(@NonNull CarContext ctx) {
@@ -117,9 +116,8 @@ public class MirrorServiceFS extends CarAppService {
 		public void onSurfaceAvailable(@NonNull SurfaceContainer localSc) {
 			if (localSc.getSurface() == null) return;
 			MirrorServiceFS.sc = localSc;
-			md.setSurface(localSc);
+			md().setSurface(localSc);
 			
-			// Anchor swipes to the dead center of the screen to avoid edge-gesture theft
 			scrollStartX = localSc.getWidth() / 2f;
 			scrollStartY = localSc.getHeight() / 2f;
 		}
@@ -127,6 +125,13 @@ public class MirrorServiceFS extends CarAppService {
 		@Override
 		public void onSurfaceDestroyed(@NonNull SurfaceContainer localSc) {
 			Log.i("MirrorServiceFS: Surface destroyed.");
+			
+			// GUARANTEE: Prevent phantom scroll injections if cable is unplugged mid-swipe
+			if (scrollUp != null) {
+				scrollUp.cancel();
+				scrollUp = null;
+				isPanning = false;
+			}
 			
 			if (md != null) {
 				md.releaseSurface(localSc);
@@ -153,13 +158,12 @@ public class MirrorServiceFS extends CarAppService {
 
 		@Override
 		public void onScroll(float distanceX, float distanceY) {
-			var md = md();
+			var mDisp = md();
 			var time = uptimeMillis();
 			scrollMoveTime = time;
 			
 			if (!isPanning || scrollUp == null) {
 				isPanning = true;
-				// Re-anchor to center on new gesture
 				if (MirrorServiceFS.sc != null) {
 					scrollStartX = MirrorServiceFS.sc.getWidth() / 2f;
 					scrollStartY = MirrorServiceFS.sc.getHeight() / 2f;
@@ -167,19 +171,17 @@ public class MirrorServiceFS extends CarAppService {
 				scrollX = scrollStartX;
 				scrollY = scrollStartY;
 				
-				if (!md.motionEvent(time, time, ACTION_DOWN, scrollX, scrollY)) {
+				if (!mDisp.motionEvent(time, time, ACTION_DOWN, scrollX, scrollY)) {
 					isPanning = false;
 					return;
 				}
 				scrollDownTime = time;
-				
-				// Increased timeout slightly to bridge Android Auto's native gesture stutters
 				scheduleScrollUp(750); 
 			}
 			
 			scrollX -= distanceX;
 			scrollY -= distanceY;
-			md.motionEvent(scrollDownTime, time, ACTION_MOVE, scrollX, scrollY);
+			mDisp.motionEvent(scrollDownTime, time, ACTION_MOVE, scrollX, scrollY);
 		}
 
 		private void scheduleScrollUp(long delay) {
@@ -222,8 +224,6 @@ public class MirrorServiceFS extends CarAppService {
 						MirrorDisplay.close(); 
 					}).build();
 			
-			// Override Android Auto's focus controller by actively declaring a PanModeListener.
-			// This signals the host OS that our app handles raw panning gestures.
 			PanModeListener panModeListener = isPanningMode -> {
 				Log.d("Pan Mode toggled: " + isPanningMode);
 			};
@@ -240,6 +240,8 @@ public class MirrorServiceFS extends CarAppService {
 		}
 
 		private MirrorDisplay md() {
+			// GUARANTEE: Failsafe against NullPointerException if callbacks fire late during teardown
+			if (md == null) md = MirrorDisplay.get(); 
 			if (sc != null) md.setSurface(sc);
 			return md;
 		}
