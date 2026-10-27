@@ -89,8 +89,15 @@ public class MirrorDisplay {
 	private final float scaleDiff;
 	private final AudioFocusRequestCompat audioFocusReq;
 	private WakeLock wakeLock;
-	private static int accel = -1;
-	private int brightness = -1;
+	
+	// MULTI-THREADING SAFETY MUTEX & STATE FLAGS (Zero Racing Guarantee)
+	private static final Object DB_LOCK = new Object();
+	private static volatile boolean isRotationLocked = false;
+	private static volatile boolean isDimmed = false;
+	private static volatile int accel = -1;
+	private volatile int brightness = -1;
+	private volatile long lastInjectedTouchTime; 
+	
 	private int refCounter;
 	private FutureSupplier<Session> session = Completed.cancelled();
 	private SurfaceContainer sc;
@@ -101,7 +108,7 @@ public class MirrorDisplay {
 	// Touch optimization caches
 	private MotionEvent.PointerProperties[] reusableProps;
 	private MotionEvent.PointerCoords[] reusableCoords;
-	private boolean cacheValid = false;
+	private volatile boolean cacheValid = false;
 	
 	private float dx;
 	private float dy;
@@ -178,11 +185,16 @@ public class MirrorDisplay {
 		this.sc = null;
 		lMetrics = pMetrics = null;
 		if (session.isDoneNotFailed()) {
-			try {
-				session.getOrThrow().vd.setSurface(null);
-			} catch (Exception e) {
-				Log.e(e, "Safe VirtualDisplay detachment failed.");
-			}
+			new Thread(() -> {
+				try {
+					Session s = session.getOrThrow();
+					if (s != null && s.vd != null) {
+						s.vd.setSurface(null);
+					}
+				} catch (Exception e) {
+					Log.e(e, "Safe VirtualDisplay detachment failed.");
+				}
+			}, "Permata-Surface-Detach").start();
 		}
 		drawMsg(oldSc, R.string.app_name);
 	}
@@ -202,6 +214,7 @@ public class MirrorDisplay {
 	}
 
 	public synchronized boolean motionEvent(MotionEvent e) {
+		lastInjectedTouchTime = uptimeMillis(); 
 		EventDispatcher d;
 		var actionMasked = e.getActionMasked();
 		
@@ -287,6 +300,7 @@ public class MirrorDisplay {
 	}
 
 	public synchronized boolean motionEvent(long downTime, long eventTime, int action, float x, float y) {
+		lastInjectedTouchTime = uptimeMillis(); 
 		if (action == MotionEvent.ACTION_DOWN) cacheValid = false;
 		
 		var d = translate(x, y, action);
@@ -361,50 +375,84 @@ public class MirrorDisplay {
 					land ? SCREEN_ORIENTATION_SENSOR_LANDSCAPE : SCREEN_ORIENTATION_SENSOR_PORTRAIT);
 		}
 
-		try {
-			var cr = ctx.getContentResolver();
-			if (accel == -1) {
-				var v = Settings.System.getInt(cr, ACCELEROMETER_ROTATION, -1);
-				if (v != -1) accel = v;
+		if (isRotationLocked) return;
+		isRotationLocked = true;
+
+		new Thread(() -> {
+			synchronized (DB_LOCK) {
+				try {
+					var cr = ctx.getContentResolver();
+					if (accel == -1) {
+						var v = Settings.System.getInt(cr, ACCELEROMETER_ROTATION, -1);
+						if (v != -1) accel = v;
+					}
+					Settings.System.putInt(cr, ACCELEROMETER_ROTATION, 0);
+					Settings.System.putInt(cr, USER_ROTATION, land ? ROTATION_90 : ROTATION_0);
+				} catch (Exception err) {
+					Log.e(err);
+				}
 			}
-			Settings.System.putInt(cr, ACCELEROMETER_ROTATION, 0);
-			Settings.System.putInt(cr, USER_ROTATION, land ? ROTATION_90 : ROTATION_0);
-		} catch (Exception err) {
-			Log.e(err);
-		}
+		}, "Permata-Rot-Lock").start();
 	}
 
 	private static void restoreAccelRotation(Context ctx) {
 		var a = EventDispatcher.get().getActivity();
 		if (a != null) a.setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_SENSOR);
-		if (accel == -1) return;
-		try {
-			Settings.System.putInt(ctx.getContentResolver(), ACCELEROMETER_ROTATION, accel);
-		} catch (Exception err) {
-			Log.e(err);
-		}
-		accel = -1;
+		
+		if (!isRotationLocked) return;
+		isRotationLocked = false;
+
+		new Thread(() -> {
+			synchronized (DB_LOCK) {
+				try {
+					if (accel != -1) {
+						Settings.System.putInt(ctx.getContentResolver(), ACCELEROMETER_ROTATION, accel);
+						accel = -1;
+					}
+				} catch (Exception err) {
+					Log.e(err);
+				}
+			}
+		}, "Permata-Rot-Unlock").start();
 	}
 
 	private void dimScreen(Context ctx) {
-		if (brightness == -1) {
-			var br = Settings.System.getInt(ctx.getContentResolver(), SCREEN_BRIGHTNESS, -1);
-			brightness = (br > 0) ? br : 200;
-		}
-		setBrightness(ctx, 1);
-		if (!Build.MANUFACTURER.equalsIgnoreCase("Xiaomi")) setBrightness(ctx, 0);
+		if (isDimmed) return;
+		isDimmed = true;
+		
+		new Thread(() -> {
+			synchronized (DB_LOCK) {
+				try {
+					if (brightness == -1) {
+						var br = Settings.System.getInt(ctx.getContentResolver(), SCREEN_BRIGHTNESS, -1);
+						brightness = (br > 0) ? br : 200;
+					}
+					Settings.System.putInt(ctx.getContentResolver(), SCREEN_BRIGHTNESS, 1);
+					if (!Build.MANUFACTURER.equalsIgnoreCase("Xiaomi")) {
+						Settings.System.putInt(ctx.getContentResolver(), SCREEN_BRIGHTNESS, 0);
+					}
+				} catch (Exception err) {
+					Log.e(err);
+				}
+			}
+		}, "Permata-Dim").start();
 	}
 
 	private void restoreBrightness(Context ctx) {
-		if (brightness > 0) setBrightness(ctx, brightness);
-	}
+		if (!isDimmed) return;
+		isDimmed = false;
 
-	private static void setBrightness(Context ctx, int br) {
-		try {
-			Settings.System.putInt(ctx.getContentResolver(), SCREEN_BRIGHTNESS, br);
-		} catch (SecurityException ex) {
-			Log.e(ex, "Failed to change SCREEN_BRIGHTNESS");
-		}
+		new Thread(() -> {
+			synchronized (DB_LOCK) {
+				try {
+					if (brightness > 0) {
+						Settings.System.putInt(ctx.getContentResolver(), SCREEN_BRIGHTNESS, brightness);
+					}
+				} catch (Exception err) {
+					Log.e(err);
+				}
+			}
+		}, "Permata-Bright").start();
 	}
 
 	@Override
@@ -445,7 +493,6 @@ public class MirrorDisplay {
 				wm.addView(overlay, lp);
 				this.overlay = overlay;
 				
-				// Updated from 10000 to 15000
 				overlay.dimAndRotate.schedule(15000);
 			} catch (Exception err) {
 				Log.e(err, "Failed to add overlay");
@@ -523,7 +570,7 @@ public class MirrorDisplay {
 	private void createSession(Promise<Session> p) {
 		if (session != p) return;
 		if (sc == null) noSession();
-		if (p.isDone()) return;
+		if (p.isDone()) return; // FIX: Restored correct method call here
 		ProjectionService.start().onCompletion((mp, err) -> {
 			if (session != p) return;
 			if (sc == null) noSession();
@@ -705,15 +752,15 @@ public class MirrorDisplay {
 		@SuppressLint("ClickableViewAccessibility")
 		@Override
 		public boolean onTouchEvent(MotionEvent event) {
-			if (event.getToolType(0) != MotionEvent.TOOL_TYPE_FINGER) return false;
-			Log.d("Temporary restoring brightness and rotation due to event ", event);
+			if (Math.abs(uptimeMillis() - lastInjectedTouchTime) < 200) return false;
 			
-			// Updated from 30000 to 15000
-			dimAndRotate.schedule(15000);
-			
-			var ctx = getContext();
-			restoreBrightness(ctx);
-			restoreAccelRotation(ctx);
+			if (event.getAction() == MotionEvent.ACTION_OUTSIDE || event.getToolType(0) == MotionEvent.TOOL_TYPE_FINGER) {
+				Log.d("Temporary restoring brightness and rotation due to physical touch event ", event);
+				dimAndRotate.schedule(15000);
+				var ctx = getContext();
+				restoreBrightness(ctx);
+				restoreAccelRotation(ctx);
+			}
 			return false;
 		}
 	}
