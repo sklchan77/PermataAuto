@@ -116,7 +116,7 @@ public class MirrorServiceFS extends CarAppService {
 		public void onSurfaceAvailable(@NonNull SurfaceContainer localSc) {
 			if (localSc.getSurface() == null) return;
 			MirrorServiceFS.sc = localSc;
-			md().setSurface(localSc);
+			if (md != null) md.setSurface(localSc);
 			
 			scrollStartX = localSc.getWidth() / 2f;
 			scrollStartY = localSc.getHeight() / 2f;
@@ -153,21 +153,23 @@ public class MirrorServiceFS extends CarAppService {
 				scrollUp = null;
 				isPanning = false;
 			}
-			md().tap(x, y);
+			if (md() != null) md().tap(x, y);
 		}
 
 		@Override
 		public void onScroll(float distanceX, float distanceY) {
 			var mDisp = md();
+			if (mDisp == null || MirrorServiceFS.sc == null) return;
+			
 			var time = uptimeMillis();
 			scrollMoveTime = time;
 			
 			if (!isPanning || scrollUp == null) {
 				isPanning = true;
-				if (MirrorServiceFS.sc != null) {
-					scrollStartX = MirrorServiceFS.sc.getWidth() / 2f;
-					scrollStartY = MirrorServiceFS.sc.getHeight() / 2f;
-				}
+				// Anchor to exact center mathematically bypasses AA Edge Gesture theft
+				scrollStartX = MirrorServiceFS.sc.getWidth() / 2f;
+				scrollStartY = MirrorServiceFS.sc.getHeight() / 2f;
+				
 				scrollX = scrollStartX;
 				scrollY = scrollStartY;
 				
@@ -186,7 +188,11 @@ public class MirrorServiceFS extends CarAppService {
 
 		private void scheduleScrollUp(long delay) {
 			scrollUp = handler.schedule(() -> {
+				// GUARANTEE: The Ghost Timer NullPointerException Failsafe
 				if (scrollUp == null) return;
+				var mDisp = md();
+				if (mDisp == null) return;
+
 				var time = uptimeMillis();
 				var end = scrollMoveTime + delay;
 				if (end > time) {
@@ -194,7 +200,7 @@ public class MirrorServiceFS extends CarAppService {
 				} else {
 					scrollUp = null;
 					isPanning = false;
-					md().motionEvent(scrollDownTime, time, ACTION_UP, scrollX, scrollY);
+					mDisp.motionEvent(scrollDownTime, time, ACTION_UP, scrollX, scrollY);
 				}
 			}, delay);
 		}
@@ -203,7 +209,7 @@ public class MirrorServiceFS extends CarAppService {
 		public void onScale(float focusX, float focusY, float scaleFactor) {
 			scrollStartX = focusX;
 			scrollStartY = focusY;
-			md().scale(focusX, focusY, scaleFactor > 1f);
+			if (md() != null) md().scale(focusX, focusY, scaleFactor > 1f);
 		}
 
 		@NonNull
@@ -220,13 +226,12 @@ public class MirrorServiceFS extends CarAppService {
 			var exitButton = new Action.Builder().setIcon(
 							new CarIcon.Builder(createWithResource(getCarContext(), R.drawable.shutdown)).build())
 					.setOnClickListener(() -> {
-						Log.i("User triggered manual shutdown. Parking on black screen to avoid restart loop.");
+						Log.i("User triggered manual shutdown.");
 						MirrorDisplay.close(); 
 					}).build();
 			
-			PanModeListener panModeListener = isPanningMode -> {
-				Log.d("Pan Mode toggled: " + isPanningMode);
-			};
+			// Override Android Auto's focus controller by actively declaring a PanModeListener.
+			PanModeListener panModeListener = isPanningMode -> Log.d("Pan Mode toggled: " + isPanningMode);
 			
 			return new NavigationTemplate.Builder()
 					.setPanModeListener(panModeListener)
@@ -240,9 +245,8 @@ public class MirrorServiceFS extends CarAppService {
 		}
 
 		private MirrorDisplay md() {
-			// GUARANTEE: Failsafe against NullPointerException if callbacks fire late during teardown
 			if (md == null) md = MirrorDisplay.get(); 
-			if (sc != null) md.setSurface(sc);
+			if (md != null && sc != null) md.setSurface(sc);
 			return md;
 		}
 	}
