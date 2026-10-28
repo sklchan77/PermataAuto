@@ -234,7 +234,7 @@ public class MirrorDisplay {
 
 	public boolean motionEvent(MotionEvent e) {
 		lastInjectedTouchTime = uptimeMillis(); 
-		EventDispatcher d = null; 
+		EventDispatcher d = null; // FIX: Strict Initialization
 		var actionMasked = e.getActionMasked();
 		
 		if (actionMasked == MotionEvent.ACTION_DOWN) {
@@ -312,7 +312,7 @@ public class MirrorDisplay {
 			} catch (Exception ex) {
 				Log.e(ex, "Touch clone failed.");
 			}
-		}
+		} // End of Micro-Lock
 		
 		if (clonedEvent != null && d != null) {
 			try {
@@ -695,13 +695,15 @@ public class MirrorDisplay {
 	@SuppressLint("SwitchIntDef")
 	private Metrics metrics(@Nullable AppCompatActivity a) {
 		if (sc == null) return null;
-		
-		// FIX: Never trust PiP or Floating Window configurations.
-		// Rely 100% on the absolute physical hardware rotation.
-		boolean landscape = switch (defaultDisplay.getRotation()) {
-			case ROTATION_90, ROTATION_270 -> true;
-			default -> false;
-		};
+		boolean landscape;
+		if (a != null) {
+			landscape = a.getResources().getConfiguration().orientation == ORIENTATION_LANDSCAPE;
+		} else {
+			landscape = switch (defaultDisplay.getRotation()) {
+				case ROTATION_90, ROTATION_270 -> true;
+				default -> false;
+			};
+		}
 		
 		var m = landscape ? lMetrics : pMetrics;
 		
