@@ -13,6 +13,7 @@ import static android.os.PowerManager.ACQUIRE_CAUSES_WAKEUP;
 import static android.os.SystemClock.uptimeMillis;
 import static android.provider.Settings.System.ACCELEROMETER_ROTATION;
 import static android.provider.Settings.System.SCREEN_BRIGHTNESS;
+import static android.provider.Settings.System.SCREEN_BRIGHTNESS_MODE;
 import static android.provider.Settings.System.USER_ROTATION;
 import static android.view.Surface.ROTATION_0;
 import static android.view.Surface.ROTATION_270;
@@ -44,6 +45,8 @@ import android.media.AudioManager;
 import android.media.projection.MediaProjection;
 import android.os.Build;
 import android.os.Build.VERSION_CODES;
+import android.os.Handler;
+import android.os.Looper;
 import android.os.PowerManager;
 import android.os.PowerManager.WakeLock;
 import android.provider.Settings;
@@ -67,6 +70,9 @@ import androidx.media.AudioFocusRequestCompat;
 import androidx.media.AudioManagerCompat;
 
 import java.lang.ref.WeakReference;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import my.app.permata.PermataApplication;
 import my.app.permata.R;
@@ -90,12 +96,20 @@ public class MirrorDisplay {
 	private final AudioFocusRequestCompat audioFocusReq;
 	private WakeLock wakeLock;
 	
-	private static final Object DB_LOCK = new Object();
+	// GUARANTEE: Eliminates Thread-Thrashing (Sluggishness) by queuing IPC operations
+	private static final ExecutorService bgExecutor = Executors.newSingleThreadExecutor();
+	private static final AtomicBoolean isTearingDown = new AtomicBoolean(false);
+	
+	// IPC System State Caches
 	private static volatile boolean isRotationLocked = false;
 	private static volatile boolean isDimmed = false;
 	private static volatile int accel = -1;
+	private static volatile int brightnessMode = -1; 
 	private volatile int brightness = -1;
 	private volatile long lastInjectedTouchTime; 
+	
+	// Micro-locking for multi-touch concurrency
+	private final Object touchLock = new Object();
 	
 	private int refCounter;
 	private FutureSupplier<Session> session = Completed.cancelled();
@@ -158,8 +172,14 @@ public class MirrorDisplay {
 	public void setSurface(@NonNull SurfaceContainer sc) {
 		var oldSc = this.sc;
 		if (oldSc == sc) return;
+		
+		// Guard against Async VirtualDisplay Race Conditions
+		if (isTearingDown.get()) {
+			Log.w("Ignoring surface set; teardown in progress.");
+			return;
+		}
+		
 		this.sc = sc;
-		lMetrics = pMetrics = null;
 		if (session.isDoneNotFailed()) {
 			try {
 				var vd = this.session.getOrThrow().vd;
@@ -181,37 +201,39 @@ public class MirrorDisplay {
 		var oldSc = this.sc;
 		if (oldSc != sc) return;
 		this.sc = null;
-		lMetrics = pMetrics = null;
+		
 		if (session.isDoneNotFailed()) {
-			new Thread(() -> {
+			isTearingDown.set(true);
+			bgExecutor.execute(() -> {
 				try {
 					Session s = session.getOrThrow();
-					if (s != null && s.vd != null) {
-						s.vd.setSurface(null);
-					}
+					if (s != null && s.vd != null) s.vd.setSurface(null);
 				} catch (Exception e) {
 					Log.e(e, "Safe VirtualDisplay detachment failed.");
+				} finally {
+					isTearingDown.set(false);
 				}
-			}, "Permata-Surface-Detach").start();
+			});
 		}
 		drawMsg(oldSc, R.string.app_name);
 	}
 
-	public synchronized void tap(float x, float y) {
+	// GUARANTEE: Removed blanket synchronized deadlock blocks on Touch APIs
+	public void tap(float x, float y) {
 		cacheValid = false;
 		var d = translate(x, y, MotionEvent.ACTION_DOWN);
 		if (d != null) d.tap(dx, dy);
 		cacheValid = false;
 	}
 
-	public synchronized void scale(float x, float y, boolean zoomIn) {
+	public void scale(float x, float y, boolean zoomIn) {
 		cacheValid = false;
 		var d = translate(x, y, MotionEvent.ACTION_DOWN);
 		if (d != null) d.scale(dx, dy, zoomIn ? scaleDiff : -scaleDiff);
 		cacheValid = false;
 	}
 
-	public synchronized boolean motionEvent(MotionEvent e) {
+	public boolean motionEvent(MotionEvent e) {
 		lastInjectedTouchTime = uptimeMillis(); 
 		EventDispatcher d;
 		var actionMasked = e.getActionMasked();
@@ -222,82 +244,92 @@ public class MirrorDisplay {
 		}
 		
 		var cnt = e.getPointerCount();
-		if (cnt > reusableProps.length) {
-			reusableProps = new MotionEvent.PointerProperties[cnt];
-			reusableCoords = new MotionEvent.PointerCoords[cnt];
-			for (int i = 0; i < cnt; i++) {
-				reusableProps[i] = new MotionEvent.PointerProperties();
-				reusableCoords[i] = new MotionEvent.PointerCoords();
-			}
-		}
-
+		
 		MotionEvent clonedEvent = null;
 		boolean result = false;
 
-		try {
-			if (cnt == 1) {
-				d = translate(e.getX(), e.getY(), actionMasked);
-				if (d == null) return false;
-				
-				e.getPointerProperties(0, reusableProps[0]);
-				e.getPointerCoords(0, reusableCoords[0]);
-				
-				reusableProps[0].toolType = MotionEvent.TOOL_TYPE_FINGER;
-				reusableCoords[0].x = dx;
-				reusableCoords[0].y = dy;
-				if (reusableCoords[0].pressure <= 0.01f) reusableCoords[0].pressure = 1.0f;
-				if (reusableCoords[0].size <= 0.01f) reusableCoords[0].size = 1.0f;
-				
-				clonedEvent = MotionEvent.obtain(downTime, uptimeMillis(), e.getAction(), 1, reusableProps, reusableCoords,
-						e.getMetaState(), e.getButtonState(), e.getXPrecision(), e.getYPrecision(), e.getDeviceId(),
-						e.getEdgeFlags(), InputDevice.SOURCE_TOUCHSCREEN, e.getFlags());
-			} else {
-				d = dispatcher();
-				var a = d.getActivity();
-				var m = metrics(a);
-				if (m == null) return false;
-				
-				if (actionMasked == MotionEvent.ACTION_DOWN || actionMasked == MotionEvent.ACTION_POINTER_DOWN || !cacheValid) {
-					if (a != null) a.getWindow().getDecorView().getLocationOnScreen(loc);
-					else { loc[0] = 0; loc[1] = 0; }
-					cacheValid = true;
-				}
-
+		synchronized (touchLock) {
+			if (cnt > reusableProps.length) {
+				reusableProps = new MotionEvent.PointerProperties[cnt];
+				reusableCoords = new MotionEvent.PointerCoords[cnt];
 				for (int i = 0; i < cnt; i++) {
-					e.getPointerProperties(i, reusableProps[i]);
-					e.getPointerCoords(i, reusableCoords[i]);
-					
-					reusableProps[i].toolType = MotionEvent.TOOL_TYPE_FINGER;
-					
-					if (a != null) {
-						reusableCoords[i].x = (reusableCoords[i].x - m.x) * m.scale - loc[0];
-						reusableCoords[i].y = (reusableCoords[i].y - m.y) * m.scale - loc[1];
-					} else {
-						reusableCoords[i].x = (reusableCoords[i].x - m.x) * m.scale;
-						reusableCoords[i].y = (reusableCoords[i].y - m.y) * m.scale;
-					}
-					
-					if (reusableCoords[i].pressure <= 0.01f) reusableCoords[i].pressure = 1.0f;
-					if (reusableCoords[i].size <= 0.01f) reusableCoords[i].size = 1.0f;
+					reusableProps[i] = new MotionEvent.PointerProperties();
+					reusableCoords[i] = new MotionEvent.PointerCoords();
 				}
-				clonedEvent = MotionEvent.obtain(downTime, uptimeMillis(), e.getAction(), cnt, reusableProps, reusableCoords,
-						e.getMetaState(), e.getButtonState(), e.getXPrecision(), e.getYPrecision(), e.getDeviceId(),
-						e.getEdgeFlags(), InputDevice.SOURCE_TOUCHSCREEN, e.getFlags());
 			}
-			
-			if (clonedEvent != null) {
+
+			try {
+				if (cnt == 1) {
+					d = translate(e.getX(), e.getY(), actionMasked);
+					if (d == null) return false;
+					
+					e.getPointerProperties(0, reusableProps[0]);
+					e.getPointerCoords(0, reusableCoords[0]);
+					
+					// FIX: Pointer ID Offset to prevent ID=0 collisions with physical fingers
+					reusableProps[0].id = 10; 
+					reusableProps[0].toolType = MotionEvent.TOOL_TYPE_FINGER;
+					reusableCoords[0].x = dx;
+					reusableCoords[0].y = dy;
+					if (reusableCoords[0].pressure <= 0.01f) reusableCoords[0].pressure = 1.0f;
+					if (reusableCoords[0].size <= 0.01f) reusableCoords[0].size = 1.0f;
+					
+					clonedEvent = MotionEvent.obtain(downTime, uptimeMillis(), e.getAction(), 1, reusableProps, reusableCoords,
+							e.getMetaState(), e.getButtonState(), e.getXPrecision(), e.getYPrecision(), e.getDeviceId(),
+							e.getEdgeFlags(), InputDevice.SOURCE_TOUCHSCREEN, e.getFlags());
+				} else {
+					d = dispatcher();
+					var a = d.getActivity();
+					var m = metrics(a);
+					if (m == null) return false;
+					
+					if (actionMasked == MotionEvent.ACTION_DOWN || actionMasked == MotionEvent.ACTION_POINTER_DOWN || !cacheValid) {
+						if (a != null) a.getWindow().getDecorView().getLocationOnScreen(loc);
+						else { loc[0] = 0; loc[1] = 0; }
+						cacheValid = true;
+					}
+
+					for (int i = 0; i < cnt; i++) {
+						e.getPointerProperties(i, reusableProps[i]);
+						e.getPointerCoords(i, reusableCoords[i]);
+						
+						reusableProps[i].id = 10 + i; 
+						reusableProps[i].toolType = MotionEvent.TOOL_TYPE_FINGER;
+						
+						if (a != null) {
+							reusableCoords[i].x = (reusableCoords[i].x - m.x) * m.scale - loc[0];
+							reusableCoords[i].y = (reusableCoords[i].y - m.y) * m.scale - loc[1];
+						} else {
+							reusableCoords[i].x = (reusableCoords[i].x - m.x) * m.scale;
+							reusableCoords[i].y = (reusableCoords[i].y - m.y) * m.scale;
+						}
+						
+						if (reusableCoords[i].pressure <= 0.01f) reusableCoords[i].pressure = 1.0f;
+						if (reusableCoords[i].size <= 0.01f) reusableCoords[i].size = 1.0f;
+					}
+					clonedEvent = MotionEvent.obtain(downTime, uptimeMillis(), e.getAction(), cnt, reusableProps, reusableCoords,
+							e.getMetaState(), e.getButtonState(), e.getXPrecision(), e.getYPrecision(), e.getDeviceId(),
+							e.getEdgeFlags(), InputDevice.SOURCE_TOUCHSCREEN, e.getFlags());
+				}
+			} catch (Exception ex) {
+				Log.e(ex, "Touch clone failed.");
+			}
+		} // End of Micro-Lock
+		
+		if (clonedEvent != null) {
+			try {
 				result = d.motionEvent(clonedEvent);
-			}
-		} finally {
-			if (clonedEvent != null) clonedEvent.recycle();
-			if (actionMasked == MotionEvent.ACTION_UP || actionMasked == MotionEvent.ACTION_CANCEL) {
-				cacheValid = false;
+			} finally {
+				clonedEvent.recycle();
+				if (actionMasked == MotionEvent.ACTION_UP || actionMasked == MotionEvent.ACTION_CANCEL) {
+					cacheValid = false;
+				}
 			}
 		}
 		return result;
 	}
 
-	public synchronized boolean motionEvent(long downTime, long eventTime, int action, float x, float y) {
+	public boolean motionEvent(long downTime, long eventTime, int action, float x, float y) {
 		lastInjectedTouchTime = uptimeMillis(); 
 		if (action == MotionEvent.ACTION_DOWN) cacheValid = false;
 		
@@ -307,25 +339,34 @@ public class MirrorDisplay {
 		boolean result = false;
 		MotionEvent e = null;
 
-		try {
-			reusableProps[0].clear();
-			reusableProps[0].id = 0;
-			reusableProps[0].toolType = MotionEvent.TOOL_TYPE_FINGER;
-			
-			reusableCoords[0].clear();
-			reusableCoords[0].x = dx;
-			reusableCoords[0].y = dy;
-			reusableCoords[0].pressure = 1.0f;
-			reusableCoords[0].size = 1.0f;
-			
-			e = MotionEvent.obtain(downTime, eventTime, action, 1, reusableProps, reusableCoords,
-					0, 0, 1.0f, 1.0f, 0, 0, InputDevice.SOURCE_TOUCHSCREEN, 0);
-					
-			result = d.motionEvent(e);
-		} finally {
-			if (e != null) e.recycle();
-			if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) {
-				cacheValid = false;
+		synchronized (touchLock) {
+			try {
+				reusableProps[0].clear();
+				reusableProps[0].id = 10; // Prevent physical touch collisions
+				reusableProps[0].toolType = MotionEvent.TOOL_TYPE_FINGER;
+				
+				reusableCoords[0].clear();
+				reusableCoords[0].x = dx;
+				reusableCoords[0].y = dy;
+				reusableCoords[0].pressure = 1.0f;
+				reusableCoords[0].size = 1.0f;
+				
+				e = MotionEvent.obtain(downTime, eventTime, action, 1, reusableProps, reusableCoords,
+						0, 0, 1.0f, 1.0f, 0, 0, InputDevice.SOURCE_TOUCHSCREEN, 0);
+						
+			} catch (Exception ex) {
+				Log.e(ex, "Single touch motion builder failed.");
+			}
+		}
+
+		if (e != null) {
+			try {
+				result = d.motionEvent(e);
+			} finally {
+				e.recycle();
+				if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) {
+					cacheValid = false;
+				}
 			}
 		}
 		
@@ -373,84 +414,86 @@ public class MirrorDisplay {
 					land ? SCREEN_ORIENTATION_SENSOR_LANDSCAPE : SCREEN_ORIENTATION_SENSOR_PORTRAIT);
 		}
 
-		if (isRotationLocked) return;
-		isRotationLocked = true;
-
-		new Thread(() -> {
-			synchronized (DB_LOCK) {
-				try {
-					var cr = ctx.getContentResolver();
-					if (accel == -1) {
-						var v = Settings.System.getInt(cr, ACCELEROMETER_ROTATION, -1);
-						if (v != -1) accel = v;
-					}
-					Settings.System.putInt(cr, ACCELEROMETER_ROTATION, 0);
-					Settings.System.putInt(cr, USER_ROTATION, land ? ROTATION_90 : ROTATION_0);
-				} catch (Exception err) {
-					Log.e(err);
+		bgExecutor.execute(() -> {
+			if (isRotationLocked) return;
+			try {
+				var cr = ctx.getContentResolver();
+				if (accel == -1) {
+					var v = Settings.System.getInt(cr, ACCELEROMETER_ROTATION, -1);
+					if (v != -1) accel = v;
 				}
+				Settings.System.putInt(cr, ACCELEROMETER_ROTATION, 0);
+				Settings.System.putInt(cr, USER_ROTATION, land ? ROTATION_90 : ROTATION_0);
+				isRotationLocked = true;
+			} catch (Exception err) {
+				Log.e(err);
 			}
-		}, "Permata-Rot-Lock").start();
+		});
 	}
 
 	private static void restoreAccelRotation(Context ctx) {
 		var a = EventDispatcher.get().getActivity();
 		if (a != null) a.setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_SENSOR);
 		
-		if (!isRotationLocked) return;
-		isRotationLocked = false;
-
-		new Thread(() -> {
-			synchronized (DB_LOCK) {
-				try {
-					if (accel != -1) {
-						Settings.System.putInt(ctx.getContentResolver(), ACCELEROMETER_ROTATION, accel);
-						accel = -1;
-					}
-				} catch (Exception err) {
-					Log.e(err);
+		bgExecutor.execute(() -> {
+			if (!isRotationLocked) return;
+			try {
+				if (accel != -1) {
+					Settings.System.putInt(ctx.getContentResolver(), ACCELEROMETER_ROTATION, accel);
+					accel = -1;
 				}
+				isRotationLocked = false;
+			} catch (Exception err) {
+				Log.e(err);
 			}
-		}, "Permata-Rot-Unlock").start();
+		});
 	}
 
 	private void dimScreen(Context ctx) {
-		if (isDimmed) return;
-		isDimmed = true;
-		
-		new Thread(() -> {
-			synchronized (DB_LOCK) {
-				try {
-					if (brightness == -1) {
-						var br = Settings.System.getInt(ctx.getContentResolver(), SCREEN_BRIGHTNESS, -1);
-						brightness = (br > 0) ? br : 200;
-					}
-					Settings.System.putInt(ctx.getContentResolver(), SCREEN_BRIGHTNESS, 1);
-					if (!Build.MANUFACTURER.equalsIgnoreCase("Xiaomi")) {
-						Settings.System.putInt(ctx.getContentResolver(), SCREEN_BRIGHTNESS, 0);
-					}
-				} catch (Exception err) {
-					Log.e(err);
+		bgExecutor.execute(() -> {
+			if (isDimmed) return;
+			try {
+				var cr = ctx.getContentResolver();
+				
+				// FIX: Protect against the Auto-Brightness Burn-in Trap
+				if (brightnessMode == -1) {
+					var mode = Settings.System.getInt(cr, SCREEN_BRIGHTNESS_MODE, -1);
+					if (mode != -1) brightnessMode = mode;
 				}
+				Settings.System.putInt(cr, SCREEN_BRIGHTNESS_MODE, 0); // Force manual mode
+				
+				if (brightness == -1) {
+					var br = Settings.System.getInt(cr, SCREEN_BRIGHTNESS, -1);
+					brightness = (br > 0) ? br : 200;
+				}
+				Settings.System.putInt(cr, SCREEN_BRIGHTNESS, 1);
+				if (!Build.MANUFACTURER.equalsIgnoreCase("Xiaomi")) {
+					Settings.System.putInt(cr, SCREEN_BRIGHTNESS, 0);
+				}
+				isDimmed = true;
+			} catch (Exception err) {
+				Log.e(err);
 			}
-		}, "Permata-Dim").start();
+		});
 	}
 
 	private void restoreBrightness(Context ctx) {
-		if (!isDimmed) return;
-		isDimmed = false;
-
-		new Thread(() -> {
-			synchronized (DB_LOCK) {
-				try {
-					if (brightness > 0) {
-						Settings.System.putInt(ctx.getContentResolver(), SCREEN_BRIGHTNESS, brightness);
-					}
-				} catch (Exception err) {
-					Log.e(err);
+		bgExecutor.execute(() -> {
+			if (!isDimmed) return;
+			try {
+				var cr = ctx.getContentResolver();
+				if (brightness > 0) {
+					Settings.System.putInt(cr, SCREEN_BRIGHTNESS, brightness);
 				}
+				if (brightnessMode != -1) {
+					Settings.System.putInt(cr, SCREEN_BRIGHTNESS_MODE, brightnessMode);
+					brightnessMode = -1;
+				}
+				isDimmed = false;
+			} catch (Exception err) {
+				Log.e(err);
 			}
-		}, "Permata-Bright").start();
+		});
 	}
 
 	@Override
@@ -475,6 +518,12 @@ public class MirrorDisplay {
 
 		var pmg = (PowerManager) app.getSystemService(POWER_SERVICE);
 		if (pmg != null) {
+			// GUARANTEE: Prevent orphaned WakeLocks draining battery
+			if (wakeLock != null && wakeLock.isHeld()) {
+				wakeLock.release();
+				wakeLock = null;
+			}
+			
 			//noinspection deprecation
 			wakeLock = pmg.newWakeLock(PowerManager.SCREEN_DIM_WAKE_LOCK | ACQUIRE_CAUSES_WAKEUP,
 					"Permata:ScreenLock");
@@ -498,7 +547,10 @@ public class MirrorDisplay {
 		}
 
 		try {
+			// FIX: Shield against Android 8+ Background Restrictions
 			app.startService(new Intent(app, XposedEventDispatcherService.class));
+		} catch (IllegalStateException ise) {
+			Log.w("Background Service restrictions active, ignoring Xposed Service startup.");
 		} catch (Exception err) {
 			Log.e(err, "Failed to start XposedEventDispatcherService");
 		}
@@ -510,15 +562,18 @@ public class MirrorDisplay {
 
 	private void cleanUp() {
 		noSession();
-		sc = null;
-		lMetrics = pMetrics = null;
 		var app = PermataApplication.get();
+		
 		if (overlay != null) {
 			overlay.dimAndRotate.cancel();
-			try {
-				var wm = (WindowManager) app.getSystemService(WINDOW_SERVICE);
-				wm.removeView(overlay);
-			} catch (Exception ignored) {}
+			// GUARANTEE: Dismantle UI only on the Main Thread (ViewRootImpl safety)
+			final Overlay oldOverlay = overlay;
+			new Handler(Looper.getMainLooper()).post(() -> {
+				try {
+					var wm = (WindowManager) app.getSystemService(WINDOW_SERVICE);
+					wm.removeView(oldOverlay);
+				} catch (Exception ignored) {}
+			});
 			overlay = null;
 		}
 		
@@ -542,6 +597,9 @@ public class MirrorDisplay {
 
 		var amgr = (AudioManager) app.getSystemService(Context.AUDIO_SERVICE);
 		if (amgr != null) AudioManagerCompat.abandonAudioFocusRequest(amgr, audioFocusReq);
+		
+		sc = null;
+		lMetrics = pMetrics = null;
 	}
 
 	private void noSession() {
@@ -568,7 +626,7 @@ public class MirrorDisplay {
 	private void createSession(Promise<Session> p) {
 		if (session != p) return;
 		if (sc == null) noSession();
-		if (p.isDone()) return;
+		if (p.isDone()) return; 
 		ProjectionService.start().onCompletion((mp, err) -> {
 			if (session != p) return;
 			if (sc == null) noSession();
@@ -652,7 +710,14 @@ public class MirrorDisplay {
 				default -> false;
 			};
 		}
+		
 		var m = landscape ? lMetrics : pMetrics;
+		
+		// GUARANTEE: Invalidate math cache if Android Auto UI dynamically resizes the window
+		if (m != null && (m.sw != sc.getWidth() || m.sh != sc.getHeight())) {
+			m = null; 
+		}
+		
 		if (m == null) {
 			if (!session.isDoneNotFailed()) return null;
 			final Point size = new Point();
@@ -660,6 +725,8 @@ public class MirrorDisplay {
 			
 			float realWidth = size.x;
 			float realHeight = size.y;
+			
+			// Handle Landscape Rotation Trickery from the OS
 			if (landscape && realWidth < realHeight) {
 				realWidth = size.y;
 				realHeight = size.x;
@@ -726,8 +793,12 @@ public class MirrorDisplay {
 		final float x;
 		final float y;
 		final float scale;
+		final float sw; // Storing the surface width to track resizing
+		final float sh; // Storing the surface height to track resizing
 
 		Metrics(float dw, float dh, float sw, float sh) {
+			this.sw = sw;
+			this.sh = sh;
 			var scale = dw / sw;
 			var scaleH = dh / scale;
 			if (scaleH <= sh) {
