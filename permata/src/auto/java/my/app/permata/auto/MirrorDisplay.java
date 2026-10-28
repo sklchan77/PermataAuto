@@ -96,7 +96,7 @@ public class MirrorDisplay {
 	private final AudioFocusRequestCompat audioFocusReq;
 	private WakeLock wakeLock;
 	
-	// GUARANTEE: Eliminates Thread-Thrashing (Sluggishness) by queuing IPC operations
+	// GUARANTEE: Eliminates Thread-Thrashing by queuing IPC operations
 	private static final ExecutorService bgExecutor = Executors.newSingleThreadExecutor();
 	private static final AtomicBoolean isTearingDown = new AtomicBoolean(false);
 	
@@ -218,7 +218,6 @@ public class MirrorDisplay {
 		drawMsg(oldSc, R.string.app_name);
 	}
 
-	// GUARANTEE: Removed blanket synchronized deadlock blocks on Touch APIs
 	public void tap(float x, float y) {
 		cacheValid = false;
 		var d = translate(x, y, MotionEvent.ACTION_DOWN);
@@ -235,7 +234,7 @@ public class MirrorDisplay {
 
 	public boolean motionEvent(MotionEvent e) {
 		lastInjectedTouchTime = uptimeMillis(); 
-		EventDispatcher d;
+		EventDispatcher d = null; // FIX: Strict Initialization
 		var actionMasked = e.getActionMasked();
 		
 		if (actionMasked == MotionEvent.ACTION_DOWN) {
@@ -266,7 +265,6 @@ public class MirrorDisplay {
 					e.getPointerProperties(0, reusableProps[0]);
 					e.getPointerCoords(0, reusableCoords[0]);
 					
-					// FIX: Pointer ID Offset to prevent ID=0 collisions with physical fingers
 					reusableProps[0].id = 10; 
 					reusableProps[0].toolType = MotionEvent.TOOL_TYPE_FINGER;
 					reusableCoords[0].x = dx;
@@ -316,7 +314,7 @@ public class MirrorDisplay {
 			}
 		} // End of Micro-Lock
 		
-		if (clonedEvent != null) {
+		if (clonedEvent != null && d != null) {
 			try {
 				result = d.motionEvent(clonedEvent);
 			} finally {
@@ -342,7 +340,7 @@ public class MirrorDisplay {
 		synchronized (touchLock) {
 			try {
 				reusableProps[0].clear();
-				reusableProps[0].id = 10; // Prevent physical touch collisions
+				reusableProps[0].id = 10; 
 				reusableProps[0].toolType = MotionEvent.TOOL_TYPE_FINGER;
 				
 				reusableCoords[0].clear();
@@ -455,12 +453,11 @@ public class MirrorDisplay {
 			try {
 				var cr = ctx.getContentResolver();
 				
-				// FIX: Protect against the Auto-Brightness Burn-in Trap
 				if (brightnessMode == -1) {
 					var mode = Settings.System.getInt(cr, SCREEN_BRIGHTNESS_MODE, -1);
 					if (mode != -1) brightnessMode = mode;
 				}
-				Settings.System.putInt(cr, SCREEN_BRIGHTNESS_MODE, 0); // Force manual mode
+				Settings.System.putInt(cr, SCREEN_BRIGHTNESS_MODE, 0); 
 				
 				if (brightness == -1) {
 					var br = Settings.System.getInt(cr, SCREEN_BRIGHTNESS, -1);
@@ -518,7 +515,6 @@ public class MirrorDisplay {
 
 		var pmg = (PowerManager) app.getSystemService(POWER_SERVICE);
 		if (pmg != null) {
-			// GUARANTEE: Prevent orphaned WakeLocks draining battery
 			if (wakeLock != null && wakeLock.isHeld()) {
 				wakeLock.release();
 				wakeLock = null;
@@ -547,7 +543,6 @@ public class MirrorDisplay {
 		}
 
 		try {
-			// FIX: Shield against Android 8+ Background Restrictions
 			app.startService(new Intent(app, XposedEventDispatcherService.class));
 		} catch (IllegalStateException ise) {
 			Log.w("Background Service restrictions active, ignoring Xposed Service startup.");
@@ -566,7 +561,6 @@ public class MirrorDisplay {
 		
 		if (overlay != null) {
 			overlay.dimAndRotate.cancel();
-			// GUARANTEE: Dismantle UI only on the Main Thread (ViewRootImpl safety)
 			final Overlay oldOverlay = overlay;
 			new Handler(Looper.getMainLooper()).post(() -> {
 				try {
@@ -713,7 +707,6 @@ public class MirrorDisplay {
 		
 		var m = landscape ? lMetrics : pMetrics;
 		
-		// GUARANTEE: Invalidate math cache if Android Auto UI dynamically resizes the window
 		if (m != null && (m.sw != sc.getWidth() || m.sh != sc.getHeight())) {
 			m = null; 
 		}
@@ -726,7 +719,6 @@ public class MirrorDisplay {
 			float realWidth = size.x;
 			float realHeight = size.y;
 			
-			// Handle Landscape Rotation Trickery from the OS
 			if (landscape && realWidth < realHeight) {
 				realWidth = size.y;
 				realHeight = size.x;
@@ -793,8 +785,8 @@ public class MirrorDisplay {
 		final float x;
 		final float y;
 		final float scale;
-		final float sw; // Storing the surface width to track resizing
-		final float sh; // Storing the surface height to track resizing
+		final float sw; 
+		final float sh; 
 
 		Metrics(float dw, float dh, float sw, float sh) {
 			this.sw = sw;
