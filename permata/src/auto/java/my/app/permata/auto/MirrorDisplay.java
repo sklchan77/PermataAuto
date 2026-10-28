@@ -112,7 +112,6 @@ public class MirrorDisplay {
 	private SurfaceContainer sc;
 	private Overlay overlay;
 	
-	// DYNAMIC ANCHOR: The singular real-time translation matrix
 	private Metrics currentMetrics;
 	
 	private MotionEvent.PointerProperties[] reusableProps;
@@ -176,7 +175,7 @@ public class MirrorDisplay {
 		}
 		
 		this.sc = sc;
-		currentMetrics = null; // Invalidate math when surface reloads
+		currentMetrics = null; 
 		
 		if (session.isDoneNotFailed()) {
 			try {
@@ -711,15 +710,28 @@ public class MirrorDisplay {
 		float dh = size.y;
 		float sw = sc.getWidth();
 		float sh = sc.getHeight();
+
+		// THE FIX: Aspect-Ratio Matching Algorithm
+		// Force the phone's logical dimensions to match the car's physical aspect ratio
+		boolean carIsLandscape = sw > sh;
+		boolean phoneIsLandscape = dw > dh;
+
+		if (carIsLandscape && !phoneIsLandscape) {
+			// Phone is lying (reporting tall hardware for a wide projection). Swap them.
+			dw = size.y;
+			dh = size.x;
+		} else if (!carIsLandscape && phoneIsLandscape) {
+			// Phone is lying (reporting wide hardware for a tall projection). Swap them.
+			dw = size.y;
+			dh = size.x;
+		}
 		
-		// DYNAMIC ANCHOR: If the hardware bounds haven't changed, reuse the matrix
 		if (currentMetrics != null && 
 			currentMetrics.sw == sw && currentMetrics.sh == sh && 
 			currentMetrics.dw == dw && currentMetrics.dh == dh) {
 			return currentMetrics;
 		}
 		
-		// If the phone rotated or car resized, instantly rebuild the hardware matrix
 		currentMetrics = new Metrics(dw, dh, sw, sh);
 		return currentMetrics;
 	}
@@ -780,7 +792,6 @@ public class MirrorDisplay {
 		final float dw; 
 		final float dh; 
 
-		// TRUE DYNAMIC TRANSLATION: Calculated exclusively on physical bounds
 		Metrics(float dw, float dh, float sw, float sh) {
 			this.sw = sw;
 			this.sh = sh;
