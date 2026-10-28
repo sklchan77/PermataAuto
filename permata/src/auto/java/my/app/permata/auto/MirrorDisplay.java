@@ -7,7 +7,6 @@ import static android.content.Intent.FLAG_ACTIVITY_CLEAR_TOP;
 import static android.content.Intent.FLAG_ACTIVITY_NEW_TASK;
 import static android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE;
 import static android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT;
-import static android.content.res.Configuration.ORIENTATION_LANDSCAPE;
 import static android.os.Build.VERSION.SDK_INT;
 import static android.os.PowerManager.ACQUIRE_CAUSES_WAKEUP;
 import static android.os.SystemClock.uptimeMillis;
@@ -96,11 +95,9 @@ public class MirrorDisplay {
 	private final AudioFocusRequestCompat audioFocusReq;
 	private WakeLock wakeLock;
 	
-	// GUARANTEE: Eliminates Thread-Thrashing by queuing IPC operations
 	private static final ExecutorService bgExecutor = Executors.newSingleThreadExecutor();
 	private static final AtomicBoolean isTearingDown = new AtomicBoolean(false);
 	
-	// IPC System State Caches
 	private static volatile boolean isRotationLocked = false;
 	private static volatile boolean isDimmed = false;
 	private static volatile int accel = -1;
@@ -108,15 +105,15 @@ public class MirrorDisplay {
 	private volatile int brightness = -1;
 	private volatile long lastInjectedTouchTime; 
 	
-	// Micro-locking for multi-touch concurrency
 	private final Object touchLock = new Object();
 	
 	private int refCounter;
 	private FutureSupplier<Session> session = Completed.cancelled();
 	private SurfaceContainer sc;
 	private Overlay overlay;
-	private Metrics lMetrics;
-	private Metrics pMetrics;
+	
+	// DYNAMIC ANCHOR: The singular real-time translation matrix
+	private Metrics currentMetrics;
 	
 	private MotionEvent.PointerProperties[] reusableProps;
 	private MotionEvent.PointerCoords[] reusableCoords;
@@ -173,13 +170,14 @@ public class MirrorDisplay {
 		var oldSc = this.sc;
 		if (oldSc == sc) return;
 		
-		// Guard against Async VirtualDisplay Race Conditions
 		if (isTearingDown.get()) {
 			Log.w("Ignoring surface set; teardown in progress.");
 			return;
 		}
 		
 		this.sc = sc;
+		currentMetrics = null; // Invalidate math when surface reloads
+		
 		if (session.isDoneNotFailed()) {
 			try {
 				var vd = this.session.getOrThrow().vd;
@@ -234,7 +232,7 @@ public class MirrorDisplay {
 
 	public boolean motionEvent(MotionEvent e) {
 		lastInjectedTouchTime = uptimeMillis(); 
-		EventDispatcher d = null; // FIX: Strict Initialization
+		EventDispatcher d = null; 
 		var actionMasked = e.getActionMasked();
 		
 		if (actionMasked == MotionEvent.ACTION_DOWN) {
@@ -282,8 +280,15 @@ public class MirrorDisplay {
 					if (m == null) return false;
 					
 					if (actionMasked == MotionEvent.ACTION_DOWN || actionMasked == MotionEvent.ACTION_POINTER_DOWN || !cacheValid) {
-						if (a != null) a.getWindow().getDecorView().getLocationOnScreen(loc);
-						else { loc[0] = 0; loc[1] = 0; }
+						if (a != null) {
+							if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N && (a.isInPictureInPictureMode() || a.isInMultiWindowMode())) {
+								loc[0] = 0; loc[1] = 0;
+							} else {
+								a.getWindow().getDecorView().getLocationOnScreen(loc);
+							}
+						} else { 
+							loc[0] = 0; loc[1] = 0; 
+						}
 						cacheValid = true;
 					}
 
@@ -312,7 +317,7 @@ public class MirrorDisplay {
 			} catch (Exception ex) {
 				Log.e(ex, "Touch clone failed.");
 			}
-		} // End of Micro-Lock
+		}
 		
 		if (clonedEvent != null && d != null) {
 			try {
@@ -380,7 +385,11 @@ public class MirrorDisplay {
 
 		if (action == MotionEvent.ACTION_DOWN || !cacheValid) {
 			if (a != null) {
-				a.getWindow().getDecorView().getLocationOnScreen(loc);
+				if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N && (a.isInPictureInPictureMode() || a.isInMultiWindowMode())) {
+					loc[0] = 0; loc[1] = 0;
+				} else {
+					a.getWindow().getDecorView().getLocationOnScreen(loc);
+				}
 			} else {
 				loc[0] = 0;
 				loc[1] = 0;
@@ -593,7 +602,7 @@ public class MirrorDisplay {
 		if (amgr != null) AudioManagerCompat.abandonAudioFocusRequest(amgr, audioFocusReq);
 		
 		sc = null;
-		lMetrics = pMetrics = null;
+		currentMetrics = null;
 	}
 
 	private void noSession() {
@@ -692,46 +701,27 @@ public class MirrorDisplay {
 	}
 
 	@Nullable
-	@SuppressLint("SwitchIntDef")
 	private Metrics metrics(@Nullable AppCompatActivity a) {
-		if (sc == null) return null;
-		boolean landscape;
-		if (a != null) {
-			landscape = a.getResources().getConfiguration().orientation == ORIENTATION_LANDSCAPE;
-		} else {
-			landscape = switch (defaultDisplay.getRotation()) {
-				case ROTATION_90, ROTATION_270 -> true;
-				default -> false;
-			};
+		if (sc == null || !session.isDoneNotFailed()) return null;
+		
+		final Point size = new Point();
+		defaultDisplay.getRealSize(size);
+		
+		float dw = size.x;
+		float dh = size.y;
+		float sw = sc.getWidth();
+		float sh = sc.getHeight();
+		
+		// DYNAMIC ANCHOR: If the hardware bounds haven't changed, reuse the matrix
+		if (currentMetrics != null && 
+			currentMetrics.sw == sw && currentMetrics.sh == sh && 
+			currentMetrics.dw == dw && currentMetrics.dh == dh) {
+			return currentMetrics;
 		}
 		
-		var m = landscape ? lMetrics : pMetrics;
-		
-		if (m != null && (m.sw != sc.getWidth() || m.sh != sc.getHeight())) {
-			m = null; 
-		}
-		
-		if (m == null) {
-			if (!session.isDoneNotFailed()) return null;
-			final Point size = new Point();
-			defaultDisplay.getRealSize(size);
-			
-			float realWidth = size.x;
-			float realHeight = size.y;
-			
-			if (landscape && realWidth < realHeight) {
-				realWidth = size.y;
-				realHeight = size.x;
-			} else if (!landscape && realWidth > realHeight) {
-				realWidth = size.y;
-				realHeight = size.x;
-			}
-
-			m = new Metrics(realWidth, realHeight, sc.getWidth(), sc.getHeight());
-			if (landscape) lMetrics = m;
-			else pMetrics = m;
-		}
-		return m;
+		// If the phone rotated or car resized, instantly rebuild the hardware matrix
+		currentMetrics = new Metrics(dw, dh, sw, sh);
+		return currentMetrics;
 	}
 
 	private void setMirroringMode(PermataApplication app, int mode) {
@@ -787,10 +777,16 @@ public class MirrorDisplay {
 		final float scale;
 		final float sw; 
 		final float sh; 
+		final float dw; 
+		final float dh; 
 
+		// TRUE DYNAMIC TRANSLATION: Calculated exclusively on physical bounds
 		Metrics(float dw, float dh, float sw, float sh) {
 			this.sw = sw;
 			this.sh = sh;
+			this.dw = dw;
+			this.dh = dh;
+			
 			var scale = dw / sw;
 			var scaleH = dh / scale;
 			if (scaleH <= sh) {
