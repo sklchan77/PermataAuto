@@ -15,7 +15,6 @@ import static android.provider.Settings.System.SCREEN_BRIGHTNESS;
 import static android.provider.Settings.System.SCREEN_BRIGHTNESS_MODE;
 import static android.provider.Settings.System.USER_ROTATION;
 import static android.view.Surface.ROTATION_0;
-import static android.view.Surface.ROTATION_270;
 import static android.view.Surface.ROTATION_90;
 import static android.view.ViewGroup.LayoutParams.MATCH_PARENT;
 import static android.view.WindowManager.LayoutParams.FLAG_DISMISS_KEYGUARD;
@@ -277,7 +276,7 @@ public class MirrorDisplay {
 						reusableProps[i].id = 10 + i; 
 						reusableProps[i].toolType = MotionEvent.TOOL_TYPE_FINGER;
 						
-						// PURE HARDWARE TRANSLATION - No 'loc' Window Subtraction
+						// ABSOLUTE HARDWARE MAPPING: No Window Offsets
 						reusableCoords[i].x = (reusableCoords[i].x - m.x) * m.scale;
 						reusableCoords[i].y = (reusableCoords[i].y - m.y) * m.scale;
 						
@@ -349,7 +348,7 @@ public class MirrorDisplay {
 		var m = metrics();
 		if (m == null) return null;
 
-		// PURE HARDWARE TRANSLATION - No 'loc' Window Subtraction
+		// ABSOLUTE HARDWARE MAPPING: No Window Offsets
 		dx = (x - m.x) * m.scale;
 		dy = (y - m.y) * m.scale;
 		
@@ -655,24 +654,18 @@ public class MirrorDisplay {
 		final Point size = new Point();
 		defaultDisplay.getRealSize(size);
 		
-		float dw = size.x;
-		float dh = size.y;
+		// PERFECT MAPPING: Force True Hardware Dimensions completely independent of Android state.
+		boolean isLandscape = PermataApplication.get().isMirroringLandscape();
+		
+		float max = Math.max(size.x, size.y);
+		float min = Math.min(size.x, size.y);
+		
+		float dw = isLandscape ? max : min;
+		float dh = isLandscape ? min : max;
+		
 		float sw = sc.getWidth();
 		float sh = sc.getHeight();
 
-		// GUARANTEE: Match the raw hardware boundaries directly to the App orientation State.
-		boolean isLandscapeMirroring = PermataApplication.get().isMirroringLandscape();
-
-		if (isLandscapeMirroring && dw < dh) {
-			float temp = dw;
-			dw = dh;
-			dh = temp;
-		} else if (!isLandscapeMirroring && dw > dh) {
-			float temp = dw;
-			dw = dh;
-			dh = temp;
-		}
-		
 		if (currentMetrics != null && 
 			currentMetrics.sw == sw && currentMetrics.sh == sh && 
 			currentMetrics.dw == dw && currentMetrics.dh == dh) {
