@@ -15,7 +15,6 @@ import static android.provider.Settings.System.SCREEN_BRIGHTNESS;
 import static android.provider.Settings.System.SCREEN_BRIGHTNESS_MODE;
 import static android.provider.Settings.System.USER_ROTATION;
 import static android.view.Surface.ROTATION_0;
-import static android.view.Surface.ROTATION_270;
 import static android.view.Surface.ROTATION_90;
 import static android.view.ViewGroup.LayoutParams.MATCH_PARENT;
 import static android.view.WindowManager.LayoutParams.FLAG_DISMISS_KEYGUARD;
@@ -62,7 +61,6 @@ import android.widget.FrameLayout;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.annotation.StringRes;
-import androidx.appcompat.app.AppCompatActivity;
 import androidx.car.app.SurfaceContainer;
 import androidx.media.AudioAttributesCompat;
 import androidx.media.AudioFocusRequestCompat;
@@ -89,7 +87,6 @@ public class MirrorDisplay {
 			FLAG_NOT_FOCUSABLE | FLAG_KEEP_SCREEN_ON | FLAG_DISMISS_KEYGUARD | FLAG_TURN_SCREEN_ON |
 					FLAG_SHOW_WHEN_LOCKED | FLAG_NOT_TOUCHABLE | FLAG_WATCH_OUTSIDE_TOUCH;
 	private static WeakReference<MirrorDisplay> ref;
-	private final int[] loc = new int[2];
 	private final Display defaultDisplay;
 	private final float scaleDiff;
 	private final AudioFocusRequestCompat audioFocusReq;
@@ -116,7 +113,6 @@ public class MirrorDisplay {
 	
 	private MotionEvent.PointerProperties[] reusableProps;
 	private MotionEvent.PointerCoords[] reusableCoords;
-	private volatile boolean cacheValid = false;
 	
 	private float dx;
 	private float dy;
@@ -216,17 +212,13 @@ public class MirrorDisplay {
 	}
 
 	public void tap(float x, float y) {
-		cacheValid = false;
-		var d = translate(x, y, MotionEvent.ACTION_DOWN);
+		var d = translate(x, y);
 		if (d != null) d.tap(dx, dy);
-		cacheValid = false;
 	}
 
 	public void scale(float x, float y, boolean zoomIn) {
-		cacheValid = false;
-		var d = translate(x, y, MotionEvent.ACTION_DOWN);
+		var d = translate(x, y);
 		if (d != null) d.scale(dx, dy, zoomIn ? scaleDiff : -scaleDiff);
-		cacheValid = false;
 	}
 
 	public boolean motionEvent(MotionEvent e) {
@@ -236,7 +228,6 @@ public class MirrorDisplay {
 		
 		if (actionMasked == MotionEvent.ACTION_DOWN) {
 			downTime = uptimeMillis();
-			cacheValid = false; 
 		}
 		
 		var cnt = e.getPointerCount();
@@ -256,7 +247,7 @@ public class MirrorDisplay {
 
 			try {
 				if (cnt == 1) {
-					d = translate(e.getX(), e.getY(), actionMasked);
+					d = translate(e.getX(), e.getY());
 					if (d == null) return false;
 					
 					e.getPointerProperties(0, reusableProps[0]);
@@ -274,22 +265,8 @@ public class MirrorDisplay {
 							e.getEdgeFlags(), InputDevice.SOURCE_TOUCHSCREEN, e.getFlags());
 				} else {
 					d = dispatcher();
-					var a = d.getActivity();
-					var m = metrics(a);
+					var m = metrics();
 					if (m == null) return false;
-					
-					if (actionMasked == MotionEvent.ACTION_DOWN || actionMasked == MotionEvent.ACTION_POINTER_DOWN || !cacheValid) {
-						if (a != null) {
-							if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N && (a.isInPictureInPictureMode() || a.isInMultiWindowMode())) {
-								loc[0] = 0; loc[1] = 0;
-							} else {
-								a.getWindow().getDecorView().getLocationOnScreen(loc);
-							}
-						} else { 
-							loc[0] = 0; loc[1] = 0; 
-						}
-						cacheValid = true;
-					}
 
 					for (int i = 0; i < cnt; i++) {
 						e.getPointerProperties(i, reusableProps[i]);
@@ -298,13 +275,8 @@ public class MirrorDisplay {
 						reusableProps[i].id = 10 + i; 
 						reusableProps[i].toolType = MotionEvent.TOOL_TYPE_FINGER;
 						
-						if (a != null) {
-							reusableCoords[i].x = (reusableCoords[i].x - m.x) * m.scale - loc[0];
-							reusableCoords[i].y = (reusableCoords[i].y - m.y) * m.scale - loc[1];
-						} else {
-							reusableCoords[i].x = (reusableCoords[i].x - m.x) * m.scale;
-							reusableCoords[i].y = (reusableCoords[i].y - m.y) * m.scale;
-						}
+						reusableCoords[i].x = (reusableCoords[i].x - m.x) * m.scale;
+						reusableCoords[i].y = (reusableCoords[i].y - m.y) * m.scale;
 						
 						if (reusableCoords[i].pressure <= 0.01f) reusableCoords[i].pressure = 1.0f;
 						if (reusableCoords[i].size <= 0.01f) reusableCoords[i].size = 1.0f;
@@ -323,9 +295,6 @@ public class MirrorDisplay {
 				result = d.motionEvent(clonedEvent);
 			} finally {
 				clonedEvent.recycle();
-				if (actionMasked == MotionEvent.ACTION_UP || actionMasked == MotionEvent.ACTION_CANCEL) {
-					cacheValid = false;
-				}
 			}
 		}
 		return result;
@@ -333,9 +302,8 @@ public class MirrorDisplay {
 
 	public boolean motionEvent(long downTime, long eventTime, int action, float x, float y) {
 		lastInjectedTouchTime = uptimeMillis(); 
-		if (action == MotionEvent.ACTION_DOWN) cacheValid = false;
 		
-		var d = translate(x, y, action);
+		var d = translate(x, y);
 		if (d == null) return false;
 		
 		boolean result = false;
@@ -366,9 +334,6 @@ public class MirrorDisplay {
 				result = d.motionEvent(e);
 			} finally {
 				e.recycle();
-				if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) {
-					cacheValid = false;
-				}
 			}
 		}
 		
@@ -376,33 +341,14 @@ public class MirrorDisplay {
 	}
 
 	@Nullable
-	private EventDispatcher translate(float x, float y, int action) {
+	private EventDispatcher translate(float x, float y) {
 		var d = dispatcher();
-		var a = d.getActivity();
-		var m = metrics(a);
+		var m = metrics();
 		if (m == null) return null;
 
-		if (action == MotionEvent.ACTION_DOWN || !cacheValid) {
-			if (a != null) {
-				if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N && (a.isInPictureInPictureMode() || a.isInMultiWindowMode())) {
-					loc[0] = 0; loc[1] = 0;
-				} else {
-					a.getWindow().getDecorView().getLocationOnScreen(loc);
-				}
-			} else {
-				loc[0] = 0;
-				loc[1] = 0;
-			}
-			cacheValid = true;
-		}
-
-		if (a != null) {
-			dx = (x - m.x) * m.scale - loc[0];
-			dy = (y - m.y) * m.scale - loc[1];
-		} else {
-			dx = (x - m.x) * m.scale;
-			dy = (y - m.y) * m.scale;
-		}
+		// PURE MATH: Absolute Projection Offset to Absolute Hardware Pixels
+		dx = (x - m.x) * m.scale;
+		dy = (y - m.y) * m.scale;
 		
 		return d;
 	}
@@ -700,7 +646,7 @@ public class MirrorDisplay {
 	}
 
 	@Nullable
-	private Metrics metrics(@Nullable AppCompatActivity a) {
+	private Metrics metrics() {
 		if (sc == null || !session.isDoneNotFailed()) return null;
 		
 		final Point size = new Point();
@@ -711,20 +657,8 @@ public class MirrorDisplay {
 		float sw = sc.getWidth();
 		float sh = sc.getHeight();
 
-		// THE FIX: Aspect-Ratio Matching Algorithm
-		// Force the phone's logical dimensions to match the car's physical aspect ratio
-		boolean carIsLandscape = sw > sh;
-		boolean phoneIsLandscape = dw > dh;
-
-		if (carIsLandscape && !phoneIsLandscape) {
-			// Phone is lying (reporting tall hardware for a wide projection). Swap them.
-			dw = size.y;
-			dh = size.x;
-		} else if (!carIsLandscape && phoneIsLandscape) {
-			// Phone is lying (reporting wide hardware for a tall projection). Swap them.
-			dw = size.y;
-			dh = size.x;
-		}
+		// PURE DYNAMIC ANCHOR: No Swapping. No orientation tracking. No PiP tracking.
+		// Real size directly equals exactly what the hardware compositor is rendering.
 		
 		if (currentMetrics != null && 
 			currentMetrics.sw == sw && currentMetrics.sh == sh && 
