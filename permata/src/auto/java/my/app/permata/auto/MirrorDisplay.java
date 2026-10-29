@@ -660,7 +660,7 @@ public class MirrorDisplay {
 		// ULTIMATE FIX: Ask the gravity sensor for the TRUE physical rotation.
 		// This bypasses the PiP UI sandbox completely and guarantees correct axis mapping.
 		int rotation = defaultDisplay.getRotation();
-		boolean phoneIsLandscape = (rotation == Surface.ROTATION_90 || rotation == Surface.ROTATION_270);
+		boolean phoneIsLandscape = (rotation == ROTATION_90 || rotation == ROTATION_270);
 
 		if (phoneIsLandscape && dw < dh) {
 			// Phone is physically Landscape, but lying about hardware sizes. Force swap.
