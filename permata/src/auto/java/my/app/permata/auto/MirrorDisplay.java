@@ -15,6 +15,7 @@ import static android.provider.Settings.System.SCREEN_BRIGHTNESS;
 import static android.provider.Settings.System.SCREEN_BRIGHTNESS_MODE;
 import static android.provider.Settings.System.USER_ROTATION;
 import static android.view.Surface.ROTATION_0;
+import static android.view.Surface.ROTATION_270;
 import static android.view.Surface.ROTATION_90;
 import static android.view.ViewGroup.LayoutParams.MATCH_PARENT;
 import static android.view.WindowManager.LayoutParams.FLAG_DISMISS_KEYGUARD;
@@ -346,7 +347,6 @@ public class MirrorDisplay {
 		var m = metrics();
 		if (m == null) return null;
 
-		// PURE MATH: Absolute Projection Offset to Absolute Hardware Pixels
 		dx = (x - m.x) * m.scale;
 		dy = (y - m.y) * m.scale;
 		
@@ -657,8 +657,20 @@ public class MirrorDisplay {
 		float sw = sc.getWidth();
 		float sh = sc.getHeight();
 
-		// PURE DYNAMIC ANCHOR: No Swapping. No orientation tracking. No PiP tracking.
-		// Real size directly equals exactly what the hardware compositor is rendering.
+		// ULTIMATE FIX: Ask the gravity sensor for the TRUE physical rotation.
+		// This bypasses the PiP UI sandbox completely and guarantees correct axis mapping.
+		int rotation = defaultDisplay.getRotation();
+		boolean phoneIsLandscape = (rotation == Surface.ROTATION_90 || rotation == Surface.ROTATION_270);
+
+		if (phoneIsLandscape && dw < dh) {
+			// Phone is physically Landscape, but lying about hardware sizes. Force swap.
+			dw = size.y;
+			dh = size.x;
+		} else if (!phoneIsLandscape && dw > dh) {
+			// Phone is physically Portrait, but lying about hardware sizes. Force swap.
+			dw = size.y;
+			dh = size.x;
+		}
 		
 		if (currentMetrics != null && 
 			currentMetrics.sw == sw && currentMetrics.sh == sh && 
