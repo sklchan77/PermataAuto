@@ -15,7 +15,6 @@ import static android.provider.Settings.System.SCREEN_BRIGHTNESS;
 import static android.provider.Settings.System.SCREEN_BRIGHTNESS_MODE;
 import static android.provider.Settings.System.USER_ROTATION;
 import static android.view.Surface.ROTATION_0;
-import static android.view.Surface.ROTATION_270;
 import static android.view.Surface.ROTATION_90;
 import static android.view.ViewGroup.LayoutParams.MATCH_PARENT;
 import static android.view.WindowManager.LayoutParams.FLAG_DISMISS_KEYGUARD;
@@ -55,7 +54,6 @@ import android.text.TextUtils;
 import android.view.Display;
 import android.view.InputDevice;
 import android.view.MotionEvent;
-import android.view.Surface;
 import android.view.WindowManager;
 import android.widget.FrameLayout;
 
@@ -255,7 +253,7 @@ public class MirrorDisplay {
 					reusableProps[0].id = 10; 
 					reusableProps[0].toolType = MotionEvent.TOOL_TYPE_FINGER;
 					
-					// Pure absolute coordinates for AccessibilityService
+					// Pure absolute coordinates mapped strictly to forced visual dimensions
 					reusableCoords[0].x = (e.getX() - m.x) * m.scale;
 					reusableCoords[0].y = (e.getY() - m.y) * m.scale;
 					
@@ -367,12 +365,7 @@ public class MirrorDisplay {
 		MirrorDisplay md = (ref != null) ? ref.get() : null;
 		if (md == null || md.sc == null) return; 
 
-		var a = EventDispatcher.get().getActivity();
-		var land = PermataApplication.get().isMirroringLandscape();
-		if (a != null) {
-			a.setRequestedOrientation(
-					land ? SCREEN_ORIENTATION_SENSOR_LANDSCAPE : SCREEN_ORIENTATION_SENSOR_PORTRAIT);
-		}
+		boolean land = PermataApplication.get().isMirroringLandscape();
 
 		bgExecutor.execute(() -> {
 			if (md.sc == null) return; 
@@ -393,9 +386,6 @@ public class MirrorDisplay {
 	}
 
 	private static void restoreAccelRotation(Context ctx) {
-		var a = EventDispatcher.get().getActivity();
-		if (a != null) a.setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_SENSOR);
-		
 		bgExecutor.execute(() -> {
 			if (!isRotationLocked) return;
 			try {
@@ -498,7 +488,6 @@ public class MirrorDisplay {
 						new WindowManager.LayoutParams(MATCH_PARENT, MATCH_PARENT, TYPE_APPLICATION_OVERLAY,
 								OVERLAY_FLAGS, PixelFormat.TRANSPARENT);
 				
-				// NON-ROOT STARTUP SEQUENCE: Safely evaluate Landscape mode based strictly on car geometry
 				boolean land = (mode == 1); 
 				lp.screenOrientation = land ? ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE : ActivityInfo.SCREEN_ORIENTATION_PORTRAIT;
 				
@@ -674,12 +663,15 @@ public class MirrorDisplay {
 		float sw = sc.getWidth();
 		float sh = sc.getHeight();
 
-		int rotation = defaultDisplay.getRotation();
-		boolean isLandscapeRotation = (rotation == ROTATION_90 || rotation == ROTATION_270);
+		// FATAL FLAW FIXED: We no longer trust the physical gravity sensor.
+		// If the phone was physically upright but forced into Landscape by the Overlay,
+		// the previous code kept Portrait dimensions, violently squishing the Landscape math grid.
+		// We now STRICTLY pull the dimensions based on the forced mirroring mode.
+		boolean isLandscape = PermataApplication.get().isMirroringLandscape();
 
-		if (isLandscapeRotation && dw < dh) {
+		if (isLandscape && dw < dh) {
 			float temp = dw; dw = dh; dh = temp;
-		} else if (!isLandscapeRotation && dw > dh) {
+		} else if (!isLandscape && dw > dh) {
 			float temp = dw; dw = dh; dh = temp;
 		}
 		
