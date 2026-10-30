@@ -5,8 +5,9 @@ import static android.content.Context.WINDOW_SERVICE;
 import static android.content.Intent.FLAG_ACTIVITY_CLEAR_TASK;
 import static android.content.Intent.FLAG_ACTIVITY_CLEAR_TOP;
 import static android.content.Intent.FLAG_ACTIVITY_NEW_TASK;
-import static android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE;
-import static android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT;
+import static android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE;
+import static android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT;
+import static android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR;
 import static android.os.Build.VERSION.SDK_INT;
 import static android.os.PowerManager.ACQUIRE_CAUSES_WAKEUP;
 import static android.os.SystemClock.uptimeMillis;
@@ -345,7 +346,8 @@ public class MirrorDisplay {
 			if (lp != null) {
 				if (forceCarPriority) {
 					boolean land = PermataApplication.get().isMirroringLandscape();
-					lp.screenOrientation = land ? ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE : ActivityInfo.SCREEN_ORIENTATION_PORTRAIT;
+					// STRICT LOCK: These ignore the accelerometer entirely
+					lp.screenOrientation = land ? SCREEN_ORIENTATION_LANDSCAPE : SCREEN_ORIENTATION_PORTRAIT;
 				} else {
 					lp.screenOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED;
 				}
@@ -365,7 +367,13 @@ public class MirrorDisplay {
 		MirrorDisplay md = (ref != null) ? ref.get() : null;
 		if (md == null || md.sc == null) return; 
 
+		var a = EventDispatcher.get().getActivity();
 		boolean land = PermataApplication.get().isMirroringLandscape();
+		
+		if (a != null) {
+			// STRICT LOCK: Completely amputates the accelerometer trigger during idle mirroring
+			a.setRequestedOrientation(land ? SCREEN_ORIENTATION_LANDSCAPE : SCREEN_ORIENTATION_PORTRAIT);
+		}
 
 		bgExecutor.execute(() -> {
 			if (md.sc == null) return; 
@@ -386,6 +394,10 @@ public class MirrorDisplay {
 	}
 
 	private static void restoreAccelRotation(Context ctx) {
+		var a = EventDispatcher.get().getActivity();
+		// RE-ARM SENSOR: Reactivates the accelerometer trigger when phone is touched or session ends
+		if (a != null) a.setRequestedOrientation(SCREEN_ORIENTATION_SENSOR);
+
 		bgExecutor.execute(() -> {
 			if (!isRotationLocked) return;
 			try {
@@ -489,7 +501,8 @@ public class MirrorDisplay {
 								OVERLAY_FLAGS, PixelFormat.TRANSPARENT);
 				
 				boolean land = (mode == 1); 
-				lp.screenOrientation = land ? ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE : ActivityInfo.SCREEN_ORIENTATION_PORTRAIT;
+				// STRICT LOCK: Ignore accelerometer on initial launch
+				lp.screenOrientation = land ? SCREEN_ORIENTATION_LANDSCAPE : SCREEN_ORIENTATION_PORTRAIT;
 				
 				var overlay = new Overlay(app);
 				wm.addView(overlay, lp);
@@ -663,10 +676,6 @@ public class MirrorDisplay {
 		float sw = sc.getWidth();
 		float sh = sc.getHeight();
 
-		// FATAL FLAW FIXED: We no longer trust the physical gravity sensor.
-		// If the phone was physically upright but forced into Landscape by the Overlay,
-		// the previous code kept Portrait dimensions, violently squishing the Landscape math grid.
-		// We now STRICTLY pull the dimensions based on the forced mirroring mode.
 		boolean isLandscape = PermataApplication.get().isMirroringLandscape();
 
 		if (isLandscape && dw < dh) {
@@ -788,7 +797,7 @@ public class MirrorDisplay {
 				dimAndRotate.schedule(10000); 
 				var ctx = getContext();
 				restoreBrightness(ctx);
-				restoreAccelRotation(ctx);
+				restoreAccelRotation(ctx); // Instantly re-arms the sensor trigger for texting
 				
 				updateOverlayOrientation(false);
 			}
