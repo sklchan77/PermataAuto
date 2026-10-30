@@ -18,6 +18,7 @@ import static android.provider.Settings.System.USER_ROTATION;
 import static android.view.Surface.ROTATION_0;
 import static android.view.Surface.ROTATION_90;
 import static android.view.ViewGroup.LayoutParams.MATCH_PARENT;
+import static android.view.WindowManager.LayoutParams.FLAG_ALT_FOCUSABLE_IM;
 import static android.view.WindowManager.LayoutParams.FLAG_DISMISS_KEYGUARD;
 import static android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON;
 import static android.view.WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE;
@@ -53,8 +54,10 @@ import android.text.StaticLayout;
 import android.text.TextPaint;
 import android.text.TextUtils;
 import android.view.Display;
+import android.view.Gravity;
 import android.view.InputDevice;
 import android.view.MotionEvent;
+import android.view.View;
 import android.view.WindowManager;
 import android.widget.FrameLayout;
 
@@ -86,6 +89,11 @@ public class MirrorDisplay {
 	private static final int OVERLAY_FLAGS =
 			FLAG_NOT_FOCUSABLE | FLAG_KEEP_SCREEN_ON | FLAG_DISMISS_KEYGUARD | FLAG_TURN_SCREEN_ON |
 					FLAG_SHOW_WHEN_LOCKED | FLAG_NOT_TOUCHABLE | FLAG_WATCH_OUTSIDE_TOUCH;
+					
+	// 1-PIXEL ANCHOR FLAGS: Purposefully omitting FLAG_NOT_FOCUSABLE so WindowManager respects its orientation
+	private static final int ANCHOR_FLAGS = 
+			FLAG_NOT_TOUCHABLE | FLAG_KEEP_SCREEN_ON | FLAG_DISMISS_KEYGUARD | FLAG_SHOW_WHEN_LOCKED | FLAG_ALT_FOCUSABLE_IM;
+			
 	private static WeakReference<MirrorDisplay> ref;
 	private final Display defaultDisplay;
 	private final float scaleDiff;
@@ -107,7 +115,9 @@ public class MirrorDisplay {
 	private int refCounter;
 	private FutureSupplier<Session> session = Completed.cancelled();
 	private SurfaceContainer sc;
+	
 	private Overlay overlay;
+	private View rotationAnchor; // The invisible 1-pixel anchor
 	
 	private Metrics currentMetrics;
 	
@@ -254,7 +264,6 @@ public class MirrorDisplay {
 					reusableProps[0].id = 10; 
 					reusableProps[0].toolType = MotionEvent.TOOL_TYPE_FINGER;
 					
-					// Pure absolute coordinates mapped strictly to forced visual dimensions
 					reusableCoords[0].x = (e.getX() - m.x) * m.scale;
 					reusableCoords[0].y = (e.getY() - m.y) * m.scale;
 					
@@ -337,24 +346,34 @@ public class MirrorDisplay {
 		return result;
 	}
 
-	// AUTO-SWITCH PRIORITY SYSTEM
+	// MULTI-LAYER PRIORITY SYSTEM
 	private void updateOverlayOrientation(boolean forceCarPriority) {
-		if (overlay == null || sc == null) return; 
 		try {
 			var wm = (WindowManager) PermataApplication.get().getSystemService(WINDOW_SERVICE);
-			var lp = (WindowManager.LayoutParams) overlay.getLayoutParams();
-			if (lp != null) {
-				if (forceCarPriority) {
-					boolean land = PermataApplication.get().isMirroringLandscape();
-					// STRICT LOCK: These ignore the accelerometer entirely
-					lp.screenOrientation = land ? SCREEN_ORIENTATION_LANDSCAPE : SCREEN_ORIENTATION_PORTRAIT;
-				} else {
-					lp.screenOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED;
+			boolean land = PermataApplication.get().isMirroringLandscape();
+			int targetOrientation = forceCarPriority 
+					? (land ? SCREEN_ORIENTATION_LANDSCAPE : SCREEN_ORIENTATION_PORTRAIT) 
+					: ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED;
+
+			// Priority 1: Update the 1-Pixel Anchor (The true lock enforcer)
+			if (rotationAnchor != null) {
+				var anchorLp = (WindowManager.LayoutParams) rotationAnchor.getLayoutParams();
+				if (anchorLp != null) {
+					anchorLp.screenOrientation = targetOrientation;
+					wm.updateViewLayout(rotationAnchor, anchorLp);
 				}
-				wm.updateViewLayout(overlay, lp);
+			}
+			
+			// Priority 2: Update the touch listener overlay (Failsafe sync)
+			if (overlay != null) {
+				var overlayLp = (WindowManager.LayoutParams) overlay.getLayoutParams();
+				if (overlayLp != null) {
+					overlayLp.screenOrientation = targetOrientation;
+					wm.updateViewLayout(overlay, overlayLp);
+				}
 			}
 		} catch (Exception err) {
-			Log.e(err, "Failed to update overlay orientation");
+			Log.e(err, "Failed to update overlay orientation hierarchy");
 		}
 	}
 
@@ -371,7 +390,6 @@ public class MirrorDisplay {
 		boolean land = PermataApplication.get().isMirroringLandscape();
 		
 		if (a != null) {
-			// STRICT LOCK: Completely amputates the accelerometer trigger during idle mirroring
 			a.setRequestedOrientation(land ? SCREEN_ORIENTATION_LANDSCAPE : SCREEN_ORIENTATION_PORTRAIT);
 		}
 
@@ -395,7 +413,6 @@ public class MirrorDisplay {
 
 	private static void restoreAccelRotation(Context ctx) {
 		var a = EventDispatcher.get().getActivity();
-		// RE-ARM SENSOR: Reactivates the accelerometer trigger when phone is touched or session ends
 		if (a != null) a.setRequestedOrientation(SCREEN_ORIENTATION_SENSOR);
 
 		bgExecutor.execute(() -> {
@@ -493,24 +510,36 @@ public class MirrorDisplay {
 			if (wakeLock != null) wakeLock.acquire(24 * 3600000);
 		}
 
-		if ((overlay == null) && (SDK_INT >= VERSION_CODES.O)) {
+		if (SDK_INT >= VERSION_CODES.O) {
 			try {
 				var wm = (WindowManager) app.getSystemService(WINDOW_SERVICE);
-				var lp =
-						new WindowManager.LayoutParams(MATCH_PARENT, MATCH_PARENT, TYPE_APPLICATION_OVERLAY,
-								OVERLAY_FLAGS, PixelFormat.TRANSPARENT);
-				
 				boolean land = (mode == 1); 
-				// STRICT LOCK: Ignore accelerometer on initial launch
-				lp.screenOrientation = land ? SCREEN_ORIENTATION_LANDSCAPE : SCREEN_ORIENTATION_PORTRAIT;
 				
-				var overlay = new Overlay(app);
-				wm.addView(overlay, lp);
-				this.overlay = overlay;
-				
-				overlay.dimAndRotate.schedule(10000);
+				// 1. ANCHOR GENERATION: Creates a focusable 1x1 pixel to mathematically enforce priority
+				if (rotationAnchor == null) {
+					var anchorLp = new WindowManager.LayoutParams(
+							1, 1, TYPE_APPLICATION_OVERLAY, ANCHOR_FLAGS, PixelFormat.TRANSPARENT);
+					anchorLp.gravity = Gravity.TOP | Gravity.START;
+					anchorLp.screenOrientation = land ? SCREEN_ORIENTATION_LANDSCAPE : SCREEN_ORIENTATION_PORTRAIT;
+					
+					rotationAnchor = new View(app);
+					wm.addView(rotationAnchor, anchorLp);
+				}
+
+				// 2. OVERLAY GENERATION: The full-screen touch listener
+				if (overlay == null) {
+					var overlayLp = new WindowManager.LayoutParams(
+							MATCH_PARENT, MATCH_PARENT, TYPE_APPLICATION_OVERLAY,
+							OVERLAY_FLAGS, PixelFormat.TRANSPARENT);
+					overlayLp.screenOrientation = land ? SCREEN_ORIENTATION_LANDSCAPE : SCREEN_ORIENTATION_PORTRAIT;
+					
+					overlay = new Overlay(app);
+					wm.addView(overlay, overlayLp);
+					
+					overlay.dimAndRotate.schedule(10000);
+				}
 			} catch (Exception err) {
-				Log.e(err, "Failed to add overlay");
+				Log.e(err, "Failed to inject overlay hierarchy");
 			}
 		}
 
@@ -532,16 +561,21 @@ public class MirrorDisplay {
 		noSession();
 		var app = PermataApplication.get();
 		
-		if (overlay != null) {
-			overlay.dimAndRotate.cancel();
+		if (overlay != null || rotationAnchor != null) {
+			if (overlay != null) overlay.dimAndRotate.cancel();
 			final Overlay oldOverlay = overlay;
+			final View oldAnchor = rotationAnchor;
+			
 			new Handler(Looper.getMainLooper()).post(() -> {
 				try {
 					var wm = (WindowManager) app.getSystemService(WINDOW_SERVICE);
-					wm.removeView(oldOverlay);
+					if (oldOverlay != null) wm.removeView(oldOverlay);
+					if (oldAnchor != null) wm.removeView(oldAnchor); // 100% Guaranteed cleanup
 				} catch (Exception ignored) {}
 			});
+			
 			overlay = null;
+			rotationAnchor = null;
 		}
 		
 		if (wakeLock != null) {
@@ -790,16 +824,22 @@ public class MirrorDisplay {
 		@SuppressLint("ClickableViewAccessibility")
 		@Override
 		public boolean onTouchEvent(MotionEvent event) {
+			// DEBOUNCE 1: Ignore our own injected Matrix touches instantly
 			if (Math.abs(uptimeMillis() - lastInjectedTouchTime) < 200) return false;
 			
-			if (event.getAction() == MotionEvent.ACTION_OUTSIDE || event.getToolType(0) == MotionEvent.TOOL_TYPE_FINGER) {
-				Log.d("Temporary restoring brightness and rotation due to physical touch event ", event);
+			// DEBOUNCE 2: Strictly filter out phantom UI redraws and non-physical events
+			if (event.getPointerCount() == 0 || event.getToolType(0) != MotionEvent.TOOL_TYPE_FINGER) return false;
+			
+			int action = event.getActionMasked();
+			if (action == MotionEvent.ACTION_OUTSIDE || action == MotionEvent.ACTION_DOWN || action == MotionEvent.ACTION_POINTER_DOWN) {
+				Log.d("True physical touch detected. Disengaging rotation anchor.");
 				dimAndRotate.schedule(10000); 
 				var ctx = getContext();
 				restoreBrightness(ctx);
-				restoreAccelRotation(ctx); // Instantly re-arms the sensor trigger for texting
+				restoreAccelRotation(ctx); 
 				
-				updateOverlayOrientation(false);
+				// Reverts the anchor window to UNSPECIFIED, yielding rotation control back to the user
+				updateOverlayOrientation(false); 
 			}
 			return false;
 		}
