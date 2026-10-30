@@ -120,7 +120,10 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 	private ExecutorService audioHardwareExecutor;
 	private final AtomicReference<AudioTrack> silentAudioTrackRef = new AtomicReference<>(null);
 	private AudioManager.OnAudioFocusChangeListener focusChangeListener;
-    private long lastWebMediaPlayingTime = 0;
+	private long lastWebMediaPlayingTime = 0;
+    
+	// VOLUME TRACKER: Saves the phone's original volume before maxing it out.
+	private volatile int originalMediaVolume = -1;
 
 	public MediaLib getLib() {
 		return lib;
@@ -185,6 +188,18 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 	private void executeNuclearTeardown() {
 		stopSilentAudioAnchor();
 		releaseAudioFocus();
+		
+		// VOLUME RESTORATION: Restore the original phone media volume upon teardown
+		if (originalMediaVolume != -1) {
+			try {
+				AudioManager am = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
+				if (am != null) {
+					am.setStreamVolume(AudioManager.STREAM_MUSIC, originalMediaVolume, 0);
+				}
+			} catch (Exception ignored) {}
+			originalMediaVolume = -1; // Reset tracker
+		}
+
 		if (session != null) {
 			session.setActive(false);
 			updatePlaybackState(STATE_STOPPED);
@@ -204,7 +219,6 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 			carDisconnectReceiver = null;
 		}
 		if (audioHardwareExecutor != null) {
-            // INSTANT KILL: Do not use awaitTermination() on the Main Thread
 			audioHardwareExecutor.shutdownNow();
 			audioHardwareExecutor = null;
 		}
@@ -263,17 +277,21 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 	}
 
 	private void onWebMediaPlaying() {
-        long now = SystemClock.uptimeMillis();
-        // Hardware IPC Debounce - Reject deadlocking parallel requests 
-        if (now - lastWebMediaPlayingTime < 300) {
-            return;
-        }
-        lastWebMediaPlayingTime = now;
+		long now = SystemClock.uptimeMillis();
+		if (now - lastWebMediaPlayingTime < 300) {
+			return;
+		}
+		lastWebMediaPlayingTime = now;
 
 		if (PermataApplication.get().isConnectedToAuto()) {
 			try {
 				AudioManager am = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
 				if (am != null) {
+					// VOLUME TRACKER: Cache the user's current volume before forcing max
+					if (originalMediaVolume == -1) {
+						originalMediaVolume = am.getStreamVolume(AudioManager.STREAM_MUSIC);
+					}
+					
 					int maxVol = am.getStreamMaxVolume(AudioManager.STREAM_MUSIC);
 					am.setStreamVolume(AudioManager.STREAM_MUSIC, maxVol, 0); 
 				}
