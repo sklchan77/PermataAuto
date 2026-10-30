@@ -7,7 +7,7 @@ import static android.content.Intent.FLAG_ACTIVITY_CLEAR_TOP;
 import static android.content.Intent.FLAG_ACTIVITY_NEW_TASK;
 import static android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE;
 import static android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT;
-import static android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR;
+import static android.content.pm.ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED;
 import static android.os.Build.VERSION.SDK_INT;
 import static android.os.PowerManager.ACQUIRE_CAUSES_WAKEUP;
 import static android.os.SystemClock.uptimeMillis;
@@ -90,7 +90,6 @@ public class MirrorDisplay {
 			FLAG_NOT_FOCUSABLE | FLAG_KEEP_SCREEN_ON | FLAG_DISMISS_KEYGUARD | FLAG_TURN_SCREEN_ON |
 					FLAG_SHOW_WHEN_LOCKED | FLAG_NOT_TOUCHABLE | FLAG_WATCH_OUTSIDE_TOUCH;
 					
-	// 1-PIXEL ANCHOR FLAGS: Purposefully omitting FLAG_NOT_FOCUSABLE so WindowManager respects its orientation
 	private static final int ANCHOR_FLAGS = 
 			FLAG_NOT_TOUCHABLE | FLAG_KEEP_SCREEN_ON | FLAG_DISMISS_KEYGUARD | FLAG_SHOW_WHEN_LOCKED | FLAG_ALT_FOCUSABLE_IM;
 			
@@ -110,14 +109,14 @@ public class MirrorDisplay {
 	private volatile int brightness = -1;
 	private volatile long lastInjectedTouchTime; 
 	
-	private final Object touchLock = new Object();
+	private final Object touchLock = new Object(); 
 	
 	private int refCounter;
 	private FutureSupplier<Session> session = Completed.cancelled();
 	private SurfaceContainer sc;
 	
 	private Overlay overlay;
-	private View rotationAnchor; // The invisible 1-pixel anchor
+	private View rotationAnchor; 
 	
 	private Metrics currentMetrics;
 	
@@ -346,7 +345,6 @@ public class MirrorDisplay {
 		return result;
 	}
 
-	// MULTI-LAYER PRIORITY SYSTEM
 	private void updateOverlayOrientation(boolean forceCarPriority) {
 		try {
 			var wm = (WindowManager) PermataApplication.get().getSystemService(WINDOW_SERVICE);
@@ -355,7 +353,6 @@ public class MirrorDisplay {
 					? (land ? SCREEN_ORIENTATION_LANDSCAPE : SCREEN_ORIENTATION_PORTRAIT) 
 					: ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED;
 
-			// Priority 1: Update the 1-Pixel Anchor (The true lock enforcer)
 			if (rotationAnchor != null) {
 				var anchorLp = (WindowManager.LayoutParams) rotationAnchor.getLayoutParams();
 				if (anchorLp != null) {
@@ -364,7 +361,6 @@ public class MirrorDisplay {
 				}
 			}
 			
-			// Priority 2: Update the touch listener overlay (Failsafe sync)
 			if (overlay != null) {
 				var overlayLp = (WindowManager.LayoutParams) overlay.getLayoutParams();
 				if (overlayLp != null) {
@@ -413,7 +409,7 @@ public class MirrorDisplay {
 
 	private static void restoreAccelRotation(Context ctx) {
 		var a = EventDispatcher.get().getActivity();
-		if (a != null) a.setRequestedOrientation(SCREEN_ORIENTATION_SENSOR);
+		if (a != null) a.setRequestedOrientation(SCREEN_ORIENTATION_UNSPECIFIED);
 
 		bgExecutor.execute(() -> {
 			if (!isRotationLocked) return;
@@ -515,7 +511,6 @@ public class MirrorDisplay {
 				var wm = (WindowManager) app.getSystemService(WINDOW_SERVICE);
 				boolean land = (mode == 1); 
 				
-				// 1. ANCHOR GENERATION: Creates a focusable 1x1 pixel to mathematically enforce priority
 				if (rotationAnchor == null) {
 					var anchorLp = new WindowManager.LayoutParams(
 							1, 1, TYPE_APPLICATION_OVERLAY, ANCHOR_FLAGS, PixelFormat.TRANSPARENT);
@@ -526,7 +521,6 @@ public class MirrorDisplay {
 					wm.addView(rotationAnchor, anchorLp);
 				}
 
-				// 2. OVERLAY GENERATION: The full-screen touch listener
 				if (overlay == null) {
 					var overlayLp = new WindowManager.LayoutParams(
 							MATCH_PARENT, MATCH_PARENT, TYPE_APPLICATION_OVERLAY,
@@ -536,7 +530,7 @@ public class MirrorDisplay {
 					overlay = new Overlay(app);
 					wm.addView(overlay, overlayLp);
 					
-					overlay.dimAndRotate.schedule(10000);
+					overlay.dimAndRotate.schedule(6000); // 6-Second Inactive Timeout
 				}
 			} catch (Exception err) {
 				Log.e(err, "Failed to inject overlay hierarchy");
@@ -561,6 +555,28 @@ public class MirrorDisplay {
 		noSession();
 		var app = PermataApplication.get();
 		
+		new Thread(() -> {
+			try {
+				var cr = app.getContentResolver();
+				if (isDimmed) {
+					if (brightness > 0) Settings.System.putInt(cr, SCREEN_BRIGHTNESS, brightness);
+					if (brightnessMode != -1) Settings.System.putInt(cr, SCREEN_BRIGHTNESS_MODE, brightnessMode);
+					brightnessMode = -1;
+					isDimmed = false;
+				}
+				if (isRotationLocked) {
+					if (accel != -1) Settings.System.putInt(cr, ACCELEROMETER_ROTATION, accel);
+					accel = -1;
+					isRotationLocked = false;
+				}
+			} catch (Exception err) {
+				Log.e(err, "Emergency teardown write failed.");
+			}
+		}, "Permata-Emergency-Teardown").start();
+
+		var a = EventDispatcher.get().getActivity();
+		if (a != null) a.setRequestedOrientation(SCREEN_ORIENTATION_UNSPECIFIED);
+		
 		if (overlay != null || rotationAnchor != null) {
 			if (overlay != null) overlay.dimAndRotate.cancel();
 			final Overlay oldOverlay = overlay;
@@ -569,8 +585,8 @@ public class MirrorDisplay {
 			new Handler(Looper.getMainLooper()).post(() -> {
 				try {
 					var wm = (WindowManager) app.getSystemService(WINDOW_SERVICE);
-					if (oldOverlay != null) wm.removeView(oldOverlay);
-					if (oldAnchor != null) wm.removeView(oldAnchor); // 100% Guaranteed cleanup
+					if (oldOverlay != null && oldOverlay.isAttachedToWindow()) wm.removeView(oldOverlay);
+					if (oldAnchor != null && oldAnchor.isAttachedToWindow()) wm.removeView(oldAnchor); 
 				} catch (Exception ignored) {}
 			});
 			
@@ -586,8 +602,6 @@ public class MirrorDisplay {
 		}
 		
 		setMirroringMode(app, 0);
-		restoreBrightness(app);
-		restoreAccelRotation(app);
 		ProjectionService.stop();
 
 		try {
@@ -824,21 +838,19 @@ public class MirrorDisplay {
 		@SuppressLint("ClickableViewAccessibility")
 		@Override
 		public boolean onTouchEvent(MotionEvent event) {
-			// DEBOUNCE 1: Ignore our own injected Matrix touches instantly
 			if (Math.abs(uptimeMillis() - lastInjectedTouchTime) < 200) return false;
 			
-			// DEBOUNCE 2: Strictly filter out phantom UI redraws and non-physical events
 			if (event.getPointerCount() == 0 || event.getToolType(0) != MotionEvent.TOOL_TYPE_FINGER) return false;
 			
 			int action = event.getActionMasked();
 			if (action == MotionEvent.ACTION_OUTSIDE || action == MotionEvent.ACTION_DOWN || action == MotionEvent.ACTION_POINTER_DOWN) {
 				Log.d("True physical touch detected. Disengaging rotation anchor.");
-				dimAndRotate.schedule(10000); 
+				dimAndRotate.schedule(6000); // 6-Second Inactive Timeout
 				var ctx = getContext();
+				
 				restoreBrightness(ctx);
 				restoreAccelRotation(ctx); 
 				
-				// Reverts the anchor window to UNSPECIFIED, yielding rotation control back to the user
 				updateOverlayOrientation(false); 
 			}
 			return false;
