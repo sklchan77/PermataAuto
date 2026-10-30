@@ -335,7 +335,7 @@ public class MirrorDisplay {
 
 	// AUTO-SWITCH PRIORITY SYSTEM
 	private void updateOverlayOrientation(boolean forceCarPriority) {
-		if (overlay == null) return;
+		if (overlay == null || sc == null) return; // ZOMBIE LOCK PREVENTION: Abort if session is dead
 		try {
 			var wm = (WindowManager) PermataApplication.get().getSystemService(WINDOW_SERVICE);
 			var lp = (WindowManager.LayoutParams) overlay.getLayoutParams();
@@ -359,6 +359,10 @@ public class MirrorDisplay {
 	}
 
 	private static void disableAccelRotation(Context ctx) {
+		// ZOMBIE LOCK PREVENTION: If delayed thread fires after disconnect, kill it instantly.
+		MirrorDisplay md = (ref != null) ? ref.get() : null;
+		if (md == null || md.sc == null) return; 
+
 		var a = EventDispatcher.get().getActivity();
 		var land = PermataApplication.get().isMirroringLandscape();
 		if (a != null) {
@@ -367,6 +371,7 @@ public class MirrorDisplay {
 		}
 
 		bgExecutor.execute(() -> {
+			if (md.sc == null) return; // ZOMBIE LOCK PREVENTION
 			if (isRotationLocked) return;
 			try {
 				var cr = ctx.getContentResolver();
@@ -403,6 +408,7 @@ public class MirrorDisplay {
 
 	private void dimScreen(Context ctx) {
 		bgExecutor.execute(() -> {
+			if (sc == null) return; // ZOMBIE DIM PREVENTION
 			if (isDimmed) return;
 			try {
 				var cr = ctx.getContentResolver();
@@ -518,12 +524,12 @@ public class MirrorDisplay {
 		var app = PermataApplication.get();
 		
 		if (overlay != null) {
-			overlay.dimAndRotate.cancel();
+			overlay.dimAndRotate.cancel(); // Abort scheduled rotations
 			final Overlay oldOverlay = overlay;
 			new Handler(Looper.getMainLooper()).post(() -> {
 				try {
 					var wm = (WindowManager) app.getSystemService(WINDOW_SERVICE);
-					wm.removeView(oldOverlay);
+					wm.removeView(oldOverlay); // Instantly releases WindowManager lock
 				} catch (Exception ignored) {}
 			});
 			overlay = null;
@@ -780,7 +786,7 @@ public class MirrorDisplay {
 			
 			if (event.getAction() == MotionEvent.ACTION_OUTSIDE || event.getToolType(0) == MotionEvent.TOOL_TYPE_FINGER) {
 				Log.d("Temporary restoring brightness and rotation due to physical touch event ", event);
-				dimAndRotate.schedule(10000); // 10 seconds timeout for touch interaction
+				dimAndRotate.schedule(10000); 
 				var ctx = getContext();
 				restoreBrightness(ctx);
 				restoreAccelRotation(ctx);
