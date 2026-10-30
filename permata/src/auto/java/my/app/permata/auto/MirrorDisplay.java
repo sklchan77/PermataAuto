@@ -212,14 +212,18 @@ public class MirrorDisplay {
 		var m = metrics();
 		if (m == null) return;
 		var d = dispatcher();
-		if (d != null) d.tap((x - m.x) * m.scale, (y - m.y) * m.scale);
+		if (d != null) {
+			d.tap((x - m.x) * m.scale, (y - m.y) * m.scale);
+		}
 	}
 
 	public void scale(float x, float y, boolean zoomIn) {
 		var m = metrics();
 		if (m == null) return;
 		var d = dispatcher();
-		if (d != null) d.scale((x - m.x) * m.scale, (y - m.y) * m.scale, zoomIn ? scaleDiff : -scaleDiff);
+		if (d != null) {
+			d.scale((x - m.x) * m.scale, (y - m.y) * m.scale, zoomIn ? scaleDiff : -scaleDiff);
+		}
 	}
 
 	public boolean motionEvent(MotionEvent e) {
@@ -250,6 +254,8 @@ public class MirrorDisplay {
 					
 					reusableProps[0].id = 10; 
 					reusableProps[0].toolType = MotionEvent.TOOL_TYPE_FINGER;
+					
+					// Pure absolute coordinates for AccessibilityService
 					reusableCoords[0].x = (e.getX() - m.x) * m.scale;
 					reusableCoords[0].y = (e.getY() - m.y) * m.scale;
 					
@@ -264,7 +270,6 @@ public class MirrorDisplay {
 						reusableProps[i].id = 10 + i; 
 						reusableProps[i].toolType = MotionEvent.TOOL_TYPE_FINGER;
 						
-						// Thread-safe pure hardware translation in-place
 						reusableCoords[i].x = (reusableCoords[i].x - m.x) * m.scale;
 						reusableCoords[i].y = (reusableCoords[i].y - m.y) * m.scale;
 						
@@ -335,7 +340,7 @@ public class MirrorDisplay {
 
 	// AUTO-SWITCH PRIORITY SYSTEM
 	private void updateOverlayOrientation(boolean forceCarPriority) {
-		if (overlay == null || sc == null) return; // ZOMBIE LOCK PREVENTION: Abort if session is dead
+		if (overlay == null || sc == null) return; 
 		try {
 			var wm = (WindowManager) PermataApplication.get().getSystemService(WINDOW_SERVICE);
 			var lp = (WindowManager.LayoutParams) overlay.getLayoutParams();
@@ -359,7 +364,6 @@ public class MirrorDisplay {
 	}
 
 	private static void disableAccelRotation(Context ctx) {
-		// ZOMBIE LOCK PREVENTION: If delayed thread fires after disconnect, kill it instantly.
 		MirrorDisplay md = (ref != null) ? ref.get() : null;
 		if (md == null || md.sc == null) return; 
 
@@ -371,7 +375,7 @@ public class MirrorDisplay {
 		}
 
 		bgExecutor.execute(() -> {
-			if (md.sc == null) return; // ZOMBIE LOCK PREVENTION
+			if (md.sc == null) return; 
 			if (isRotationLocked) return;
 			try {
 				var cr = ctx.getContentResolver();
@@ -408,7 +412,7 @@ public class MirrorDisplay {
 
 	private void dimScreen(Context ctx) {
 		bgExecutor.execute(() -> {
-			if (sc == null) return; // ZOMBIE DIM PREVENTION
+			if (sc == null) return; 
 			if (isDimmed) return;
 			try {
 				var cr = ctx.getContentResolver();
@@ -467,6 +471,7 @@ public class MirrorDisplay {
 
 		if (app.isMirroringMode()) {
 			app.setMirroringMode(mode);
+			updateOverlayOrientation(true);
 			return;
 		}
 
@@ -493,14 +498,15 @@ public class MirrorDisplay {
 						new WindowManager.LayoutParams(MATCH_PARENT, MATCH_PARENT, TYPE_APPLICATION_OVERLAY,
 								OVERLAY_FLAGS, PixelFormat.TRANSPARENT);
 				
-				boolean land = app.isMirroringLandscape();
+				// NON-ROOT STARTUP SEQUENCE: Safely evaluate Landscape mode based strictly on car geometry
+				boolean land = (mode == 1); 
 				lp.screenOrientation = land ? ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE : ActivityInfo.SCREEN_ORIENTATION_PORTRAIT;
 				
 				var overlay = new Overlay(app);
 				wm.addView(overlay, lp);
 				this.overlay = overlay;
 				
-				overlay.dimAndRotate.schedule(10000); // 10 seconds timeout for initial override
+				overlay.dimAndRotate.schedule(10000);
 			} catch (Exception err) {
 				Log.e(err, "Failed to add overlay");
 			}
@@ -516,6 +522,7 @@ public class MirrorDisplay {
 
 		var amgr = (AudioManager) app.getSystemService(Context.AUDIO_SERVICE);
 		if (amgr != null) AudioManagerCompat.requestAudioFocus(amgr, audioFocusReq);
+		
 		setMirroringMode(app, mode);
 	}
 
@@ -524,12 +531,12 @@ public class MirrorDisplay {
 		var app = PermataApplication.get();
 		
 		if (overlay != null) {
-			overlay.dimAndRotate.cancel(); // Abort scheduled rotations
+			overlay.dimAndRotate.cancel();
 			final Overlay oldOverlay = overlay;
 			new Handler(Looper.getMainLooper()).post(() -> {
 				try {
 					var wm = (WindowManager) app.getSystemService(WINDOW_SERVICE);
-					wm.removeView(oldOverlay); // Instantly releases WindowManager lock
+					wm.removeView(oldOverlay);
 				} catch (Exception ignored) {}
 			});
 			overlay = null;
