@@ -120,7 +120,6 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 	private ExecutorService audioHardwareExecutor;
 	private final AtomicReference<AudioTrack> silentAudioTrackRef = new AtomicReference<>(null);
 	
-	// BUGFIX: Mutex guarantees AudioTrack is never instantiated during a teardown sweep
 	private final Object audioLock = new Object();
 	private volatile boolean isNuclearTeardownActive = false;
 	
@@ -322,34 +321,39 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 			updatePlaybackState(STATE_PLAYING);
 		}
 
-		audioHardwareExecutor.execute(() -> {
-			try {
-				AudioTrack currentTrack = silentAudioTrackRef.get();
-				if (currentTrack != null && currentTrack.getPlayState() == AudioTrack.PLAYSTATE_PLAYING) {
-					return;
-				}
-
-				AudioManager audioManager = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
-				if (audioManager != null) {
-					if (focusChangeListener == null) {
-						focusChangeListener = focusChange -> {
-							if (focusChange == AudioManager.AUDIOFOCUS_LOSS) {
-								Log.w("PermataMediaService: Car Radio stole focus. GOD MODE Active: Ignoring loss.");
-							}
-						};
+		try {
+			// BUGFIX: Wraps executor handoff to prevent silent process crashes if the OS AudioFlinger panics
+			audioHardwareExecutor.execute(() -> {
+				try {
+					AudioTrack currentTrack = silentAudioTrackRef.get();
+					if (currentTrack != null && currentTrack.getPlayState() == AudioTrack.PLAYSTATE_PLAYING) {
+						return;
 					}
-					audioManager.requestAudioFocus(
-							focusChangeListener, 
-							AudioManager.STREAM_MUSIC, 
-							AudioManager.AUDIOFOCUS_GAIN
-					);
-				}
 
-				startSilentAudioAnchorInternal();
-			} catch (Exception e) {
-				Log.e(e, "PermataMediaService: Failed to execute audio hijack.");
-			}
-		});
+					AudioManager audioManager = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
+					if (audioManager != null) {
+						if (focusChangeListener == null) {
+							focusChangeListener = focusChange -> {
+								if (focusChange == AudioManager.AUDIOFOCUS_LOSS) {
+									Log.w("PermataMediaService: Car Radio stole focus. GOD MODE Active: Ignoring loss.");
+								}
+							};
+						}
+						audioManager.requestAudioFocus(
+								focusChangeListener, 
+								AudioManager.STREAM_MUSIC, 
+								AudioManager.AUDIOFOCUS_GAIN
+						);
+					}
+
+					startSilentAudioAnchorInternal();
+				} catch (Throwable t) {
+					Log.e(t, "PermataMediaService: Audio Hardware thread encountered an extreme OS panic.");
+				}
+			});
+		} catch (Exception rejectedExecution) {
+			Log.e(rejectedExecution, "PermataMediaService: Audio execution queue rejected task.");
+		}
 	}
 
 	private void startSilentAudioAnchorInternal() {
@@ -370,7 +374,6 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 			newTrack.write(silentBuffer, 0, silentBuffer.length);
 			newTrack.setLoopPoints(0, sampleRate, -1);
 			
-			// THREAD SAFETY: Prevent Zombie AudioTrack creation during OS Teardown Panic
 			synchronized (audioLock) {
 				if (isNuclearTeardownActive) {
 					newTrack.release();
