@@ -70,7 +70,6 @@ import androidx.media.AudioAttributesCompat;
 import androidx.media.AudioFocusRequestCompat;
 import androidx.media.AudioManagerCompat;
 
-import java.lang.ref.WeakReference;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -608,23 +607,32 @@ public class MirrorDisplay {
 	private synchronized void cleanUp() {
 		noSession();
 		var app = PermataApplication.get();
-		
 		app.getHandler().removeCallbacks(orientationHeartbeat);
+		
+		// BUGFIX: Synchronous state capture eradicates the Rapid-Reconnect / Loose USB Cable logic bomb
+		final boolean wasDimmed = isDimmed;
+		final boolean wasRotationLocked = isRotationLocked;
+		final int savedBrightness = brightness;
+		final int savedBrightnessMode = brightnessMode;
+		final int savedAccel = accel;
+
+		// Instantly reset the static state machine so any new rapid session starts 100% fresh
+		isDimmed = false;
+		isRotationLocked = false;
+		brightness = -1;
+		brightnessMode = -1;
+		accel = -1;
 		
 		new Thread(() -> {
 			synchronized (settingsLock) {
 				try {
 					var cr = app.getContentResolver();
-					if (isDimmed) {
-						if (brightness > 0) Settings.System.putInt(cr, SCREEN_BRIGHTNESS, brightness);
-						if (brightnessMode != -1) Settings.System.putInt(cr, SCREEN_BRIGHTNESS_MODE, brightnessMode);
-						brightnessMode = -1;
-						isDimmed = false;
+					if (wasDimmed) {
+						if (savedBrightness > 0) Settings.System.putInt(cr, SCREEN_BRIGHTNESS, savedBrightness);
+						if (savedBrightnessMode != -1) Settings.System.putInt(cr, SCREEN_BRIGHTNESS_MODE, savedBrightnessMode);
 					}
-					if (isRotationLocked) {
-						if (accel != -1) Settings.System.putInt(cr, ACCELEROMETER_ROTATION, accel);
-						accel = -1;
-						isRotationLocked = false;
+					if (wasRotationLocked) {
+						if (savedAccel != -1) Settings.System.putInt(cr, ACCELEROMETER_ROTATION, savedAccel);
 					}
 				} catch (Exception err) {
 					Log.e(err, "Emergency teardown write failed.");
@@ -673,7 +681,6 @@ public class MirrorDisplay {
 		
 		sc = null;
 		currentMetrics = null;
-		
 		instance = null;
 	}
 
@@ -703,8 +710,6 @@ public class MirrorDisplay {
 		if (sc == null) noSession();
 		if (p.isDone()) return; 
 		ProjectionService.start().onCompletion((mp, err) -> {
-			// BUGFIX: Ghost Screen Record Prevention. 
-			// If session was canceled while the permission dialog was open, violently destroy the projection.
 			if (session != p) {
 				if (mp != null) {
 					try { mp.stop(); } catch (Exception ignored) {}
@@ -827,11 +832,9 @@ public class MirrorDisplay {
 	private static final class Session extends MediaProjection.Callback {
 		final MediaProjection mp;
 		final VirtualDisplay vd;
-		final WeakReference<MirrorDisplay> mdRef;
 
 		Session(MediaProjection mp, MirrorDisplay md) {
 			this.mp = mp;
-			this.mdRef = new WeakReference<>(md);
 			var sc = md.sc;
 			var app = PermataApplication.get();
 			var name = app.getString(R.string.mirror_service_name);
@@ -845,7 +848,7 @@ public class MirrorDisplay {
 		@Override
 		public void onStop() {
 			close();
-			var md = mdRef.get();
+			MirrorDisplay md = MirrorDisplay.instance;
 			if (md == null) return;
 			Log.i("Media projection stopped");
 			md.cleanUp();
