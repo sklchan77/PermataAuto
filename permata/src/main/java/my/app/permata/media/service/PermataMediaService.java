@@ -119,10 +119,14 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 
 	private ExecutorService audioHardwareExecutor;
 	private final AtomicReference<AudioTrack> silentAudioTrackRef = new AtomicReference<>(null);
+	
+	// BUGFIX: Mutex guarantees AudioTrack is never instantiated during a teardown sweep
+	private final Object audioLock = new Object();
+	private volatile boolean isNuclearTeardownActive = false;
+	
 	private AudioManager.OnAudioFocusChangeListener focusChangeListener;
 	private long lastWebMediaPlayingTime = 0;
     
-	// VOLUME TRACKER: Saves the phone's original volume before maxing it out.
 	private volatile int originalMediaVolume = -1;
 
 	public MediaLib getLib() {
@@ -186,10 +190,10 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 	}
 
 	private void executeNuclearTeardown() {
+		isNuclearTeardownActive = true;
 		stopSilentAudioAnchor();
 		releaseAudioFocus();
 		
-		// VOLUME RESTORATION: Restore the original phone media volume upon teardown
 		if (originalMediaVolume != -1) {
 			try {
 				AudioManager am = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
@@ -197,7 +201,7 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 					am.setStreamVolume(AudioManager.STREAM_MUSIC, originalMediaVolume, 0);
 				}
 			} catch (Exception ignored) {}
-			originalMediaVolume = -1; // Reset tracker
+			originalMediaVolume = -1; 
 		}
 
 		if (session != null) {
@@ -287,11 +291,9 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 			try {
 				AudioManager am = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
 				if (am != null) {
-					// VOLUME TRACKER: Cache the user's current volume before forcing max
 					if (originalMediaVolume == -1) {
 						originalMediaVolume = am.getStreamVolume(AudioManager.STREAM_MUSIC);
 					}
-					
 					int maxVol = am.getStreamMaxVolume(AudioManager.STREAM_MUSIC);
 					am.setStreamVolume(AudioManager.STREAM_MUSIC, maxVol, 0); 
 				}
@@ -309,6 +311,7 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 
 	private void hijackCarAudioAndSteering() {
 		if (audioHardwareExecutor == null || audioHardwareExecutor.isShutdown()) return;
+		if (isNuclearTeardownActive) return;
 		
 		if (session != null) {
 			session.setMetadata(new MediaMetadataCompat.Builder()
@@ -366,12 +369,20 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 			byte[] silentBuffer = new byte[bufferSize];
 			newTrack.write(silentBuffer, 0, silentBuffer.length);
 			newTrack.setLoopPoints(0, sampleRate, -1);
-			newTrack.play();
-
-			AudioTrack oldTrack = silentAudioTrackRef.getAndSet(newTrack);
-			if (oldTrack != null) {
-				oldTrack.stop();
-				oldTrack.release();
+			
+			// THREAD SAFETY: Prevent Zombie AudioTrack creation during OS Teardown Panic
+			synchronized (audioLock) {
+				if (isNuclearTeardownActive) {
+					newTrack.release();
+					return;
+				}
+				
+				newTrack.play();
+				AudioTrack oldTrack = silentAudioTrackRef.getAndSet(newTrack);
+				if (oldTrack != null) {
+					oldTrack.stop();
+					oldTrack.release();
+				}
 			}
 		} catch (Exception ignored) {}
 	}
@@ -388,14 +399,14 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 	}
 
 	private void stopSilentAudioAnchor() {
-		// BUGFIX: Execute AudioTrack release synchronously during teardown. 
-		// Prevents the Zombie AudioTrack leak when the executor gets destroyed a millisecond later.
-		AudioTrack track = silentAudioTrackRef.getAndSet(null);
-		if (track != null) {
-			try { 
-				track.stop(); 
-				track.release(); 
-			} catch (Exception ignored) {}
+		synchronized (audioLock) {
+			AudioTrack track = silentAudioTrackRef.getAndSet(null);
+			if (track != null) {
+				try { 
+					track.stop(); 
+					track.release(); 
+				} catch (Exception ignored) {}
+			}
 		}
 	}
 
@@ -491,7 +502,7 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 		
 		if (session == null) {
 			return new NotificationCompat.Builder(ctx, NOTIF_CHANNEL_ID)
-					.setSmallIcon(R.drawable.notification) // BUGFIX: Prevents fatal Android 8+ crash
+					.setSmallIcon(R.drawable.notification)
 					.build();
 		}
 		
