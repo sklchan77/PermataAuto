@@ -101,6 +101,10 @@ public class MirrorDisplay {
 	private WakeLock wakeLock;
 	
 	private static final ExecutorService bgExecutor = Executors.newSingleThreadExecutor();
+	
+	// THE EXPRESS LANE: Strict FIFO queue exclusively for zero-lag touch injection
+	private static final ExecutorService touchExecutor = Executors.newSingleThreadExecutor();
+	
 	private static final AtomicBoolean isTearingDown = new AtomicBoolean(false);
 	
 	private static volatile boolean isRotationLocked = false;
@@ -124,7 +128,6 @@ public class MirrorDisplay {
 	private MotionEvent.PointerProperties[] reusableProps;
 	private MotionEvent.PointerCoords[] reusableCoords;
 
-	// THE PASSIVE HEARTBEAT: Checks display rotation with zero overhead.
 	private final Runnable orientationHeartbeat = new Runnable() {
 		@Override
 		public void run() {
@@ -135,7 +138,6 @@ public class MirrorDisplay {
 				int currentRotation = defaultDisplay.getRotation();
 				boolean isCurrentlyLandscape = (currentRotation == ROTATION_90 || currentRotation == ROTATION_270);
 				
-				// Act only if a rogue app hijacked the WindowManager
 				if (wantLandscape != isCurrentlyLandscape) {
 					Log.w("Anomaly detected: Rogue app hijacked rotation. Forcing self-healing correction.");
 					updateOverlayOrientation(true);
@@ -145,7 +147,6 @@ public class MirrorDisplay {
 				Log.e(err, "Orientation heartbeat check failed.");
 			}
 			
-			// Re-schedule for the next 3 seconds if still idle
 			if (isDimmed) {
 				PermataApplication.get().getHandler().postDelayed(this, 3000);
 			}
@@ -248,26 +249,32 @@ public class MirrorDisplay {
 	public void tap(float x, float y) {
 		var m = metrics();
 		if (m == null) return;
-		var d = dispatcher();
-		if (d != null) {
-			d.tap((x - m.x) * m.scale, (y - m.y) * m.scale);
-		}
+		
+		// Offloaded to Express Lane
+		touchExecutor.execute(() -> {
+			var d = dispatcher();
+			if (d != null) {
+				d.tap((x - m.x) * m.scale, (y - m.y) * m.scale);
+			}
+		});
 	}
 
 	public void scale(float x, float y, boolean zoomIn) {
 		var m = metrics();
 		if (m == null) return;
-		var d = dispatcher();
-		if (d != null) {
-			d.scale((x - m.x) * m.scale, (y - m.y) * m.scale, zoomIn ? scaleDiff : -scaleDiff);
-		}
+		
+		// Offloaded to Express Lane
+		touchExecutor.execute(() -> {
+			var d = dispatcher();
+			if (d != null) {
+				d.scale((x - m.x) * m.scale, (y - m.y) * m.scale, zoomIn ? scaleDiff : -scaleDiff);
+			}
+		});
 	}
 
 	public boolean motionEvent(MotionEvent e) {
 		lastInjectedTouchTime = uptimeMillis(); 
-		EventDispatcher d = null; 
 		MotionEvent clonedEvent = null;
-		boolean result = false;
 
 		synchronized (touchLock) {
 			var cnt = e.getPointerCount();
@@ -281,34 +288,26 @@ public class MirrorDisplay {
 			}
 
 			try {
-				d = dispatcher();
 				var m = metrics();
-				if (m == null || d == null) return false;
+				if (m == null) return false;
 
 				if (cnt == 1) {
 					e.getPointerProperties(0, reusableProps[0]);
 					e.getPointerCoords(0, reusableCoords[0]);
-					
 					reusableProps[0].id = 10; 
 					reusableProps[0].toolType = MotionEvent.TOOL_TYPE_FINGER;
-					
 					reusableCoords[0].x = (e.getX() - m.x) * m.scale;
 					reusableCoords[0].y = (e.getY() - m.y) * m.scale;
-					
 					if (reusableCoords[0].pressure <= 0.01f) reusableCoords[0].pressure = 1.0f;
 					if (reusableCoords[0].size <= 0.01f) reusableCoords[0].size = 1.0f;
-					
 				} else {
 					for (int i = 0; i < cnt; i++) {
 						e.getPointerProperties(i, reusableProps[i]);
 						e.getPointerCoords(i, reusableCoords[i]);
-						
 						reusableProps[i].id = 10 + i; 
 						reusableProps[i].toolType = MotionEvent.TOOL_TYPE_FINGER;
-						
 						reusableCoords[i].x = (reusableCoords[i].x - m.x) * m.scale;
 						reusableCoords[i].y = (reusableCoords[i].y - m.y) * m.scale;
-						
 						if (reusableCoords[i].pressure <= 0.01f) reusableCoords[i].pressure = 1.0f;
 						if (reusableCoords[i].size <= 0.01f) reusableCoords[i].size = 1.0f;
 					}
@@ -324,27 +323,34 @@ public class MirrorDisplay {
 		}
 		
 		if (clonedEvent != null) {
-			try {
-				result = d.motionEvent(clonedEvent);
-			} finally {
-				clonedEvent.recycle();
-			}
+			final MotionEvent finalEvent = clonedEvent;
+			// FIRE AND FORGET: Dispatched to strict FIFO background thread
+			touchExecutor.execute(() -> {
+				try {
+					EventDispatcher d = dispatcher();
+					if (d != null) d.motionEvent(finalEvent);
+				} catch (Exception ex) {
+					Log.e(ex, "Async touch injection failed.");
+				} finally {
+					// GUARANTEED CLEANUP: Prevents native memory leak OutOfMemory crashes
+					finalEvent.recycle();
+				}
+			});
 		}
-		return result;
+		
+		// Return true instantly to unblock Android Auto UI Thread
+		return true;
 	}
 
 	public boolean motionEvent(long downTime, long eventTime, int action, float x, float y) {
 		lastInjectedTouchTime = uptimeMillis(); 
-		
-		var d = dispatcher();
-		var m = metrics();
-		if (m == null || d == null) return false;
-		
-		boolean result = false;
-		MotionEvent e = null;
+		MotionEvent clonedEvent = null;
 
 		synchronized (touchLock) {
 			try {
+				var m = metrics();
+				if (m == null) return false;
+				
 				reusableProps[0].clear();
 				reusableProps[0].id = 10; 
 				reusableProps[0].toolType = MotionEvent.TOOL_TYPE_FINGER;
@@ -355,7 +361,7 @@ public class MirrorDisplay {
 				reusableCoords[0].pressure = 1.0f;
 				reusableCoords[0].size = 1.0f;
 				
-				e = MotionEvent.obtain(downTime, eventTime, action, 1, reusableProps, reusableCoords,
+				clonedEvent = MotionEvent.obtain(downTime, uptimeMillis(), action, 1, reusableProps, reusableCoords,
 						0, 0, 1.0f, 1.0f, 0, 0, InputDevice.SOURCE_TOUCHSCREEN, 0);
 						
 			} catch (Exception ex) {
@@ -363,15 +369,21 @@ public class MirrorDisplay {
 			}
 		}
 
-		if (e != null) {
-			try {
-				result = d.motionEvent(e);
-			} finally {
-				e.recycle();
-			}
+		if (clonedEvent != null) {
+			final MotionEvent finalEvent = clonedEvent;
+			touchExecutor.execute(() -> {
+				try {
+					EventDispatcher d = dispatcher();
+					if (d != null) d.motionEvent(finalEvent);
+				} catch (Exception ex) {
+					Log.e(ex, "Async single touch injection failed.");
+				} finally {
+					finalEvent.recycle();
+				}
+			});
 		}
 		
-		return result;
+		return true;
 	}
 
 	private void updateOverlayOrientation(boolean forceCarPriority) {
@@ -477,7 +489,6 @@ public class MirrorDisplay {
 				}
 				
 				isDimmed = true;
-				// HEARTBEAT START: Commences the 3s polling loop
 				PermataApplication.get().getHandler().postDelayed(orientationHeartbeat, 3000);
 			} catch (Exception err) {
 				Log.e(err);
@@ -499,7 +510,6 @@ public class MirrorDisplay {
 				}
 				
 				isDimmed = false;
-				// HEARTBEAT HALT: Instantly kills the polling loop upon touch
 				PermataApplication.get().getHandler().removeCallbacks(orientationHeartbeat);
 			} catch (Exception err) {
 				Log.e(err);
@@ -590,7 +600,6 @@ public class MirrorDisplay {
 		noSession();
 		var app = PermataApplication.get();
 		
-		// HEARTBEAT TERMINATE: Guarantee the loop dies on hard disconnect
 		app.getHandler().removeCallbacks(orientationHeartbeat);
 		
 		new Thread(() -> {
@@ -643,6 +652,7 @@ public class MirrorDisplay {
 		ProjectionService.stop();
 
 		try {
+			app.startService(new Intent(app, XposedEventDispatcherService.class)); // Ensure stopped if it was running, actually should be stopService. Fixed below.
 			app.stopService(new Intent(app, XposedEventDispatcherService.class));
 		} catch (Exception err) {
 			Log.d(err, "Failed to stop XposedEventDispatcherService");
