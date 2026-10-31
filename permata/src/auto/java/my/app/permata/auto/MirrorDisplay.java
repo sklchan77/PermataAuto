@@ -105,14 +105,16 @@ public class MirrorDisplay {
 	
 	private static final AtomicBoolean isTearingDown = new AtomicBoolean(false);
 	
-	// MULTI-THREAD SAFETY LOCK: Prevents background tasks and Emergency Teardown from colliding
 	private static final Object settingsLock = new Object();
 	
 	private static volatile boolean isRotationLocked = false;
 	private static volatile boolean isDimmed = false;
 	private static volatile int accel = -1;
 	private static volatile int brightnessMode = -1; 
-	private volatile int brightness = -1;
+	
+	// BUGFIX: Elevated to static to guarantee survival across garbage collection sweeps
+	private static volatile int brightness = -1;
+	
 	private volatile long lastInjectedTouchTime; 
 	
 	private final Object touchLock = new Object(); 
@@ -333,7 +335,6 @@ public class MirrorDisplay {
 					}
 				});
 			} catch (Exception rejectedException) {
-				// GUARANTEE: Even if the OS panics and rejects the thread, the native C++ memory is freed.
 				Log.e(rejectedException, "Touch thread rejected execution. Preventing native memory leak.");
 				finalEvent.recycle();
 			}
@@ -437,7 +438,6 @@ public class MirrorDisplay {
 
 		bgExecutor.execute(() -> {
 			if (md.sc == null) return; 
-			// THREAD SAFETY: Prevents collision with Emergency Teardown
 			synchronized (settingsLock) {
 				if (isRotationLocked) return;
 				try {
@@ -618,7 +618,6 @@ public class MirrorDisplay {
 		app.getHandler().removeCallbacks(orientationHeartbeat);
 		
 		new Thread(() -> {
-			// GUARANTEE: Synchronize with background settings queue to prevent state corruption
 			synchronized (settingsLock) {
 				try {
 					var cr = app.getContentResolver();
