@@ -32,6 +32,9 @@ import my.app.utils.function.Cancellable;
 import my.app.utils.log.Log;
 
 public class MirrorServiceFS extends CarAppService {
+	// DPI Multiplier: Accelerates car screen swipes to feel native on high-res phones.
+	private static final float SCROLL_SENSITIVITY = 2.0f;
+	
 	private MirrorDisplay md;
 	static SurfaceContainer sc;
 
@@ -161,6 +164,10 @@ public class MirrorServiceFS extends CarAppService {
 			var mDisp = md();
 			if (mDisp == null || MirrorServiceFS.sc == null) return;
 			
+			// Apply the DPI multiplier to cure the "heavy" feeling
+			distanceX *= SCROLL_SENSITIVITY;
+			distanceY *= SCROLL_SENSITIVITY;
+			
 			var time = uptimeMillis();
 			scrollMoveTime = time;
 			
@@ -178,12 +185,20 @@ public class MirrorServiceFS extends CarAppService {
 					return;
 				}
 				scrollDownTime = time;
-				scheduleScrollUp(750); 
+				
+				// Initialize the release timer
+				scheduleScrollUp(75);
 			}
 			
 			scrollX -= distanceX;
 			scrollY -= distanceY;
 			mDisp.motionEvent(scrollDownTime, time, ACTION_MOVE, scrollX, scrollY);
+			
+			// Dynamically reset the 75ms release window on every continuous swipe tick
+			if (scrollUp != null) {
+				scrollUp.cancel();
+				scheduleScrollUp(75);
+			}
 		}
 
 		private void scheduleScrollUp(long delay) {
@@ -227,7 +242,7 @@ public class MirrorServiceFS extends CarAppService {
 							new CarIcon.Builder(createWithResource(getCarContext(), R.drawable.shutdown)).build())
 					.setOnClickListener(() -> {
 						Log.i("User triggered manual shutdown.");
-						MirrorDisplay.close(); 
+						MirrorDisplay.close();
 					}).build();
 			
 			// Override Android Auto's focus controller by actively declaring a PanModeListener.
@@ -245,7 +260,7 @@ public class MirrorServiceFS extends CarAppService {
 		}
 
 		private MirrorDisplay md() {
-			if (md == null) md = MirrorDisplay.get(); 
+			if (md == null) md = MirrorDisplay.get();
 			if (md != null && sc != null) md.setSurface(sc);
 			return md;
 		}
