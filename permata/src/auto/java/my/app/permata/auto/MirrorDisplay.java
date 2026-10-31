@@ -135,8 +135,10 @@ public class MirrorDisplay {
 			
 			try {
 				boolean wantLandscape = PermataApplication.get().isMirroringLandscape();
-				int currentRotation = defaultDisplay.getRotation();
-				boolean isCurrentlyLandscape = (currentRotation == ROTATION_90 || currentRotation == ROTATION_270);
+				
+				// BUGFIX: Check software orientation configuration instead of physical hardware tilt
+				int currentOrientation = PermataApplication.get().getResources().getConfiguration().orientation;
+				boolean isCurrentlyLandscape = (currentOrientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE);
 				
 				if (wantLandscape != isCurrentlyLandscape) {
 					Log.w("Anomaly detected: Rogue app hijacked rotation. Forcing self-healing correction.");
@@ -652,7 +654,7 @@ public class MirrorDisplay {
 		ProjectionService.stop();
 
 		try {
-			app.startService(new Intent(app, XposedEventDispatcherService.class)); // Ensure stopped if it was running, actually should be stopService. Fixed below.
+			// BUGFIX: Safely stop Xposed Event Dispatcher without accidentally starting it
 			app.stopService(new Intent(app, XposedEventDispatcherService.class));
 		} catch (Exception err) {
 			Log.d(err, "Failed to stop XposedEventDispatcherService");
