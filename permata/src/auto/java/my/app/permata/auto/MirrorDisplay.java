@@ -17,6 +17,7 @@ import static android.provider.Settings.System.SCREEN_BRIGHTNESS_MODE;
 import static android.provider.Settings.System.USER_ROTATION;
 import static android.view.Surface.ROTATION_0;
 import static android.view.Surface.ROTATION_90;
+import static android.view.Surface.ROTATION_270;
 import static android.view.ViewGroup.LayoutParams.MATCH_PARENT;
 import static android.view.WindowManager.LayoutParams.FLAG_ALT_FOCUSABLE_IM;
 import static android.view.WindowManager.LayoutParams.FLAG_DISMISS_KEYGUARD;
@@ -122,6 +123,34 @@ public class MirrorDisplay {
 	
 	private MotionEvent.PointerProperties[] reusableProps;
 	private MotionEvent.PointerCoords[] reusableCoords;
+
+	// THE PASSIVE HEARTBEAT: Checks display rotation with zero overhead.
+	private final Runnable orientationHeartbeat = new Runnable() {
+		@Override
+		public void run() {
+			if (!isDimmed || sc == null) return;
+			
+			try {
+				boolean wantLandscape = PermataApplication.get().isMirroringLandscape();
+				int currentRotation = defaultDisplay.getRotation();
+				boolean isCurrentlyLandscape = (currentRotation == ROTATION_90 || currentRotation == ROTATION_270);
+				
+				// Act only if a rogue app hijacked the WindowManager
+				if (wantLandscape != isCurrentlyLandscape) {
+					Log.w("Anomaly detected: Rogue app hijacked rotation. Forcing self-healing correction.");
+					updateOverlayOrientation(true);
+					disableAccelRotation(PermataApplication.get());
+				}
+			} catch (Exception err) {
+				Log.e(err, "Orientation heartbeat check failed.");
+			}
+			
+			// Re-schedule for the next 3 seconds if still idle
+			if (isDimmed) {
+				PermataApplication.get().getHandler().postDelayed(this, 3000);
+			}
+		}
+	};
 
 	private MirrorDisplay() {
 		var ctx = PermataApplication.get();
@@ -446,7 +475,10 @@ public class MirrorDisplay {
 				if (!Build.MANUFACTURER.equalsIgnoreCase("Xiaomi")) {
 					Settings.System.putInt(cr, SCREEN_BRIGHTNESS, 0);
 				}
+				
 				isDimmed = true;
+				// HEARTBEAT START: Commences the 3s polling loop
+				PermataApplication.get().getHandler().postDelayed(orientationHeartbeat, 3000);
 			} catch (Exception err) {
 				Log.e(err);
 			}
@@ -465,7 +497,10 @@ public class MirrorDisplay {
 					Settings.System.putInt(cr, SCREEN_BRIGHTNESS_MODE, brightnessMode);
 					brightnessMode = -1;
 				}
+				
 				isDimmed = false;
+				// HEARTBEAT HALT: Instantly kills the polling loop upon touch
+				PermataApplication.get().getHandler().removeCallbacks(orientationHeartbeat);
 			} catch (Exception err) {
 				Log.e(err);
 			}
@@ -530,7 +565,7 @@ public class MirrorDisplay {
 					overlay = new Overlay(app);
 					wm.addView(overlay, overlayLp);
 					
-					overlay.dimAndRotate.schedule(6000); // 6-Second Inactive Timeout
+					overlay.dimAndRotate.schedule(6000);
 				}
 			} catch (Exception err) {
 				Log.e(err, "Failed to inject overlay hierarchy");
@@ -554,6 +589,9 @@ public class MirrorDisplay {
 	private void cleanUp() {
 		noSession();
 		var app = PermataApplication.get();
+		
+		// HEARTBEAT TERMINATE: Guarantee the loop dies on hard disconnect
+		app.getHandler().removeCallbacks(orientationHeartbeat);
 		
 		new Thread(() -> {
 			try {
@@ -845,7 +883,7 @@ public class MirrorDisplay {
 			int action = event.getActionMasked();
 			if (action == MotionEvent.ACTION_OUTSIDE || action == MotionEvent.ACTION_DOWN || action == MotionEvent.ACTION_POINTER_DOWN) {
 				Log.d("True physical touch detected. Disengaging rotation anchor.");
-				dimAndRotate.schedule(6000); // 6-Second Inactive Timeout
+				dimAndRotate.schedule(6000); 
 				var ctx = getContext();
 				
 				restoreBrightness(ctx);
