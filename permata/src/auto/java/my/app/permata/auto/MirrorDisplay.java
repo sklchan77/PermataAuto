@@ -609,36 +609,37 @@ public class MirrorDisplay {
 		var app = PermataApplication.get();
 		app.getHandler().removeCallbacks(orientationHeartbeat);
 		
-		// BUGFIX: Synchronous state capture eradicates the Rapid-Reconnect / Loose USB Cable logic bomb
 		final boolean wasDimmed = isDimmed;
 		final boolean wasRotationLocked = isRotationLocked;
 		final int savedBrightness = brightness;
 		final int savedBrightnessMode = brightnessMode;
 		final int savedAccel = accel;
 
-		// Instantly reset the static state machine so any new rapid session starts 100% fresh
 		isDimmed = false;
 		isRotationLocked = false;
 		brightness = -1;
 		brightnessMode = -1;
 		accel = -1;
 		
-		new Thread(() -> {
-			synchronized (settingsLock) {
-				try {
-					var cr = app.getContentResolver();
-					if (wasDimmed) {
-						if (savedBrightness > 0) Settings.System.putInt(cr, SCREEN_BRIGHTNESS, savedBrightness);
-						if (savedBrightnessMode != -1) Settings.System.putInt(cr, SCREEN_BRIGHTNESS_MODE, savedBrightnessMode);
+		// BUGFIX: Sanity Check avoids spawning redundant dead threads if already clean
+		if (wasDimmed || wasRotationLocked) {
+			new Thread(() -> {
+				synchronized (settingsLock) {
+					try {
+						var cr = app.getContentResolver();
+						if (wasDimmed) {
+							if (savedBrightness > 0) Settings.System.putInt(cr, SCREEN_BRIGHTNESS, savedBrightness);
+							if (savedBrightnessMode != -1) Settings.System.putInt(cr, SCREEN_BRIGHTNESS_MODE, savedBrightnessMode);
+						}
+						if (wasRotationLocked) {
+							if (savedAccel != -1) Settings.System.putInt(cr, ACCELEROMETER_ROTATION, savedAccel);
+						}
+					} catch (Exception err) {
+						Log.e(err, "Emergency teardown write failed.");
 					}
-					if (wasRotationLocked) {
-						if (savedAccel != -1) Settings.System.putInt(cr, ACCELEROMETER_ROTATION, savedAccel);
-					}
-				} catch (Exception err) {
-					Log.e(err, "Emergency teardown write failed.");
 				}
-			}
-		}, "Permata-Emergency-Teardown").start();
+			}, "Permata-Emergency-Teardown").start();
+		}
 
 		var a = EventDispatcher.get().getActivity();
 		if (a != null) a.setRequestedOrientation(SCREEN_ORIENTATION_UNSPECIFIED);
