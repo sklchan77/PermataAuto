@@ -101,11 +101,12 @@ public class MirrorDisplay {
 	private WakeLock wakeLock;
 	
 	private static final ExecutorService bgExecutor = Executors.newSingleThreadExecutor();
-	
-	// THE EXPRESS LANE: Strict FIFO queue exclusively for zero-lag touch injection
 	private static final ExecutorService touchExecutor = Executors.newSingleThreadExecutor();
 	
 	private static final AtomicBoolean isTearingDown = new AtomicBoolean(false);
+	
+	// MULTI-THREAD SAFETY LOCK: Prevents background tasks and Emergency Teardown from colliding
+	private static final Object settingsLock = new Object();
 	
 	private static volatile boolean isRotationLocked = false;
 	private static volatile boolean isDimmed = false;
@@ -135,8 +136,6 @@ public class MirrorDisplay {
 			
 			try {
 				boolean wantLandscape = PermataApplication.get().isMirroringLandscape();
-				
-				// BUGFIX: Check software orientation configuration instead of physical hardware tilt
 				int currentOrientation = PermataApplication.get().getResources().getConfiguration().orientation;
 				boolean isCurrentlyLandscape = (currentOrientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE);
 				
@@ -202,7 +201,6 @@ public class MirrorDisplay {
 		var oldSc = this.sc;
 		if (oldSc == sc) return;
 		
-		// BUGFIX: Eliminate Black Screen Race Condition. Override any pending teardown immediately.
 		isTearingDown.set(false);
 		
 		this.sc = sc;
@@ -233,7 +231,6 @@ public class MirrorDisplay {
 		if (session.isDoneNotFailed()) {
 			isTearingDown.set(true);
 			bgExecutor.execute(() -> {
-				// Abort safe detachment if a new surface hijacked the process mid-teardown
 				if (!isTearingDown.get()) return; 
 				try {
 					Session s = session.getOrThrow();
@@ -324,16 +321,22 @@ public class MirrorDisplay {
 		
 		if (clonedEvent != null) {
 			final MotionEvent finalEvent = clonedEvent;
-			touchExecutor.execute(() -> {
-				try {
-					EventDispatcher d = dispatcher();
-					if (d != null) d.motionEvent(finalEvent);
-				} catch (Exception ex) {
-					Log.e(ex, "Async touch injection failed.");
-				} finally {
-					finalEvent.recycle();
-				}
-			});
+			try {
+				touchExecutor.execute(() -> {
+					try {
+						EventDispatcher d = dispatcher();
+						if (d != null) d.motionEvent(finalEvent);
+					} catch (Exception ex) {
+						Log.e(ex, "Async touch injection failed.");
+					} finally {
+						finalEvent.recycle();
+					}
+				});
+			} catch (Exception rejectedException) {
+				// GUARANTEE: Even if the OS panics and rejects the thread, the native C++ memory is freed.
+				Log.e(rejectedException, "Touch thread rejected execution. Preventing native memory leak.");
+				finalEvent.recycle();
+			}
 		}
 		
 		return true;
@@ -368,16 +371,21 @@ public class MirrorDisplay {
 
 		if (clonedEvent != null) {
 			final MotionEvent finalEvent = clonedEvent;
-			touchExecutor.execute(() -> {
-				try {
-					EventDispatcher d = dispatcher();
-					if (d != null) d.motionEvent(finalEvent);
-				} catch (Exception ex) {
-					Log.e(ex, "Async single touch injection failed.");
-				} finally {
-					finalEvent.recycle();
-				}
-			});
+			try {
+				touchExecutor.execute(() -> {
+					try {
+						EventDispatcher d = dispatcher();
+						if (d != null) d.motionEvent(finalEvent);
+					} catch (Exception ex) {
+						Log.e(ex, "Async single touch injection failed.");
+					} finally {
+						finalEvent.recycle();
+					}
+				});
+			} catch (Exception rejectedException) {
+				Log.e(rejectedException, "Touch thread rejected execution. Preventing native memory leak.");
+				finalEvent.recycle();
+			}
 		}
 		
 		return true;
@@ -429,18 +437,21 @@ public class MirrorDisplay {
 
 		bgExecutor.execute(() -> {
 			if (md.sc == null) return; 
-			if (isRotationLocked) return;
-			try {
-				var cr = ctx.getContentResolver();
-				if (accel == -1) {
-					var v = Settings.System.getInt(cr, ACCELEROMETER_ROTATION, -1);
-					if (v != -1) accel = v;
+			// THREAD SAFETY: Prevents collision with Emergency Teardown
+			synchronized (settingsLock) {
+				if (isRotationLocked) return;
+				try {
+					var cr = ctx.getContentResolver();
+					if (accel == -1) {
+						var v = Settings.System.getInt(cr, ACCELEROMETER_ROTATION, -1);
+						if (v != -1) accel = v;
+					}
+					Settings.System.putInt(cr, ACCELEROMETER_ROTATION, 0);
+					Settings.System.putInt(cr, USER_ROTATION, land ? ROTATION_90 : ROTATION_0);
+					isRotationLocked = true;
+				} catch (Exception err) {
+					Log.e(err);
 				}
-				Settings.System.putInt(cr, ACCELEROMETER_ROTATION, 0);
-				Settings.System.putInt(cr, USER_ROTATION, land ? ROTATION_90 : ROTATION_0);
-				isRotationLocked = true;
-			} catch (Exception err) {
-				Log.e(err);
 			}
 		});
 	}
@@ -450,15 +461,17 @@ public class MirrorDisplay {
 		if (a != null) a.setRequestedOrientation(SCREEN_ORIENTATION_UNSPECIFIED);
 
 		bgExecutor.execute(() -> {
-			if (!isRotationLocked) return;
-			try {
-				if (accel != -1) {
-					Settings.System.putInt(ctx.getContentResolver(), ACCELEROMETER_ROTATION, accel);
-					accel = -1;
+			synchronized (settingsLock) {
+				if (!isRotationLocked) return;
+				try {
+					if (accel != -1) {
+						Settings.System.putInt(ctx.getContentResolver(), ACCELEROMETER_ROTATION, accel);
+						accel = -1;
+					}
+					isRotationLocked = false;
+				} catch (Exception err) {
+					Log.e(err);
 				}
-				isRotationLocked = false;
-			} catch (Exception err) {
-				Log.e(err);
 			}
 		});
 	}
@@ -466,52 +479,55 @@ public class MirrorDisplay {
 	private void dimScreen(Context ctx) {
 		bgExecutor.execute(() -> {
 			if (sc == null) return; 
-			if (isDimmed) return;
-			try {
-				var cr = ctx.getContentResolver();
-				
-				if (brightnessMode == -1) {
-					var mode = Settings.System.getInt(cr, SCREEN_BRIGHTNESS_MODE, -1);
-					if (mode != -1) brightnessMode = mode;
+			synchronized (settingsLock) {
+				if (isDimmed) return;
+				try {
+					var cr = ctx.getContentResolver();
+					
+					if (brightnessMode == -1) {
+						var mode = Settings.System.getInt(cr, SCREEN_BRIGHTNESS_MODE, -1);
+						if (mode != -1) brightnessMode = mode;
+					}
+					Settings.System.putInt(cr, SCREEN_BRIGHTNESS_MODE, 0); 
+					
+					if (brightness == -1) {
+						var br = Settings.System.getInt(cr, SCREEN_BRIGHTNESS, -1);
+						brightness = (br > 0) ? br : 200;
+					}
+					Settings.System.putInt(cr, SCREEN_BRIGHTNESS, 1);
+					if (!Build.MANUFACTURER.equalsIgnoreCase("Xiaomi")) {
+						Settings.System.putInt(cr, SCREEN_BRIGHTNESS, 0);
+					}
+					
+					isDimmed = true;
+					PermataApplication.get().getHandler().removeCallbacks(orientationHeartbeat);
+					PermataApplication.get().getHandler().postDelayed(orientationHeartbeat, 3000);
+				} catch (Exception err) {
+					Log.e(err);
 				}
-				Settings.System.putInt(cr, SCREEN_BRIGHTNESS_MODE, 0); 
-				
-				if (brightness == -1) {
-					var br = Settings.System.getInt(cr, SCREEN_BRIGHTNESS, -1);
-					brightness = (br > 0) ? br : 200;
-				}
-				Settings.System.putInt(cr, SCREEN_BRIGHTNESS, 1);
-				if (!Build.MANUFACTURER.equalsIgnoreCase("Xiaomi")) {
-					Settings.System.putInt(cr, SCREEN_BRIGHTNESS, 0);
-				}
-				
-				isDimmed = true;
-				// BUGFIX: Prevent exponential Multiplier Memory Leak
-				PermataApplication.get().getHandler().removeCallbacks(orientationHeartbeat);
-				PermataApplication.get().getHandler().postDelayed(orientationHeartbeat, 3000);
-			} catch (Exception err) {
-				Log.e(err);
 			}
 		});
 	}
 
 	private void restoreBrightness(Context ctx) {
 		bgExecutor.execute(() -> {
-			if (!isDimmed) return;
-			try {
-				var cr = ctx.getContentResolver();
-				if (brightness > 0) {
-					Settings.System.putInt(cr, SCREEN_BRIGHTNESS, brightness);
+			synchronized (settingsLock) {
+				if (!isDimmed) return;
+				try {
+					var cr = ctx.getContentResolver();
+					if (brightness > 0) {
+						Settings.System.putInt(cr, SCREEN_BRIGHTNESS, brightness);
+					}
+					if (brightnessMode != -1) {
+						Settings.System.putInt(cr, SCREEN_BRIGHTNESS_MODE, brightnessMode);
+						brightnessMode = -1;
+					}
+					
+					isDimmed = false;
+					PermataApplication.get().getHandler().removeCallbacks(orientationHeartbeat);
+				} catch (Exception err) {
+					Log.e(err);
 				}
-				if (brightnessMode != -1) {
-					Settings.System.putInt(cr, SCREEN_BRIGHTNESS_MODE, brightnessMode);
-					brightnessMode = -1;
-				}
-				
-				isDimmed = false;
-				PermataApplication.get().getHandler().removeCallbacks(orientationHeartbeat);
-			} catch (Exception err) {
-				Log.e(err);
 			}
 		});
 	}
@@ -602,21 +618,24 @@ public class MirrorDisplay {
 		app.getHandler().removeCallbacks(orientationHeartbeat);
 		
 		new Thread(() -> {
-			try {
-				var cr = app.getContentResolver();
-				if (isDimmed) {
-					if (brightness > 0) Settings.System.putInt(cr, SCREEN_BRIGHTNESS, brightness);
-					if (brightnessMode != -1) Settings.System.putInt(cr, SCREEN_BRIGHTNESS_MODE, brightnessMode);
-					brightnessMode = -1;
-					isDimmed = false;
+			// GUARANTEE: Synchronize with background settings queue to prevent state corruption
+			synchronized (settingsLock) {
+				try {
+					var cr = app.getContentResolver();
+					if (isDimmed) {
+						if (brightness > 0) Settings.System.putInt(cr, SCREEN_BRIGHTNESS, brightness);
+						if (brightnessMode != -1) Settings.System.putInt(cr, SCREEN_BRIGHTNESS_MODE, brightnessMode);
+						brightnessMode = -1;
+						isDimmed = false;
+					}
+					if (isRotationLocked) {
+						if (accel != -1) Settings.System.putInt(cr, ACCELEROMETER_ROTATION, accel);
+						accel = -1;
+						isRotationLocked = false;
+					}
+				} catch (Exception err) {
+					Log.e(err, "Emergency teardown write failed.");
 				}
-				if (isRotationLocked) {
-					if (accel != -1) Settings.System.putInt(cr, ACCELEROMETER_ROTATION, accel);
-					accel = -1;
-					isRotationLocked = false;
-				}
-			} catch (Exception err) {
-				Log.e(err, "Emergency teardown write failed.");
 			}
 		}, "Permata-Emergency-Teardown").start();
 
@@ -651,7 +670,6 @@ public class MirrorDisplay {
 		ProjectionService.stop();
 
 		try {
-			// BUGFIX: Removed catastrophic startService(...) invocation that triggered IllegalStateException
 			app.stopService(new Intent(app, XposedEventDispatcherService.class));
 		} catch (Exception err) {
 			Log.d(err, "Failed to stop XposedEventDispatcherService");
