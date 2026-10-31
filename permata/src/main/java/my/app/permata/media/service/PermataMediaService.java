@@ -290,8 +290,8 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 			try {
 				AudioManager am = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
 				if (am != null) {
-					// BUGFIX: Respect user's volume adjustments during the drive
-					// We ONLY force maximum volume once when the hijack begins.
+					// BUGFIX: Intelligent Volume Respect
+					// Sets to max volume ONCE per session. If user turns it down, we leave it alone!
 					if (originalMediaVolume == -1) {
 						originalMediaVolume = am.getStreamVolume(AudioManager.STREAM_MUSIC);
 						int maxVol = am.getStreamMaxVolume(AudioManager.STREAM_MUSIC);
