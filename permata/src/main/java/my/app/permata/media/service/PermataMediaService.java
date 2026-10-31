@@ -280,8 +280,6 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 	}
 
 	private void onWebMediaPlaying() {
-		// BUGFIX: Impenetrable Straggler Guard.
-		// Immediately ignores phantom WebView callbacks if the app is violently shutting down.
 		if (isNuclearTeardownActive) return;
 		
 		long now = SystemClock.uptimeMillis();
