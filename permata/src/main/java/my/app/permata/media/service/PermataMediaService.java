@@ -388,20 +388,15 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 	}
 
 	private void stopSilentAudioAnchor() {
-		if (audioHardwareExecutor == null || audioHardwareExecutor.isShutdown()) {
-			AudioTrack track = silentAudioTrackRef.getAndSet(null);
-			if (track != null) {
-				try { track.stop(); track.release(); } catch (Exception ignored) {}
-			}
-			return;
+		// BUGFIX: Execute AudioTrack release synchronously during teardown. 
+		// Prevents the Zombie AudioTrack leak when the executor gets destroyed a millisecond later.
+		AudioTrack track = silentAudioTrackRef.getAndSet(null);
+		if (track != null) {
+			try { 
+				track.stop(); 
+				track.release(); 
+			} catch (Exception ignored) {}
 		}
-
-		audioHardwareExecutor.execute(() -> {
-			AudioTrack track = silentAudioTrackRef.getAndSet(null);
-			if (track != null) {
-				try { track.stop(); track.release(); } catch (Exception ignored) {}
-			}
-		});
 	}
 
 	private void updatePlaybackState(int state) {
@@ -494,10 +489,9 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 		notificationInit();
 		Context ctx = this;
 		
-		// BUGFIX: Guarantee a valid small icon even when session falls back (Prevent Invalid notification crash)
 		if (session == null) {
 			return new NotificationCompat.Builder(ctx, NOTIF_CHANNEL_ID)
-					.setSmallIcon(R.drawable.notification)
+					.setSmallIcon(R.drawable.notification) // BUGFIX: Prevents fatal Android 8+ crash
 					.build();
 		}
 		
