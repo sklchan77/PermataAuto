@@ -94,7 +94,6 @@ public class MirrorDisplay {
 	private static final int ANCHOR_FLAGS = 
 			FLAG_NOT_TOUCHABLE | FLAG_KEEP_SCREEN_ON | FLAG_DISMISS_KEYGUARD | FLAG_SHOW_WHEN_LOCKED | FLAG_ALT_FOCUSABLE_IM;
 			
-	// BUGFIX: Converted to Strong Reference Singleton to survive long-drive Android Memory Pressure sweeps
 	private static MirrorDisplay instance;
 	
 	private final Display defaultDisplay;
@@ -531,7 +530,6 @@ public class MirrorDisplay {
 
 	@Override
 	protected void finalize() {
-		// Finalizer fallback ensures cleanup if instance is somehow dropped
 		cleanUp();
 	}
 
@@ -676,7 +674,6 @@ public class MirrorDisplay {
 		sc = null;
 		currentMetrics = null;
 		
-		// BUGFIX: Destroy the strong reference memory root so OS can cleanly reclaim RAM after drive
 		instance = null;
 	}
 
@@ -706,9 +703,18 @@ public class MirrorDisplay {
 		if (sc == null) noSession();
 		if (p.isDone()) return; 
 		ProjectionService.start().onCompletion((mp, err) -> {
-			if (session != p) return;
+			// BUGFIX: Ghost Screen Record Prevention. 
+			// If session was canceled while the permission dialog was open, violently destroy the projection.
+			if (session != p) {
+				if (mp != null) {
+					try { mp.stop(); } catch (Exception ignored) {}
+				}
+				return;
+			}
+			
 			if (sc == null) noSession();
 			if (p.isDone()) return;
+			
 			if (err != null) {
 				if (isCancellation(err)) {
 					drawMsg(R.string.screen_capture_rejected);
