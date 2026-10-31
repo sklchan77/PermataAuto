@@ -94,7 +94,9 @@ public class MirrorDisplay {
 	private static final int ANCHOR_FLAGS = 
 			FLAG_NOT_TOUCHABLE | FLAG_KEEP_SCREEN_ON | FLAG_DISMISS_KEYGUARD | FLAG_SHOW_WHEN_LOCKED | FLAG_ALT_FOCUSABLE_IM;
 			
-	private static WeakReference<MirrorDisplay> ref;
+	// BUGFIX: Converted to Strong Reference Singleton to survive long-drive Android Memory Pressure sweeps
+	private static MirrorDisplay instance;
+	
 	private final Display defaultDisplay;
 	private final float scaleDiff;
 	private final AudioFocusRequestCompat audioFocusReq;
@@ -104,28 +106,23 @@ public class MirrorDisplay {
 	private static final ExecutorService touchExecutor = Executors.newSingleThreadExecutor();
 	
 	private static final AtomicBoolean isTearingDown = new AtomicBoolean(false);
-	
 	private static final Object settingsLock = new Object();
 	
 	private static volatile boolean isRotationLocked = false;
 	private static volatile boolean isDimmed = false;
 	private static volatile int accel = -1;
 	private static volatile int brightnessMode = -1; 
-	
-	// BUGFIX: Elevated to static to guarantee survival across garbage collection sweeps
 	private static volatile int brightness = -1;
 	
 	private volatile long lastInjectedTouchTime; 
-	
 	private final Object touchLock = new Object(); 
 	
-	private int refCounter;
+	private int refCounter = 0;
 	private FutureSupplier<Session> session = Completed.cancelled();
 	private SurfaceContainer sc;
 	
 	private Overlay overlay;
 	private View rotationAnchor; 
-	
 	private Metrics currentMetrics;
 	
 	private MotionEvent.PointerProperties[] reusableProps;
@@ -178,25 +175,26 @@ public class MirrorDisplay {
 		}
 	}
 
-	public static MirrorDisplay get() {
-		MirrorDisplay md;
-		if ((ref == null) || ((md = ref.get()) == null)) {
-			ref = new WeakReference<>(md = new MirrorDisplay());
+	public static synchronized MirrorDisplay get() {
+		if (instance == null) {
+			instance = new MirrorDisplay();
 		}
-		md.refCounter++;
-		return md;
+		instance.refCounter++;
+		return instance;
 	}
 
-	public static void close() {
-		MirrorDisplay md;
-		if ((ref == null) || ((md = ref.get()) == null)) return;
-		var sc = md.sc;
-		md.cleanUp();
+	public static synchronized void close() {
+		if (instance == null) return;
+		var sc = instance.sc;
+		instance.cleanUp();
 		if (sc != null) drawMsg(sc, R.string.app_name);
 	}
 
-	public void release() {
-		if (--refCounter == 0) cleanUp();
+	public synchronized void release() {
+		if (--refCounter <= 0) {
+			refCounter = 0;
+			cleanUp();
+		}
 	}
 
 	public void setSurface(@NonNull SurfaceContainer sc) {
@@ -426,8 +424,7 @@ public class MirrorDisplay {
 	}
 
 	private static void disableAccelRotation(Context ctx) {
-		MirrorDisplay md = (ref != null) ? ref.get() : null;
-		if (md == null || md.sc == null) return; 
+		if (instance == null || instance.sc == null) return; 
 
 		var a = EventDispatcher.get().getActivity();
 		boolean land = PermataApplication.get().isMirroringLandscape();
@@ -437,7 +434,7 @@ public class MirrorDisplay {
 		}
 
 		bgExecutor.execute(() -> {
-			if (md.sc == null) return; 
+			if (instance == null || instance.sc == null) return; 
 			synchronized (settingsLock) {
 				if (isRotationLocked) return;
 				try {
@@ -534,9 +531,8 @@ public class MirrorDisplay {
 
 	@Override
 	protected void finalize() {
-		if ((ref == null) || (ref.get() == null) || (ref.get() == this)) {
-			cleanUp();
-		}
+		// Finalizer fallback ensures cleanup if instance is somehow dropped
+		cleanUp();
 	}
 
 	private void started() {
@@ -611,7 +607,7 @@ public class MirrorDisplay {
 		setMirroringMode(app, mode);
 	}
 
-	private void cleanUp() {
+	private synchronized void cleanUp() {
 		noSession();
 		var app = PermataApplication.get();
 		
@@ -679,6 +675,9 @@ public class MirrorDisplay {
 		
 		sc = null;
 		currentMetrics = null;
+		
+		// BUGFIX: Destroy the strong reference memory root so OS can cleanly reclaim RAM after drive
+		instance = null;
 	}
 
 	private void noSession() {
