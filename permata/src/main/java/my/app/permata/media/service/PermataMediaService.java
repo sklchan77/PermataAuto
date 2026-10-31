@@ -493,7 +493,14 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 	private Notification createNotification(int st, PlayableItem i) {
 		notificationInit();
 		Context ctx = this;
-		if (session == null) return new NotificationCompat.Builder(ctx, NOTIF_CHANNEL_ID).build();
+		
+		// BUGFIX: Guarantee a valid small icon even when session falls back (Prevent Invalid notification crash)
+		if (session == null) {
+			return new NotificationCompat.Builder(ctx, NOTIF_CHANNEL_ID)
+					.setSmallIcon(R.drawable.notification)
+					.build();
+		}
+		
 		MediaControllerCompat controller = session.getController();
 		MediaMetadataCompat mediaMetadata = controller.getMetadata();
 		NotificationCompat.Builder builder =
