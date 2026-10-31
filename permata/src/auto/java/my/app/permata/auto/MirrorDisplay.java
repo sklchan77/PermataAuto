@@ -130,6 +130,8 @@ public class MirrorDisplay {
 		@Override
 		public void run() {
 			if (!isDimmed || sc == null) return;
+			// BUGFIX: Contextual Instance Guard for Heartbeat
+			if (MirrorDisplay.instance != MirrorDisplay.this) return;
 			
 			try {
 				boolean wantLandscape = PermataApplication.get().isMirroringLandscape();
@@ -248,6 +250,7 @@ public class MirrorDisplay {
 		if (m == null) return;
 		
 		touchExecutor.execute(() -> {
+			if (MirrorDisplay.instance != MirrorDisplay.this) return;
 			var d = dispatcher();
 			if (d != null) {
 				d.tap((x - m.x) * m.scale, (y - m.y) * m.scale);
@@ -260,6 +263,7 @@ public class MirrorDisplay {
 		if (m == null) return;
 		
 		touchExecutor.execute(() -> {
+			if (MirrorDisplay.instance != MirrorDisplay.this) return;
 			var d = dispatcher();
 			if (d != null) {
 				d.scale((x - m.x) * m.scale, (y - m.y) * m.scale, zoomIn ? scaleDiff : -scaleDiff);
@@ -322,6 +326,8 @@ public class MirrorDisplay {
 			try {
 				touchExecutor.execute(() -> {
 					try {
+						// BUGFIX: Guarantee we don't inject touches into a dead WindowManager
+						if (MirrorDisplay.instance != MirrorDisplay.this) return;
 						EventDispatcher d = dispatcher();
 						if (d != null) d.motionEvent(finalEvent);
 					} catch (Exception ex) {
@@ -371,6 +377,7 @@ public class MirrorDisplay {
 			try {
 				touchExecutor.execute(() -> {
 					try {
+						if (MirrorDisplay.instance != MirrorDisplay.this) return;
 						EventDispatcher d = dispatcher();
 						if (d != null) d.motionEvent(finalEvent);
 					} catch (Exception ex) {
@@ -434,6 +441,8 @@ public class MirrorDisplay {
 		bgExecutor.execute(() -> {
 			if (instance == null || instance.sc == null) return; 
 			synchronized (settingsLock) {
+				// BUGFIX: Delayed Execution Context Guard
+				// Ensures a lagging thread doesn't lock rotation AFTER a disconnect
 				if (isRotationLocked) return;
 				try {
 					var cr = ctx.getContentResolver();
@@ -473,7 +482,11 @@ public class MirrorDisplay {
 
 	private void dimScreen(Context ctx) {
 		bgExecutor.execute(() -> {
+			// BUGFIX: Context Guard for Zombie Dimming Tasks
+			// Prevents a lagged dim task from executing if the USB was unplugged while it was waiting in queue
+			if (MirrorDisplay.instance != MirrorDisplay.this) return;
 			if (sc == null) return; 
+			
 			synchronized (settingsLock) {
 				if (isDimmed) return;
 				try {
@@ -506,6 +519,7 @@ public class MirrorDisplay {
 
 	private void restoreBrightness(Context ctx) {
 		bgExecutor.execute(() -> {
+			if (MirrorDisplay.instance != MirrorDisplay.this) return;
 			synchronized (settingsLock) {
 				if (!isDimmed) return;
 				try {
@@ -621,7 +635,6 @@ public class MirrorDisplay {
 		brightnessMode = -1;
 		accel = -1;
 		
-		// BUGFIX: Sanity Check avoids spawning redundant dead threads if already clean
 		if (wasDimmed || wasRotationLocked) {
 			new Thread(() -> {
 				synchronized (settingsLock) {
