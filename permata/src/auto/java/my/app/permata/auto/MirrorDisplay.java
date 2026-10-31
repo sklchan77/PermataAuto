@@ -202,10 +202,8 @@ public class MirrorDisplay {
 		var oldSc = this.sc;
 		if (oldSc == sc) return;
 		
-		if (isTearingDown.get()) {
-			Log.w("Ignoring surface set; teardown in progress.");
-			return;
-		}
+		// BUGFIX: Eliminate Black Screen Race Condition. Override any pending teardown immediately.
+		isTearingDown.set(false);
 		
 		this.sc = sc;
 		currentMetrics = null; 
@@ -235,6 +233,8 @@ public class MirrorDisplay {
 		if (session.isDoneNotFailed()) {
 			isTearingDown.set(true);
 			bgExecutor.execute(() -> {
+				// Abort safe detachment if a new surface hijacked the process mid-teardown
+				if (!isTearingDown.get()) return; 
 				try {
 					Session s = session.getOrThrow();
 					if (s != null && s.vd != null) s.vd.setSurface(null);
@@ -252,7 +252,6 @@ public class MirrorDisplay {
 		var m = metrics();
 		if (m == null) return;
 		
-		// Offloaded to Express Lane
 		touchExecutor.execute(() -> {
 			var d = dispatcher();
 			if (d != null) {
@@ -265,7 +264,6 @@ public class MirrorDisplay {
 		var m = metrics();
 		if (m == null) return;
 		
-		// Offloaded to Express Lane
 		touchExecutor.execute(() -> {
 			var d = dispatcher();
 			if (d != null) {
@@ -326,7 +324,6 @@ public class MirrorDisplay {
 		
 		if (clonedEvent != null) {
 			final MotionEvent finalEvent = clonedEvent;
-			// FIRE AND FORGET: Dispatched to strict FIFO background thread
 			touchExecutor.execute(() -> {
 				try {
 					EventDispatcher d = dispatcher();
@@ -334,13 +331,11 @@ public class MirrorDisplay {
 				} catch (Exception ex) {
 					Log.e(ex, "Async touch injection failed.");
 				} finally {
-					// GUARANTEED CLEANUP: Prevents native memory leak OutOfMemory crashes
 					finalEvent.recycle();
 				}
 			});
 		}
 		
-		// Return true instantly to unblock Android Auto UI Thread
 		return true;
 	}
 
@@ -491,6 +486,8 @@ public class MirrorDisplay {
 				}
 				
 				isDimmed = true;
+				// BUGFIX: Prevent exponential Multiplier Memory Leak
+				PermataApplication.get().getHandler().removeCallbacks(orientationHeartbeat);
 				PermataApplication.get().getHandler().postDelayed(orientationHeartbeat, 3000);
 			} catch (Exception err) {
 				Log.e(err);
@@ -654,7 +651,7 @@ public class MirrorDisplay {
 		ProjectionService.stop();
 
 		try {
-			// BUGFIX: Safely stop Xposed Event Dispatcher without accidentally starting it
+			// BUGFIX: Removed catastrophic startService(...) invocation that triggered IllegalStateException
 			app.stopService(new Intent(app, XposedEventDispatcherService.class));
 		} catch (Exception err) {
 			Log.d(err, "Failed to stop XposedEventDispatcherService");
