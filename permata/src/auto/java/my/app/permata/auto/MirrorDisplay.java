@@ -130,7 +130,7 @@ public class MirrorDisplay {
 		@Override
 		public void run() {
 			if (!isDimmed || sc == null) return;
-			// BUGFIX: Contextual Instance Guard for Heartbeat
+			
 			if (MirrorDisplay.instance != MirrorDisplay.this) return;
 			
 			try {
@@ -326,7 +326,6 @@ public class MirrorDisplay {
 			try {
 				touchExecutor.execute(() -> {
 					try {
-						// BUGFIX: Guarantee we don't inject touches into a dead WindowManager
 						if (MirrorDisplay.instance != MirrorDisplay.this) return;
 						EventDispatcher d = dispatcher();
 						if (d != null) d.motionEvent(finalEvent);
@@ -441,8 +440,6 @@ public class MirrorDisplay {
 		bgExecutor.execute(() -> {
 			if (instance == null || instance.sc == null) return; 
 			synchronized (settingsLock) {
-				// BUGFIX: Delayed Execution Context Guard
-				// Ensures a lagging thread doesn't lock rotation AFTER a disconnect
 				if (isRotationLocked) return;
 				try {
 					var cr = ctx.getContentResolver();
@@ -482,8 +479,6 @@ public class MirrorDisplay {
 
 	private void dimScreen(Context ctx) {
 		bgExecutor.execute(() -> {
-			// BUGFIX: Context Guard for Zombie Dimming Tasks
-			// Prevents a lagged dim task from executing if the USB was unplugged while it was waiting in queue
 			if (MirrorDisplay.instance != MirrorDisplay.this) return;
 			if (sc == null) return; 
 			
@@ -636,7 +631,7 @@ public class MirrorDisplay {
 		accel = -1;
 		
 		if (wasDimmed || wasRotationLocked) {
-			new Thread(() -> {
+			bgExecutor.execute(() -> {
 				synchronized (settingsLock) {
 					try {
 						var cr = app.getContentResolver();
@@ -651,7 +646,7 @@ public class MirrorDisplay {
 						Log.e(err, "Emergency teardown write failed.");
 					}
 				}
-			}, "Permata-Emergency-Teardown").start();
+			});
 		}
 
 		var a = EventDispatcher.get().getActivity();
