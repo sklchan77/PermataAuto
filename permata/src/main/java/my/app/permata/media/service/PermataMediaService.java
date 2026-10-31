@@ -290,11 +290,13 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 			try {
 				AudioManager am = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
 				if (am != null) {
+					// BUGFIX: Respect user's volume adjustments during the drive
+					// We ONLY force maximum volume once when the hijack begins.
 					if (originalMediaVolume == -1) {
 						originalMediaVolume = am.getStreamVolume(AudioManager.STREAM_MUSIC);
+						int maxVol = am.getStreamMaxVolume(AudioManager.STREAM_MUSIC);
+						am.setStreamVolume(AudioManager.STREAM_MUSIC, maxVol, 0); 
 					}
-					int maxVol = am.getStreamMaxVolume(AudioManager.STREAM_MUSIC);
-					am.setStreamVolume(AudioManager.STREAM_MUSIC, maxVol, 0); 
 				}
 			} catch (Exception ignored) {}
 		}
@@ -322,7 +324,6 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 		}
 
 		try {
-			// BUGFIX: Wraps executor handoff to prevent silent process crashes if the OS AudioFlinger panics
 			audioHardwareExecutor.execute(() -> {
 				try {
 					AudioTrack currentTrack = silentAudioTrackRef.get();
