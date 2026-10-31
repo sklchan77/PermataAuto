@@ -280,6 +280,10 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 	}
 
 	private void onWebMediaPlaying() {
+		// BUGFIX: Impenetrable Straggler Guard.
+		// Immediately ignores phantom WebView callbacks if the app is violently shutting down.
+		if (isNuclearTeardownActive) return;
+		
 		long now = SystemClock.uptimeMillis();
 		if (now - lastWebMediaPlayingTime < 300) {
 			return;
@@ -290,8 +294,6 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 			try {
 				AudioManager am = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
 				if (am != null) {
-					// BUGFIX: Intelligent Volume Respect
-					// Sets to max volume ONCE per session. If user turns it down, we leave it alone!
 					if (originalMediaVolume == -1) {
 						originalMediaVolume = am.getStreamVolume(AudioManager.STREAM_MUSIC);
 						int maxVol = am.getStreamMaxVolume(AudioManager.STREAM_MUSIC);
