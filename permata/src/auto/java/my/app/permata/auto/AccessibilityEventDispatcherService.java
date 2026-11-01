@@ -62,6 +62,11 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
 		}
 	};
 
+	// Expose availability flag to force EventDispatcher OS-level overrides
+	public static boolean isAvailable() {
+		return instance != null;
+	}
+
 	static int getWindowCount() {
 		var ds = instance;
 		if (ds == null) return -1;
@@ -193,15 +198,16 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
 				p.time = eventTime;
 				path.reset();
 				path.moveTo(x, y);
-				var dur = Math.max(50L, Math.min(eventTime - downTime, getMaxGestureDuration()));
-				p.sd = new StrokeDescription(path, 0L, dur, true);
+				// SURGICAL FIX: Reduced initial tap duration to 10ms to prevent gesture queue bloating and drag lag
+				p.sd = new StrokeDescription(path, 0L, 10L, true);
 				addStroke(p.sd);
 			}
 			case ACTION_UP -> {
 				if (p.sd == null) return true;
 				path.reset();
-				path.moveTo(x, y);
-				var dur = Math.max(50L, Math.min(eventTime - p.time, getMaxGestureDuration()));
+				path.moveTo(p.x, p.y);
+				path.lineTo(x, y); 
+				var dur = Math.max(10L, Math.min(eventTime - p.time, getMaxGestureDuration()));
 				var sd = p.sd.continueStroke(path, 0L, dur, false);
 				p.sd = null;
 				addStroke(sd);
@@ -210,7 +216,8 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
 				path.reset();
 				path.moveTo(p.x, p.y);
 				path.lineTo(x, y);
-				var dur = Math.max(50L, Math.min(eventTime - p.time, getMaxGestureDuration()));
+				// SURGICAL FIX: Shrunk minimum duration constraint to 10ms to allow flawless 60fps PiP dragging 
+				var dur = Math.max(10L, Math.min(eventTime - p.time, getMaxGestureDuration()));
 				p.x = x;
 				p.y = y;
 				p.time = eventTime;
@@ -292,7 +299,6 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
 
 		if (type != TYPE_WINDOW_STATE_CHANGED) return;
 
-		// Fast fail check to preserve CPU
 		if (isConsentGranted && clickOnButton == null) return;
 
 		CharSequence pkg = event.getPackageName();
