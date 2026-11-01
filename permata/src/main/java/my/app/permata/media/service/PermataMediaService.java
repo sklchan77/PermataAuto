@@ -300,9 +300,6 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 			audioHardwareExecutor.execute(() -> {
 				if (isTeardownActive) return;
 				try {
-					// SURGICAL FIX: Forcefully request audio focus BEFORE checking the AudioTrack.
-					// This unconditionally rips steering wheel controls back from the Car Radio 
-					// or Assistant every time this method fires, preventing permanent hardware lockout.
 					AudioManager audioManager = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
 					if (audioManager != null) {
 						if (focusChangeListener == null) {
@@ -318,10 +315,15 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 								}
 							};
 						}
+						
+						// SURGICAL FIX: Cures the Infinite Death Loop
+						// We downgrade the request from AUDIOFOCUS_GAIN to AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK.
+						// This tells the OS to share the audio channel instead of fighting the Car Radio for exclusivity,
+						// permanently preventing the stuttering, racing, and infinite pausing loop in Web Media.
 						audioManager.requestAudioFocus(
 								focusChangeListener,
 								AudioManager.STREAM_MUSIC,
-								AudioManager.AUDIOFOCUS_GAIN
+								AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK
 						);
 					}
 
