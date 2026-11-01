@@ -53,12 +53,12 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
 	private GestureDescription.Builder gb;
 	private Pointer[] pointers = new Pointer[]{new Pointer()};
 	
-	private volatile boolean isDispatching = false;
+	// SURGICAL FIX: Track last move time to create the 30/45 overlap chain
+	private long lastMoveTime = 0;
 
 	private final Handler safetyHandler = new Handler(Looper.getMainLooper());
 	private final Runnable safetyReleaseRunnable = () -> {
 		try {
-			isDispatching = false; 
 			if (pointers != null && pointers.length > 0 && pointers[0] != null && pointers[0].sd != null) {
 				Log.w("Virtual finger safety timeout triggered. Forcing ACTION_UP to release phone screen.");
 				long now = android.os.SystemClock.uptimeMillis();
@@ -159,8 +159,17 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
 			ds.safetyHandler.postDelayed(ds.safetyReleaseRunnable, 500); 
 		}
 		
-		if (ds.isDispatching && action == ACTION_MOVE) {
-			return true;
+		// SURGICAL FIX: 33 FPS Overlap Throttle
+		// Ensures car coordinates do not flood the OS queue, while perfectly maintaining 
+		// the continueStroke gesture chain for Notification / Recents dragging.
+		long now = android.os.SystemClock.uptimeMillis();
+		if (action == ACTION_MOVE) {
+			if (now - ds.lastMoveTime < 30) {
+				return true; 
+			}
+			ds.lastMoveTime = now;
+		} else if (action == ACTION_DOWN) {
+			ds.lastMoveTime = now;
 		}
 
 		var pointers = ds.pointers;
@@ -217,8 +226,15 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
 			ds.safetyHandler.postDelayed(ds.safetyReleaseRunnable, 500); 
 		}
 		
-		if (ds.isDispatching && action == ACTION_MOVE) {
-			return true;
+		// SURGICAL FIX: 33 FPS Overlap Throttle
+		long now = android.os.SystemClock.uptimeMillis();
+		if (action == ACTION_MOVE) {
+			if (now - ds.lastMoveTime < 30) {
+				return true;
+			}
+			ds.lastMoveTime = now;
+		} else if (action == ACTION_DOWN) {
+			ds.lastMoveTime = now;
 		}
 		
 		if ((x < 0f) || (y < 0f)) return true;
@@ -236,7 +252,8 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
 				p.time = eventTime;
 				path.reset();
 				path.moveTo(x, y);
-				p.sd = new StrokeDescription(path, 0L, 10L, true);
+				// 45ms duration ensures the stroke bridges the 30ms dispatch interval
+				p.sd = new StrokeDescription(path, 0L, 45L, true);
 				addStroke(p.sd);
 			}
 			case ACTION_UP -> {
@@ -253,7 +270,8 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
 				path.reset();
 				path.moveTo(p.x, p.y);
 				path.lineTo(x, y);
-				var dur = Math.max(10L, Math.min(eventTime - p.time, getMaxGestureDuration()));
+				// 45ms duration ensures the stroke bridges the 30ms dispatch interval
+				var dur = Math.max(45L, Math.min(eventTime - p.time, getMaxGestureDuration()));
 				p.x = x;
 				p.y = y;
 				p.time = eventTime;
@@ -288,22 +306,7 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
 		var g = gb.build();
 		gb = null;
 		
-		isDispatching = true;
-		boolean result = dispatchGesture(g, new GestureResultCallback() {
-			@Override
-			public void onCompleted(GestureDescription gestureDescription) {
-				isDispatching = false;
-			}
-			@Override
-			public void onCancelled(GestureDescription gestureDescription) {
-				isDispatching = false;
-			}
-		}, null);
-		
-		if (!result) {
-			isDispatching = false;
-		}
-		return result;
+		return dispatchGesture(g, null, null);
 	}
 	
 	@RequiresApi(api = VERSION_CODES.N)
