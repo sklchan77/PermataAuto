@@ -5,7 +5,6 @@ import static android.view.MotionEvent.ACTION_DOWN;
 import static android.view.MotionEvent.ACTION_MOVE;
 import static android.view.MotionEvent.ACTION_UP;
 import static android.view.MotionEvent.obtain;
-import static my.app.permata.auto.AccessibilityEventDispatcherService.getWindowCount;
 import static my.app.utils.async.Completed.completed;
 import static my.app.utils.async.Completed.completedNull;
 
@@ -32,7 +31,14 @@ abstract class EventDispatcher {
 	}
 
 	static EventDispatcher get() {
-		if (getWindowCount() > 1) return AccessibilityDispatcher.get();
+		// SURGICAL FIX: FORCE GLOBAL OS HIT-TESTING
+		// If Accessibility is active, force ALL touches through the OS kernel to ensure 
+		// Z-axis depth is respected. This guarantees touches strike PiP windows, 
+		// system popups, and floating bubbles exactly like a physical finger on the glass.
+		if (AccessibilityEventDispatcherService.isAvailable()) {
+			return AccessibilityDispatcher.get();
+		}
+		
 		var d = ActivityDispatcher.get();
 		return (d.getActiveInstance() == null) ? XposedDispatcher.get() : d;
 	}
@@ -173,7 +179,7 @@ abstract class EventDispatcher {
 
 		@Override
 		AppCompatActivity getActivity() {
-			var cnt = getWindowCount();
+			var cnt = AccessibilityEventDispatcherService.getWindowCount();
 			if (cnt == -1) {
 				if (imm == null) {
 					imm = (InputMethodManager) PermataApplication.get()
@@ -215,7 +221,7 @@ abstract class EventDispatcher {
 			var ctx = PermataApplication.get();
 			if (ctx != null) {
 				Intent intent = new Intent("my.app.permata.ACTION_GLOBAL_BACK");
-				intent.setPackage(ctx.getPackageName()); // Micro-optimization for OS security/speed
+				intent.setPackage(ctx.getPackageName()); 
 				ctx.sendBroadcast(intent);
 				return true;
 			}
@@ -232,7 +238,7 @@ abstract class EventDispatcher {
 			var ctx = PermataApplication.get();
 			if (ctx != null) {
 				Intent intent = new Intent("my.app.permata.ACTION_GLOBAL_HOME");
-				intent.setPackage(ctx.getPackageName()); // Micro-optimization for OS security/speed
+				intent.setPackage(ctx.getPackageName()); 
 				ctx.sendBroadcast(intent);
 				return true;
 			}
