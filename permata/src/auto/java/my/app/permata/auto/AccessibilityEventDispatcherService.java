@@ -55,12 +55,10 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
 	
 	private volatile boolean isDispatching = false;
 
-	// SURGICAL FIX: The Virtual Finger Deadman's Switch
-	// Automatically releases the screen if an ACTION_UP is dropped during a surface switch
 	private final Handler safetyHandler = new Handler(Looper.getMainLooper());
 	private final Runnable safetyReleaseRunnable = () -> {
 		try {
-			isDispatching = false; // Force clear the OS callback lock
+			isDispatching = false; 
 			if (pointers != null && pointers.length > 0 && pointers[0] != null && pointers[0].sd != null) {
 				Log.w("Virtual finger safety timeout triggered. Forcing ACTION_UP to release phone screen.");
 				long now = android.os.SystemClock.uptimeMillis();
@@ -93,7 +91,6 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
 		int cnt =
 				(VERSION.SDK_INT >= VERSION_CODES.TIRAMISU) ? ds.windowIds.size() :
 						ds.listWindows().size();
-		Log.d("Window count: ", cnt);
 		return cnt;
 	}
 
@@ -157,10 +154,9 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
 		
 		var action = e.getActionMasked();
 
-		// Update Deadman's Switch Timer
 		ds.safetyHandler.removeCallbacks(ds.safetyReleaseRunnable);
 		if (action != MotionEvent.ACTION_UP && action != MotionEvent.ACTION_CANCEL) {
-			ds.safetyHandler.postDelayed(ds.safetyReleaseRunnable, 500); // Trigger release if stuck for 500ms
+			ds.safetyHandler.postDelayed(ds.safetyReleaseRunnable, 500); 
 		}
 		
 		if (ds.isDispatching && action == ACTION_MOVE) {
@@ -216,7 +212,6 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
 		var ds = instance;
 		if ((VERSION.SDK_INT < VERSION_CODES.O) || (ds == null)) return false;
 		
-		// Update Deadman's Switch Timer
 		ds.safetyHandler.removeCallbacks(ds.safetyReleaseRunnable);
 		if (action != MotionEvent.ACTION_UP && action != MotionEvent.ACTION_CANCEL) {
 			ds.safetyHandler.postDelayed(ds.safetyReleaseRunnable, 500); 
