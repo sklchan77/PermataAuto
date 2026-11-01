@@ -503,7 +503,6 @@ public class MirrorDisplay {
 					
 					mainHandler.post(() -> {
 						mainHandler.removeCallbacks(orientationHeartbeat);
-						// SURGICAL FIX: Fire instantly on the 6th second, then loop every 3s
 						mainHandler.post(orientationHeartbeat); 
 					});
 				} catch (Exception err) {
@@ -581,9 +580,13 @@ public class MirrorDisplay {
 				}
 
 				if (overlay == null) {
+					// SURGICAL FIX: Shrunk to 1x1 Pixel
+					// Evades Android 12+ Untrusted Touch Occlusion Blockade entirely.
+					// FLAG_WATCH_OUTSIDE_TOUCH guarantees physical touches are still perfectly detected globally.
 					var overlayLp = new WindowManager.LayoutParams(
-							MATCH_PARENT, MATCH_PARENT, TYPE_APPLICATION_OVERLAY,
+							1, 1, TYPE_APPLICATION_OVERLAY,
 							OVERLAY_FLAGS, PixelFormat.TRANSPARENT);
+					overlayLp.gravity = Gravity.TOP | Gravity.START;
 					overlayLp.screenOrientation = land ? SCREEN_ORIENTATION_LANDSCAPE : SCREEN_ORIENTATION_PORTRAIT;
 					
 					overlay = new Overlay(app);
