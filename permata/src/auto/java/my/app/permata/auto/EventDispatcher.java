@@ -31,11 +31,11 @@ abstract class EventDispatcher {
 	}
 
 	static EventDispatcher get() {
-		// SURGICAL FIX: FORCE GLOBAL OS HIT-TESTING
-		// If Accessibility is active, force ALL touches through the OS kernel to ensure 
-		// Z-axis depth is respected. This guarantees touches strike PiP windows, 
-		// system popups, and floating bubbles exactly like a physical finger on the glass.
-		if (AccessibilityEventDispatcherService.isAvailable()) {
+		// SURGICAL FIX: Dynamic Routing
+		// Uses instant, zero-lag local injection for the base Permata UI (floating buttons).
+		// Automatically switches to OS-level Accessibility injection when PiP or other apps open.
+		int windowCount = AccessibilityEventDispatcherService.getWindowCount();
+		if (windowCount > 1) {
 			return AccessibilityDispatcher.get();
 		}
 		
