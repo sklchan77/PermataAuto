@@ -24,6 +24,8 @@ import android.content.IntentFilter;
 import android.graphics.Path;
 import android.os.Build.VERSION;
 import android.os.Build.VERSION_CODES;
+import android.os.Handler;
+import android.os.Looper;
 import android.view.MotionEvent;
 import android.view.accessibility.AccessibilityEvent;
 import android.view.accessibility.AccessibilityNodeInfo;
@@ -51,8 +53,24 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
 	private GestureDescription.Builder gb;
 	private Pointer[] pointers = new Pointer[]{new Pointer()};
 	
-	// SURGICAL FIX: Prevents OS Gesture Queue Flooding & Digitizer Lockup
 	private volatile boolean isDispatching = false;
+
+	// SURGICAL FIX: The Virtual Finger Deadman's Switch
+	// Automatically releases the screen if an ACTION_UP is dropped during a surface switch
+	private final Handler safetyHandler = new Handler(Looper.getMainLooper());
+	private final Runnable safetyReleaseRunnable = () -> {
+		try {
+			isDispatching = false; // Force clear the OS callback lock
+			if (pointers != null && pointers.length > 0 && pointers[0] != null && pointers[0].sd != null) {
+				Log.w("Virtual finger safety timeout triggered. Forcing ACTION_UP to release phone screen.");
+				long now = android.os.SystemClock.uptimeMillis();
+				buildGesture(pointers[0], now, now, MotionEvent.ACTION_UP, pointers[0].x, pointers[0].y, false);
+				dispatch();
+			}
+		} catch (Exception e) {
+			Log.e(e, "Failed to release virtual finger lock");
+		}
+	};
 
 	private final BroadcastReceiver commandReceiver = new BroadcastReceiver() {
 		@Override
@@ -138,11 +156,13 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
 		if ((VERSION.SDK_INT < VERSION_CODES.O) || (ds == null)) return false;
 		
 		var action = e.getActionMasked();
+
+		// Update Deadman's Switch Timer
+		ds.safetyHandler.removeCallbacks(ds.safetyReleaseRunnable);
+		if (action != MotionEvent.ACTION_UP && action != MotionEvent.ACTION_CANCEL) {
+			ds.safetyHandler.postDelayed(ds.safetyReleaseRunnable, 500); // Trigger release if stuck for 500ms
+		}
 		
-		// NUCLEAR FLOOD PROTECTION: 
-		// If the Android OS is currently executing a gesture, silently drop intermediate ACTION_MOVE 
-		// frames from the car screen to prevent the OS InputManager from queueing thousands 
-		// of gestures and completely freezing the physical phone digitizer.
 		if (ds.isDispatching && action == ACTION_MOVE) {
 			return true;
 		}
@@ -195,6 +215,12 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
 	static boolean dispatchMotionEvent(long downTime, long eventTime, int action, float x, float y) {
 		var ds = instance;
 		if ((VERSION.SDK_INT < VERSION_CODES.O) || (ds == null)) return false;
+		
+		// Update Deadman's Switch Timer
+		ds.safetyHandler.removeCallbacks(ds.safetyReleaseRunnable);
+		if (action != MotionEvent.ACTION_UP && action != MotionEvent.ACTION_CANCEL) {
+			ds.safetyHandler.postDelayed(ds.safetyReleaseRunnable, 500); 
+		}
 		
 		if (ds.isDispatching && action == ACTION_MOVE) {
 			return true;
