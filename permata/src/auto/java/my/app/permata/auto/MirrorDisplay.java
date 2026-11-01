@@ -274,8 +274,6 @@ public class MirrorDisplay {
 	}
 
 	public boolean motionEvent(MotionEvent e) {
-		// BUGFIX: Prevent 200ms Lockout Trap
-		// Only updates lockout timer on absolute initial tap, allowing user to instantly wake screen
 		if (e.getActionMasked() == MotionEvent.ACTION_DOWN) {
 			lastInjectedTouchTime = uptimeMillis(); 
 		}
@@ -339,7 +337,6 @@ public class MirrorDisplay {
 					} catch (Exception ex) {
 						Log.e(ex, "Async touch injection failed.");
 					}
-					// BUGFIX: Removed finalEvent.recycle() to prevent OS InputManager asynchronous crashes
 				});
 			} catch (Exception rejectedException) {
 				Log.e(rejectedException, "Touch thread rejected execution.");
@@ -613,7 +610,6 @@ public class MirrorDisplay {
 		setMirroringMode(app, mode);
 	}
 
-	// BUGFIX: Removed `synchronized` modifier to prevent complete Main Thread Deadlock
 	private void cleanUp() {
 		noSession();
 		var app = PermataApplication.get();
@@ -922,7 +918,6 @@ public class MirrorDisplay {
 		@SuppressLint("ClickableViewAccessibility")
 		@Override
 		public boolean onTouchEvent(MotionEvent event) {
-			// BUGFIX: Precision 50ms lockout window prevents complete phone touch deadlocks
 			if (Math.abs(uptimeMillis() - lastInjectedTouchTime) < 50) return false;
 			
 			if (event.getPointerCount() == 0 || event.getToolType(0) != MotionEvent.TOOL_TYPE_FINGER) return false;
