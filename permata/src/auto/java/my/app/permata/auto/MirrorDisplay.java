@@ -271,9 +271,8 @@ public class MirrorDisplay {
 	}
 
 	public boolean motionEvent(MotionEvent e) {
-		if (e.getActionMasked() == MotionEvent.ACTION_DOWN) {
-			lastInjectedTouchTime = uptimeMillis(); 
-		}
+		// SURGICAL FIX: Continuously record exact time of ALL car touches to prevent ACTION_OUTSIDE false-positives
+		lastInjectedTouchTime = uptimeMillis(); 
 		resetIdleTimer();
 		
 		MotionEvent clonedEvent = null;
@@ -344,9 +343,8 @@ public class MirrorDisplay {
 	}
 
 	public boolean motionEvent(long downTime, long eventTime, int action, float x, float y) {
-		if (action == MotionEvent.ACTION_DOWN) {
-			lastInjectedTouchTime = uptimeMillis(); 
-		}
+		// SURGICAL FIX: Continuously record exact time of ALL car touches to prevent ACTION_OUTSIDE false-positives
+		lastInjectedTouchTime = uptimeMillis(); 
 		resetIdleTimer();
 		
 		MotionEvent clonedEvent = null;
@@ -580,9 +578,6 @@ public class MirrorDisplay {
 				}
 
 				if (overlay == null) {
-					// SURGICAL FIX: Shrunk to 1x1 Pixel
-					// Evades Android 12+ Untrusted Touch Occlusion Blockade entirely.
-					// FLAG_WATCH_OUTSIDE_TOUCH guarantees physical touches are still perfectly detected globally.
 					var overlayLp = new WindowManager.LayoutParams(
 							1, 1, TYPE_APPLICATION_OVERLAY,
 							OVERLAY_FLAGS, PixelFormat.TRANSPARENT);
@@ -910,7 +905,10 @@ public class MirrorDisplay {
 		@SuppressLint("ClickableViewAccessibility")
 		@Override
 		public boolean onTouchEvent(MotionEvent event) {
-			if (Math.abs(uptimeMillis() - lastInjectedTouchTime) < 50) return false;
+			// SURGICAL FIX: Widened the exclusion window to 500ms.
+			// This perfectly absorbs the slight processing delay of OS-level Accessibility touches,
+			// ensuring that car-screen touches NEVER trigger a false-positive physical wakeup.
+			if (Math.abs(uptimeMillis() - lastInjectedTouchTime) < 500) return false;
 			if (event.getPointerCount() == 0 || event.getToolType(0) != MotionEvent.TOOL_TYPE_FINGER) return false;
 			
 			int action = event.getActionMasked();
