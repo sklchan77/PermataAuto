@@ -150,7 +150,6 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 		);
 		session.setCallback(callback);
 		
-		// SURGICAL FIX: Force Android Auto to recognize the service as alive immediately
 		session.setActive(true);
 
 		Intent mediaButtonIntent = new Intent(Intent.ACTION_MEDIA_BUTTON, null, ctx, MediaButtonReceiver.class);
@@ -301,17 +300,21 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 			audioHardwareExecutor.execute(() -> {
 				if (isTeardownActive) return;
 				try {
-					AudioTrack currentTrack = silentAudioTrackRef.get();
-					if (currentTrack != null && currentTrack.getPlayState() == AudioTrack.PLAYSTATE_PLAYING) {
-						return;
-					}
-
+					// SURGICAL FIX: Forcefully request audio focus BEFORE checking the AudioTrack.
+					// This unconditionally rips steering wheel controls back from the Car Radio 
+					// or Assistant every time this method fires, preventing permanent hardware lockout.
 					AudioManager audioManager = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
 					if (audioManager != null) {
 						if (focusChangeListener == null) {
 							focusChangeListener = focusChange -> {
 								if (focusChange == AudioManager.AUDIOFOCUS_LOSS) {
 									Log.w("PermataMediaService: Car Radio stole focus.");
+								} else if (focusChange == AudioManager.AUDIOFOCUS_GAIN) {
+									Log.i("PermataMediaService: Audio focus returned. Enforcing Steering Control anchor.");
+									if (session != null && !isTeardownActive) {
+										session.setActive(true);
+										updatePlaybackState(STATE_PLAYING);
+									}
 								}
 							};
 						}
@@ -320,6 +323,11 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 								AudioManager.STREAM_MUSIC,
 								AudioManager.AUDIOFOCUS_GAIN
 						);
+					}
+
+					AudioTrack currentTrack = silentAudioTrackRef.get();
+					if (currentTrack != null && currentTrack.getPlayState() == AudioTrack.PLAYSTATE_PLAYING) {
+						return; 
 					}
 
 					startSilentAudioAnchorInternal();
