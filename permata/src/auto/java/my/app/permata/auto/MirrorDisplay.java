@@ -503,7 +503,8 @@ public class MirrorDisplay {
 					
 					mainHandler.post(() -> {
 						mainHandler.removeCallbacks(orientationHeartbeat);
-						mainHandler.postDelayed(orientationHeartbeat, 3000);
+						// SURGICAL FIX: Fire instantly on the 6th second, then loop every 3s
+						mainHandler.post(orientationHeartbeat); 
 					});
 				} catch (Exception err) {
 					Log.e(err);
