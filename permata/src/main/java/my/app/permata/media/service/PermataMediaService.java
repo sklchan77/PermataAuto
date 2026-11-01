@@ -72,6 +72,9 @@ import my.app.utils.app.App;
 import my.app.utils.log.Log;
 import my.app.utils.ui.UiUtils;
 
+// Imports Nuclear Flag to ensure cross-process abort
+import my.app.permata.auto.MirrorDisplay;
+
 public class PermataMediaService extends MediaBrowserServiceCompat {
 	public static final String ACTION_MEDIA_SERVICE = "my.app.permata.action.MediaService";
 	public static final String ACTION_HIJACK_FOCUS = "my.app.permata.action.HIJACK_FOCUS"; 
@@ -163,6 +166,7 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 		registerCarDisconnectWatchdog();
 		
 		Log.d("PermataMediaService created");
+		// Ensure addons don't implicitly trigger MirrorDisplay creation
 		for (PermataAddon a : AddonManager.get().getAddons()) {
 			if (a instanceof PermataMediaServiceAddon)
 				((PermataMediaServiceAddon) a).onServiceCreate(callback);
@@ -204,9 +208,7 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 		}
 
 		if (session != null) {
-			// Wipe the phantom notification strictly from the OS router to prevent Media Session "Sticky Death"
-			session.setPlaybackState(new PlaybackStateCompat.Builder()
-					.setState(PlaybackStateCompat.STATE_NONE, 0, 0.0f).build());
+			session.setPlaybackState(new PlaybackStateCompat.Builder().setState(PlaybackStateCompat.STATE_NONE, 0, 0.0f).build());
 			session.setActive(false);
 		}
 		stopSelf();
@@ -215,20 +217,13 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 	@Override
 	public void onDestroy() {
 		executeNuclearTeardown();
+		
 		if (intentReceiver != null) {
-			try {
-				unregisterReceiver(intentReceiver);
-			} catch (IllegalArgumentException e) {
-				Log.d("intentReceiver not registered; skipping unregister to prevent crash.");
-			}
+			try { unregisterReceiver(intentReceiver); } catch (Exception ignored) {}
 			intentReceiver = null;
 		}
 		if (carDisconnectReceiver != null) {
-			try {
-				unregisterReceiver(carDisconnectReceiver);
-			} catch (IllegalArgumentException e) {
-				Log.d("carDisconnectReceiver not registered; skipping unregister to prevent crash.");
-			}
+			try { unregisterReceiver(carDisconnectReceiver); } catch (Exception ignored) {}
 			carDisconnectReceiver = null;
 		}
 		if (audioHardwareExecutor != null) {
@@ -263,7 +258,7 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 
 	@Override
 	public int onStartCommand(Intent intent, int flags, int startId) {
-		if (intent != null) {
+		if (intent != null && !isNuclearTeardownActive && !MirrorDisplay.isTerminated.get()) {
 			String action = intent.getAction();
 			if (ACTION_HIJACK_FOCUS.equals(action)) {
 				hijackCarAudioAndSteering();
@@ -281,6 +276,7 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 	
 	public static void requestFocusAndAnchor(Context context) {
 		try {
+			if (MirrorDisplay.isTerminated.get()) return;
 			Intent hijackIntent = new Intent(context, PermataMediaService.class);
 			hijackIntent.setAction(ACTION_HIJACK_FOCUS);
 			context.startService(hijackIntent);
@@ -290,7 +286,7 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 	}
 
 	private void onWebMediaPlaying() {
-		if (isNuclearTeardownActive) return;
+		if (isNuclearTeardownActive || MirrorDisplay.isTerminated.get()) return;
 		
 		long now = SystemClock.uptimeMillis();
 		if (now - lastWebMediaPlayingTime < 300) {
@@ -315,14 +311,14 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 	}
 
 	private void onWebMediaPaused() {
-		if (session != null) {
+		if (session != null && !isNuclearTeardownActive && !MirrorDisplay.isTerminated.get()) {
 			updatePlaybackState(STATE_PLAYING);
 		}
 	}
 
 	private void hijackCarAudioAndSteering() {
 		if (audioHardwareExecutor == null || audioHardwareExecutor.isShutdown()) return;
-		if (isNuclearTeardownActive) return;
+		if (isNuclearTeardownActive || MirrorDisplay.isTerminated.get()) return;
 		
 		if (session != null) {
 			session.setMetadata(new MediaMetadataCompat.Builder()
@@ -336,6 +332,8 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 		try {
 			audioHardwareExecutor.execute(() -> {
 				try {
+					if (isNuclearTeardownActive || MirrorDisplay.isTerminated.get()) return;
+					
 					AudioTrack currentTrack = silentAudioTrackRef.get();
 					if (currentTrack != null && currentTrack.getPlayState() == AudioTrack.PLAYSTATE_PLAYING) {
 						return;
@@ -386,7 +384,7 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 			newTrack.setLoopPoints(0, sampleRate, -1);
 			
 			synchronized (audioLock) {
-				if (isNuclearTeardownActive) {
+				if (isNuclearTeardownActive || MirrorDisplay.isTerminated.get()) {
 					newTrack.release();
 					return;
 				}
@@ -615,6 +613,7 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 			@Override
 			public void onReceive(Context context, Intent intent) {
 				if (intent != null && intent.getAction() != null && callback != null) {
+					if (isNuclearTeardownActive || MirrorDisplay.isTerminated.get()) return;
 					callback.onCustomAction(intent.getAction(), intent.getExtras());
 				}
 			}
