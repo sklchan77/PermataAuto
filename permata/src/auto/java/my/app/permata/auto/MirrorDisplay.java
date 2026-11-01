@@ -126,6 +126,8 @@ public class MirrorDisplay {
 	private MotionEvent.PointerProperties[] reusableProps;
 	private MotionEvent.PointerCoords[] reusableCoords;
 
+	public static final String ACTION_KILL_WEBVIEW = "my.app.permata.action.KILL_WEBVIEW";
+
 	private final Runnable orientationHeartbeat = new Runnable() {
 		@Override
 		public void run() {
@@ -272,7 +274,12 @@ public class MirrorDisplay {
 	}
 
 	public boolean motionEvent(MotionEvent e) {
-		lastInjectedTouchTime = uptimeMillis(); 
+		// BUGFIX: Prevent 200ms Lockout Trap
+		// Only updates lockout timer on absolute initial tap, allowing user to instantly wake screen
+		if (e.getActionMasked() == MotionEvent.ACTION_DOWN) {
+			lastInjectedTouchTime = uptimeMillis(); 
+		}
+		
 		MotionEvent clonedEvent = null;
 
 		synchronized (touchLock) {
@@ -331,13 +338,11 @@ public class MirrorDisplay {
 						if (d != null) d.motionEvent(finalEvent);
 					} catch (Exception ex) {
 						Log.e(ex, "Async touch injection failed.");
-					} finally {
-						finalEvent.recycle();
 					}
+					// BUGFIX: Removed finalEvent.recycle() to prevent OS InputManager asynchronous crashes
 				});
 			} catch (Exception rejectedException) {
-				Log.e(rejectedException, "Touch thread rejected execution. Preventing native memory leak.");
-				finalEvent.recycle();
+				Log.e(rejectedException, "Touch thread rejected execution.");
 			}
 		}
 		
@@ -345,7 +350,10 @@ public class MirrorDisplay {
 	}
 
 	public boolean motionEvent(long downTime, long eventTime, int action, float x, float y) {
-		lastInjectedTouchTime = uptimeMillis(); 
+		if (action == MotionEvent.ACTION_DOWN) {
+			lastInjectedTouchTime = uptimeMillis(); 
+		}
+		
 		MotionEvent clonedEvent = null;
 
 		synchronized (touchLock) {
@@ -381,13 +389,10 @@ public class MirrorDisplay {
 						if (d != null) d.motionEvent(finalEvent);
 					} catch (Exception ex) {
 						Log.e(ex, "Async single touch injection failed.");
-					} finally {
-						finalEvent.recycle();
 					}
 				});
 			} catch (Exception rejectedException) {
-				Log.e(rejectedException, "Touch thread rejected execution. Preventing native memory leak.");
-				finalEvent.recycle();
+				Log.e(rejectedException, "Touch thread rejected execution.");
 			}
 		}
 		
@@ -536,11 +541,6 @@ public class MirrorDisplay {
 		});
 	}
 
-	@Override
-	protected void finalize() {
-		cleanUp();
-	}
-
 	private void started() {
 		if (sc == null) return;
 		var app = PermataApplication.get();
@@ -613,10 +613,13 @@ public class MirrorDisplay {
 		setMirroringMode(app, mode);
 	}
 
-	private synchronized void cleanUp() {
+	// BUGFIX: Removed `synchronized` modifier to prevent complete Main Thread Deadlock
+	private void cleanUp() {
 		noSession();
 		var app = PermataApplication.get();
 		app.getHandler().removeCallbacks(orientationHeartbeat);
+		
+		app.sendBroadcast(new Intent(ACTION_KILL_WEBVIEW));
 		
 		final boolean wasDimmed = isDimmed;
 		final boolean wasRotationLocked = isRotationLocked;
@@ -919,7 +922,8 @@ public class MirrorDisplay {
 		@SuppressLint("ClickableViewAccessibility")
 		@Override
 		public boolean onTouchEvent(MotionEvent event) {
-			if (Math.abs(uptimeMillis() - lastInjectedTouchTime) < 200) return false;
+			// BUGFIX: Precision 50ms lockout window prevents complete phone touch deadlocks
+			if (Math.abs(uptimeMillis() - lastInjectedTouchTime) < 50) return false;
 			
 			if (event.getPointerCount() == 0 || event.getToolType(0) != MotionEvent.TOOL_TYPE_FINGER) return false;
 			
