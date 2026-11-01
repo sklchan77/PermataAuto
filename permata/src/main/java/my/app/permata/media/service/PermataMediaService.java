@@ -204,8 +204,10 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 		}
 
 		if (session != null) {
+			// Wipe the phantom notification strictly from the OS router to prevent Media Session "Sticky Death"
+			session.setPlaybackState(new PlaybackStateCompat.Builder()
+					.setState(PlaybackStateCompat.STATE_NONE, 0, 0.0f).build());
 			session.setActive(false);
-			updatePlaybackState(STATE_STOPPED);
 		}
 		stopSelf();
 	}
@@ -214,11 +216,19 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 	public void onDestroy() {
 		executeNuclearTeardown();
 		if (intentReceiver != null) {
-			unregisterReceiver(intentReceiver);
+			try {
+				unregisterReceiver(intentReceiver);
+			} catch (IllegalArgumentException e) {
+				Log.d("intentReceiver not registered; skipping unregister to prevent crash.");
+			}
 			intentReceiver = null;
 		}
 		if (carDisconnectReceiver != null) {
-			unregisterReceiver(carDisconnectReceiver);
+			try {
+				unregisterReceiver(carDisconnectReceiver);
+			} catch (IllegalArgumentException e) {
+				Log.d("carDisconnectReceiver not registered; skipping unregister to prevent crash.");
+			}
 			carDisconnectReceiver = null;
 		}
 		if (audioHardwareExecutor != null) {
