@@ -72,7 +72,6 @@ import androidx.media.AudioManagerCompat;
 
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.concurrent.atomic.AtomicBoolean;
 
 import my.app.permata.PermataApplication;
 import my.app.permata.R;
@@ -93,7 +92,6 @@ public class MirrorDisplay {
 			FLAG_NOT_TOUCHABLE | FLAG_KEEP_SCREEN_ON | FLAG_DISMISS_KEYGUARD | FLAG_SHOW_WHEN_LOCKED | FLAG_ALT_FOCUSABLE_IM;
 			
 	private static MirrorDisplay instance;
-	
 	private final Display defaultDisplay;
 	private final float scaleDiff;
 	private final AudioFocusRequestCompat audioFocusReq;
@@ -101,8 +99,6 @@ public class MirrorDisplay {
 	
 	private static final ExecutorService bgExecutor = Executors.newSingleThreadExecutor();
 	private static final ExecutorService touchExecutor = Executors.newSingleThreadExecutor();
-	
-	private static final AtomicBoolean isTearingDown = new AtomicBoolean(false);
 	private static final Object settingsLock = new Object();
 	
 	private static volatile boolean isRotationLocked = false;
@@ -127,16 +123,13 @@ public class MirrorDisplay {
 
 	public static final String ACTION_KILL_WEBVIEW = "my.app.permata.action.KILL_WEBVIEW";
 
-	// Standard Android UI Handler for Native Timers
 	private final Handler mainHandler = new Handler(Looper.getMainLooper());
 	
-	// 6-Second Idle Timeout
 	private final Runnable idleDimRunnable = () -> {
 		Log.d("Idle timeout reached. Dimming screen.");
 		dimScreen(PermataApplication.get());
 	};
 
-	// 3-Second Landscape Heartbeat
 	private final Runnable orientationHeartbeat = new Runnable() {
 		@Override
 		public void run() {
@@ -144,11 +137,11 @@ public class MirrorDisplay {
 			
 			try {
 				boolean wantLandscape = PermataApplication.get().isMirroringLandscape();
-				int currentOrientation = PermataApplication.get().getResources().getConfiguration().orientation;
-				boolean isCurrentlyLandscape = (currentOrientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE);
+				int rotation = defaultDisplay.getRotation();
+				boolean isCurrentlyLandscape = (rotation == ROTATION_90 || rotation == ROTATION_270);
 				
 				if (wantLandscape != isCurrentlyLandscape) {
-					Log.w("Anomaly detected: Rogue app hijacked rotation. Forcing self-healing correction.");
+					Log.w("Real rogue app hijacked physical rotation. Forcing self-healing correction.");
 					updateOverlayOrientation(true);
 					disableAccelRotation(PermataApplication.get());
 				}
@@ -508,7 +501,6 @@ public class MirrorDisplay {
 					
 					isDimmed = true;
 					
-					// Start Heartbeat
 					mainHandler.post(() -> {
 						mainHandler.removeCallbacks(orientationHeartbeat);
 						mainHandler.postDelayed(orientationHeartbeat, 3000);
@@ -536,7 +528,6 @@ public class MirrorDisplay {
 					
 					isDimmed = false;
 					
-					// Stop Heartbeat
 					mainHandler.post(() -> mainHandler.removeCallbacks(orientationHeartbeat));
 				} catch (Exception err) {
 					Log.e(err);
