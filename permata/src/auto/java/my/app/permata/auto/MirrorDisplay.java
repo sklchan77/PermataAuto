@@ -70,6 +70,8 @@ import androidx.media.AudioAttributesCompat;
 import androidx.media.AudioFocusRequestCompat;
 import androidx.media.AudioManagerCompat;
 
+import java.util.LinkedList;
+import java.util.Queue;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -95,6 +97,9 @@ public class MirrorDisplay {
 			
 	private static MirrorDisplay instance;
 	
+	// NUCLEAR ABORT FLAG: Instantly paralyzes all background tasks and event handlers upon shutdown
+	public static final AtomicBoolean isTerminated = new AtomicBoolean(false);
+	
 	private final Display defaultDisplay;
 	private final float scaleDiff;
 	private final AudioFocusRequestCompat audioFocusReq;
@@ -113,6 +118,7 @@ public class MirrorDisplay {
 	private static volatile int brightness = -1;
 	
 	private volatile long lastInjectedTouchTime; 
+	private volatile long lastPhysicalTouchTime; // Tracks time for the 6-second re-dim logic
 	private final Object touchLock = new Object(); 
 	
 	private int refCounter = 0;
@@ -123,35 +129,45 @@ public class MirrorDisplay {
 	private View rotationAnchor; 
 	private Metrics currentMetrics;
 	
-	private MotionEvent.PointerProperties[] reusableProps;
-	private MotionEvent.PointerCoords[] reusableCoords;
+	// PRE-ALLOCATED OBJECT POOL: Prevents GC stutter and heap exhaustion during rapid touch streams
+	private static final int MAX_POOL_SIZE = 10;
+	private final Queue<MotionEvent.PointerProperties[]> propsPool = new LinkedList<>();
+	private final Queue<MotionEvent.PointerCoords[]> coordsPool = new LinkedList<>();
 
 	public static final String ACTION_KILL_WEBVIEW = "my.app.permata.action.KILL_WEBVIEW";
 
-	private final Runnable orientationHeartbeat = new Runnable() {
+	// UNIFIED HANDLER: Consolidates Heartbeat and 6-Second Idle Re-dim logic
+	private final Handler unifiedHandler = new Handler(Looper.getMainLooper());
+	private final Runnable unifiedStateEnforcer = new Runnable() {
 		@Override
 		public void run() {
-			if (!isDimmed || sc == null) return;
-			
+			if (isTerminated.get() || sc == null) return;
 			if (MirrorDisplay.instance != MirrorDisplay.this) return;
-			
-			try {
-				boolean wantLandscape = PermataApplication.get().isMirroringLandscape();
-				int currentOrientation = PermataApplication.get().getResources().getConfiguration().orientation;
-				boolean isCurrentlyLandscape = (currentOrientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE);
-				
-				if (wantLandscape != isCurrentlyLandscape) {
-					Log.w("Anomaly detected: Rogue app hijacked rotation. Forcing self-healing correction.");
-					updateOverlayOrientation(true);
-					disableAccelRotation(PermataApplication.get());
-				}
-			} catch (Exception err) {
-				Log.e(err, "Orientation heartbeat check failed.");
+
+			// Handle 6-Second Auto-Dim
+			if (!isDimmed && (uptimeMillis() - lastPhysicalTouchTime > 6000) && (uptimeMillis() - lastInjectedTouchTime > 6000)) {
+				Log.i("Idle timeout reached. Re-dimming screen.");
+				dimScreen(PermataApplication.get());
 			}
-			
+
+			// Handle Heartbeat Configuration
 			if (isDimmed) {
-				PermataApplication.get().getHandler().postDelayed(this, 3000);
+				try {
+					boolean wantLandscape = PermataApplication.get().isMirroringLandscape();
+					int currentOrientation = PermataApplication.get().getResources().getConfiguration().orientation;
+					boolean isCurrentlyLandscape = (currentOrientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE);
+					
+					if (wantLandscape != isCurrentlyLandscape) {
+						Log.w("Anomaly detected: Rogue app hijacked rotation. Forcing self-healing correction.");
+						updateOverlayOrientation(true);
+						disableAccelRotation(PermataApplication.get());
+					}
+				} catch (Exception err) {
+					Log.e(err, "Orientation heartbeat check failed.");
+				}
 			}
+			
+			unifiedHandler.postDelayed(this, 3000);
 		}
 	};
 
@@ -169,19 +185,27 @@ public class MirrorDisplay {
 										.setContentType(AudioAttributesCompat.CONTENT_TYPE_MUSIC).build())
 						.setWillPauseWhenDucked(false).setOnAudioFocusChangeListener(focusChange -> {}).build();
 		
-		reusableProps = new MotionEvent.PointerProperties[10];
-		reusableCoords = new MotionEvent.PointerCoords[10];
-		for (int i = 0; i < 10; i++) {
-			reusableProps[i] = new MotionEvent.PointerProperties();
-			reusableCoords[i] = new MotionEvent.PointerCoords();
+		// Initialize the Object Pool
+		for (int p = 0; p < MAX_POOL_SIZE; p++) {
+			MotionEvent.PointerProperties[] initialProps = new MotionEvent.PointerProperties[10];
+			MotionEvent.PointerCoords[] initialCoords = new MotionEvent.PointerCoords[10];
+			for (int i = 0; i < 10; i++) {
+				initialProps[i] = new MotionEvent.PointerProperties();
+				initialCoords[i] = new MotionEvent.PointerCoords();
+			}
+			propsPool.add(initialProps);
+			coordsPool.add(initialCoords);
 		}
 	}
 
 	public static synchronized MirrorDisplay get() {
-		if (instance == null) {
+		// Only create if we are explicitly not in a terminated state
+		if (instance == null && !isTerminated.get()) {
 			instance = new MirrorDisplay();
 		}
-		instance.refCounter++;
+		if (instance != null) {
+			instance.refCounter++;
+		}
 		return instance;
 	}
 
@@ -200,10 +224,12 @@ public class MirrorDisplay {
 	}
 
 	public void setSurface(@NonNull SurfaceContainer sc) {
+		if (isTerminated.get()) return;
 		var oldSc = this.sc;
 		if (oldSc == sc) return;
 		
 		isTearingDown.set(false);
+		isTerminated.set(false); // Reset nuclear flag on fresh explicit connect
 		
 		this.sc = sc;
 		currentMetrics = null; 
@@ -233,7 +259,7 @@ public class MirrorDisplay {
 		if (session.isDoneNotFailed()) {
 			isTearingDown.set(true);
 			bgExecutor.execute(() -> {
-				if (!isTearingDown.get()) return; 
+				if (!isTearingDown.get() || isTerminated.get()) return; 
 				try {
 					Session s = session.getOrThrow();
 					if (s != null && s.vd != null) s.vd.setSurface(null);
@@ -248,11 +274,12 @@ public class MirrorDisplay {
 	}
 
 	public void tap(float x, float y) {
+		if (isTerminated.get()) return;
 		var m = metrics();
 		if (m == null) return;
 		
 		touchExecutor.execute(() -> {
-			if (MirrorDisplay.instance != MirrorDisplay.this) return;
+			if (isTerminated.get() || MirrorDisplay.instance != MirrorDisplay.this) return;
 			var d = dispatcher();
 			if (d != null) {
 				d.tap((x - m.x) * m.scale, (y - m.y) * m.scale);
@@ -261,11 +288,12 @@ public class MirrorDisplay {
 	}
 
 	public void scale(float x, float y, boolean zoomIn) {
+		if (isTerminated.get()) return;
 		var m = metrics();
 		if (m == null) return;
 		
 		touchExecutor.execute(() -> {
-			if (MirrorDisplay.instance != MirrorDisplay.this) return;
+			if (isTerminated.get() || MirrorDisplay.instance != MirrorDisplay.this) return;
 			var d = dispatcher();
 			if (d != null) {
 				d.scale((x - m.x) * m.scale, (y - m.y) * m.scale, zoomIn ? scaleDiff : -scaleDiff);
@@ -274,55 +302,73 @@ public class MirrorDisplay {
 	}
 
 	public boolean motionEvent(MotionEvent e) {
+		if (isTerminated.get()) return false;
+		
 		if (e.getActionMasked() == MotionEvent.ACTION_DOWN) {
 			lastInjectedTouchTime = uptimeMillis(); 
 		}
 		
 		MotionEvent clonedEvent = null;
+		MotionEvent.PointerProperties[] activeProps = null;
+		MotionEvent.PointerCoords[] activeCoords = null;
 
 		synchronized (touchLock) {
 			var cnt = e.getPointerCount();
-			if (cnt > reusableProps.length) {
-				reusableProps = new MotionEvent.PointerProperties[cnt];
-				reusableCoords = new MotionEvent.PointerCoords[cnt];
+			
+			// Checkout from Object Pool
+			activeProps = propsPool.poll();
+			activeCoords = coordsPool.poll();
+			
+			if (activeProps == null || activeCoords == null || cnt > activeProps.length) {
+				activeProps = new MotionEvent.PointerProperties[cnt];
+				activeCoords = new MotionEvent.PointerCoords[cnt];
 				for (int i = 0; i < cnt; i++) {
-					reusableProps[i] = new MotionEvent.PointerProperties();
-					reusableCoords[i] = new MotionEvent.PointerCoords();
+					activeProps[i] = new MotionEvent.PointerProperties();
+					activeCoords[i] = new MotionEvent.PointerCoords();
 				}
 			}
 
 			try {
 				var m = metrics();
-				if (m == null) return false;
+				if (m == null) {
+					// Return to pool if aborted early
+					propsPool.offer(activeProps);
+					coordsPool.offer(activeCoords);
+					return false;
+				}
 
 				if (cnt == 1) {
-					e.getPointerProperties(0, reusableProps[0]);
-					e.getPointerCoords(0, reusableCoords[0]);
-					reusableProps[0].id = 10; 
-					reusableProps[0].toolType = MotionEvent.TOOL_TYPE_FINGER;
-					reusableCoords[0].x = (e.getX() - m.x) * m.scale;
-					reusableCoords[0].y = (e.getY() - m.y) * m.scale;
-					if (reusableCoords[0].pressure <= 0.01f) reusableCoords[0].pressure = 1.0f;
-					if (reusableCoords[0].size <= 0.01f) reusableCoords[0].size = 1.0f;
+					e.getPointerProperties(0, activeProps[0]);
+					e.getPointerCoords(0, activeCoords[0]);
+					activeProps[0].id = 10; 
+					activeProps[0].toolType = MotionEvent.TOOL_TYPE_FINGER;
+					activeCoords[0].x = (e.getX() - m.x) * m.scale;
+					activeCoords[0].y = (e.getY() - m.y) * m.scale;
+					if (activeCoords[0].pressure <= 0.01f) activeCoords[0].pressure = 1.0f;
+					if (activeCoords[0].size <= 0.01f) activeCoords[0].size = 1.0f;
 				} else {
 					for (int i = 0; i < cnt; i++) {
-						e.getPointerProperties(i, reusableProps[i]);
-						e.getPointerCoords(i, reusableCoords[i]);
-						reusableProps[i].id = 10 + i; 
-						reusableProps[i].toolType = MotionEvent.TOOL_TYPE_FINGER;
-						reusableCoords[i].x = (reusableCoords[i].x - m.x) * m.scale;
-						reusableCoords[i].y = (reusableCoords[i].y - m.y) * m.scale;
-						if (reusableCoords[i].pressure <= 0.01f) reusableCoords[i].pressure = 1.0f;
-						if (reusableCoords[i].size <= 0.01f) reusableCoords[i].size = 1.0f;
+						e.getPointerProperties(i, activeProps[i]);
+						e.getPointerCoords(i, activeCoords[i]);
+						activeProps[i].id = 10 + i; 
+						activeProps[i].toolType = MotionEvent.TOOL_TYPE_FINGER;
+						activeCoords[i].x = (activeCoords[i].x - m.x) * m.scale;
+						activeCoords[i].y = (activeCoords[i].y - m.y) * m.scale;
+						if (activeCoords[i].pressure <= 0.01f) activeCoords[i].pressure = 1.0f;
+						if (activeCoords[i].size <= 0.01f) activeCoords[i].size = 1.0f;
 					}
 				}
 				
-				clonedEvent = MotionEvent.obtain(e.getDownTime(), uptimeMillis(), e.getAction(), cnt, reusableProps, reusableCoords,
+				clonedEvent = MotionEvent.obtain(e.getDownTime(), uptimeMillis(), e.getAction(), cnt, activeProps, activeCoords,
 						e.getMetaState(), e.getButtonState(), e.getXPrecision(), e.getYPrecision(), e.getDeviceId(),
 						e.getEdgeFlags(), InputDevice.SOURCE_TOUCHSCREEN, e.getFlags());
 						
 			} catch (Exception ex) {
 				Log.e(ex, "Touch clone failed.");
+			} finally {
+				// Return to pool after cloning is complete
+				if (activeProps != null) propsPool.offer(activeProps);
+				if (activeCoords != null) coordsPool.offer(activeCoords);
 			}
 		}
 		
@@ -331,7 +377,7 @@ public class MirrorDisplay {
 			try {
 				touchExecutor.execute(() -> {
 					try {
-						if (MirrorDisplay.instance != MirrorDisplay.this) return;
+						if (isTerminated.get() || MirrorDisplay.instance != MirrorDisplay.this) return;
 						EventDispatcher d = dispatcher();
 						if (d != null) d.motionEvent(finalEvent);
 					} catch (Exception ex) {
@@ -347,32 +393,52 @@ public class MirrorDisplay {
 	}
 
 	public boolean motionEvent(long downTime, long eventTime, int action, float x, float y) {
+		if (isTerminated.get()) return false;
 		if (action == MotionEvent.ACTION_DOWN) {
 			lastInjectedTouchTime = uptimeMillis(); 
 		}
 		
 		MotionEvent clonedEvent = null;
+		MotionEvent.PointerProperties[] activeProps = null;
+		MotionEvent.PointerCoords[] activeCoords = null;
 
 		synchronized (touchLock) {
+			activeProps = propsPool.poll();
+			activeCoords = coordsPool.poll();
+			
+			if (activeProps == null || activeCoords == null) {
+				activeProps = new MotionEvent.PointerProperties[1];
+				activeCoords = new MotionEvent.PointerCoords[1];
+				activeProps[0] = new MotionEvent.PointerProperties();
+				activeCoords[0] = new MotionEvent.PointerCoords();
+			}
+			
 			try {
 				var m = metrics();
-				if (m == null) return false;
+				if (m == null) {
+					propsPool.offer(activeProps);
+					coordsPool.offer(activeCoords);
+					return false;
+				}
 				
-				reusableProps[0].clear();
-				reusableProps[0].id = 10; 
-				reusableProps[0].toolType = MotionEvent.TOOL_TYPE_FINGER;
+				activeProps[0].clear();
+				activeProps[0].id = 10; 
+				activeProps[0].toolType = MotionEvent.TOOL_TYPE_FINGER;
 				
-				reusableCoords[0].clear();
-				reusableCoords[0].x = (x - m.x) * m.scale;
-				reusableCoords[0].y = (y - m.y) * m.scale;
-				reusableCoords[0].pressure = 1.0f;
-				reusableCoords[0].size = 1.0f;
+				activeCoords[0].clear();
+				activeCoords[0].x = (x - m.x) * m.scale;
+				activeCoords[0].y = (y - m.y) * m.scale;
+				activeCoords[0].pressure = 1.0f;
+				activeCoords[0].size = 1.0f;
 				
-				clonedEvent = MotionEvent.obtain(downTime, uptimeMillis(), action, 1, reusableProps, reusableCoords,
+				clonedEvent = MotionEvent.obtain(downTime, uptimeMillis(), action, 1, activeProps, activeCoords,
 						0, 0, 1.0f, 1.0f, 0, 0, InputDevice.SOURCE_TOUCHSCREEN, 0);
 						
 			} catch (Exception ex) {
 				Log.e(ex, "Single touch motion builder failed.");
+			} finally {
+				if (activeProps != null) propsPool.offer(activeProps);
+				if (activeCoords != null) coordsPool.offer(activeCoords);
 			}
 		}
 
@@ -381,7 +447,7 @@ public class MirrorDisplay {
 			try {
 				touchExecutor.execute(() -> {
 					try {
-						if (MirrorDisplay.instance != MirrorDisplay.this) return;
+						if (isTerminated.get() || MirrorDisplay.instance != MirrorDisplay.this) return;
 						EventDispatcher d = dispatcher();
 						if (d != null) d.motionEvent(finalEvent);
 					} catch (Exception ex) {
@@ -397,6 +463,7 @@ public class MirrorDisplay {
 	}
 
 	private void updateOverlayOrientation(boolean forceCarPriority) {
+		if (isTerminated.get()) return;
 		try {
 			var wm = (WindowManager) PermataApplication.get().getSystemService(WINDOW_SERVICE);
 			boolean land = PermataApplication.get().isMirroringLandscape();
@@ -430,7 +497,7 @@ public class MirrorDisplay {
 	}
 
 	private static void disableAccelRotation(Context ctx) {
-		if (instance == null || instance.sc == null) return; 
+		if (isTerminated.get() || instance == null || instance.sc == null) return; 
 
 		var a = EventDispatcher.get().getActivity();
 		boolean land = PermataApplication.get().isMirroringLandscape();
@@ -440,7 +507,7 @@ public class MirrorDisplay {
 		}
 
 		bgExecutor.execute(() -> {
-			if (instance == null || instance.sc == null) return; 
+			if (isTerminated.get() || instance == null || instance.sc == null) return; 
 			synchronized (settingsLock) {
 				if (isRotationLocked) return;
 				try {
@@ -481,8 +548,7 @@ public class MirrorDisplay {
 
 	private void dimScreen(Context ctx) {
 		bgExecutor.execute(() -> {
-			if (MirrorDisplay.instance != MirrorDisplay.this) return;
-			if (sc == null) return; 
+			if (isTerminated.get() || MirrorDisplay.instance != MirrorDisplay.this || sc == null) return;
 			
 			synchronized (settingsLock) {
 				if (isDimmed) return;
@@ -505,8 +571,9 @@ public class MirrorDisplay {
 					}
 					
 					isDimmed = true;
-					PermataApplication.get().getHandler().removeCallbacks(orientationHeartbeat);
-					PermataApplication.get().getHandler().postDelayed(orientationHeartbeat, 3000);
+					// Ensure unified enforcer is running
+					unifiedHandler.removeCallbacks(unifiedStateEnforcer);
+					unifiedHandler.postDelayed(unifiedStateEnforcer, 3000);
 				} catch (Exception err) {
 					Log.e(err);
 				}
@@ -516,7 +583,6 @@ public class MirrorDisplay {
 
 	private void restoreBrightness(Context ctx) {
 		bgExecutor.execute(() -> {
-			if (MirrorDisplay.instance != MirrorDisplay.this) return;
 			synchronized (settingsLock) {
 				if (!isDimmed) return;
 				try {
@@ -530,7 +596,6 @@ public class MirrorDisplay {
 					}
 					
 					isDimmed = false;
-					PermataApplication.get().getHandler().removeCallbacks(orientationHeartbeat);
 				} catch (Exception err) {
 					Log.e(err);
 				}
@@ -539,7 +604,7 @@ public class MirrorDisplay {
 	}
 
 	private void started() {
-		if (sc == null) return;
+		if (sc == null || isTerminated.get()) return;
 		var app = PermataApplication.get();
 		var mode = sc.getWidth() > sc.getHeight() ? 1 : 2;
 
@@ -588,8 +653,6 @@ public class MirrorDisplay {
 					
 					overlay = new Overlay(app);
 					wm.addView(overlay, overlayLp);
-					
-					overlay.dimAndRotate.schedule(6000);
 				}
 			} catch (Exception err) {
 				Log.e(err, "Failed to inject overlay hierarchy");
@@ -611,10 +674,12 @@ public class MirrorDisplay {
 	}
 
 	private void cleanUp() {
+		// FIRE NUCLEAR ABORT: Instantly kills all loops, WebViews, and pending Executor tasks
+		isTerminated.set(true);
+		
 		noSession();
 		var app = PermataApplication.get();
-		app.getHandler().removeCallbacks(orientationHeartbeat);
-		
+		unifiedHandler.removeCallbacks(unifiedStateEnforcer);
 		app.sendBroadcast(new Intent(ACTION_KILL_WEBVIEW));
 		
 		final boolean wasDimmed = isDimmed;
@@ -652,7 +717,6 @@ public class MirrorDisplay {
 		if (a != null) a.setRequestedOrientation(SCREEN_ORIENTATION_UNSPECIFIED);
 		
 		if (overlay != null || rotationAnchor != null) {
-			if (overlay != null) overlay.dimAndRotate.cancel();
 			final Overlay oldOverlay = overlay;
 			final View oldAnchor = rotationAnchor;
 			
@@ -689,7 +753,7 @@ public class MirrorDisplay {
 		
 		sc = null;
 		currentMetrics = null;
-		instance = null;
+		instance = null; // Free strong reference memory block
 	}
 
 	private void noSession() {
@@ -699,7 +763,7 @@ public class MirrorDisplay {
 	}
 
 	private void createSession() {
-		if (!session.isDone()) return;
+		if (!session.isDone() || isTerminated.get()) return;
 		var p = new Promise<Session>();
 		session = p;
 		createSession(p);
@@ -709,16 +773,16 @@ public class MirrorDisplay {
 			started();
 		});
 		PermataApplication.get().getHandler().schedule(() -> {
-			if (!session.isDone()) drawMsg(R.string.unlock_phone_and_grant);
+			if (!session.isDone() && !isTerminated.get()) drawMsg(R.string.unlock_phone_and_grant);
 		}, 500);
 	}
 
 	private void createSession(Promise<Session> p) {
-		if (session != p) return;
+		if (session != p || isTerminated.get()) return;
 		if (sc == null) noSession();
 		if (p.isDone()) return; 
 		ProjectionService.start().onCompletion((mp, err) -> {
-			if (session != p) {
+			if (session != p || isTerminated.get()) {
 				if (mp != null) {
 					try { mp.stop(); } catch (Exception ignored) {}
 				}
@@ -752,14 +816,14 @@ public class MirrorDisplay {
 
 	private void retryCreateSession(Promise<Session> p) {
 		PermataApplication.get().getHandler().schedule(() -> {
-			if (p.isDone()) return;
+			if (p.isDone() || isTerminated.get()) return;
 			Log.i("Retrying to create media projection");
 			createSession(p);
 		}, 3000);
 	}
 
 	private void drawMsg(@StringRes int msg) {
-		if (sc != null) drawMsg(sc, msg);
+		if (sc != null && !isTerminated.get()) drawMsg(sc, msg);
 	}
 
 	private static void drawMsg(SurfaceContainer sc, @StringRes int msg) {
@@ -796,7 +860,7 @@ public class MirrorDisplay {
 
 	@Nullable
 	private Metrics metrics() {
-		if (sc == null || !session.isDoneNotFailed()) return null;
+		if (sc == null || !session.isDoneNotFailed() || isTerminated.get()) return null;
 		
 		final Point size = new Point();
 		defaultDisplay.getRealSize(size);
@@ -857,7 +921,7 @@ public class MirrorDisplay {
 		public void onStop() {
 			close();
 			MirrorDisplay md = MirrorDisplay.instance;
-			if (md == null) return;
+			if (md == null || isTerminated.get()) return;
 			Log.i("Media projection stopped");
 			md.cleanUp();
 		}
@@ -901,16 +965,7 @@ public class MirrorDisplay {
 	}
 
 	private final class Overlay extends FrameLayout {
-		final ReschedulableTask dimAndRotate = new ReschedulableTask() {
-			@Override
-			protected void perform() {
-				var ctx = getContext();
-				dimScreen(ctx);
-				disableAccelRotation(ctx);
-				updateOverlayOrientation(true);
-			}
-		};
-
+		
 		public Overlay(@NonNull Context context) {
 			super(context);
 		}
@@ -918,19 +973,21 @@ public class MirrorDisplay {
 		@SuppressLint("ClickableViewAccessibility")
 		@Override
 		public boolean onTouchEvent(MotionEvent event) {
-			if (Math.abs(uptimeMillis() - lastInjectedTouchTime) < 50) return false;
+			if (isTerminated.get()) return false;
 			
+			if (Math.abs(uptimeMillis() - lastInjectedTouchTime) < 50) return false;
 			if (event.getPointerCount() == 0 || event.getToolType(0) != MotionEvent.TOOL_TYPE_FINGER) return false;
 			
 			int action = event.getActionMasked();
 			if (action == MotionEvent.ACTION_OUTSIDE || action == MotionEvent.ACTION_DOWN || action == MotionEvent.ACTION_POINTER_DOWN) {
 				Log.d("True physical touch detected. Disengaging rotation anchor.");
-				dimAndRotate.schedule(6000); 
-				var ctx = getContext();
 				
+				// Reset physical touch timer for the unified handler
+				lastPhysicalTouchTime = uptimeMillis();
+				
+				var ctx = getContext();
 				restoreBrightness(ctx);
 				restoreAccelRotation(ctx); 
-				
 				updateOverlayOrientation(false); 
 			}
 			return false;
