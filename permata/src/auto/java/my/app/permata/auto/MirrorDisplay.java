@@ -17,7 +17,6 @@ import static android.provider.Settings.System.SCREEN_BRIGHTNESS_MODE;
 import static android.provider.Settings.System.USER_ROTATION;
 import static android.view.Surface.ROTATION_0;
 import static android.view.Surface.ROTATION_90;
-import static android.view.Surface.ROTATION_270;
 import static android.view.ViewGroup.LayoutParams.MATCH_PARENT;
 import static android.view.WindowManager.LayoutParams.FLAG_ALT_FOCUSABLE_IM;
 import static android.view.WindowManager.LayoutParams.FLAG_DISMISS_KEYGUARD;
@@ -70,8 +69,6 @@ import androidx.media.AudioAttributesCompat;
 import androidx.media.AudioFocusRequestCompat;
 import androidx.media.AudioManagerCompat;
 
-import java.util.LinkedList;
-import java.util.Queue;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -83,914 +80,799 @@ import my.app.permata.ui.activity.MainActivityDelegate;
 import my.app.utils.async.Completed;
 import my.app.utils.async.FutureSupplier;
 import my.app.utils.async.Promise;
-import my.app.utils.concurrent.ReschedulableTask;
 import my.app.utils.log.Log;
 import my.app.utils.ui.UiUtils;
 
 public class MirrorDisplay {
-	private static final int OVERLAY_FLAGS =
-			FLAG_NOT_FOCUSABLE | FLAG_KEEP_SCREEN_ON | FLAG_DISMISS_KEYGUARD | FLAG_TURN_SCREEN_ON |
-					FLAG_SHOW_WHEN_LOCKED | FLAG_NOT_TOUCHABLE | FLAG_WATCH_OUTSIDE_TOUCH;
-					
-	private static final int ANCHOR_FLAGS = 
-			FLAG_NOT_TOUCHABLE | FLAG_KEEP_SCREEN_ON | FLAG_DISMISS_KEYGUARD | FLAG_SHOW_WHEN_LOCKED | FLAG_ALT_FOCUSABLE_IM;
-			
-	private static MirrorDisplay instance;
-	
-	// NUCLEAR ABORT FLAG: Instantly paralyzes all background tasks and event handlers upon shutdown
-	public static final AtomicBoolean isTerminated = new AtomicBoolean(false);
-	
-	private final Display defaultDisplay;
-	private final float scaleDiff;
-	private final AudioFocusRequestCompat audioFocusReq;
-	private WakeLock wakeLock;
-	
-	private static final ExecutorService bgExecutor = Executors.newSingleThreadExecutor();
-	private static final ExecutorService touchExecutor = Executors.newSingleThreadExecutor();
-	
-	private static final AtomicBoolean isTearingDown = new AtomicBoolean(false);
-	private static final Object settingsLock = new Object();
-	
-	private static volatile boolean isRotationLocked = false;
-	private static volatile boolean isDimmed = false;
-	private static volatile int accel = -1;
-	private static volatile int brightnessMode = -1; 
-	private static volatile int brightness = -1;
-	
-	private volatile long lastInjectedTouchTime; 
-	private volatile long lastPhysicalTouchTime; // Tracks time for the 6-second re-dim logic
-	private final Object touchLock = new Object(); 
-	
-	private int refCounter = 0;
-	private FutureSupplier<Session> session = Completed.cancelled();
-	private SurfaceContainer sc;
-	
-	private Overlay overlay;
-	private View rotationAnchor; 
-	private Metrics currentMetrics;
-	
-	// PRE-ALLOCATED OBJECT POOL: Prevents GC stutter and heap exhaustion during rapid touch streams
-	private static final int MAX_POOL_SIZE = 10;
-	private final Queue<MotionEvent.PointerProperties[]> propsPool = new LinkedList<>();
-	private final Queue<MotionEvent.PointerCoords[]> coordsPool = new LinkedList<>();
+    private static final int OVERLAY_FLAGS =
+            FLAG_NOT_FOCUSABLE | FLAG_KEEP_SCREEN_ON | FLAG_DISMISS_KEYGUARD | FLAG_TURN_SCREEN_ON |
+                    FLAG_SHOW_WHEN_LOCKED | FLAG_NOT_TOUCHABLE | FLAG_WATCH_OUTSIDE_TOUCH;
 
-	public static final String ACTION_KILL_WEBVIEW = "my.app.permata.action.KILL_WEBVIEW";
+    private static final int ANCHOR_FLAGS =
+            FLAG_NOT_TOUCHABLE | FLAG_KEEP_SCREEN_ON | FLAG_DISMISS_KEYGUARD | FLAG_SHOW_WHEN_LOCKED | FLAG_ALT_FOCUSABLE_IM;
 
-	// UNIFIED HANDLER: Consolidates Heartbeat and 6-Second Idle Re-dim logic
-	private final Handler unifiedHandler = new Handler(Looper.getMainLooper());
-	private final Runnable unifiedStateEnforcer = new Runnable() {
-		@Override
-		public void run() {
-			if (isTerminated.get() || sc == null) return;
-			if (MirrorDisplay.instance != MirrorDisplay.this) return;
+    private static MirrorDisplay instance;
+    private final Display defaultDisplay;
+    private final float scaleDiff;
+    private final AudioFocusRequestCompat audioFocusReq;
+    private WakeLock wakeLock;
 
-			// Handle 6-Second Auto-Dim
-			if (!isDimmed && (uptimeMillis() - lastPhysicalTouchTime > 6000) && (uptimeMillis() - lastInjectedTouchTime > 6000)) {
-				Log.i("Idle timeout reached. Re-dimming screen.");
-				dimScreen(PermataApplication.get());
-			}
+    private static final ExecutorService bgExecutor = Executors.newSingleThreadExecutor();
+    private static final ExecutorService touchExecutor = Executors.newSingleThreadExecutor();
+    private static final Object settingsLock = new Object();
 
-			// Handle Heartbeat Configuration
-			if (isDimmed) {
-				try {
-					boolean wantLandscape = PermataApplication.get().isMirroringLandscape();
-					int currentOrientation = PermataApplication.get().getResources().getConfiguration().orientation;
-					boolean isCurrentlyLandscape = (currentOrientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE);
-					
-					if (wantLandscape != isCurrentlyLandscape) {
-						Log.w("Anomaly detected: Rogue app hijacked rotation. Forcing self-healing correction.");
-						updateOverlayOrientation(true);
-						disableAccelRotation(PermataApplication.get());
-					}
-				} catch (Exception err) {
-					Log.e(err, "Orientation heartbeat check failed.");
-				}
-			}
-			
-			unifiedHandler.postDelayed(this, 3000);
-		}
-	};
+    private static volatile boolean isRotationLocked = false;
+    private static volatile boolean isDimmed = false;
+    private static volatile int accel = -1;
+    private static volatile int brightnessMode = -1;
+    private static volatile int brightness = -1;
 
-	private MirrorDisplay() {
-		var ctx = PermataApplication.get();
-		var vm = (WindowManager) ctx.getSystemService(WINDOW_SERVICE);
-		defaultDisplay = vm.getDefaultDisplay();
-		var size = new Point();
-		defaultDisplay.getRealSize(size);
-		scaleDiff = Math.max(UiUtils.toPx(ctx, 20), Math.min(size.x, size.y) / 20f);
-		
-		audioFocusReq =
-				new AudioFocusRequestCompat.Builder(AudioManagerCompat.AUDIOFOCUS_GAIN).setAudioAttributes(
-								new AudioAttributesCompat.Builder().setUsage(AudioAttributesCompat.USAGE_MEDIA)
-										.setContentType(AudioAttributesCompat.CONTENT_TYPE_MUSIC).build())
-						.setWillPauseWhenDucked(false).setOnAudioFocusChangeListener(focusChange -> {}).build();
-		
-		// Initialize the Object Pool
-		for (int p = 0; p < MAX_POOL_SIZE; p++) {
-			MotionEvent.PointerProperties[] initialProps = new MotionEvent.PointerProperties[10];
-			MotionEvent.PointerCoords[] initialCoords = new MotionEvent.PointerCoords[10];
-			for (int i = 0; i < 10; i++) {
-				initialProps[i] = new MotionEvent.PointerProperties();
-				initialCoords[i] = new MotionEvent.PointerCoords();
-			}
-			propsPool.add(initialProps);
-			coordsPool.add(initialCoords);
-		}
-	}
+    private volatile long lastInjectedTouchTime;
+    private final Object touchLock = new Object();
 
-	public static synchronized MirrorDisplay get() {
-		// Only create if we are explicitly not in a terminated state
-		if (instance == null && !isTerminated.get()) {
-			instance = new MirrorDisplay();
-		}
-		if (instance != null) {
-			instance.refCounter++;
-		}
-		return instance;
-	}
+    private int refCounter = 0;
+    private FutureSupplier<Session> session = Completed.cancelled();
+    private SurfaceContainer sc;
 
-	public static synchronized void close() {
-		if (instance == null) return;
-		var sc = instance.sc;
-		instance.cleanUp();
-		if (sc != null) drawMsg(sc, R.string.app_name);
-	}
+    private Overlay overlay;
+    private View rotationAnchor;
+    private Metrics currentMetrics;
 
-	public synchronized void release() {
-		if (--refCounter <= 0) {
-			refCounter = 0;
-			cleanUp();
-		}
-	}
+    private MotionEvent.PointerProperties[] reusableProps;
+    private MotionEvent.PointerCoords[] reusableCoords;
 
-	public void setSurface(@NonNull SurfaceContainer sc) {
-		if (isTerminated.get()) return;
-		var oldSc = this.sc;
-		if (oldSc == sc) return;
-		
-		isTearingDown.set(false);
-		isTerminated.set(false); // Reset nuclear flag on fresh explicit connect
-		
-		this.sc = sc;
-		currentMetrics = null; 
-		
-		if (session.isDoneNotFailed()) {
-			try {
-				var vd = this.session.getOrThrow().vd;
-				vd.setSurface(sc.getSurface());
-				vd.resize(sc.getWidth(), sc.getHeight(), sc.getDpi());
-				started();
-			} catch (Throwable err) {
-				Log.d(err);
-				noSession();
-				createSession();
-			}
-		} else {
-			createSession();
-		}
-		if (oldSc != null) drawMsg(oldSc, R.string.app_name);
-	}
+    public static final String ACTION_KILL_WEBVIEW = "my.app.permata.action.KILL_WEBVIEW";
 
-	public void releaseSurface(@NonNull SurfaceContainer sc) {
-		var oldSc = this.sc;
-		if (oldSc != sc) return;
-		this.sc = null;
-		
-		if (session.isDoneNotFailed()) {
-			isTearingDown.set(true);
-			bgExecutor.execute(() -> {
-				if (!isTearingDown.get() || isTerminated.get()) return; 
-				try {
-					Session s = session.getOrThrow();
-					if (s != null && s.vd != null) s.vd.setSurface(null);
-				} catch (Exception e) {
-					Log.e(e, "Safe VirtualDisplay detachment failed.");
-				} finally {
-					isTearingDown.set(false);
-				}
-			});
-		}
-		drawMsg(oldSc, R.string.app_name);
-	}
+    // Standard Android UI Handler for Idle Dimming
+    private final Handler mainHandler = new Handler(Looper.getMainLooper());
+    private final Runnable idleDimRunnable = () -> {
+        Log.d("Idle timeout reached. Dimming screen.");
+        dimScreen(PermataApplication.get());
+    };
 
-	public void tap(float x, float y) {
-		if (isTerminated.get()) return;
-		var m = metrics();
-		if (m == null) return;
-		
-		touchExecutor.execute(() -> {
-			if (isTerminated.get() || MirrorDisplay.instance != MirrorDisplay.this) return;
-			var d = dispatcher();
-			if (d != null) {
-				d.tap((x - m.x) * m.scale, (y - m.y) * m.scale);
-			}
-		});
-	}
+    private MirrorDisplay() {
+        var ctx = PermataApplication.get();
+        var vm = (WindowManager) ctx.getSystemService(WINDOW_SERVICE);
+        defaultDisplay = vm.getDefaultDisplay();
+        var size = new Point();
+        defaultDisplay.getRealSize(size);
+        scaleDiff = Math.max(UiUtils.toPx(ctx, 20), Math.min(size.x, size.y) / 20f);
 
-	public void scale(float x, float y, boolean zoomIn) {
-		if (isTerminated.get()) return;
-		var m = metrics();
-		if (m == null) return;
-		
-		touchExecutor.execute(() -> {
-			if (isTerminated.get() || MirrorDisplay.instance != MirrorDisplay.this) return;
-			var d = dispatcher();
-			if (d != null) {
-				d.scale((x - m.x) * m.scale, (y - m.y) * m.scale, zoomIn ? scaleDiff : -scaleDiff);
-			}
-		});
-	}
+        audioFocusReq = new AudioFocusRequestCompat.Builder(AudioManagerCompat.AUDIOFOCUS_GAIN)
+                .setAudioAttributes(new AudioAttributesCompat.Builder().setUsage(AudioAttributesCompat.USAGE_MEDIA)
+                        .setContentType(AudioAttributesCompat.CONTENT_TYPE_MUSIC).build())
+                .setWillPauseWhenDucked(false).setOnAudioFocusChangeListener(focusChange -> {}).build();
 
-	public boolean motionEvent(MotionEvent e) {
-		if (isTerminated.get()) return false;
-		
-		if (e.getActionMasked() == MotionEvent.ACTION_DOWN) {
-			lastInjectedTouchTime = uptimeMillis(); 
-		}
-		
-		MotionEvent clonedEvent = null;
-		MotionEvent.PointerProperties[] activeProps = null;
-		MotionEvent.PointerCoords[] activeCoords = null;
+        reusableProps = new MotionEvent.PointerProperties[10];
+        reusableCoords = new MotionEvent.PointerCoords[10];
+        for (int i = 0; i < 10; i++) {
+            reusableProps[i] = new MotionEvent.PointerProperties();
+            reusableCoords[i] = new MotionEvent.PointerCoords();
+        }
+    }
 
-		synchronized (touchLock) {
-			var cnt = e.getPointerCount();
-			
-			// Checkout from Object Pool
-			activeProps = propsPool.poll();
-			activeCoords = coordsPool.poll();
-			
-			if (activeProps == null || activeCoords == null || cnt > activeProps.length) {
-				activeProps = new MotionEvent.PointerProperties[cnt];
-				activeCoords = new MotionEvent.PointerCoords[cnt];
-				for (int i = 0; i < cnt; i++) {
-					activeProps[i] = new MotionEvent.PointerProperties();
-					activeCoords[i] = new MotionEvent.PointerCoords();
-				}
-			}
+    public static synchronized MirrorDisplay get() {
+        if (instance == null) {
+            instance = new MirrorDisplay();
+        }
+        instance.refCounter++;
+        return instance;
+    }
 
-			try {
-				var m = metrics();
-				if (m == null) {
-					// Return to pool if aborted early
-					propsPool.offer(activeProps);
-					coordsPool.offer(activeCoords);
-					return false;
-				}
+    public static synchronized void close() {
+        if (instance == null) return;
+        var sc = instance.sc;
+        instance.cleanUp();
+        if (sc != null) drawMsg(sc, R.string.app_name);
+    }
 
-				if (cnt == 1) {
-					e.getPointerProperties(0, activeProps[0]);
-					e.getPointerCoords(0, activeCoords[0]);
-					activeProps[0].id = 10; 
-					activeProps[0].toolType = MotionEvent.TOOL_TYPE_FINGER;
-					activeCoords[0].x = (e.getX() - m.x) * m.scale;
-					activeCoords[0].y = (e.getY() - m.y) * m.scale;
-					if (activeCoords[0].pressure <= 0.01f) activeCoords[0].pressure = 1.0f;
-					if (activeCoords[0].size <= 0.01f) activeCoords[0].size = 1.0f;
-				} else {
-					for (int i = 0; i < cnt; i++) {
-						e.getPointerProperties(i, activeProps[i]);
-						e.getPointerCoords(i, activeCoords[i]);
-						activeProps[i].id = 10 + i; 
-						activeProps[i].toolType = MotionEvent.TOOL_TYPE_FINGER;
-						activeCoords[i].x = (activeCoords[i].x - m.x) * m.scale;
-						activeCoords[i].y = (activeCoords[i].y - m.y) * m.scale;
-						if (activeCoords[i].pressure <= 0.01f) activeCoords[i].pressure = 1.0f;
-						if (activeCoords[i].size <= 0.01f) activeCoords[i].size = 1.0f;
-					}
-				}
-				
-				clonedEvent = MotionEvent.obtain(e.getDownTime(), uptimeMillis(), e.getAction(), cnt, activeProps, activeCoords,
-						e.getMetaState(), e.getButtonState(), e.getXPrecision(), e.getYPrecision(), e.getDeviceId(),
-						e.getEdgeFlags(), InputDevice.SOURCE_TOUCHSCREEN, e.getFlags());
-						
-			} catch (Exception ex) {
-				Log.e(ex, "Touch clone failed.");
-			} finally {
-				// Return to pool after cloning is complete
-				if (activeProps != null) propsPool.offer(activeProps);
-				if (activeCoords != null) coordsPool.offer(activeCoords);
-			}
-		}
-		
-		if (clonedEvent != null) {
-			final MotionEvent finalEvent = clonedEvent;
-			try {
-				touchExecutor.execute(() -> {
-					try {
-						if (isTerminated.get() || MirrorDisplay.instance != MirrorDisplay.this) return;
-						EventDispatcher d = dispatcher();
-						if (d != null) d.motionEvent(finalEvent);
-					} catch (Exception ex) {
-						Log.e(ex, "Async touch injection failed.");
-					}
-				});
-			} catch (Exception rejectedException) {
-				Log.e(rejectedException, "Touch thread rejected execution.");
-			}
-		}
-		
-		return true;
-	}
+    public synchronized void release() {
+        if (--refCounter <= 0) {
+            refCounter = 0;
+            cleanUp();
+        }
+    }
 
-	public boolean motionEvent(long downTime, long eventTime, int action, float x, float y) {
-		if (isTerminated.get()) return false;
-		if (action == MotionEvent.ACTION_DOWN) {
-			lastInjectedTouchTime = uptimeMillis(); 
-		}
-		
-		MotionEvent clonedEvent = null;
-		MotionEvent.PointerProperties[] activeProps = null;
-		MotionEvent.PointerCoords[] activeCoords = null;
+    public void setSurface(@NonNull SurfaceContainer sc) {
+        var oldSc = this.sc;
+        if (oldSc == sc) return;
+        
+        this.sc = sc;
+        currentMetrics = null;
 
-		synchronized (touchLock) {
-			activeProps = propsPool.poll();
-			activeCoords = coordsPool.poll();
-			
-			if (activeProps == null || activeCoords == null) {
-				activeProps = new MotionEvent.PointerProperties[1];
-				activeCoords = new MotionEvent.PointerCoords[1];
-				activeProps[0] = new MotionEvent.PointerProperties();
-				activeCoords[0] = new MotionEvent.PointerCoords();
-			}
-			
-			try {
-				var m = metrics();
-				if (m == null) {
-					propsPool.offer(activeProps);
-					coordsPool.offer(activeCoords);
-					return false;
-				}
-				
-				activeProps[0].clear();
-				activeProps[0].id = 10; 
-				activeProps[0].toolType = MotionEvent.TOOL_TYPE_FINGER;
-				
-				activeCoords[0].clear();
-				activeCoords[0].x = (x - m.x) * m.scale;
-				activeCoords[0].y = (y - m.y) * m.scale;
-				activeCoords[0].pressure = 1.0f;
-				activeCoords[0].size = 1.0f;
-				
-				clonedEvent = MotionEvent.obtain(downTime, uptimeMillis(), action, 1, activeProps, activeCoords,
-						0, 0, 1.0f, 1.0f, 0, 0, InputDevice.SOURCE_TOUCHSCREEN, 0);
-						
-			} catch (Exception ex) {
-				Log.e(ex, "Single touch motion builder failed.");
-			} finally {
-				if (activeProps != null) propsPool.offer(activeProps);
-				if (activeCoords != null) coordsPool.offer(activeCoords);
-			}
-		}
+        if (session.isDoneNotFailed()) {
+            try {
+                var vd = this.session.getOrThrow().vd;
+                vd.setSurface(sc.getSurface());
+                vd.resize(sc.getWidth(), sc.getHeight(), sc.getDpi());
+                started();
+            } catch (Throwable err) {
+                Log.d(err);
+                noSession();
+                createSession();
+            }
+        } else {
+            createSession();
+        }
+        if (oldSc != null) drawMsg(oldSc, R.string.app_name);
+    }
 
-		if (clonedEvent != null) {
-			final MotionEvent finalEvent = clonedEvent;
-			try {
-				touchExecutor.execute(() -> {
-					try {
-						if (isTerminated.get() || MirrorDisplay.instance != MirrorDisplay.this) return;
-						EventDispatcher d = dispatcher();
-						if (d != null) d.motionEvent(finalEvent);
-					} catch (Exception ex) {
-						Log.e(ex, "Async single touch injection failed.");
-					}
-				});
-			} catch (Exception rejectedException) {
-				Log.e(rejectedException, "Touch thread rejected execution.");
-			}
-		}
-		
-		return true;
-	}
+    public void releaseSurface(@NonNull SurfaceContainer sc) {
+        var oldSc = this.sc;
+        if (oldSc != sc) return;
+        this.sc = null;
 
-	private void updateOverlayOrientation(boolean forceCarPriority) {
-		if (isTerminated.get()) return;
-		try {
-			var wm = (WindowManager) PermataApplication.get().getSystemService(WINDOW_SERVICE);
-			boolean land = PermataApplication.get().isMirroringLandscape();
-			int targetOrientation = forceCarPriority 
-					? (land ? SCREEN_ORIENTATION_LANDSCAPE : SCREEN_ORIENTATION_PORTRAIT) 
-					: ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED;
+        if (session.isDoneNotFailed()) {
+            try {
+                Session s = session.getOrThrow();
+                if (s != null && s.vd != null) s.vd.setSurface(null);
+            } catch (Exception e) {
+                Log.e(e, "VirtualDisplay detachment failed.");
+            }
+        }
+        drawMsg(oldSc, R.string.app_name);
+    }
 
-			if (rotationAnchor != null) {
-				var anchorLp = (WindowManager.LayoutParams) rotationAnchor.getLayoutParams();
-				if (anchorLp != null) {
-					anchorLp.screenOrientation = targetOrientation;
-					wm.updateViewLayout(rotationAnchor, anchorLp);
-				}
-			}
-			
-			if (overlay != null) {
-				var overlayLp = (WindowManager.LayoutParams) overlay.getLayoutParams();
-				if (overlayLp != null) {
-					overlayLp.screenOrientation = targetOrientation;
-					wm.updateViewLayout(overlay, overlayLp);
-				}
-			}
-		} catch (Exception err) {
-			Log.e(err, "Failed to update overlay orientation hierarchy");
-		}
-	}
+    private void resetIdleTimer() {
+        mainHandler.removeCallbacks(idleDimRunnable);
+        mainHandler.postDelayed(idleDimRunnable, 6000);
+    }
 
-	public static void disableAccelRotation() {
-		var app = PermataApplication.get();
-		app.getHandler().postDelayed(() -> disableAccelRotation(app), 3000);
-	}
+    public void tap(float x, float y) {
+        resetIdleTimer();
+        var m = metrics();
+        if (m == null) return;
 
-	private static void disableAccelRotation(Context ctx) {
-		if (isTerminated.get() || instance == null || instance.sc == null) return; 
+        touchExecutor.execute(() -> {
+            var d = dispatcher();
+            if (d != null) {
+                d.tap((x - m.x) * m.scale, (y - m.y) * m.scale);
+            }
+        });
+    }
 
-		var a = EventDispatcher.get().getActivity();
-		boolean land = PermataApplication.get().isMirroringLandscape();
-		
-		if (a != null) {
-			a.setRequestedOrientation(land ? SCREEN_ORIENTATION_LANDSCAPE : SCREEN_ORIENTATION_PORTRAIT);
-		}
+    public void scale(float x, float y, boolean zoomIn) {
+        resetIdleTimer();
+        var m = metrics();
+        if (m == null) return;
 
-		bgExecutor.execute(() -> {
-			if (isTerminated.get() || instance == null || instance.sc == null) return; 
-			synchronized (settingsLock) {
-				if (isRotationLocked) return;
-				try {
-					var cr = ctx.getContentResolver();
-					if (accel == -1) {
-						var v = Settings.System.getInt(cr, ACCELEROMETER_ROTATION, -1);
-						if (v != -1) accel = v;
-					}
-					Settings.System.putInt(cr, ACCELEROMETER_ROTATION, 0);
-					Settings.System.putInt(cr, USER_ROTATION, land ? ROTATION_90 : ROTATION_0);
-					isRotationLocked = true;
-				} catch (Exception err) {
-					Log.e(err);
-				}
-			}
-		});
-	}
+        touchExecutor.execute(() -> {
+            var d = dispatcher();
+            if (d != null) {
+                d.scale((x - m.x) * m.scale, (y - m.y) * m.scale, zoomIn ? scaleDiff : -scaleDiff);
+            }
+        });
+    }
 
-	private static void restoreAccelRotation(Context ctx) {
-		var a = EventDispatcher.get().getActivity();
-		if (a != null) a.setRequestedOrientation(SCREEN_ORIENTATION_UNSPECIFIED);
+    public boolean motionEvent(MotionEvent e) {
+        if (e.getActionMasked() == MotionEvent.ACTION_DOWN) {
+            lastInjectedTouchTime = uptimeMillis();
+        }
+        resetIdleTimer();
 
-		bgExecutor.execute(() -> {
-			synchronized (settingsLock) {
-				if (!isRotationLocked) return;
-				try {
-					if (accel != -1) {
-						Settings.System.putInt(ctx.getContentResolver(), ACCELEROMETER_ROTATION, accel);
-						accel = -1;
-					}
-					isRotationLocked = false;
-				} catch (Exception err) {
-					Log.e(err);
-				}
-			}
-		});
-	}
+        MotionEvent clonedEvent = null;
 
-	private void dimScreen(Context ctx) {
-		bgExecutor.execute(() -> {
-			if (isTerminated.get() || MirrorDisplay.instance != MirrorDisplay.this || sc == null) return;
-			
-			synchronized (settingsLock) {
-				if (isDimmed) return;
-				try {
-					var cr = ctx.getContentResolver();
-					
-					if (brightnessMode == -1) {
-						var mode = Settings.System.getInt(cr, SCREEN_BRIGHTNESS_MODE, -1);
-						if (mode != -1) brightnessMode = mode;
-					}
-					Settings.System.putInt(cr, SCREEN_BRIGHTNESS_MODE, 0); 
-					
-					if (brightness == -1) {
-						var br = Settings.System.getInt(cr, SCREEN_BRIGHTNESS, -1);
-						brightness = (br > 0) ? br : 200;
-					}
-					Settings.System.putInt(cr, SCREEN_BRIGHTNESS, 1);
-					if (!Build.MANUFACTURER.equalsIgnoreCase("Xiaomi")) {
-						Settings.System.putInt(cr, SCREEN_BRIGHTNESS, 0);
-					}
-					
-					isDimmed = true;
-					// Ensure unified enforcer is running
-					unifiedHandler.removeCallbacks(unifiedStateEnforcer);
-					unifiedHandler.postDelayed(unifiedStateEnforcer, 3000);
-				} catch (Exception err) {
-					Log.e(err);
-				}
-			}
-		});
-	}
+        synchronized (touchLock) {
+            var cnt = e.getPointerCount();
+            if (cnt > reusableProps.length) {
+                reusableProps = new MotionEvent.PointerProperties[cnt];
+                reusableCoords = new MotionEvent.PointerCoords[cnt];
+                for (int i = 0; i < cnt; i++) {
+                    reusableProps[i] = new MotionEvent.PointerProperties();
+                    reusableCoords[i] = new MotionEvent.PointerCoords();
+                }
+            }
 
-	private void restoreBrightness(Context ctx) {
-		bgExecutor.execute(() -> {
-			synchronized (settingsLock) {
-				if (!isDimmed) return;
-				try {
-					var cr = ctx.getContentResolver();
-					if (brightness > 0) {
-						Settings.System.putInt(cr, SCREEN_BRIGHTNESS, brightness);
-					}
-					if (brightnessMode != -1) {
-						Settings.System.putInt(cr, SCREEN_BRIGHTNESS_MODE, brightnessMode);
-						brightnessMode = -1;
-					}
-					
-					isDimmed = false;
-				} catch (Exception err) {
-					Log.e(err);
-				}
-			}
-		});
-	}
+            try {
+                var m = metrics();
+                if (m == null) return false;
 
-	private void started() {
-		if (sc == null || isTerminated.get()) return;
-		var app = PermataApplication.get();
-		var mode = sc.getWidth() > sc.getHeight() ? 1 : 2;
+                for (int i = 0; i < cnt; i++) {
+                    e.getPointerProperties(i, reusableProps[i]);
+                    e.getPointerCoords(i, reusableCoords[i]);
+                    reusableProps[i].id = 10 + i;
+                    reusableProps[i].toolType = MotionEvent.TOOL_TYPE_FINGER;
+                    reusableCoords[i].x = (reusableCoords[i].x - m.x) * m.scale;
+                    reusableCoords[i].y = (reusableCoords[i].y - m.y) * m.scale;
+                    if (reusableCoords[i].pressure <= 0.01f) reusableCoords[i].pressure = 1.0f;
+                    if (reusableCoords[i].size <= 0.01f) reusableCoords[i].size = 1.0f;
+                }
 
-		if (app.isMirroringMode()) {
-			app.setMirroringMode(mode);
-			updateOverlayOrientation(true);
-			return;
-		}
+                clonedEvent = MotionEvent.obtain(e.getDownTime(), uptimeMillis(), e.getAction(), cnt, reusableProps, reusableCoords,
+                        e.getMetaState(), e.getButtonState(), e.getXPrecision(), e.getYPrecision(), e.getDeviceId(),
+                        e.getEdgeFlags(), InputDevice.SOURCE_TOUCHSCREEN, e.getFlags());
+            } catch (Exception ex) {
+                Log.e(ex, "Touch clone failed.");
+            }
+        }
 
-		dimScreen(app);
-		disableAccelRotation(app);
+        if (clonedEvent != null) {
+            final MotionEvent finalEvent = clonedEvent;
+            try {
+                touchExecutor.execute(() -> {
+                    try {
+                        EventDispatcher d = dispatcher();
+                        if (d != null) d.motionEvent(finalEvent);
+                    } catch (Exception ex) {
+                        Log.e(ex, "Async touch injection failed.");
+                    }
+                });
+            } catch (Exception rejectedException) {
+                Log.e(rejectedException, "Touch thread rejected execution.");
+            }
+        }
 
-		var pmg = (PowerManager) app.getSystemService(POWER_SERVICE);
-		if (pmg != null) {
-			if (wakeLock != null && wakeLock.isHeld()) {
-				wakeLock.release();
-				wakeLock = null;
-			}
-			
-			//noinspection deprecation
-			wakeLock = pmg.newWakeLock(PowerManager.SCREEN_DIM_WAKE_LOCK | ACQUIRE_CAUSES_WAKEUP,
-					"Permata:ScreenLock");
-			if (wakeLock != null) wakeLock.acquire(24 * 3600000);
-		}
+        return true;
+    }
 
-		if (SDK_INT >= VERSION_CODES.O) {
-			try {
-				var wm = (WindowManager) app.getSystemService(WINDOW_SERVICE);
-				boolean land = (mode == 1); 
-				
-				if (rotationAnchor == null) {
-					var anchorLp = new WindowManager.LayoutParams(
-							1, 1, TYPE_APPLICATION_OVERLAY, ANCHOR_FLAGS, PixelFormat.TRANSPARENT);
-					anchorLp.gravity = Gravity.TOP | Gravity.START;
-					anchorLp.screenOrientation = land ? SCREEN_ORIENTATION_LANDSCAPE : SCREEN_ORIENTATION_PORTRAIT;
-					
-					rotationAnchor = new View(app);
-					wm.addView(rotationAnchor, anchorLp);
-				}
+    public boolean motionEvent(long downTime, long eventTime, int action, float x, float y) {
+        if (action == MotionEvent.ACTION_DOWN) {
+            lastInjectedTouchTime = uptimeMillis();
+        }
+        resetIdleTimer();
 
-				if (overlay == null) {
-					var overlayLp = new WindowManager.LayoutParams(
-							MATCH_PARENT, MATCH_PARENT, TYPE_APPLICATION_OVERLAY,
-							OVERLAY_FLAGS, PixelFormat.TRANSPARENT);
-					overlayLp.screenOrientation = land ? SCREEN_ORIENTATION_LANDSCAPE : SCREEN_ORIENTATION_PORTRAIT;
-					
-					overlay = new Overlay(app);
-					wm.addView(overlay, overlayLp);
-				}
-			} catch (Exception err) {
-				Log.e(err, "Failed to inject overlay hierarchy");
-			}
-		}
+        MotionEvent clonedEvent = null;
 
-		try {
-			app.startService(new Intent(app, XposedEventDispatcherService.class));
-		} catch (IllegalStateException ise) {
-			Log.w("Background Service restrictions active, ignoring Xposed Service startup.");
-		} catch (Exception err) {
-			Log.e(err, "Failed to start XposedEventDispatcherService");
-		}
+        synchronized (touchLock) {
+            try {
+                var m = metrics();
+                if (m == null) return false;
 
-		var amgr = (AudioManager) app.getSystemService(Context.AUDIO_SERVICE);
-		if (amgr != null) AudioManagerCompat.requestAudioFocus(amgr, audioFocusReq);
-		
-		setMirroringMode(app, mode);
-	}
+                reusableProps[0].clear();
+                reusableProps[0].id = 10;
+                reusableProps[0].toolType = MotionEvent.TOOL_TYPE_FINGER;
 
-	private void cleanUp() {
-		// FIRE NUCLEAR ABORT: Instantly kills all loops, WebViews, and pending Executor tasks
-		isTerminated.set(true);
-		
-		noSession();
-		var app = PermataApplication.get();
-		unifiedHandler.removeCallbacks(unifiedStateEnforcer);
-		app.sendBroadcast(new Intent(ACTION_KILL_WEBVIEW));
-		
-		final boolean wasDimmed = isDimmed;
-		final boolean wasRotationLocked = isRotationLocked;
-		final int savedBrightness = brightness;
-		final int savedBrightnessMode = brightnessMode;
-		final int savedAccel = accel;
+                reusableCoords[0].clear();
+                reusableCoords[0].x = (x - m.x) * m.scale;
+                reusableCoords[0].y = (y - m.y) * m.scale;
+                reusableCoords[0].pressure = 1.0f;
+                reusableCoords[0].size = 1.0f;
 
-		isDimmed = false;
-		isRotationLocked = false;
-		brightness = -1;
-		brightnessMode = -1;
-		accel = -1;
-		
-		if (wasDimmed || wasRotationLocked) {
-			bgExecutor.execute(() -> {
-				synchronized (settingsLock) {
-					try {
-						var cr = app.getContentResolver();
-						if (wasDimmed) {
-							if (savedBrightness > 0) Settings.System.putInt(cr, SCREEN_BRIGHTNESS, savedBrightness);
-							if (savedBrightnessMode != -1) Settings.System.putInt(cr, SCREEN_BRIGHTNESS_MODE, savedBrightnessMode);
-						}
-						if (wasRotationLocked) {
-							if (savedAccel != -1) Settings.System.putInt(cr, ACCELEROMETER_ROTATION, savedAccel);
-						}
-					} catch (Exception err) {
-						Log.e(err, "Emergency teardown write failed.");
-					}
-				}
-			});
-		}
+                clonedEvent = MotionEvent.obtain(downTime, uptimeMillis(), action, 1, reusableProps, reusableCoords,
+                        0, 0, 1.0f, 1.0f, 0, 0, InputDevice.SOURCE_TOUCHSCREEN, 0);
 
-		var a = EventDispatcher.get().getActivity();
-		if (a != null) a.setRequestedOrientation(SCREEN_ORIENTATION_UNSPECIFIED);
-		
-		if (overlay != null || rotationAnchor != null) {
-			final Overlay oldOverlay = overlay;
-			final View oldAnchor = rotationAnchor;
-			
-			new Handler(Looper.getMainLooper()).post(() -> {
-				try {
-					var wm = (WindowManager) app.getSystemService(WINDOW_SERVICE);
-					if (oldOverlay != null && oldOverlay.isAttachedToWindow()) wm.removeView(oldOverlay);
-					if (oldAnchor != null && oldAnchor.isAttachedToWindow()) wm.removeView(oldAnchor); 
-				} catch (Exception ignored) {}
-			});
-			
-			overlay = null;
-			rotationAnchor = null;
-		}
-		
-		if (wakeLock != null) {
-			try {
-				if (wakeLock.isHeld()) wakeLock.release();
-			} catch (Exception ignored) {}
-			wakeLock = null;
-		}
-		
-		setMirroringMode(app, 0);
-		ProjectionService.stop();
+            } catch (Exception ex) {
+                Log.e(ex, "Single touch motion builder failed.");
+            }
+        }
 
-		try {
-			app.stopService(new Intent(app, XposedEventDispatcherService.class));
-		} catch (Exception err) {
-			Log.d(err, "Failed to stop XposedEventDispatcherService");
-		}
+        if (clonedEvent != null) {
+            final MotionEvent finalEvent = clonedEvent;
+            try {
+                touchExecutor.execute(() -> {
+                    try {
+                        EventDispatcher d = dispatcher();
+                        if (d != null) d.motionEvent(finalEvent);
+                    } catch (Exception ex) {
+                        Log.e(ex, "Async single touch injection failed.");
+                    }
+                });
+            } catch (Exception rejectedException) {
+                Log.e(rejectedException, "Touch thread rejected execution.");
+            }
+        }
 
-		var amgr = (AudioManager) app.getSystemService(Context.AUDIO_SERVICE);
-		if (amgr != null) AudioManagerCompat.abandonAudioFocusRequest(amgr, audioFocusReq);
-		
-		sc = null;
-		currentMetrics = null;
-		instance = null; // Free strong reference memory block
-	}
+        return true;
+    }
 
-	private void noSession() {
-		if (session.isDoneNotFailed()) session.getOrThrow().close();
-		else session.cancel();
-		session = Completed.cancelled();
-	}
+    private void updateOverlayOrientation(boolean forceCarPriority) {
+        try {
+            var wm = (WindowManager) PermataApplication.get().getSystemService(WINDOW_SERVICE);
+            boolean land = PermataApplication.get().isMirroringLandscape();
+            int targetOrientation = forceCarPriority
+                    ? (land ? SCREEN_ORIENTATION_LANDSCAPE : SCREEN_ORIENTATION_PORTRAIT)
+                    : ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED;
 
-	private void createSession() {
-		if (!session.isDone() || isTerminated.get()) return;
-		var p = new Promise<Session>();
-		session = p;
-		createSession(p);
-		p.onSuccess(s -> {
-			Log.i("Session created: ", s);
-			session = Completed.completed(s);
-			started();
-		});
-		PermataApplication.get().getHandler().schedule(() -> {
-			if (!session.isDone() && !isTerminated.get()) drawMsg(R.string.unlock_phone_and_grant);
-		}, 500);
-	}
+            if (rotationAnchor != null) {
+                var anchorLp = (WindowManager.LayoutParams) rotationAnchor.getLayoutParams();
+                if (anchorLp != null) {
+                    anchorLp.screenOrientation = targetOrientation;
+                    wm.updateViewLayout(rotationAnchor, anchorLp);
+                }
+            }
 
-	private void createSession(Promise<Session> p) {
-		if (session != p || isTerminated.get()) return;
-		if (sc == null) noSession();
-		if (p.isDone()) return; 
-		ProjectionService.start().onCompletion((mp, err) -> {
-			if (session != p || isTerminated.get()) {
-				if (mp != null) {
-					try { mp.stop(); } catch (Exception ignored) {}
-				}
-				return;
-			}
-			
-			if (sc == null) noSession();
-			if (p.isDone()) return;
-			
-			if (err != null) {
-				if (isCancellation(err)) {
-					drawMsg(R.string.screen_capture_rejected);
-					cleanUp();
-					return;
-				}
-				Log.e(err, "Failed to create media projection");
-				retryCreateSession(p);
-			} else if (mp == null) {
-				Log.e("Failed to create media projection");
-				retryCreateSession(p);
-			} else {
-				try {
-					p.complete(new Session(mp, this));
-				} catch (Exception ex) {
-					Log.e(ex, "Failed to create media projection");
-					retryCreateSession(p);
-				}
-			}
-		});
-	}
+            if (overlay != null) {
+                var overlayLp = (WindowManager.LayoutParams) overlay.getLayoutParams();
+                if (overlayLp != null) {
+                    overlayLp.screenOrientation = targetOrientation;
+                    wm.updateViewLayout(overlay, overlayLp);
+                }
+            }
+        } catch (Exception err) {
+            Log.e(err, "Failed to update overlay orientation hierarchy");
+        }
+    }
 
-	private void retryCreateSession(Promise<Session> p) {
-		PermataApplication.get().getHandler().schedule(() -> {
-			if (p.isDone() || isTerminated.get()) return;
-			Log.i("Retrying to create media projection");
-			createSession(p);
-		}, 3000);
-	}
+    public static void disableAccelRotation() {
+        var app = PermataApplication.get();
+        app.getHandler().postDelayed(() -> disableAccelRotation(app), 3000);
+    }
 
-	private void drawMsg(@StringRes int msg) {
-		if (sc != null && !isTerminated.get()) drawMsg(sc, msg);
-	}
+    private static void disableAccelRotation(Context ctx) {
+        if (instance == null || instance.sc == null) return;
 
-	private static void drawMsg(SurfaceContainer sc, @StringRes int msg) {
-		try {
-			var surface = sc.getSurface();
-			if (surface == null) return;
-			var c = surface.lockCanvas(null);
-			if (c == null) return;
-			var w = sc.getWidth();
-			var h = sc.getHeight();
-			TextPaint paint = new TextPaint(Paint.ANTI_ALIAS_FLAG);
-			paint.setColor(Color.WHITE);
-			paint.setTypeface(Typeface.DEFAULT);
-			paint.setElegantTextHeight(true);
-			paint.setTextAlign(Paint.Align.CENTER);
-			paint.setTextSize(h / 10f);
-			var text = PermataApplication.get().getString(msg);
-			var sl = StaticLayout.Builder.obtain(text, 0, text.length(), paint, w).setMaxLines(5)
-					.setEllipsize(TextUtils.TruncateAt.END).setIncludePad(true).build();
-			c.drawColor(Color.BLACK);
-			c.translate(w / 2f, h / 2f - sl.getHeight() / 2f);
-			sl.draw(c);
-			surface.unlockCanvasAndPost(c);
-		} catch (Exception err) {
-			Log.d(err, "Failed to draw message on surface");
-		}
-	}
+        var a = EventDispatcher.get().getActivity();
+        boolean land = PermataApplication.get().isMirroringLandscape();
 
-	private EventDispatcher dispatcher() {
-		var d = EventDispatcher.get();
-		Log.d(d);
-		return d;
-	}
+        if (a != null) {
+            a.setRequestedOrientation(land ? SCREEN_ORIENTATION_LANDSCAPE : SCREEN_ORIENTATION_PORTRAIT);
+        }
 
-	@Nullable
-	private Metrics metrics() {
-		if (sc == null || !session.isDoneNotFailed() || isTerminated.get()) return null;
-		
-		final Point size = new Point();
-		defaultDisplay.getRealSize(size);
-		
-		float dw = size.x;
-		float dh = size.y;
-		float sw = sc.getWidth();
-		float sh = sc.getHeight();
+        bgExecutor.execute(() -> {
+            synchronized (settingsLock) {
+                if (isRotationLocked) return;
+                try {
+                    var cr = ctx.getContentResolver();
+                    if (accel == -1) {
+                        var v = Settings.System.getInt(cr, ACCELEROMETER_ROTATION, -1);
+                        if (v != -1) accel = v;
+                    }
+                    Settings.System.putInt(cr, ACCELEROMETER_ROTATION, 0);
+                    Settings.System.putInt(cr, USER_ROTATION, land ? ROTATION_90 : ROTATION_0);
+                    isRotationLocked = true;
+                } catch (Exception err) {
+                    Log.e(err);
+                }
+            }
+        });
+    }
 
-		boolean isLandscape = PermataApplication.get().isMirroringLandscape();
+    private static void restoreAccelRotation(Context ctx) {
+        var a = EventDispatcher.get().getActivity();
+        if (a != null) a.setRequestedOrientation(SCREEN_ORIENTATION_UNSPECIFIED);
 
-		if (isLandscape && dw < dh) {
-			float temp = dw; dw = dh; dh = temp;
-		} else if (!isLandscape && dw > dh) {
-			float temp = dw; dw = dh; dh = temp;
-		}
-		
-		if (currentMetrics != null && 
-			currentMetrics.sw == sw && currentMetrics.sh == sh && 
-			currentMetrics.dw == dw && currentMetrics.dh == dh) {
-			return currentMetrics;
-		}
-		
-		currentMetrics = new Metrics(dw, dh, sw, sh);
-		return currentMetrics;
-	}
+        bgExecutor.execute(() -> {
+            synchronized (settingsLock) {
+                if (!isRotationLocked) return;
+                try {
+                    if (accel != -1) {
+                        Settings.System.putInt(ctx.getContentResolver(), ACCELEROMETER_ROTATION, accel);
+                        accel = -1;
+                    }
+                    isRotationLocked = false;
+                } catch (Exception err) {
+                    Log.e(err);
+                }
+            }
+        });
+    }
 
-	private void setMirroringMode(PermataApplication app, int mode) {
-		app.setMirroringMode(mode);
-		var intent = new Intent(app, MainActivity.class);
-		intent.setAction(MainActivityDelegate.INTENT_ACTION_FINISH);
-		intent.setFlags(FLAG_ACTIVITY_NEW_TASK | FLAG_ACTIVITY_CLEAR_TOP);
-		app.startActivity(intent);
+    private void dimScreen(Context ctx) {
+        bgExecutor.execute(() -> {
+            if (sc == null) return;
 
-		intent = new Intent(app, LauncherActivity.class);
-		intent.setFlags(FLAG_ACTIVITY_NEW_TASK | FLAG_ACTIVITY_CLEAR_TASK);
-		if (mode == 0) intent.setAction(MainActivityDelegate.INTENT_ACTION_FINISH);
-		app.startActivity(intent);
-	}
+            synchronized (settingsLock) {
+                if (isDimmed) return;
+                try {
+                    var cr = ctx.getContentResolver();
 
-	private static final class Session extends MediaProjection.Callback {
-		final MediaProjection mp;
-		final VirtualDisplay vd;
+                    if (brightnessMode == -1) {
+                        var mode = Settings.System.getInt(cr, SCREEN_BRIGHTNESS_MODE, -1);
+                        if (mode != -1) brightnessMode = mode;
+                    }
+                    Settings.System.putInt(cr, SCREEN_BRIGHTNESS_MODE, 0);
 
-		Session(MediaProjection mp, MirrorDisplay md) {
-			this.mp = mp;
-			var sc = md.sc;
-			var app = PermataApplication.get();
-			var name = app.getString(R.string.mirror_service_name);
-			mp.registerCallback(this, app.getHandler());
-			vd = mp.createVirtualDisplay(name, sc.getWidth(), sc.getHeight(), sc.getDpi(),
-					DisplayManager.VIRTUAL_DISPLAY_FLAG_OWN_CONTENT_ONLY, sc.getSurface(), null, null);
-			if (vd == null) throw new RuntimeException("Failed to create VirtualDisplay");
-			Log.i("VirtualDisplay created");
-		}
+                    if (brightness == -1) {
+                        var br = Settings.System.getInt(cr, SCREEN_BRIGHTNESS, -1);
+                        brightness = (br > 0) ? br : 200;
+                    }
+                    Settings.System.putInt(cr, SCREEN_BRIGHTNESS, 1);
+                    if (!Build.MANUFACTURER.equalsIgnoreCase("Xiaomi")) {
+                        Settings.System.putInt(cr, SCREEN_BRIGHTNESS, 0);
+                    }
 
-		@Override
-		public void onStop() {
-			close();
-			MirrorDisplay md = MirrorDisplay.instance;
-			if (md == null || isTerminated.get()) return;
-			Log.i("Media projection stopped");
-			md.cleanUp();
-		}
+                    isDimmed = true;
+                } catch (Exception err) {
+                    Log.e(err);
+                }
+            }
+        });
+    }
 
-		void close() {
-			mp.unregisterCallback(this);
-			vd.release();
-			mp.stop();
-		}
-	}
+    private void restoreBrightness(Context ctx) {
+        bgExecutor.execute(() -> {
+            synchronized (settingsLock) {
+                if (!isDimmed) return;
+                try {
+                    var cr = ctx.getContentResolver();
+                    if (brightness > 0) {
+                        Settings.System.putInt(cr, SCREEN_BRIGHTNESS, brightness);
+                    }
+                    if (brightnessMode != -1) {
+                        Settings.System.putInt(cr, SCREEN_BRIGHTNESS_MODE, brightnessMode);
+                        brightnessMode = -1;
+                    }
 
-	private static final class Metrics {
-		final float x;
-		final float y;
-		final float scale;
-		final float sw; 
-		final float sh; 
-		final float dw; 
-		final float dh; 
+                    isDimmed = false;
+                } catch (Exception err) {
+                    Log.e(err);
+                }
+            }
+        });
+    }
 
-		Metrics(float dw, float dh, float sw, float sh) {
-			this.sw = sw;
-			this.sh = sh;
-			this.dw = dw;
-			this.dh = dh;
-			
-			var scale = dw / sw;
-			var scaleH = dh / scale;
-			if (scaleH <= sh) {
-				x = 0f;
-				y = (sh - scaleH) / 2f;
-				assert y >= 0f;
-			} else {
-				scale = dh / sh;
-				y = 0f;
-				x = (sw - (dw / scale)) / 2;
-				assert x >= 0f;
-			}
-			this.scale = scale;
-		}
-	}
+    private void started() {
+        if (sc == null) return;
+        var app = PermataApplication.get();
+        var mode = sc.getWidth() > sc.getHeight() ? 1 : 2;
 
-	private final class Overlay extends FrameLayout {
-		
-		public Overlay(@NonNull Context context) {
-			super(context);
-		}
+        if (app.isMirroringMode()) {
+            app.setMirroringMode(mode);
+            updateOverlayOrientation(true);
+            return;
+        }
 
-		@SuppressLint("ClickableViewAccessibility")
-		@Override
-		public boolean onTouchEvent(MotionEvent event) {
-			if (isTerminated.get()) return false;
-			
-			if (Math.abs(uptimeMillis() - lastInjectedTouchTime) < 50) return false;
-			if (event.getPointerCount() == 0 || event.getToolType(0) != MotionEvent.TOOL_TYPE_FINGER) return false;
-			
-			int action = event.getActionMasked();
-			if (action == MotionEvent.ACTION_OUTSIDE || action == MotionEvent.ACTION_DOWN || action == MotionEvent.ACTION_POINTER_DOWN) {
-				Log.d("True physical touch detected. Disengaging rotation anchor.");
-				
-				// Reset physical touch timer for the unified handler
-				lastPhysicalTouchTime = uptimeMillis();
-				
-				var ctx = getContext();
-				restoreBrightness(ctx);
-				restoreAccelRotation(ctx); 
-				updateOverlayOrientation(false); 
-			}
-			return false;
-		}
-	}
+        dimScreen(app);
+        disableAccelRotation(app);
+        resetIdleTimer();
+
+        var pmg = (PowerManager) app.getSystemService(POWER_SERVICE);
+        if (pmg != null) {
+            if (wakeLock != null && wakeLock.isHeld()) {
+                wakeLock.release();
+                wakeLock = null;
+            }
+
+            //noinspection deprecation
+            wakeLock = pmg.newWakeLock(PowerManager.SCREEN_DIM_WAKE_LOCK | ACQUIRE_CAUSES_WAKEUP,
+                    "Permata:ScreenLock");
+            if (wakeLock != null) wakeLock.acquire(24 * 3600000);
+        }
+
+        if (SDK_INT >= VERSION_CODES.O) {
+            try {
+                var wm = (WindowManager) app.getSystemService(WINDOW_SERVICE);
+                boolean land = (mode == 1);
+
+                if (rotationAnchor == null) {
+                    var anchorLp = new WindowManager.LayoutParams(
+                            1, 1, TYPE_APPLICATION_OVERLAY, ANCHOR_FLAGS, PixelFormat.TRANSPARENT);
+                    anchorLp.gravity = Gravity.TOP | Gravity.START;
+                    anchorLp.screenOrientation = land ? SCREEN_ORIENTATION_LANDSCAPE : SCREEN_ORIENTATION_PORTRAIT;
+
+                    rotationAnchor = new View(app);
+                    wm.addView(rotationAnchor, anchorLp);
+                }
+
+                if (overlay == null) {
+                    var overlayLp = new WindowManager.LayoutParams(
+                            MATCH_PARENT, MATCH_PARENT, TYPE_APPLICATION_OVERLAY,
+                            OVERLAY_FLAGS, PixelFormat.TRANSPARENT);
+                    overlayLp.screenOrientation = land ? SCREEN_ORIENTATION_LANDSCAPE : SCREEN_ORIENTATION_PORTRAIT;
+
+                    overlay = new Overlay(app);
+                    wm.addView(overlay, overlayLp);
+                }
+            } catch (Exception err) {
+                Log.e(err, "Failed to inject overlay hierarchy");
+            }
+        }
+
+        try {
+            app.startService(new Intent(app, XposedEventDispatcherService.class));
+        } catch (IllegalStateException ise) {
+            Log.w("Background Service restrictions active, ignoring Xposed Service startup.");
+        } catch (Exception err) {
+            Log.e(err, "Failed to start XposedEventDispatcherService");
+        }
+
+        var amgr = (AudioManager) app.getSystemService(Context.AUDIO_SERVICE);
+        if (amgr != null) AudioManagerCompat.requestAudioFocus(amgr, audioFocusReq);
+
+        setMirroringMode(app, mode);
+    }
+
+    private void cleanUp() {
+        noSession();
+        var app = PermataApplication.get();
+        mainHandler.removeCallbacks(idleDimRunnable);
+        app.sendBroadcast(new Intent(ACTION_KILL_WEBVIEW));
+
+        final boolean wasDimmed = isDimmed;
+        final boolean wasRotationLocked = isRotationLocked;
+        final int savedBrightness = brightness;
+        final int savedBrightnessMode = brightnessMode;
+        final int savedAccel = accel;
+
+        isDimmed = false;
+        isRotationLocked = false;
+        brightness = -1;
+        brightnessMode = -1;
+        accel = -1;
+
+        if (wasDimmed || wasRotationLocked) {
+            bgExecutor.execute(() -> {
+                synchronized (settingsLock) {
+                    try {
+                        var cr = app.getContentResolver();
+                        if (wasDimmed) {
+                            if (savedBrightness > 0) Settings.System.putInt(cr, SCREEN_BRIGHTNESS, savedBrightness);
+                            if (savedBrightnessMode != -1) Settings.System.putInt(cr, SCREEN_BRIGHTNESS_MODE, savedBrightnessMode);
+                        }
+                        if (wasRotationLocked) {
+                            if (savedAccel != -1) Settings.System.putInt(cr, ACCELEROMETER_ROTATION, savedAccel);
+                        }
+                    } catch (Exception err) {
+                        Log.e(err, "Emergency teardown write failed.");
+                    }
+                }
+            });
+        }
+
+        var a = EventDispatcher.get().getActivity();
+        if (a != null) a.setRequestedOrientation(SCREEN_ORIENTATION_UNSPECIFIED);
+
+        if (overlay != null || rotationAnchor != null) {
+            final Overlay oldOverlay = overlay;
+            final View oldAnchor = rotationAnchor;
+
+            mainHandler.post(() -> {
+                try {
+                    var wm = (WindowManager) app.getSystemService(WINDOW_SERVICE);
+                    if (oldOverlay != null && oldOverlay.isAttachedToWindow()) wm.removeView(oldOverlay);
+                    if (oldAnchor != null && oldAnchor.isAttachedToWindow()) wm.removeView(oldAnchor);
+                } catch (Exception ignored) {}
+            });
+
+            overlay = null;
+            rotationAnchor = null;
+        }
+
+        if (wakeLock != null) {
+            try {
+                if (wakeLock.isHeld()) wakeLock.release();
+            } catch (Exception ignored) {}
+            wakeLock = null;
+        }
+
+        setMirroringMode(app, 0);
+        ProjectionService.stop();
+
+        try {
+            app.stopService(new Intent(app, XposedEventDispatcherService.class));
+        } catch (Exception err) {
+            Log.d(err, "Failed to stop XposedEventDispatcherService");
+        }
+
+        var amgr = (AudioManager) app.getSystemService(Context.AUDIO_SERVICE);
+        if (amgr != null) AudioManagerCompat.abandonAudioFocusRequest(amgr, audioFocusReq);
+
+        sc = null;
+        currentMetrics = null;
+        instance = null;
+    }
+
+    private void noSession() {
+        if (session.isDoneNotFailed()) session.getOrThrow().close();
+        else session.cancel();
+        session = Completed.cancelled();
+    }
+
+    private void createSession() {
+        if (!session.isDone()) return;
+        var p = new Promise<Session>();
+        session = p;
+        createSession(p);
+        p.onSuccess(s -> {
+            Log.i("Session created: ", s);
+            session = Completed.completed(s);
+            started();
+        });
+        PermataApplication.get().getHandler().schedule(() -> {
+            if (!session.isDone()) drawMsg(R.string.unlock_phone_and_grant);
+        }, 500);
+    }
+
+    private void createSession(Promise<Session> p) {
+        if (session != p) return;
+        if (sc == null) noSession();
+        if (p.isDone()) return;
+        ProjectionService.start().onCompletion((mp, err) -> {
+            if (session != p) {
+                if (mp != null) {
+                    try { mp.stop(); } catch (Exception ignored) {}
+                }
+                return;
+            }
+
+            if (sc == null) noSession();
+            if (p.isDone()) return;
+
+            if (err != null) {
+                if (isCancellation(err)) {
+                    drawMsg(R.string.screen_capture_rejected);
+                    cleanUp();
+                    return;
+                }
+                Log.e(err, "Failed to create media projection");
+                retryCreateSession(p);
+            } else if (mp == null) {
+                Log.e("Failed to create media projection");
+                retryCreateSession(p);
+            } else {
+                try {
+                    p.complete(new Session(mp, this));
+                } catch (Exception ex) {
+                    Log.e(ex, "Failed to create media projection");
+                    retryCreateSession(p);
+                }
+            }
+        });
+    }
+
+    private void retryCreateSession(Promise<Session> p) {
+        PermataApplication.get().getHandler().schedule(() -> {
+            if (p.isDone()) return;
+            Log.i("Retrying to create media projection");
+            createSession(p);
+        }, 3000);
+    }
+
+    private void drawMsg(@StringRes int msg) {
+        if (sc != null) drawMsg(sc, msg);
+    }
+
+    private static void drawMsg(SurfaceContainer sc, @StringRes int msg) {
+        try {
+            var surface = sc.getSurface();
+            if (surface == null) return;
+            var c = surface.lockCanvas(null);
+            if (c == null) return;
+            var w = sc.getWidth();
+            var h = sc.getHeight();
+            TextPaint paint = new TextPaint(Paint.ANTI_ALIAS_FLAG);
+            paint.setColor(Color.WHITE);
+            paint.setTypeface(Typeface.DEFAULT);
+            paint.setElegantTextHeight(true);
+            paint.setTextAlign(Paint.Align.CENTER);
+            paint.setTextSize(h / 10f);
+            var text = PermataApplication.get().getString(msg);
+            var sl = StaticLayout.Builder.obtain(text, 0, text.length(), paint, w).setMaxLines(5)
+                    .setEllipsize(TextUtils.TruncateAt.END).setIncludePad(true).build();
+            c.drawColor(Color.BLACK);
+            c.translate(w / 2f, h / 2f - sl.getHeight() / 2f);
+            sl.draw(c);
+            surface.unlockCanvasAndPost(c);
+        } catch (Exception err) {
+            Log.d(err, "Failed to draw message on surface");
+        }
+    }
+
+    private EventDispatcher dispatcher() {
+        var d = EventDispatcher.get();
+        Log.d(d);
+        return d;
+    }
+
+    @Nullable
+    private Metrics metrics() {
+        if (sc == null || !session.isDoneNotFailed()) return null;
+
+        final Point size = new Point();
+        defaultDisplay.getRealSize(size);
+
+        float dw = size.x;
+        float dh = size.y;
+        float sw = sc.getWidth();
+        float sh = sc.getHeight();
+
+        boolean isLandscape = PermataApplication.get().isMirroringLandscape();
+
+        if (isLandscape && dw < dh) {
+            float temp = dw; dw = dh; dh = temp;
+        } else if (!isLandscape && dw > dh) {
+            float temp = dw; dw = dh; dh = temp;
+        }
+
+        if (currentMetrics != null &&
+                currentMetrics.sw == sw && currentMetrics.sh == sh &&
+                currentMetrics.dw == dw && currentMetrics.dh == dh) {
+            return currentMetrics;
+        }
+
+        currentMetrics = new Metrics(dw, dh, sw, sh);
+        return currentMetrics;
+    }
+
+    private void setMirroringMode(PermataApplication app, int mode) {
+        app.setMirroringMode(mode);
+        var intent = new Intent(app, MainActivity.class);
+        intent.setAction(MainActivityDelegate.INTENT_ACTION_FINISH);
+        intent.setFlags(FLAG_ACTIVITY_NEW_TASK | FLAG_ACTIVITY_CLEAR_TOP);
+        app.startActivity(intent);
+
+        intent = new Intent(app, LauncherActivity.class);
+        intent.setFlags(FLAG_ACTIVITY_NEW_TASK | FLAG_ACTIVITY_CLEAR_TASK);
+        if (mode == 0) intent.setAction(MainActivityDelegate.INTENT_ACTION_FINISH);
+        app.startActivity(intent);
+    }
+
+    private static final class Session extends MediaProjection.Callback {
+        final MediaProjection mp;
+        final VirtualDisplay vd;
+
+        Session(MediaProjection mp, MirrorDisplay md) {
+            this.mp = mp;
+            var sc = md.sc;
+            var app = PermataApplication.get();
+            var name = app.getString(R.string.mirror_service_name);
+            mp.registerCallback(this, app.getHandler());
+            vd = mp.createVirtualDisplay(name, sc.getWidth(), sc.getHeight(), sc.getDpi(),
+                    DisplayManager.VIRTUAL_DISPLAY_FLAG_OWN_CONTENT_ONLY, sc.getSurface(), null, null);
+            if (vd == null) throw new RuntimeException("Failed to create VirtualDisplay");
+            Log.i("VirtualDisplay created");
+        }
+
+        @Override
+        public void onStop() {
+            close();
+            MirrorDisplay md = MirrorDisplay.instance;
+            if (md == null) return;
+            Log.i("Media projection stopped");
+            md.cleanUp();
+        }
+
+        void close() {
+            mp.unregisterCallback(this);
+            vd.release();
+            mp.stop();
+        }
+    }
+
+    private static final class Metrics {
+        final float x;
+        final float y;
+        final float scale;
+        final float sw;
+        final float sh;
+        final float dw;
+        final float dh;
+
+        Metrics(float dw, float dh, float sw, float sh) {
+            this.sw = sw;
+            this.sh = sh;
+            this.dw = dw;
+            this.dh = dh;
+
+            var scale = dw / sw;
+            var scaleH = dh / scale;
+            if (scaleH <= sh) {
+                x = 0f;
+                y = (sh - scaleH) / 2f;
+                assert y >= 0f;
+            } else {
+                scale = dh / sh;
+                y = 0f;
+                x = (sw - (dw / scale)) / 2;
+                assert x >= 0f;
+            }
+            this.scale = scale;
+        }
+    }
+
+    private final class Overlay extends FrameLayout {
+
+        public Overlay(@NonNull Context context) {
+            super(context);
+        }
+
+        @SuppressLint("ClickableViewAccessibility")
+        @Override
+        public boolean onTouchEvent(MotionEvent event) {
+            if (Math.abs(uptimeMillis() - lastInjectedTouchTime) < 50) return false;
+            if (event.getPointerCount() == 0 || event.getToolType(0) != MotionEvent.TOOL_TYPE_FINGER) return false;
+
+            int action = event.getActionMasked();
+            if (action == MotionEvent.ACTION_OUTSIDE || action == MotionEvent.ACTION_DOWN || action == MotionEvent.ACTION_POINTER_DOWN) {
+                Log.d("True physical touch detected. Disengaging rotation anchor.");
+                
+                resetIdleTimer();
+                var ctx = getContext();
+                restoreBrightness(ctx);
+                restoreAccelRotation(ctx);
+                updateOverlayOrientation(false);
+            }
+            return false;
+        }
+    }
 }
