@@ -50,6 +50,9 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
 	private final Path path = new Path();
 	private GestureDescription.Builder gb;
 	private Pointer[] pointers = new Pointer[]{new Pointer()};
+	
+	// SURGICAL FIX: Prevents OS Gesture Queue Flooding & Digitizer Lockup
+	private volatile boolean isDispatching = false;
 
 	private final BroadcastReceiver commandReceiver = new BroadcastReceiver() {
 		@Override
@@ -62,7 +65,6 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
 		}
 	};
 
-	// Expose availability flag to force EventDispatcher OS-level overrides
 	public static boolean isAvailable() {
 		return instance != null;
 	}
@@ -100,7 +102,7 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
 		ds.path.reset();
 		ds.path.moveTo(x, y);
 		var gb = new GestureDescription.Builder().addStroke(new StrokeDescription(ds.path, 0L, 50L));
-		return ds.dispatchGesture(gb.build(), null, null);
+		return ds.dispatchSingleGesture(gb.build());
 	}
 
 	static boolean dispatchScale(float x, float y, float diff) {
@@ -134,9 +136,19 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
 	static boolean dispatchMotionEvent(MotionEvent e) {
 		var ds = instance;
 		if ((VERSION.SDK_INT < VERSION_CODES.O) || (ds == null)) return false;
+		
+		var action = e.getActionMasked();
+		
+		// NUCLEAR FLOOD PROTECTION: 
+		// If the Android OS is currently executing a gesture, silently drop intermediate ACTION_MOVE 
+		// frames from the car screen to prevent the OS InputManager from queueing thousands 
+		// of gestures and completely freezing the physical phone digitizer.
+		if (ds.isDispatching && action == ACTION_MOVE) {
+			return true;
+		}
+
 		var pointers = ds.pointers;
 		var cnt = e.getPointerCount();
-		var action = e.getActionMasked();
 		boolean completePrev;
 
 		if ((cnt > 1) && (action == ACTION_MOVE)) {
@@ -183,6 +195,11 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
 	static boolean dispatchMotionEvent(long downTime, long eventTime, int action, float x, float y) {
 		var ds = instance;
 		if ((VERSION.SDK_INT < VERSION_CODES.O) || (ds == null)) return false;
+		
+		if (ds.isDispatching && action == ACTION_MOVE) {
+			return true;
+		}
+		
 		if ((x < 0f) || (y < 0f)) return true;
 		var p = instance.pointers[0];
 		return ds.buildGesture(p, downTime, eventTime, action, x, y, false) && ds.dispatch();
@@ -198,7 +215,6 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
 				p.time = eventTime;
 				path.reset();
 				path.moveTo(x, y);
-				// SURGICAL FIX: Reduced initial tap duration to 10ms to prevent gesture queue bloating and drag lag
 				p.sd = new StrokeDescription(path, 0L, 10L, true);
 				addStroke(p.sd);
 			}
@@ -216,7 +232,6 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
 				path.reset();
 				path.moveTo(p.x, p.y);
 				path.lineTo(x, y);
-				// SURGICAL FIX: Shrunk minimum duration constraint to 10ms to allow flawless 60fps PiP dragging 
 				var dur = Math.max(10L, Math.min(eventTime - p.time, getMaxGestureDuration()));
 				p.x = x;
 				p.y = y;
@@ -248,8 +263,30 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
 
 	@RequiresApi(api = VERSION_CODES.N)
 	private boolean dispatch() {
+		if (gb == null) return false;
 		var g = gb.build();
 		gb = null;
+		
+		isDispatching = true;
+		boolean result = dispatchGesture(g, new GestureResultCallback() {
+			@Override
+			public void onCompleted(GestureDescription gestureDescription) {
+				isDispatching = false;
+			}
+			@Override
+			public void onCancelled(GestureDescription gestureDescription) {
+				isDispatching = false;
+			}
+		}, null);
+		
+		if (!result) {
+			isDispatching = false;
+		}
+		return result;
+	}
+	
+	@RequiresApi(api = VERSION_CODES.N)
+	private boolean dispatchSingleGesture(GestureDescription g) {
 		return dispatchGesture(g, null, null);
 	}
 
