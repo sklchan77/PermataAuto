@@ -125,30 +125,20 @@ public class MirrorActivity extends CarActivity implements SurfaceHolder.Callbac
 		}, 5000);
 	}
 
-    // SURGICAL FIX: Non-static actions so they can call finish() on the CarActivity
-	void onHomeButtonClick() {
-		var ctx = PermataApplication.get();
-		if (ctx != null) {
-			Intent intent = new Intent(ctx, LauncherActivity.class);
-			intent.setFlags(FLAG_ACTIVITY_NEW_TASK | FLAG_ACTIVITY_CLEAR_TOP | FLAG_ACTIVITY_SINGLE_TOP);
-			ctx.startActivity(intent);
-		}
-		disableAccelRotation();
-        finish(); // Closes the split-screen window
-	}
-
-	void onBackButtonClick() {
-		var d = EventDispatcher.get();
-		if (d != null) {
-			d.directBack();
-		}
+	// RESTORED FIX: Must remain static so MirrorServiceFS can bind to them
+	static void onHomeButtonClick() {
+		AccessibilityEventDispatcherService.dispatchHome();
 		disableAccelRotation();
 	}
 
-	void onExitButtonClick() {
+	static void onBackButtonClick() {
+		AccessibilityEventDispatcherService.dispatchBack();
+		disableAccelRotation();
+	}
+
+	static void onExitButtonClick() {
 		Log.i("User triggered manual shutdown from Split-Screen toolbar.");
-		MirrorDisplay.close();
-        finish(); // Destroys the zombie window and returns to native Car Dashboard
+		MirrorDisplay.close(); // This internally clears the zombie window via setMirroringMode(0)
 	}
 
 	private final class ToolBar extends LinearLayout {
@@ -224,16 +214,16 @@ public class MirrorActivity extends CarActivity implements SurfaceHolder.Callbac
 					downTime = uptimeMillis();
 					downX = e.getRawX();
 					downY = e.getRawY();
-					moving = false; // Reset drag lock
+					moving = false; 
 					
-                    // SURGICAL FIX: Uses direct local pixel boundaries instead of skewed raw math
+					// Checks exact pixel bounds to bypass Android Auto's coordinate skew
 					int btnIndex = getButtonAt(e.getX(), e.getY());
 					if (btnIndex >= 0 && btnIndex < getChildCount()) {
 						downButton = getChildAt(btnIndex);
 						downButton.startAnimation(animation);
 					} else {
-                        downButton = null;
-                    }
+						downButton = null;
+					}
 					return true;
 				}
 				case MotionEvent.ACTION_MOVE -> {
@@ -244,61 +234,60 @@ public class MirrorActivity extends CarActivity implements SurfaceHolder.Callbac
 						moving = true;
 						if (downButton != null) {
 							downButton.clearAnimation();
-                            downButton = null;
+							downButton = null;
 						}
 					}
 					
 					if (moving) {
-					    int w = getWidth();
-					    int h = getHeight();
-					    int pw = ((View)getParent()).getWidth();
-					    int ph = ((View)getParent()).getHeight();
-					    
-					    var newX = Math.max(pad, Math.min(pw - pad - w, e.getRawX() - w / 2f));
-					    var newY = Math.max(pad, Math.min(ph - pad - h, e.getRawY() - h / 2f));
-					    animate().x(newX).y(newY).setDuration(0).start();
+						int w = getWidth();
+						int h = getHeight();
+						int pw = ((View)getParent()).getWidth();
+						int ph = ((View)getParent()).getHeight();
+						
+						var newX = Math.max(pad, Math.min(pw - pad - w, e.getRawX() - w / 2f));
+						var newY = Math.max(pad, Math.min(ph - pad - h, e.getRawY() - h / 2f));
+						animate().x(newX).y(newY).setDuration(0).start();
 					}
 					return true;
 				}
 				case MotionEvent.ACTION_UP -> {
 					if (moving) {
 						moving = false;
-                        return true;
+						return true;
 					}
-                    
-                    if (downButton != null) {
-                        downButton.clearAnimation();
-                        if ((uptimeMillis() - downTime) < 500) {
-                            handleClick(downButton.getId());
-                        }
-                    }
+					
+					if (downButton != null) {
+						downButton.clearAnimation();
+						if ((uptimeMillis() - downTime) < 500) {
+							handleClick(downButton.getId());
+						}
+					}
 					return true;
 				}
-                case MotionEvent.ACTION_CANCEL -> {
-                    moving = false;
-                    if (downButton != null) {
-                        downButton.clearAnimation();
-                        downButton = null;
-                    }
-                    return true;
-                }
+				case MotionEvent.ACTION_CANCEL -> {
+					moving = false;
+					if (downButton != null) {
+						downButton.clearAnimation();
+						downButton = null;
+					}
+					return true;
+				}
 				default -> {
 					return super.onTouchEvent(e);
 				}
 			}
 		}
 
-        // Guarantees 100% click accuracy by checking physical element boundaries
-        private int getButtonAt(float localX, float localY) {
-            for (int i = 0; i < getChildCount(); i++) {
-                View child = getChildAt(i);
-                if (localX >= child.getLeft() && localX <= child.getRight() &&
-                    localY >= child.getTop() && localY <= child.getBottom()) {
-                    return i;
-                }
-            }
-            return -1;
-        }
+		private int getButtonAt(float localX, float localY) {
+			for (int i = 0; i < getChildCount(); i++) {
+				View child = getChildAt(i);
+				if (localX >= child.getLeft() && localX <= child.getRight() &&
+					localY >= child.getTop() && localY <= child.getBottom()) {
+					return i;
+				}
+			}
+			return -1;
+		}
 
 		private void handleClick(int viewId) {
 			if (viewId == R.drawable.home) onHomeButtonClick();
