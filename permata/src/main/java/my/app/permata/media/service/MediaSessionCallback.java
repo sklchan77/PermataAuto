@@ -466,7 +466,6 @@ public class MediaSessionCallback extends MediaSessionCompat.Callback
 
 		switch (state.getState()) {
 			case STATE_NONE, STATE_STOPPED, STATE_ERROR -> {
-				// SURGICAL FIX: Background intercepter to appease Dead Link Scrubbing
 				PlaybackStateCompat connectingState = new PlaybackStateCompat.Builder().setActions(SUPPORTED_ACTIONS)
 						.setState(STATE_CONNECTING, 0, 1.0f).build();
 				setPlaybackState(connectingState);
@@ -524,8 +523,6 @@ public class MediaSessionCallback extends MediaSessionCompat.Callback
 	}
 
 	private FutureSupplier<Void> playFromMediaId(String mediaId, Bundle extras) {
-		// SURGICAL FIX: Android Auto "Dead Link Scrubbing" bypass
-		// Instantly transition to CONNECTING so AA doesn't flag the link as broken when clicked from background
 		PlaybackStateCompat state = new PlaybackStateCompat.Builder().setActions(SUPPORTED_ACTIONS)
 				.setState(STATE_CONNECTING, 0, 1.0f).build();
 		setPlaybackState(state);
@@ -1316,6 +1313,11 @@ public class MediaSessionCallback extends MediaSessionCompat.Callback
 
 	private void setPlaybackState(PlaybackStateCompat state) {
 		currentState = state;
+		// A stop or engine switch deactivates the session. Publish resumed playback
+		// through an active session so system media controls can discover it again.
+		if ((state.getState() == STATE_PLAYING) && !session.isActive()) {
+			session.setActive(true);
+		}
 		session.setPlaybackState(state);
 		service.updateNotification(state.getState(), getCurrentItem());
 		fireBroadcastEvent(l -> l.onPlaybackStateChanged(this, state));
@@ -1664,7 +1666,7 @@ public class MediaSessionCallback extends MediaSessionCompat.Callback
 				Context ctx = PermataApplication.get();
 				Intent intent = new Intent();
 				intent.setClassName(ctx, "my.app.permata.auto.LauncherActivity");
-				intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | FLAG_ACTIVITY_CLEAR_TOP | FLAG_ACTIVITY_SINGLE_TOP);
+				intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
 				ctx.startActivity(intent);
 			} catch (Exception e) {
 				Log.e(e, "Failed to wake Car UI for background play request.");
