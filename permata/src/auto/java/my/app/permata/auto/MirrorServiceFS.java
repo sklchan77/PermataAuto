@@ -227,9 +227,8 @@ public class MirrorServiceFS extends CarAppService {
 							new CarIcon.Builder(createWithResource(getCarContext(), R.drawable.home)).build())
 					.setOnClickListener(MirrorActivity::onHomeButtonClick).build();
 					
-			// SURGICAL ADDITION: Recent Apps Button (matching white color tint)
 			var recentButton = new Action.Builder().setIcon(
-							new CarIcon.Builder(createWithResource(getCarContext(), R.drawable.menu)).setTint(androidx.car.app.model.CarColor.DEFAULT).build())
+							new CarIcon.Builder(createWithResource(getCarContext(), R.drawable.recent)).setTint(androidx.car.app.model.CarColor.DEFAULT).build())
 					.setOnClickListener(MirrorActivity::onRecentButtonClick).build();
 					
 			var backButton = new Action.Builder().setIcon(
@@ -250,7 +249,7 @@ public class MirrorServiceFS extends CarAppService {
 					.setMapActionStrip(new ActionStrip.Builder().addAction(Action.PAN).build())
 					.setActionStrip(new ActionStrip.Builder()
 							.addAction(homeButton)
-							.addAction(recentButton) // SURGICAL ADDITION: Inserted between Home and Back
+							.addAction(recentButton) 
 							.addAction(backButton)
 							.addAction(exitButton)
 							.build())
