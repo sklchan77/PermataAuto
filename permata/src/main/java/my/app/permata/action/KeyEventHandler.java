@@ -43,7 +43,6 @@ public class KeyEventHandler {
     private static volatile long lastGlobalActionTime = 0L;
     
     private static final AtomicLong swipeSessionId = new AtomicLong(0);
-    // GUARD: Prevents overlapping hardware touch dispatches during the 170ms swipe window
     private static final AtomicBoolean isHardwareSwiping = new AtomicBoolean(false);
     
     private static final Map<Class<?>, Method> webViewMethodCache = new ConcurrentHashMap<>();
@@ -97,7 +96,9 @@ public class KeyEventHandler {
             "      return 'DOUYIN: Standard media UI wipe executed.'; " +
             "    }}," +
             "    {name:\"tiktok\",match:/tiktok/,execute:function(){" +
-            "      var ttCss = ' [data-e2e=\"video-author-avatar\"], [data-e2e=\"nav-login\"], [class*=\"DivHeaderContainer\"], [class*=\"DivSideNavContainer\"], [class*=\"DivBottomContainer\"] { display: none !important; } [class*=\"DivMediaCardOverlay\"], [class*=\"DivOverlayBottomContent\"], [class*=\"DivCreatorInfoContainer\"], [class*=\"BasePlayerContainer\"]::after { pointer-events: none !important; } '; " +
+            "      var ttCss = ' [data-e2e=\"video-author-avatar\"], [data-e2e=\"nav-login\"], [class*=\"DivHeaderContainer\"], [class*=\"DivSideNavContainer\"], [class*=\"DivBottomContainer\"], [id*=\"login\"], [class*=\"login\"], [class*=\"modal\"], [class*=\"mask\"], [class*=\"overlay\"], [class*=\"bottom-bar\"], [class*=\"app-banner\"], [id*=\"dialog\"] { display: none !important; opacity: 0 !important; pointer-events: none !important; } ' + " +
+            "                  ' [class*=\"DivMediaCardOverlay\"], [class*=\"DivOverlayBottomContent\"], [class*=\"DivCreatorInfoContainer\"], [class*=\"BasePlayerContainer\"]::after { pointer-events: none !important; } ' + " +
+            "                  ' body, html { touch-action: pan-y !important; overflow: auto !important; } '; " +
             "      return 'TIKTOK: ' + injectGlobalWipe() + ' | ' + injectSpecificWipe(ttCss, 'permata-tt-css'); " +
             "    }}," +
             "    {name:\"instagram\",match:/instagram/,execute:function(){" +
@@ -260,7 +261,11 @@ public class KeyEventHandler {
                                     final String hostTag = "[Host: " + host + "] ";
                                     Log.i("[DETECTION] " + hostTag + "Resolved. isMediaHost: " + isMediaHost + " | isSnapFeedHost: " + isSnapFeedHost + " | isTikTok: " + isTikTok + " | isDouyin: " + isDouyin);
 
-                                    View touchTargetView = findTopmostTouchTarget(finalTargetActivity, resolvedWebView);
+                                    // SURGICAL FIX: Perfectly Isolated Target Bypass for TikTok
+                                    // ONLY TikTok bypasses the topmost scanner to defeat its transparent shield overlay.
+                                    // Douyin, Facebook, Instagram, and all other hosts will continue using the normal findTopmostTouchTarget method.
+                                    View touchTargetView = isTikTok ? resolvedWebView : findTopmostTouchTarget(finalTargetActivity, resolvedWebView);
+                                    
                                     smartScrollWebView(resolvedWebView, touchTargetView, !isNext, hostTag, isMediaHost, isDouyin);
                                 } else {
                                     Log.i("[DETECTION] WebBrowser is hidden or out of focus. Allowing default media propagation.");
@@ -427,8 +432,8 @@ public class KeyEventHandler {
             return;
         }
 
-        // Use a guaranteed Main Looper Handler instead of View.postDelayed to prevent deadlocks
         final android.os.Handler guaranteedHandler = new android.os.Handler(android.os.Looper.getMainLooper());
+        
         final float actionX = touchTarget.getWidth() * 0.50f; 
         final float centerY = touchTarget.getHeight() / 2f;
         float span = touchTarget.getHeight() * 0.60f; 
@@ -461,7 +466,6 @@ public class KeyEventHandler {
                 }, (long) (swipeDuration * linearT));
             }
 
-            // GUARANTEED UNLOCK: Runs independent of View attachment state
             guaranteedHandler.postDelayed(() -> {
                 try {
                     if (touchTarget.isAttachedToWindow() && touchTarget.getVisibility() == View.VISIBLE) {
