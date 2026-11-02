@@ -31,9 +31,6 @@ abstract class EventDispatcher {
 	}
 
 	static EventDispatcher get() {
-		// SURGICAL FIX: Dynamic Routing
-		// Uses instant, zero-lag local injection for the base Permata UI (floating buttons).
-		// Automatically switches to OS-level Accessibility injection when PiP or other apps open.
 		int windowCount = AccessibilityEventDispatcherService.getWindowCount();
 		if (windowCount > 1) {
 			return AccessibilityDispatcher.get();
@@ -48,6 +45,11 @@ abstract class EventDispatcher {
 	public abstract boolean directBack();
 
 	public abstract boolean home();
+	
+	// SURGICAL ADDITION: Non-Root Recent Apps Methods
+	public abstract boolean recent();
+	
+	public abstract boolean directRecent();
 
 	public abstract boolean tap(float x, float y);
 
@@ -87,6 +89,16 @@ abstract class EventDispatcher {
 		@Override
 		public boolean home() {
 			return AccessibilityDispatcher.get().home();
+		}
+
+		@Override
+		public boolean recent() {
+			return AccessibilityDispatcher.get().recent();
+		}
+
+		@Override
+		public boolean directRecent() {
+			return AccessibilityDispatcher.get().directRecent();
 		}
 
 		@Override
@@ -142,6 +154,16 @@ abstract class EventDispatcher {
 		@Override
 		public boolean home() {
 			return AccessibilityDispatcher.get().home();
+		}
+		
+		@Override
+		public boolean recent() {
+			return AccessibilityDispatcher.get().recent();
+		}
+
+		@Override
+		public boolean directRecent() {
+			return AccessibilityDispatcher.get().directRecent();
 		}
 
 		@Override
@@ -217,7 +239,6 @@ abstract class EventDispatcher {
 		public boolean directBack() {
 			if (AccessibilityEventDispatcherService.dispatchBack()) return true;
 			
-			// IPC Bypass: Deliver targeted explicit broadcast if in the isolated Car Process
 			var ctx = PermataApplication.get();
 			if (ctx != null) {
 				Intent intent = new Intent("my.app.permata.ACTION_GLOBAL_BACK");
@@ -234,7 +255,6 @@ abstract class EventDispatcher {
 		public boolean home() {
 			if (AccessibilityEventDispatcherService.dispatchHome()) return true;
 			
-			// IPC Bypass for Home Button
 			var ctx = PermataApplication.get();
 			if (ctx != null) {
 				Intent intent = new Intent("my.app.permata.ACTION_GLOBAL_HOME");
@@ -245,6 +265,28 @@ abstract class EventDispatcher {
 			
 			var d = SuDispatcher.get();
 			return (d != null) && d.home();
+		}
+		
+		@Override
+		public boolean recent() {
+			return directRecent();
+		}
+
+		@Override
+		public boolean directRecent() {
+			if (AccessibilityEventDispatcherService.dispatchRecent()) return true;
+			
+			// IPC Bypass for non-root Recents
+			var ctx = PermataApplication.get();
+			if (ctx != null) {
+				Intent intent = new Intent("my.app.permata.ACTION_GLOBAL_RECENT");
+				intent.setPackage(ctx.getPackageName()); 
+				ctx.sendBroadcast(intent);
+				return true;
+			}
+			
+			var d = SuDispatcher.get();
+			return (d != null) && d.recent();
 		}
 
 		@Override
@@ -299,6 +341,16 @@ abstract class EventDispatcher {
 		@Override
 		public boolean home() {
 			return keyEvent(KeyEvent.KEYCODE_HOME);
+		}
+		
+		@Override
+		public boolean recent() {
+			return keyEvent(KeyEvent.KEYCODE_APP_SWITCH); 
+		}
+
+		@Override
+		public boolean directRecent() {
+			return keyEvent(KeyEvent.KEYCODE_APP_SWITCH);
 		}
 
 		private boolean keyEvent(int code) {
