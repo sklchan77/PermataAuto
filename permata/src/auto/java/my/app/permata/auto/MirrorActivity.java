@@ -135,7 +135,6 @@ public class MirrorActivity extends CarActivity implements SurfaceHolder.Callbac
 		disableAccelRotation();
 	}
 	
-	// SURGICAL ADDITION: Recent Apps Launcher
 	static void onRecentButtonClick() {
 		var d = EventDispatcher.get();
 		if (d != null) {
@@ -145,12 +144,12 @@ public class MirrorActivity extends CarActivity implements SurfaceHolder.Callbac
 	}
 
 	static void onBackButtonClick() {
-		// SURGICAL FIX: The Non-Root Home-Screen Back Blocker
-		// Checks active app footprint in memory natively. No permissions required.
-		var activeApp = LauncherActivity.getActiveInstance();
-		if (activeApp != null && activeApp.hasWindowFocus()) {
-			Log.i("Back button blocked. Already at mirroring home screen.");
-			return;
+		if (PermataApplication.get().isConnectedToAuto()) {
+			var activeApp = LauncherActivity.getActiveInstance();
+			if (activeApp != null && activeApp.hasWindowFocus()) {
+				Log.i("Back button blocked. Already at mirroring home screen.");
+				return;
+			}
 		}
 		
 		var d = EventDispatcher.get();
@@ -205,14 +204,12 @@ public class MirrorActivity extends CarActivity implements SurfaceHolder.Callbac
 
 			var iconPad = iconSize / 4;
 			
-			// SURGICAL FIX: Placed menu icon correctly between home and back
-			var icons = new int[]{R.drawable.home, R.drawable.menu, R.drawable.back, R.drawable.shutdown};
+			var icons = new int[]{R.drawable.home, R.drawable.recent, R.drawable.back, R.drawable.shutdown};
 			for (int i = 0; i < icons.length; i++) {
 				var v = new AppCompatImageView(ctx);
 				v.setId(icons[i]);
 				v.setImageResource(icons[i]);
 				
-				// SURGICAL FIX: Apply white filter to both the new menu icon (1) and shutdown (3)
 				if (i == 1 || i == 3) v.setColorFilter(Color.WHITE); 
 				
 				v.setBackgroundResource(R.drawable.oval_bg);
@@ -331,7 +328,7 @@ public class MirrorActivity extends CarActivity implements SurfaceHolder.Callbac
 
 		private void handleClick(int viewId) {
 			if (viewId == R.drawable.home) onHomeButtonClick();
-			else if (viewId == R.drawable.menu) onRecentButtonClick(); // SURGICAL ADDITION
+			else if (viewId == R.drawable.recent) onRecentButtonClick(); 
 			else if (viewId == R.drawable.back) onBackButtonClick();
 			else if (viewId == R.drawable.shutdown) onExitButtonClick();
 		}
