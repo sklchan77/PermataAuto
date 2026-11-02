@@ -100,7 +100,6 @@ public class MirrorDisplay {
 	private static final ExecutorService bgExecutor = Executors.newSingleThreadExecutor();
 	private static final ExecutorService touchExecutor = Executors.newSingleThreadExecutor();
 	
-	// SURGICAL FIX: Unified lifecycle monitor protects against multi-thread race conditions & deadlocks
 	private static final Object lifecycleLock = new Object(); 
 	private static final Object settingsLock = new Object();
 	
@@ -115,7 +114,7 @@ public class MirrorDisplay {
 	private final Object touchLock = new Object(); 
 	
 	private int refCounter = 0;
-	private boolean isDestroyed = false; // SURGICAL FIX: Zombie prevention flag
+	private boolean isDestroyed = false; 
 	
 	private FutureSupplier<Session> session = Completed.cancelled();
 	private SurfaceContainer sc;
@@ -431,7 +430,6 @@ public class MirrorDisplay {
 	}
 
 	private static void disableAccelRotation(Context ctx) {
-		// SURGICAL FIX: Fast-fail to prevent execution if teardown already began
 		synchronized (lifecycleLock) {
 			if (instance == null || instance.sc == null || instance.isDestroyed) return; 
 		}
@@ -597,7 +595,7 @@ public class MirrorDisplay {
 			//noinspection deprecation
 			wakeLock = pmg.newWakeLock(PowerManager.SCREEN_DIM_WAKE_LOCK | ACQUIRE_CAUSES_WAKEUP,
 					"Permata:ScreenLock");
-			if (wakeLock != null) wakeLock.acquire(24 * 3600000); // Max safe acquisition
+			if (wakeLock != null) wakeLock.acquire(24 * 3600000); 
 		}
 
 		if (SDK_INT >= VERSION_CODES.O) {
@@ -644,7 +642,6 @@ public class MirrorDisplay {
 		setMirroringMode(app, mode);
 	}
 
-	// SURGICAL FIX: Strict internal teardown logic. Must be called from inside lifecycleLock.
 	private void cleanUpLocked() {
 		if (isDestroyed) return;
 		isDestroyed = true;
@@ -733,8 +730,26 @@ public class MirrorDisplay {
 
 	private void createSession(Promise<Session> p) {
 		if (session != p) return;
-		if (sc == null) noSession();
+		if (sc == null) {
+			noSession();
+			return;
+		}
+		
+		// SURGICAL FIX: The Session Guillotine. 
+		// Viciously hunt down and destroy any orphaned VirtualDisplay or MediaProjection 
+		// before allowing the OS to allocate a new one. This prevents the black-screen deadlock.
+		if (session.isDoneNotFailed()) {
+			try {
+				Session oldSession = session.getOrThrow();
+				if (oldSession != null) oldSession.close();
+			} catch (Exception e) {
+				Log.e(e, "Failed to guillotine previous session.");
+			}
+			session = Completed.cancelled();
+		}
+		
 		if (p.isDone()) return; 
+		
 		ProjectionService.start().onCompletion((mp, err) -> {
 			synchronized (lifecycleLock) {
 				if (isDestroyed || session != p) {
@@ -744,7 +759,10 @@ public class MirrorDisplay {
 					return;
 				}
 				
-				if (sc == null) noSession();
+				if (sc == null) {
+					noSession();
+					return;
+				}
 				if (p.isDone()) return;
 				
 				if (err != null) {
@@ -760,9 +778,9 @@ public class MirrorDisplay {
 					retryCreateSession(p);
 				} else {
 					try {
-						p.complete(new Session(mp, this));
+						p.complete(new Session(mp, MirrorDisplay.this));
 					} catch (Exception ex) {
-						Log.e(ex, "Failed to create media projection");
+						Log.e(ex, "Failed to create VirtualDisplay");
 						retryCreateSession(p);
 					}
 				}
