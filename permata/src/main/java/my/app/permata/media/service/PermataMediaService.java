@@ -149,7 +149,8 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 		);
 		session.setCallback(callback);
 		
-		session.setActive(true);
+		// SURGICAL FIX: Stealth Startup - Keeps AA Media Tile hidden until actual media begins
+		session.setActive(false);
 
 		Intent mediaButtonIntent = new Intent(Intent.ACTION_MEDIA_BUTTON, null, ctx, MediaButtonReceiver.class);
 		session.setMediaButtonReceiver(PendingIntent.getBroadcast(ctx, 0, mediaButtonIntent, FLAG_IMMUTABLE));
