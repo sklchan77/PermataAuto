@@ -123,7 +123,6 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 
 	private AudioManager.OnAudioFocusChangeListener focusChangeListener;
 	private long lastWebMediaPlayingTime = 0;
-	private int originalMediaVolume = -1;
 
 	public MediaLib getLib() {
 		return lib;
@@ -168,16 +167,6 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 		isTeardownActive = true;
 		stopSilentAudioAnchor();
 		releaseAudioFocus();
-
-		if (originalMediaVolume != -1) {
-			try {
-				AudioManager am = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
-				if (am != null) {
-					am.setStreamVolume(AudioManager.STREAM_MUSIC, originalMediaVolume, 0);
-				}
-			} catch (Exception ignored) {}
-			originalMediaVolume = -1;
-		}
 
 		if (session != null) {
 			session.setPlaybackState(new PlaybackStateCompat.Builder().setState(PlaybackStateCompat.STATE_NONE, 0, 0.0f).build());
@@ -261,19 +250,6 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 		}
 		lastWebMediaPlayingTime = now;
 
-		if (PermataApplication.get().isConnectedToAuto()) {
-			try {
-				AudioManager am = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
-				if (am != null) {
-					if (originalMediaVolume == -1) {
-						originalMediaVolume = am.getStreamVolume(AudioManager.STREAM_MUSIC);
-						int maxVol = am.getStreamMaxVolume(AudioManager.STREAM_MUSIC);
-						am.setStreamVolume(AudioManager.STREAM_MUSIC, maxVol, 0);
-					}
-				}
-			} catch (Exception ignored) {}
-		}
-
 		hijackCarAudioAndSteering();
 	}
 
@@ -307,18 +283,7 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 								if (focusChange == AudioManager.AUDIOFOCUS_LOSS) {
 									Log.w("PermataMediaService: Car Radio stole focus.");
 								} else if (focusChange == AudioManager.AUDIOFOCUS_GAIN) {
-									Log.i("PermataMediaService: Audio focus returned. Enforcing Steering Control anchor and maximizing volume.");
-									
-									// SURGICAL FIX: Cures "Duck Fatigue"
-									// Explicitly forces the OS volume back to 100% hardware maximum the instant the interrupting app finishes.
-									try {
-										AudioManager am = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
-										if (am != null) {
-											int maxVol = am.getStreamMaxVolume(AudioManager.STREAM_MUSIC);
-											am.setStreamVolume(AudioManager.STREAM_MUSIC, maxVol, 0);
-										}
-									} catch (Exception ignored) {}
-									
+									Log.i("PermataMediaService: Audio focus returned. Enforcing Steering Control anchor.");
 									if (session != null && !isTeardownActive) {
 										session.setActive(true);
 										updatePlaybackState(STATE_PLAYING);
@@ -327,6 +292,8 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 							};
 						}
 						
+						// SURGICAL FIX: Restored MAY_DUCK purely to stop the infinite pause loop, 
+						// without any artificial volume modification enforcers.
 						audioManager.requestAudioFocus(
 								focusChangeListener,
 								AudioManager.STREAM_MUSIC,
