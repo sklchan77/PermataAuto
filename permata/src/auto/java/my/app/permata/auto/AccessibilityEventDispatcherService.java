@@ -77,7 +77,6 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
 			} else if ("my.app.permata.ACTION_GLOBAL_HOME".equals(intent.getAction())) {
 				performGlobalAction(GLOBAL_ACTION_HOME);
 			} else if ("my.app.permata.ACTION_GLOBAL_RECENT".equals(intent.getAction())) { 
-				// SURGICAL ADDITION: Non-Root Recent Apps action
 				performGlobalAction(GLOBAL_ACTION_RECENTS);
 			}
 		}
@@ -112,7 +111,6 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
 		return (ds != null) && ds.performGlobalAction(GLOBAL_ACTION_HOME);
 	}
 	
-	// SURGICAL ADDITION: Trigger OS Global Recents menu natively
 	static boolean dispatchRecent() {
 		var ds = instance;
 		return (ds != null) && ds.performGlobalAction(GLOBAL_ACTION_RECENTS);
@@ -328,7 +326,7 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
 		IntentFilter filter = new IntentFilter();
 		filter.addAction("my.app.permata.ACTION_GLOBAL_BACK");
 		filter.addAction("my.app.permata.ACTION_GLOBAL_HOME");
-		filter.addAction("my.app.permata.ACTION_GLOBAL_RECENT"); // SURGICAL ADDITION
+		filter.addAction("my.app.permata.ACTION_GLOBAL_RECENT"); 
 		if (VERSION.SDK_INT >= VERSION_CODES.TIRAMISU) {
 			registerReceiver(commandReceiver, filter, Context.RECEIVER_NOT_EXPORTED);
 		} else {
