@@ -125,21 +125,30 @@ public class MirrorActivity extends CarActivity implements SurfaceHolder.Callbac
 		}, 5000);
 	}
 
-	static void onHomeButtonClick() {
-		// SURGICAL FIX: Force route to OS-Level Accessibility to guarantee execution across all modes
-		AccessibilityEventDispatcherService.dispatchHome();
+    // SURGICAL FIX: Non-static actions so they can call finish() on the CarActivity
+	void onHomeButtonClick() {
+		var ctx = PermataApplication.get();
+		if (ctx != null) {
+			Intent intent = new Intent(ctx, LauncherActivity.class);
+			intent.setFlags(FLAG_ACTIVITY_NEW_TASK | FLAG_ACTIVITY_CLEAR_TOP | FLAG_ACTIVITY_SINGLE_TOP);
+			ctx.startActivity(intent);
+		}
+		disableAccelRotation();
+        finish(); // Closes the split-screen window
+	}
+
+	void onBackButtonClick() {
+		var d = EventDispatcher.get();
+		if (d != null) {
+			d.directBack();
+		}
 		disableAccelRotation();
 	}
 
-	static void onBackButtonClick() {
-		// SURGICAL FIX: Force route to OS-Level Accessibility to guarantee execution across all modes
-		AccessibilityEventDispatcherService.dispatchBack();
-		disableAccelRotation();
-	}
-
-	static void onExitButtonClick() {
+	void onExitButtonClick() {
 		Log.i("User triggered manual shutdown from Split-Screen toolbar.");
 		MirrorDisplay.close();
+        finish(); // Destroys the zombie window and returns to native Car Dashboard
 	}
 
 	private final class ToolBar extends LinearLayout {
@@ -164,8 +173,7 @@ public class MirrorActivity extends CarActivity implements SurfaceHolder.Callbac
 			moveTolerance = toPx(ctx, 10);
 			animation = AnimationUtils.loadAnimation(ctx, my.app.utils.R.anim.button_press);
 			
-			// SURGICAL FIX: Restored static rigid layout rendering. 
-			// 48dp ensures buttons are visually identical and perfectly touchable on Car Screens.
+			// Rigid 48dp sizing guarantees uniform button size regardless of projection DPI
 			iconSize = (int) toPx(ctx, 48); 
 			
 			setOrientation(HORIZONTAL);
@@ -190,11 +198,13 @@ public class MirrorActivity extends CarActivity implements SurfaceHolder.Callbac
 				addView(v);
 			}
 			
-			// Dynamically stick to the right edge during drawing phase without crashing touch bounds
+			// Auto-position to the right edge during layout inflation
 			addOnLayoutChangeListener((v, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) -> {
-				int pw = ((View)getParent()).getWidth();
-				if (pw > 0) setX(pw - getWidth() - pad);
-				setY(pad);
+				if (!moving) { 
+					int pw = ((View)getParent()).getWidth();
+					if (pw > 0) setX(pw - getWidth() - pad);
+					setY(pad);
+				}
 			});
 
 			delayedHide.schedule(5000);
@@ -214,66 +224,86 @@ public class MirrorActivity extends CarActivity implements SurfaceHolder.Callbac
 					downTime = uptimeMillis();
 					downX = e.getRawX();
 					downY = e.getRawY();
+					moving = false; // Reset drag lock
 					
-					int btnIndex = getButtonAt(e.getX());
+                    // SURGICAL FIX: Uses direct local pixel boundaries instead of skewed raw math
+					int btnIndex = getButtonAt(e.getX(), e.getY());
 					if (btnIndex >= 0 && btnIndex < getChildCount()) {
 						downButton = getChildAt(btnIndex);
 						downButton.startAnimation(animation);
-					}
+					} else {
+                        downButton = null;
+                    }
 					return true;
 				}
 				case MotionEvent.ACTION_MOVE -> {
-					if ((downButton != null) && ((Math.abs(e.getRawX() - downX) >= moveTolerance) ||
-							(Math.abs(e.getRawY() - downY) >= moveTolerance))) {
-						downButton.clearAnimation();
-					}
-					int w = getWidth();
-					int h = getHeight();
-					int pw = ((View)getParent()).getWidth();
-					int ph = ((View)getParent()).getHeight();
+					float deltaX = Math.abs(e.getRawX() - downX);
+					float deltaY = Math.abs(e.getRawY() - downY);
 					
-					var newX = Math.max(pad, Math.min(pw - pad - w, e.getRawX() - w / 2f));
-					var newY = Math.max(pad, Math.min(ph - pad - h, e.getRawY() - h / 2f));
-					animate().x(newX).y(newY).setDuration(0).start();
-					moving = true;
+					if (!moving && (deltaX >= moveTolerance || deltaY >= moveTolerance)) {
+						moving = true;
+						if (downButton != null) {
+							downButton.clearAnimation();
+                            downButton = null;
+						}
+					}
+					
+					if (moving) {
+					    int w = getWidth();
+					    int h = getHeight();
+					    int pw = ((View)getParent()).getWidth();
+					    int ph = ((View)getParent()).getHeight();
+					    
+					    var newX = Math.max(pad, Math.min(pw - pad - w, e.getRawX() - w / 2f));
+					    var newY = Math.max(pad, Math.min(ph - pad - h, e.getRawY() - h / 2f));
+					    animate().x(newX).y(newY).setDuration(0).start();
+					}
 					return true;
 				}
 				case MotionEvent.ACTION_UP -> {
 					if (moving) {
 						moving = false;
-						if ((Math.abs(e.getRawX() - downX) >= moveTolerance) ||
-								(Math.abs(e.getRawY() - downY) >= moveTolerance)) {
-							return true;
-						}
+                        return true;
 					}
-					if ((uptimeMillis() - downTime) < 400) handleClick(e.getX());
-					else handleLongClick(e.getX());
+                    
+                    if (downButton != null) {
+                        downButton.clearAnimation();
+                        if ((uptimeMillis() - downTime) < 500) {
+                            handleClick(downButton.getId());
+                        }
+                    }
 					return true;
 				}
+                case MotionEvent.ACTION_CANCEL -> {
+                    moving = false;
+                    if (downButton != null) {
+                        downButton.clearAnimation();
+                        downButton = null;
+                    }
+                    return true;
+                }
 				default -> {
 					return super.onTouchEvent(e);
 				}
 			}
 		}
 
-		private int getButtonAt(float x) {
-			int buttonWidthWithPad = iconSize + pad;
-			int index = (int) (x / buttonWidthWithPad);
-			return Math.max(0, Math.min(2, index));
-		}
+        // Guarantees 100% click accuracy by checking physical element boundaries
+        private int getButtonAt(float localX, float localY) {
+            for (int i = 0; i < getChildCount(); i++) {
+                View child = getChildAt(i);
+                if (localX >= child.getLeft() && localX <= child.getRight() &&
+                    localY >= child.getTop() && localY <= child.getBottom()) {
+                    return i;
+                }
+            }
+            return -1;
+        }
 
-		private void handleClick(float x) {
-			int btn = getButtonAt(x);
-			if (btn == 0) onHomeButtonClick();
-			else if (btn == 1) onBackButtonClick();
-			else onExitButtonClick();
-		}
-
-		private void handleLongClick(float x) {
-			int btn = getButtonAt(x);
-			if (btn == 0) onHomeButtonClick(); 
-			else if (btn == 1) onBackButtonClick();
-			else onExitButtonClick();
+		private void handleClick(int viewId) {
+			if (viewId == R.drawable.home) onHomeButtonClick();
+			else if (viewId == R.drawable.back) onBackButtonClick();
+			else if (viewId == R.drawable.shutdown) onExitButtonClick();
 		}
 	}
 }
