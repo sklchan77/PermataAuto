@@ -125,8 +125,6 @@ public class MirrorActivity extends CarActivity implements SurfaceHolder.Callbac
 		}, 5000);
 	}
 
-	// SURGICAL FIX: Restored native Car Intents so MirrorServiceFS can bind to them correctly.
-	// This prevents the buttons from accidentally triggering actions on the physical phone screen.
 	static void onHomeButtonClick() {
 		var ctx = PermataApplication.get();
 		if (ctx != null) {
@@ -149,8 +147,6 @@ public class MirrorActivity extends CarActivity implements SurfaceHolder.Callbac
 		Log.i("User triggered manual shutdown from Split-Screen toolbar.");
 		MirrorDisplay.close();
 		
-		// SURGICAL FIX: Forcefully kills the zombie Car UI window for both Split-Screen and Full-Screen modes,
-		// dropping the user perfectly back to the native Car Dashboard.
 		var ctx = PermataApplication.get();
 		if (ctx != null) {
 			Intent intent = new Intent(ctx, LauncherActivity.class);
@@ -171,10 +167,13 @@ public class MirrorActivity extends CarActivity implements SurfaceHolder.Callbac
 		private final Animation animation;
 		private int iconSize;
 		private final int pad;
+		
 		private long downTime;
 		private float downX, downY;
+		private float initialX, initialY; // SURGICAL FIX: Tracks initial layout position to prevent snapping
 		private View downButton;
 		private boolean moving;
+		private boolean isPositioned = false; // SURGICAL FIX: Prevents layout loops from resetting position
 
 		public ToolBar(Context ctx) {
 			super(ctx);
@@ -182,7 +181,6 @@ public class MirrorActivity extends CarActivity implements SurfaceHolder.Callbac
 			moveTolerance = toPx(ctx, 10);
 			animation = AnimationUtils.loadAnimation(ctx, my.app.utils.R.anim.button_press);
 			
-			// Rigid 48dp sizing guarantees uniform button size regardless of projection DPI
 			iconSize = (int) toPx(ctx, 48); 
 			
 			setOrientation(HORIZONTAL);
@@ -207,12 +205,15 @@ public class MirrorActivity extends CarActivity implements SurfaceHolder.Callbac
 				addView(v);
 			}
 			
-			// Auto-position to the right edge during layout inflation
+			// SURGICAL FIX: Auto-position only fires once during initialization
 			addOnLayoutChangeListener((v, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) -> {
-				if (!moving) { 
+				if (!isPositioned) { 
 					int pw = ((View)getParent()).getWidth();
-					if (pw > 0) setX(pw - getWidth() - pad);
-					setY(pad);
+					if (pw > 0) {
+						setX(pw - getWidth() - pad);
+						setY(pad);
+						isPositioned = true;
+					}
 				}
 			});
 
@@ -233,9 +234,10 @@ public class MirrorActivity extends CarActivity implements SurfaceHolder.Callbac
 					downTime = uptimeMillis();
 					downX = e.getRawX();
 					downY = e.getRawY();
+					initialX = getX(); // Track where the toolbar currently is
+					initialY = getY();
 					moving = false; 
 					
-					// Checks exact pixel bounds to bypass Android Auto's coordinate skew
 					int btnIndex = getButtonAt(e.getX(), e.getY());
 					if (btnIndex >= 0 && btnIndex < getChildCount()) {
 						downButton = getChildAt(btnIndex);
@@ -246,10 +248,11 @@ public class MirrorActivity extends CarActivity implements SurfaceHolder.Callbac
 					return true;
 				}
 				case MotionEvent.ACTION_MOVE -> {
-					float deltaX = Math.abs(e.getRawX() - downX);
-					float deltaY = Math.abs(e.getRawY() - downY);
+					// SURGICAL FIX: Use delta distance instead of absolute raw coordinates to prevent edge-snapping
+					float deltaX = e.getRawX() - downX;
+					float deltaY = e.getRawY() - downY;
 					
-					if (!moving && (deltaX >= moveTolerance || deltaY >= moveTolerance)) {
+					if (!moving && (Math.abs(deltaX) >= moveTolerance || Math.abs(deltaY) >= moveTolerance)) {
 						moving = true;
 						if (downButton != null) {
 							downButton.clearAnimation();
@@ -263,8 +266,8 @@ public class MirrorActivity extends CarActivity implements SurfaceHolder.Callbac
 						int pw = ((View)getParent()).getWidth();
 						int ph = ((View)getParent()).getHeight();
 						
-						var newX = Math.max(pad, Math.min(pw - pad - w, e.getRawX() - w / 2f));
-						var newY = Math.max(pad, Math.min(ph - pad - h, e.getRawY() - h / 2f));
+						var newX = Math.max(pad, Math.min(pw - pad - w, initialX + deltaX));
+						var newY = Math.max(pad, Math.min(ph - pad - h, initialY + deltaY));
 						animate().x(newX).y(newY).setDuration(0).start();
 					}
 					return true;
