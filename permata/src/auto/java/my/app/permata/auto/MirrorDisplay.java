@@ -470,33 +470,39 @@ public class MirrorDisplay {
 		}
 	}
 
-	private static void restoreAccelRotation(Context ctx) {
+	private static void restoreAccelRotation(Context ctx, boolean synchronous) {
 		var a = EventDispatcher.get().getActivity();
 		if (a != null) a.setRequestedOrientation(SCREEN_ORIENTATION_UNSPECIFIED);
 
-		try {
-			bgExecutor.execute(() -> {
-				synchronized (settingsLock) {
-					if (!isRotationLocked) return;
-					try {
-						var cr = ctx.getContentResolver();
-						if (accel != -1) {
-							Settings.System.putInt(cr, ACCELEROMETER_ROTATION, accel);
-							accel = -1;
-						}
-						
-						if (originalUserRotation != -1) {
-							Settings.System.putInt(cr, USER_ROTATION, originalUserRotation);
-							originalUserRotation = -1;
-						}
-						isRotationLocked = false;
-					} catch (Exception err) {
-						Log.e(err);
+		Runnable task = () -> {
+			synchronized (settingsLock) {
+				if (!isRotationLocked) return;
+				try {
+					var cr = ctx.getContentResolver();
+					if (accel != -1) {
+						Settings.System.putInt(cr, ACCELEROMETER_ROTATION, accel);
+						accel = -1;
 					}
+					
+					if (originalUserRotation != -1) {
+						Settings.System.putInt(cr, USER_ROTATION, originalUserRotation);
+						originalUserRotation = -1;
+					}
+					isRotationLocked = false;
+				} catch (Exception err) {
+					Log.e(err, "Settings Provider lagged or failed during rotation restore.");
 				}
-			});
-		} catch (Exception ex) {
-			Log.e(ex, "Background thread rejected rotation restore instruction");
+			}
+		};
+
+		if (synchronous) {
+			task.run();
+		} else {
+			try {
+				bgExecutor.execute(task);
+			} catch (Exception ex) {
+				Log.e(ex, "Background thread rejected rotation restore instruction");
+			}
 		}
 	}
 
@@ -521,10 +527,9 @@ public class MirrorDisplay {
 							var br = Settings.System.getInt(cr, SCREEN_BRIGHTNESS, -1);
 							brightness = (br > 0) ? br : 200;
 						}
+						
+						// SURGICAL FIX: Cures the Samsung 100% Brightness Panic Bug
 						Settings.System.putInt(cr, SCREEN_BRIGHTNESS, 1);
-						if (!Build.MANUFACTURER.equalsIgnoreCase("Xiaomi")) {
-							Settings.System.putInt(cr, SCREEN_BRIGHTNESS, 0);
-						}
 						
 						isDimmed = true;
 						
@@ -542,31 +547,37 @@ public class MirrorDisplay {
 		}
 	}
 
-	private void restoreBrightness(Context ctx) {
-		try {
-			bgExecutor.execute(() -> {
-				synchronized (settingsLock) {
-					if (!isDimmed) return;
-					try {
-						var cr = ctx.getContentResolver();
-						if (brightness > 0) {
-							Settings.System.putInt(cr, SCREEN_BRIGHTNESS, brightness);
-						}
-						if (brightnessMode != -1) {
-							Settings.System.putInt(cr, SCREEN_BRIGHTNESS_MODE, brightnessMode);
-							brightnessMode = -1;
-						}
-						
-						isDimmed = false;
-						
-						mainHandler.post(() -> mainHandler.removeCallbacks(orientationHeartbeat));
-					} catch (Exception err) {
-						Log.e(err);
+	private void restoreBrightness(Context ctx, boolean synchronous) {
+		Runnable restoreTask = () -> {
+			synchronized (settingsLock) {
+				if (!isDimmed) return;
+				try {
+					var cr = ctx.getContentResolver();
+					if (brightness > 0) {
+						Settings.System.putInt(cr, SCREEN_BRIGHTNESS, brightness);
 					}
+					if (brightnessMode != -1) {
+						Settings.System.putInt(cr, SCREEN_BRIGHTNESS_MODE, brightnessMode);
+						brightnessMode = -1;
+					}
+					
+					isDimmed = false;
+					
+					mainHandler.post(() -> mainHandler.removeCallbacks(orientationHeartbeat));
+				} catch (Exception err) {
+					Log.e(err, "Settings Provider lagged or failed during brightness restore.");
 				}
-			});
-		} catch (Exception ex) {
-			Log.e(ex, "Background thread rejected brightness restore instruction");
+			}
+		};
+
+		if (synchronous) {
+			restoreTask.run();
+		} else {
+			try {
+				bgExecutor.execute(restoreTask);
+			} catch (Exception ex) {
+				Log.e(ex, "Background thread rejected brightness restore instruction");
+			}
 		}
 	}
 
@@ -653,8 +664,9 @@ public class MirrorDisplay {
 		mainHandler.removeCallbacks(orientationHeartbeat);
 		app.sendBroadcast(new Intent(ACTION_KILL_WEBVIEW));
 		
-		restoreBrightness(app);
-		restoreAccelRotation(app);
+		// SURGICAL FIX: Call the synchronous variants to beat the Thread Guillotine
+		restoreBrightness(app, true);
+		restoreAccelRotation(app, true);
 		
 		var a = EventDispatcher.get().getActivity();
 		if (a != null) a.setRequestedOrientation(SCREEN_ORIENTATION_UNSPECIFIED);
@@ -735,9 +747,6 @@ public class MirrorDisplay {
 			return;
 		}
 		
-		// SURGICAL FIX: The Session Guillotine. 
-		// Viciously hunt down and destroy any orphaned VirtualDisplay or MediaProjection 
-		// before allowing the OS to allocate a new one. This prevents the black-screen deadlock.
 		if (session.isDoneNotFailed()) {
 			try {
 				Session oldSession = session.getOrThrow();
@@ -958,8 +967,9 @@ public class MirrorDisplay {
 				
 				resetIdleTimer();
 				var ctx = getContext();
-				restoreBrightness(ctx);
-				restoreAccelRotation(ctx); 
+				// SURGICAL FIX: Dispatches asynchronously when triggered by the UI thread to prevent touch lag
+				restoreBrightness(ctx, false);
+				restoreAccelRotation(ctx, false); 
 				updateOverlayOrientation(false); 
 			}
 			return false;
