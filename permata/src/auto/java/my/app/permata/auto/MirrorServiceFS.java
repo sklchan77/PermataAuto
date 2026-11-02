@@ -32,7 +32,6 @@ import my.app.utils.function.Cancellable;
 import my.app.utils.log.Log;
 
 public class MirrorServiceFS extends CarAppService {
-	// DPI Multiplier: Accelerates car screen swipes to feel native on high-res phones.
 	private static final float SCROLL_SENSITIVITY = 2.0f;
 	
 	private MirrorDisplay md;
@@ -50,7 +49,7 @@ public class MirrorServiceFS extends CarAppService {
 			md.release();
 			md = null;
 		}
-		sc = null; // GUARANTEE: Prevent static memory leaks (zombies) on teardown
+		sc = null; 
 		super.onDestroy();
 	}
 
@@ -129,7 +128,6 @@ public class MirrorServiceFS extends CarAppService {
 		public void onSurfaceDestroyed(@NonNull SurfaceContainer localSc) {
 			Log.i("MirrorServiceFS: Surface destroyed.");
 			
-			// GUARANTEE: Prevent phantom scroll injections if cable is unplugged mid-swipe
 			if (scrollUp != null) {
 				scrollUp.cancel();
 				scrollUp = null;
@@ -164,7 +162,6 @@ public class MirrorServiceFS extends CarAppService {
 			var mDisp = md();
 			if (mDisp == null || MirrorServiceFS.sc == null) return;
 			
-			// Apply the DPI multiplier to cure the "heavy" feeling
 			distanceX *= SCROLL_SENSITIVITY;
 			distanceY *= SCROLL_SENSITIVITY;
 			
@@ -173,7 +170,6 @@ public class MirrorServiceFS extends CarAppService {
 			
 			if (!isPanning || scrollUp == null) {
 				isPanning = true;
-				// Anchor to exact center mathematically bypasses AA Edge Gesture theft
 				scrollStartX = MirrorServiceFS.sc.getWidth() / 2f;
 				scrollStartY = MirrorServiceFS.sc.getHeight() / 2f;
 				
@@ -186,7 +182,6 @@ public class MirrorServiceFS extends CarAppService {
 				}
 				scrollDownTime = time;
 				
-				// Initialize the release timer
 				scheduleScrollUp(75);
 			}
 			
@@ -194,7 +189,6 @@ public class MirrorServiceFS extends CarAppService {
 			scrollY -= distanceY;
 			mDisp.motionEvent(scrollDownTime, time, ACTION_MOVE, scrollX, scrollY);
 			
-			// Dynamically reset the 75ms release window on every continuous swipe tick
 			if (scrollUp != null) {
 				scrollUp.cancel();
 				scheduleScrollUp(75);
@@ -203,7 +197,6 @@ public class MirrorServiceFS extends CarAppService {
 
 		private void scheduleScrollUp(long delay) {
 			scrollUp = handler.schedule(() -> {
-				// GUARANTEE: The Ghost Timer NullPointerException Failsafe
 				if (scrollUp == null) return;
 				var mDisp = md();
 				if (mDisp == null) return;
@@ -234,18 +227,22 @@ public class MirrorServiceFS extends CarAppService {
 							new CarIcon.Builder(createWithResource(getCarContext(), R.drawable.home)).build())
 					.setOnClickListener(MirrorActivity::onHomeButtonClick).build();
 					
+			// SURGICAL ADDITION: Recent Apps Button (matching white color tint)
+			var recentButton = new Action.Builder().setIcon(
+							new CarIcon.Builder(createWithResource(getCarContext(), R.drawable.menu)).setTint(androidx.car.app.model.CarColor.DEFAULT).build())
+					.setOnClickListener(MirrorActivity::onRecentButtonClick).build();
+					
 			var backButton = new Action.Builder().setIcon(
 							new CarIcon.Builder(createWithResource(getCarContext(), R.drawable.back)).build())
 					.setOnClickListener(MirrorActivity::onBackButtonClick).build();
 					
 			var exitButton = new Action.Builder().setIcon(
-							new CarIcon.Builder(createWithResource(getCarContext(), R.drawable.shutdown)).build())
+							new CarIcon.Builder(createWithResource(getCarContext(), R.drawable.shutdown)).setTint(androidx.car.app.model.CarColor.DEFAULT).build())
 					.setOnClickListener(() -> {
 						Log.i("User triggered manual shutdown.");
 						MirrorDisplay.close();
 					}).build();
 			
-			// Override Android Auto's focus controller by actively declaring a PanModeListener.
 			PanModeListener panModeListener = isPanningMode -> Log.d("Pan Mode toggled: " + isPanningMode);
 			
 			return new NavigationTemplate.Builder()
@@ -253,6 +250,7 @@ public class MirrorServiceFS extends CarAppService {
 					.setMapActionStrip(new ActionStrip.Builder().addAction(Action.PAN).build())
 					.setActionStrip(new ActionStrip.Builder()
 							.addAction(homeButton)
+							.addAction(recentButton) // SURGICAL ADDITION: Inserted between Home and Back
 							.addAction(backButton)
 							.addAction(exitButton)
 							.build())
