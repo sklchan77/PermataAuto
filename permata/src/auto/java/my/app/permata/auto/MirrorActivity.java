@@ -151,16 +151,7 @@ public class MirrorActivity extends CarActivity implements SurfaceHolder.Callbac
 	}
 
 	static void onBackButtonClick() {
-		if (PermataApplication.get().isConnectedToAuto()) {
-			var activeApp = LauncherActivity.getActiveInstance();
-			// SURGICAL FIX: Replaced unreliable hasWindowFocus() with strict Lifecycle State RESUMED check.
-			// It is now impossible for backgrounded apps to accidentally trigger this block.
-			if (activeApp != null && activeApp.getLifecycle().getCurrentState().isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED)) {
-				Log.i("Back button blocked. Already at mirroring home screen.");
-				return;
-			}
-		}
-		
+		// SURGICAL FIX: Unreliable Launcher focus check stripped. Native Back command passes through cleanly.
 		var d = EventDispatcher.get();
 		if (d != null) {
 			d.directBack();
@@ -219,6 +210,7 @@ public class MirrorActivity extends CarActivity implements SurfaceHolder.Callbac
 				v.setId(icons[i]);
 				v.setImageResource(icons[i]);
 				
+				// SURGICAL FIX: PorterDuff SRC_IN forcefully paints black/transparent vectors to pure white
 				if (i == 1 || i == 3) v.setColorFilter(Color.WHITE, PorterDuff.Mode.SRC_IN); 
 				
 				v.setBackgroundResource(R.drawable.oval_bg);
