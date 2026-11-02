@@ -104,7 +104,7 @@ public class MirrorDisplay {
 	private static volatile boolean isRotationLocked = false;
 	private static volatile boolean isDimmed = false;
 	private static volatile int accel = -1;
-	private static volatile int originalUserRotation = -1; // SURGICAL FIX: Track physical axis perfectly
+	private static volatile int originalUserRotation = -1; 
 	private static volatile int brightnessMode = -1; 
 	private static volatile int brightness = -1;
 	
@@ -292,29 +292,19 @@ public class MirrorDisplay {
 				var m = metrics();
 				if (m == null) return false;
 
-				if (cnt == 1) {
-					e.getPointerProperties(0, reusableProps[0]);
-					e.getPointerCoords(0, reusableCoords[0]);
-					reusableProps[0].id = 10; 
-					reusableProps[0].toolType = MotionEvent.TOOL_TYPE_FINGER;
-					reusableCoords[0].x = (e.getX() - m.x) * m.scale;
-					reusableCoords[0].y = (e.getY() - m.y) * m.scale;
-					if (reusableCoords[0].pressure <= 0.01f) reusableCoords[0].pressure = 1.0f;
-					if (reusableCoords[0].size <= 0.01f) reusableCoords[0].size = 1.0f;
-				} else {
-					for (int i = 0; i < cnt; i++) {
-						e.getPointerProperties(i, reusableProps[i]);
-						e.getPointerCoords(i, reusableCoords[i]);
-						reusableProps[i].id = 10 + i; 
-						reusableProps[i].toolType = MotionEvent.TOOL_TYPE_FINGER;
-						reusableCoords[i].x = (reusableCoords[i].x - m.x) * m.scale;
-						reusableCoords[i].y = (reusableCoords[i].y - m.y) * m.scale;
-						if (reusableCoords[i].pressure <= 0.01f) reusableCoords[i].pressure = 1.0f;
-						if (reusableCoords[i].size <= 0.01f) reusableCoords[i].size = 1.0f;
-					}
+				for (int i = 0; i < cnt; i++) {
+					e.getPointerProperties(i, reusableProps[i]);
+					e.getPointerCoords(i, reusableCoords[i]);
+					reusableProps[i].id = 10 + i; 
+					reusableProps[i].toolType = MotionEvent.TOOL_TYPE_FINGER;
+					reusableCoords[i].x = (reusableCoords[i].x - m.x) * m.scale;
+					reusableCoords[i].y = (reusableCoords[i].y - m.y) * m.scale;
+					if (reusableCoords[i].pressure <= 0.01f) reusableCoords[i].pressure = 1.0f;
+					if (reusableCoords[i].size <= 0.01f) reusableCoords[i].size = 1.0f;
 				}
 				
-				clonedEvent = MotionEvent.obtain(e.getDownTime(), uptimeMillis(), e.getAction(), cnt, reusableProps, reusableCoords,
+				// SURGICAL FIX: Uses exact e.getEventTime() to preserve OS Physics and Velocity Tracker inertia.
+				clonedEvent = MotionEvent.obtain(e.getDownTime(), e.getEventTime(), e.getAction(), cnt, reusableProps, reusableCoords,
 						e.getMetaState(), e.getButtonState(), e.getXPrecision(), e.getYPrecision(), e.getDeviceId(),
 						e.getEdgeFlags(), InputDevice.SOURCE_TOUCHSCREEN, e.getFlags());
 						
@@ -363,7 +353,8 @@ public class MirrorDisplay {
 				reusableCoords[0].pressure = 1.0f;
 				reusableCoords[0].size = 1.0f;
 				
-				clonedEvent = MotionEvent.obtain(downTime, uptimeMillis(), action, 1, reusableProps, reusableCoords,
+				// SURGICAL FIX: Directly applies accurate provided eventTime to maintain physical drag consistency.
+				clonedEvent = MotionEvent.obtain(downTime, eventTime, action, 1, reusableProps, reusableCoords,
 						0, 0, 1.0f, 1.0f, 0, 0, InputDevice.SOURCE_TOUCHSCREEN, 0);
 						
 			} catch (Exception ex) {
@@ -442,7 +433,7 @@ public class MirrorDisplay {
 						var v = Settings.System.getInt(cr, ACCELEROMETER_ROTATION, -1);
 						if (v != -1) accel = v;
 					}
-					// SURGICAL FIX: Ensure we securely backup the physical layout orientation before modifying it
+					
 					if (originalUserRotation == -1) {
 						var ur = Settings.System.getInt(cr, USER_ROTATION, -1);
 						if (ur != -1) originalUserRotation = ur;
@@ -471,7 +462,7 @@ public class MirrorDisplay {
 						Settings.System.putInt(cr, ACCELEROMETER_ROTATION, accel);
 						accel = -1;
 					}
-					// SURGICAL FIX: Perfectly restore the native physical axis (fixing stuck landscape phones)
+					
 					if (originalUserRotation != -1) {
 						Settings.System.putInt(cr, USER_ROTATION, originalUserRotation);
 						originalUserRotation = -1;
@@ -625,7 +616,6 @@ public class MirrorDisplay {
 		mainHandler.removeCallbacks(orientationHeartbeat);
 		app.sendBroadcast(new Intent(ACTION_KILL_WEBVIEW));
 		
-		// SURGICAL FIX: Uses robust methods to perfectly restore states before tearing down variables
 		restoreBrightness(app);
 		restoreAccelRotation(app);
 		
