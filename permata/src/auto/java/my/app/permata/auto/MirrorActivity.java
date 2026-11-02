@@ -126,20 +126,14 @@ public class MirrorActivity extends CarActivity implements SurfaceHolder.Callbac
 	}
 
 	static void onHomeButtonClick() {
-		var ctx = PermataApplication.get();
-		if (ctx != null) {
-			Intent intent = new Intent(ctx, LauncherActivity.class);
-			intent.setFlags(FLAG_ACTIVITY_NEW_TASK | FLAG_ACTIVITY_CLEAR_TOP | FLAG_ACTIVITY_SINGLE_TOP);
-			ctx.startActivity(intent);
-		}
+		// SURGICAL FIX: Force route to OS-Level Accessibility to guarantee execution across all modes
+		AccessibilityEventDispatcherService.dispatchHome();
 		disableAccelRotation();
 	}
 
 	static void onBackButtonClick() {
-		var d = EventDispatcher.get();
-		if (d != null) {
-			d.directBack();
-		}
+		// SURGICAL FIX: Force route to OS-Level Accessibility to guarantee execution across all modes
+		AccessibilityEventDispatcherService.dispatchBack();
 		disableAccelRotation();
 	}
 
@@ -157,60 +151,30 @@ public class MirrorActivity extends CarActivity implements SurfaceHolder.Callbac
 		};
 		private final float moveTolerance;
 		private final Animation animation;
-		private float minX;
-		private float maxX;
-		private float minY;
-		private float maxY;
 		private int iconSize;
 		private final int pad;
 		private long downTime;
 		private float downX, downY;
 		private View downButton;
 		private boolean moving;
-		private boolean isLaidOut = false;
 
 		public ToolBar(Context ctx) {
 			super(ctx);
-			pad = (int) toPx(ctx, 5);
+			pad = (int) toPx(ctx, 8);
 			moveTolerance = toPx(ctx, 10);
 			animation = AnimationUtils.loadAnimation(ctx, my.app.utils.R.anim.button_press);
+			
+			// SURGICAL FIX: Restored static rigid layout rendering. 
+			// 48dp ensures buttons are visually identical and perfectly touchable on Car Screens.
+			iconSize = (int) toPx(ctx, 48); 
+			
+			setOrientation(HORIZONTAL);
 			setLayoutParams(new FrameLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT));
-			
-			// SURGICAL FIX: Postpone button drawing until the layout passes the VirtualDisplay dimensions
-			post(() -> buildButtons(ctx));
-			
-			delayedHide.schedule(5000);
-		}
-		
-		private void buildButtons(Context ctx) {
-			if (isLaidOut) return;
-			
-			int parentWidth = ((View)getParent()).getWidth();
-			int parentHeight = ((View)getParent()).getHeight();
-			
-			// Fallback to DisplayMetrics if layout fails to resolve bounds immediately
-			if (parentWidth <= 0 || parentHeight <= 0) {
-				var dm = ctx.getResources().getDisplayMetrics();
-				parentWidth = dm.widthPixels;
-				parentHeight = dm.heightPixels;
-			}
-			
-			minX = pad;
-			maxX = parentWidth - pad;
-			minY = pad;
-			maxY = parentHeight - pad;
-			
-			// SURGICAL FIX: Calculate size relative to the actual Render Surface bounds, not the Phone OS DPI
-			iconSize = (int) Math.max(Math.min(parentWidth, parentHeight) / 10f, toPx(ctx, 24));
-			
-			setX(parentWidth - (iconSize * 3) - (pad * 2));
-			setY(pad);
 
 			var iconPad = iconSize / 4;
 			var icons = new int[]{R.drawable.home, R.drawable.back, R.drawable.shutdown};
 			for (int i = 0; i < icons.length; i++) {
 				var v = new AppCompatImageView(ctx);
-				addView(v);
 				v.setId(icons[i]);
 				v.setImageResource(icons[i]);
 				
@@ -218,14 +182,22 @@ public class MirrorActivity extends CarActivity implements SurfaceHolder.Callbac
 				
 				v.setBackgroundResource(R.drawable.oval_bg);
 				v.setPadding(iconPad, iconPad, iconPad, iconPad);
-				LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(iconSize, iconSize);
+				var lp = new LinearLayout.LayoutParams(iconSize, iconSize);
 				if (i > 0) lp.setMarginStart(pad);
 				v.setLayoutParams(lp);
 				v.setAdjustViewBounds(true);
 				v.setScaleType(ImageView.ScaleType.FIT_CENTER);
+				addView(v);
 			}
 			
-			isLaidOut = true;
+			// Dynamically stick to the right edge during drawing phase without crashing touch bounds
+			addOnLayoutChangeListener((v, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) -> {
+				int pw = ((View)getParent()).getWidth();
+				if (pw > 0) setX(pw - getWidth() - pad);
+				setY(pad);
+			});
+
+			delayedHide.schedule(5000);
 		}
 
 		void show() {
@@ -236,8 +208,6 @@ public class MirrorActivity extends CarActivity implements SurfaceHolder.Callbac
 		@SuppressLint("ClickableViewAccessibility")
 		@Override
 		public boolean onTouchEvent(MotionEvent e) {
-			if (!isLaidOut) return false;
-			
 			show();
 			switch (e.getActionMasked()) {
 				case MotionEvent.ACTION_DOWN -> {
@@ -259,8 +229,11 @@ public class MirrorActivity extends CarActivity implements SurfaceHolder.Callbac
 					}
 					int w = getWidth();
 					int h = getHeight();
-					var newX = Math.max(minX, Math.min(maxX - w, e.getRawX() - w / 2f));
-					var newY = Math.max(minY, Math.min(maxY - h, e.getRawY() - h / 2f));
+					int pw = ((View)getParent()).getWidth();
+					int ph = ((View)getParent()).getHeight();
+					
+					var newX = Math.max(pad, Math.min(pw - pad - w, e.getRawX() - w / 2f));
+					var newY = Math.max(pad, Math.min(ph - pad - h, e.getRawY() - h / 2f));
 					animate().x(newX).y(newY).setDuration(0).start();
 					moving = true;
 					return true;
