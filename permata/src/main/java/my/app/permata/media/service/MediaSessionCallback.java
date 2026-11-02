@@ -466,27 +466,49 @@ public class MediaSessionCallback extends MediaSessionCompat.Callback
 
 		switch (state.getState()) {
 			case STATE_NONE, STATE_STOPPED, STATE_ERROR -> {
-				return lib.getLastPlayedItem().then(this::prepareItem).then(i -> {
-					if (i != null) playPreparedItem(i, lib.getLastPlayedPosition(i));
-					return completedVoid();
+				// SURGICAL FIX: Background intercepter to appease Dead Link Scrubbing
+				PlaybackStateCompat connectingState = new PlaybackStateCompat.Builder().setActions(SUPPORTED_ACTIONS)
+						.setState(STATE_CONNECTING, 0, 1.0f).build();
+				setPlaybackState(connectingState);
+
+				my.app.utils.async.Promise<Void> p = new my.app.utils.async.Promise<>();
+				wakeCarUiAndRun(() -> {
+					lib.getLastPlayedItem().then(this::prepareItem).then(i -> {
+						if (i != null) playPreparedItem(i, lib.getLastPlayedPosition(i));
+						p.complete(null);
+						return completedVoid();
+					});
 				});
+				return p;
 			}
 			case STATE_PAUSED -> {
-				MediaEngine eng = getEngine();
-				assert (eng != null);
-				assert (eng.getSource() != null);
-				if (!eng.requestAudioFocus(audioManager, audioFocusReq)) {
-					Log.i("Audio focus request failed");
-					return completedVoid();
-				}
-				long pos = state.getPosition();
-				float speed = getSpeed(engine.getSource());
-				state =
-						new PlaybackStateCompat.Builder(state).setState(PlaybackStateCompat.STATE_PLAYING, pos,
-								speed).build();
-				setPlaybackState(state);
-				eng.setPosition(pos);
-				start(eng, speed);
+				PlaybackStateCompat connectingState = new PlaybackStateCompat.Builder(state)
+						.setState(STATE_CONNECTING, state.getPosition(), state.getPlaybackSpeed()).build();
+				setPlaybackState(connectingState);
+
+				my.app.utils.async.Promise<Void> p = new my.app.utils.async.Promise<>();
+				wakeCarUiAndRun(() -> {
+					MediaEngine eng = getEngine();
+					if (eng == null || eng.getSource() == null) {
+						p.complete(null);
+						return;
+					}
+					if (!eng.requestAudioFocus(audioManager, audioFocusReq)) {
+						Log.i("Audio focus request failed");
+						p.complete(null);
+						return;
+					}
+					long pos = getPlaybackState().getPosition();
+					float speed = getSpeed(eng.getSource());
+					PlaybackStateCompat newState =
+							new PlaybackStateCompat.Builder(getPlaybackState()).setState(PlaybackStateCompat.STATE_PLAYING, pos,
+									speed).build();
+					setPlaybackState(newState);
+					eng.setPosition(pos);
+					start(eng, speed);
+					p.complete(null);
+				});
+				return p;
 			}
 			default -> {
 			}
@@ -502,30 +524,41 @@ public class MediaSessionCallback extends MediaSessionCompat.Callback
 	}
 
 	private FutureSupplier<Void> playFromMediaId(String mediaId, Bundle extras) {
-		return lib.getItem(mediaId).then(i -> {
-			if (i instanceof PlayableItem) {
-				return completed((PlayableItem) i);
-			} else if (i instanceof BrowsableItem) {
-				return ((BrowsableItem) i).getFirstPlayable();
-			} else {
-				return completedNull();
-			}
-		}).then(this::prepareItem).then(pi -> {
-			if (pi != null) {
-				long pos = (extras == null) ? 0 : extras.getLong(EXTRA_POS, 0);
-				playPreparedItem(pi, pos);
-			} else {
-				String msg =
-						lib.getContext().getResources().getString(R.string.err_failed_to_play, mediaId);
-				Log.w(msg);
-				PlaybackStateCompat state = new PlaybackStateCompat.Builder().setActions(SUPPORTED_ACTIONS)
-						.setState(STATE_ERROR, 0, 1.0f)
-						.setErrorMessage(PlaybackStateCompat.ERROR_CODE_UNKNOWN_ERROR, msg).build();
-				setPlaybackState(state);
-			}
+		// SURGICAL FIX: Android Auto "Dead Link Scrubbing" bypass
+		// Instantly transition to CONNECTING so AA doesn't flag the link as broken when clicked from background
+		PlaybackStateCompat state = new PlaybackStateCompat.Builder().setActions(SUPPORTED_ACTIONS)
+				.setState(STATE_CONNECTING, 0, 1.0f).build();
+		setPlaybackState(state);
 
-			return completedVoid();
+		my.app.utils.async.Promise<Void> delayedPromise = new my.app.utils.async.Promise<>();
+
+		wakeCarUiAndRun(() -> {
+			lib.getItem(mediaId).then(i -> {
+				if (i instanceof PlayableItem) {
+					return completed((PlayableItem) i);
+				} else if (i instanceof BrowsableItem) {
+					return ((BrowsableItem) i).getFirstPlayable();
+				} else {
+					return completedNull();
+				}
+			}).then(this::prepareItem).then(pi -> {
+				if (pi != null) {
+					long pos = (extras == null) ? 0 : extras.getLong(EXTRA_POS, 0);
+					playPreparedItem(pi, pos);
+				} else {
+					String msg = lib.getContext().getResources().getString(R.string.err_failed_to_play, mediaId);
+					Log.w(msg);
+					PlaybackStateCompat errState = new PlaybackStateCompat.Builder().setActions(SUPPORTED_ACTIONS)
+							.setState(STATE_ERROR, 0, 1.0f)
+							.setErrorMessage(PlaybackStateCompat.ERROR_CODE_UNKNOWN_ERROR, msg).build();
+					setPlaybackState(errState);
+				}
+				delayedPromise.complete(null);
+				return completedVoid();
+			});
 		});
+
+		return delayedPromise;
 	}
 
 	@Override
@@ -674,7 +707,8 @@ public class MediaSessionCallback extends MediaSessionCompat.Callback
 		b.setState(next ? STATE_SKIPPING_TO_NEXT : STATE_SKIPPING_TO_PREVIOUS, pos,
 				state.getPlaybackSpeed());
 		setPlaybackState(b.build());
-		playPreparedItem(i, pos);
+		
+		wakeCarUiAndRun(() -> playPreparedItem(i, pos));
 	}
 
 	@Override
@@ -1185,7 +1219,10 @@ public class MediaSessionCallback extends MediaSessionCompat.Callback
 		PlaybackStateCompat state = new PlaybackStateCompat.Builder().setActions(SUPPORTED_ACTIONS)
 				.setState(STATE_CONNECTING, 0, 1.0f).build();
 		setPlaybackState(state);
-		playerTask = prepareItem(i).onSuccess(pi -> playPreparedItem(i, pos));
+		
+		wakeCarUiAndRun(() -> {
+			playerTask = prepareItem(i).onSuccess(pi -> playPreparedItem(i, pos));
+		});
 	}
 
 	private void playPreparedItem(PlayableItem i, long pos) {
@@ -1617,6 +1654,24 @@ public class MediaSessionCallback extends MediaSessionCompat.Callback
 		@Override
 		public void run() {
 			if (playbackTimer == this) onStop();
+		}
+	}
+	
+	private void wakeCarUiAndRun(Runnable action) {
+		boolean needsWake = PermataApplication.get().isConnectedToAuto() && (videoView == null || videoView.isEmpty());
+		if (needsWake) {
+			try {
+				Context ctx = PermataApplication.get();
+				Intent intent = new Intent();
+				intent.setClassName(ctx, "my.app.permata.auto.LauncherActivity");
+				intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | FLAG_ACTIVITY_CLEAR_TOP | FLAG_ACTIVITY_SINGLE_TOP);
+				ctx.startActivity(intent);
+			} catch (Exception e) {
+				Log.e(e, "Failed to wake Car UI for background play request.");
+			}
+			handler.postDelayed(action, 1500); // Wait exactly 1.5 seconds for Surface and WebView to fully inflate
+		} else {
+			action.run();
 		}
 	}
 }
