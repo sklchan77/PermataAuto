@@ -21,13 +21,18 @@ import android.widget.EditText;
 import androidx.annotation.Nullable;
 
 import java.lang.reflect.Method;
+import java.util.Arrays;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.Map;
+import java.util.Set;
 import java.util.WeakHashMap;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 
+import my.app.permata.auto.AccessibilityEventDispatcherService;
+import my.app.permata.auto.EventDispatcher;
 import my.app.permata.media.service.MediaSessionCallback;
 import my.app.permata.ui.activity.MainActivityDelegate;
 import my.app.utils.function.IntObjectFunction;
@@ -45,10 +50,27 @@ public class KeyEventHandler {
     private static final AtomicLong swipeSessionId = new AtomicLong(0);
     private static final AtomicBoolean isHardwareSwiping = new AtomicBoolean(false);
     
+    // SURGICAL FIX: The Master List of Native Scroller Apps
+    private static final Set<String> SCROLLER_PACKAGES = new HashSet<>(Arrays.asList(
+            "com.zhiliaoapp.musically", // TikTok Global
+            "com.ss.android.ugc.trill", // TikTok Asia
+            "com.ss.android.ugc.aweme", // Douyin
+            "com.instagram.android",    // Instagram
+            "com.facebook.katana",      // Facebook
+            "com.snapchat.android",     // Snapchat
+            "com.reddit.frontpage",     // Reddit
+            "com.twitter.android",      // X/Twitter
+            "com.smile.gifmaker",       // Kuaishou
+            "com.kwai.video",           // Kwai
+            "com.xingin.xhs",           // Xiaohongshu
+            "in.mohalla.video",         // Moj
+            "in.mohalla.sharechat",     // Sharechat
+            "tv.danmaku.bili"           // Bilibili
+    ));
+    
     private static final Map<Class<?>, Method> webViewMethodCache = new ConcurrentHashMap<>();
     private static final Map<View, Long> scrollTimestamps = Collections.synchronizedMap(new WeakHashMap<>());
 
-    // RESTORED FIX: Returned exactly to your flawlessly working original CSS payload
     private static final String JS_UNIVERSAL_PAYLOAD = "(function(){" +
             "let res = 'Discovery [Layer 2]: JS Registry Miss (No custom formatting applied)'; " +
             "const injectGlobalWipe = function() { " +
@@ -181,97 +203,118 @@ public class KeyEventHandler {
                     Log.w("[CHECK] Input dropped: Button spam detected (< 250ms)");
                     return true;
                 }
-                lastGlobalActionTime = currentUptime;
-
-                boolean isNext = (code == KeyEvent.KEYCODE_MEDIA_NEXT);
+                
+                // SURGICAL FIX: The Dual-Radar Execution Engine
+                String activePkg = AccessibilityEventDispatcherService.getLastActivePackage();
+                boolean isNativeScroller = activePkg != null && SCROLLER_PACKAGES.contains(activePkg);
                 
                 ActivityFragment activeFragment = finalTargetActivity.getActiveFragment();
-                if (activeFragment != null) {
-                    String className = activeFragment.getClass().getName();
-                    
-                    if (className.endsWith("WebBrowserFragment") && !className.endsWith("YoutubeFragment")) {
-                        
-                        finalTargetActivity.post(() -> {
-                            
-                            if (finalTargetActivity.getWindow() != null) {
-                                Context ctx = finalTargetActivity.getWindow().getContext();
-                                while (ctx instanceof ContextWrapper) {
-                                    if (ctx instanceof Activity) {
-                                        break;
-                                    }
-                                    ctx = ((ContextWrapper) ctx).getBaseContext();
-                                }
-                                if (ctx instanceof Activity) {
-                                    Activity act = (Activity) ctx;
-                                    if (act.isFinishing() || act.isDestroyed()) return;
-                                }
-                            }
+                boolean isWebBrowser = activeFragment != null && 
+                        activeFragment.getClass().getName().endsWith("WebBrowserFragment") && 
+                        !activeFragment.getClass().getName().endsWith("YoutubeFragment");
 
-                            WebView resolvedWebView = scanFragmentsForWebView(activeFragment);
-                            boolean isExplicitWebFragment = (resolvedWebView != null);
-
-                            if (resolvedWebView == null || !resolvedWebView.isShown()) {
-                                resolvedWebView = findTopVisibleWebView(finalTargetActivity);
-                            }
-
-                            if (resolvedWebView != null && resolvedWebView.isShown()) {
-                                boolean hasTouchFocus = resolvedWebView.hasFocus();
-                                boolean isFullScreenSize = false;
-                                
-                                if (finalTargetActivity.getWindow() != null && finalTargetActivity.getWindow().getDecorView() != null) {
-                                    int screenHeight = finalTargetActivity.getWindow().getDecorView().getHeight();
-                                    if (screenHeight > 0) {
-                                        isFullScreenSize = resolvedWebView.getHeight() > (screenHeight * 0.5);
-                                    }
-                                }
-
-                                if (isExplicitWebFragment || hasTouchFocus || isFullScreenSize) {
-                                    String currentUrl = resolvedWebView.getUrl();
-                                    String host = "unknown";
-                                    boolean isMediaHost = false;
-                                    boolean isInstagram = false;
-                                    boolean isSnapFeedHost = false;
-                                    boolean isTikTok = false;
-                                    boolean isDouyin = false;
-                                    
-                                    if (currentUrl != null) {
-                                        try {
-                                            host = Uri.parse(currentUrl).getHost();
-                                            if (host != null) {
-                                                if (host.startsWith("www.")) host = host.substring(4);
-                                                
-                                                String h = host.toLowerCase();
-                                                isInstagram = h.contains("instagram");
-                                                isTikTok = h.contains("tiktok");
-                                                isDouyin = h.contains("douyin");
-                                                
-                                                isSnapFeedHost = h.contains("youtube") || h.contains("youtu") || h.contains("facebook") ||
-                                                        h.contains("kuaishou") || h.contains("xiaohongshu") ||
-                                                        h.contains("likee") || h.contains("kwai") || h.contains("snackvideo") ||
-                                                        h.contains("mojapp") || h.contains("sharechat");
-                                                        
-                                                isMediaHost = isInstagram || isSnapFeedHost || h.contains("bilibili") || 
-                                                        h.contains("reddit") || h.contains("twitter") || h.contains("x.com") || 
-                                                        h.contains("pinterest") || h.contains("twitch") || h.contains("weibo") || 
-                                                        h.contains("snapchat") || h.contains("vk") || isDouyin || isTikTok;
-                                            }
-                                        } catch (Exception ignored) {}
-                                    }
-                                    final String hostTag = "[Host: " + host + "] ";
-                                    Log.i("[DETECTION] " + hostTag + "Resolved. isMediaHost: " + isMediaHost + " | isSnapFeedHost: " + isSnapFeedHost + " | isTikTok: " + isTikTok + " | isDouyin: " + isDouyin);
-
-                                    View touchTargetView = isTikTok ? resolvedWebView : findTopmostTouchTarget(finalTargetActivity, resolvedWebView);
-                                    
-                                    smartScrollWebView(resolvedWebView, touchTargetView, !isNext, hostTag, isMediaHost, isDouyin, isTikTok);
-                                } else {
-                                    Log.i("[DETECTION] WebBrowser is hidden or out of focus. Allowing default media propagation.");
-                                }
-                            }
-                        });
-                        
-                        return true; 
-                    }
+                // If it's NOT our WebBrowser and NOT a Native Scroller (e.g. YouTube), pass through immediately!
+                if (!isWebBrowser && !isNativeScroller) {
+                    Log.i("[DETECTION] Native Passthrough: Let OS handle media key for package -> " + activePkg);
+                    return defaultHandler.apply(code, event);
                 }
+
+                lastGlobalActionTime = currentUptime;
+                boolean isNext = (code == KeyEvent.KEYCODE_MEDIA_NEXT);
+                
+                // Scenario A: It is a known Native Scroller (TikTok, Douyin, etc.)
+                if (isNativeScroller && !isWebBrowser) {
+                    Log.i("[DETECTION] Native Scroller App detected: " + activePkg + ". Firing God-Mode Swipe.");
+                    int width = 1080;
+                    int height = 1920;
+                    if (finalTargetActivity.getWindow() != null && finalTargetActivity.getWindow().getDecorView() != null) {
+                        width = finalTargetActivity.getWindow().getDecorView().getWidth();
+                        height = finalTargetActivity.getWindow().getDecorView().getHeight();
+                    }
+                    executeNativeAppSwipe(!isNext, activePkg, width, height);
+                    return true;
+                }
+
+                // Scenario B: It is our WebBrowser fragment
+                finalTargetActivity.post(() -> {
+                    
+                    if (finalTargetActivity.getWindow() != null) {
+                        Context ctx = finalTargetActivity.getWindow().getContext();
+                        while (ctx instanceof ContextWrapper) {
+                            if (ctx instanceof Activity) {
+                                break;
+                            }
+                            ctx = ((ContextWrapper) ctx).getBaseContext();
+                        }
+                        if (ctx instanceof Activity) {
+                            Activity act = (Activity) ctx;
+                            if (act.isFinishing() || act.isDestroyed()) return;
+                        }
+                    }
+
+                    WebView resolvedWebView = scanFragmentsForWebView(activeFragment);
+                    boolean isExplicitWebFragment = (resolvedWebView != null);
+
+                    if (resolvedWebView == null || !resolvedWebView.isShown()) {
+                        resolvedWebView = findTopVisibleWebView(finalTargetActivity);
+                    }
+
+                    if (resolvedWebView != null && resolvedWebView.isShown()) {
+                        boolean hasTouchFocus = resolvedWebView.hasFocus();
+                        boolean isFullScreenSize = false;
+                        
+                        if (finalTargetActivity.getWindow() != null && finalTargetActivity.getWindow().getDecorView() != null) {
+                            int screenHeight = finalTargetActivity.getWindow().getDecorView().getHeight();
+                            if (screenHeight > 0) {
+                                isFullScreenSize = resolvedWebView.getHeight() > (screenHeight * 0.5);
+                            }
+                        }
+
+                        if (isExplicitWebFragment || hasTouchFocus || isFullScreenSize) {
+                            String currentUrl = resolvedWebView.getUrl();
+                            String host = "unknown";
+                            boolean isMediaHost = false;
+                            boolean isInstagram = false;
+                            boolean isSnapFeedHost = false;
+                            boolean isTikTok = false;
+                            boolean isDouyin = false;
+                            
+                            if (currentUrl != null) {
+                                try {
+                                    host = Uri.parse(currentUrl).getHost();
+                                    if (host != null) {
+                                        if (host.startsWith("www.")) host = host.substring(4);
+                                        
+                                        String h = host.toLowerCase();
+                                        isInstagram = h.contains("instagram");
+                                        isTikTok = h.contains("tiktok");
+                                        isDouyin = h.contains("douyin");
+                                        
+                                        isSnapFeedHost = h.contains("youtube") || h.contains("youtu") || h.contains("facebook") ||
+                                                h.contains("kuaishou") || h.contains("xiaohongshu") ||
+                                                h.contains("likee") || h.contains("kwai") || h.contains("snackvideo") ||
+                                                h.contains("mojapp") || h.contains("sharechat");
+                                                
+                                        isMediaHost = isInstagram || isSnapFeedHost || h.contains("bilibili") || 
+                                                h.contains("reddit") || h.contains("twitter") || h.contains("x.com") || 
+                                                h.contains("pinterest") || h.contains("twitch") || h.contains("weibo") || 
+                                                h.contains("snapchat") || h.contains("vk") || isDouyin || isTikTok;
+                                    }
+                                } catch (Exception ignored) {}
+                            }
+                            final String hostTag = "[Host: " + host + "] ";
+                            Log.i("[DETECTION] " + hostTag + "Resolved. isMediaHost: " + isMediaHost + " | isSnapFeedHost: " + isSnapFeedHost + " | isTikTok: " + isTikTok + " | isDouyin: " + isDouyin);
+
+                            View touchTargetView = isTikTok ? resolvedWebView : findTopmostTouchTarget(finalTargetActivity, resolvedWebView);
+                            
+                            smartScrollWebView(resolvedWebView, touchTargetView, !isNext, hostTag, isMediaHost, isDouyin, isTikTok);
+                        } else {
+                            Log.i("[DETECTION] WebBrowser is hidden or out of focus. Allowing default media propagation.");
+                        }
+                    }
+                });
+                
+                return true; 
             }
         }
 
@@ -385,39 +428,59 @@ public class KeyEventHandler {
         return baseWebView;
     }
 
-    private static View scanHighestVisibleChild(View parent, long minValidArea, int minValidHeight) {
-        if (parent == null || !parent.isShown() || parent.getVisibility() != View.VISIBLE || parent.getAlpha() < 0.1f) {
-            return null;
+    // SURGICAL FIX: A new dedicated Global Swiper for native apps bypassing the local UI tree entirely
+    private static void executeNativeAppSwipe(boolean up, String pkgName, int width, int height) {
+        if (!isHardwareSwiping.compareAndSet(false, true)) {
+            Log.w("[NATIVE_SWIPE] Sequence already in progress. Dropping overlapping dispatch.");
+            return;
+        }
+
+        final android.os.Handler guaranteedHandler = new android.os.Handler(android.os.Looper.getMainLooper());
+        final float actionX = width * 0.50f; 
+        
+        float centerY = height / 2f;
+        float span = height * 0.60f; 
+        if (pkgName.contains("zhiliaoapp") || pkgName.contains("trill") || pkgName.contains("aweme")) {
+            centerY = height * 0.35f;
+            span = height * 0.40f; 
         }
         
-        if (parent instanceof ViewGroup) {
-            ViewGroup vg = (ViewGroup) parent;
-            for (int i = vg.getChildCount() - 1; i >= 0; i--) {
-                View child = vg.getChildAt(i);
-                View target = scanHighestVisibleChild(child, minValidArea, minValidHeight);
+        final float yStart = up ? (centerY - span / 2f) : (centerY + span / 2f);
+        final float yEnd = up ? (centerY + span / 2f) : (centerY - span / 2f);
+
+        try {
+            final long startTime = android.os.SystemClock.uptimeMillis();
+            
+            EventDispatcher dispatcher = EventDispatcher.get();
+            dispatcher.motionEvent(startTime, startTime, MotionEvent.ACTION_DOWN, actionX, yStart);
+
+            final int stepCount = 13; 
+            final long swipeDuration = 170; 
+            
+            for (int i = 1; i <= stepCount; i++) {
+                final float linearT = (float) i / stepCount;
+                final float currentY = yStart + (yEnd - yStart) * linearT;
+                final long moveTime = startTime + (long) (swipeDuration * linearT);
                 
-                if (target != null) {
-                    return target;
+                guaranteedHandler.postDelayed(() -> {
+                    dispatcher.motionEvent(startTime, moveTime, MotionEvent.ACTION_MOVE, actionX, currentY);
+                }, (long) (swipeDuration * linearT));
+            }
+
+            guaranteedHandler.postDelayed(() -> {
+                try {
+                    long endTime = startTime + swipeDuration + 10;
+                    dispatcher.motionEvent(startTime, endTime, MotionEvent.ACTION_UP, actionX, yEnd);
+                    Log.i("[REACTION] Global Hardware Swipe for " + pkgName + " Concluded.");
+                } finally {
+                    isHardwareSwiping.set(false);
                 }
-            }
+            }, swipeDuration + 10);
+
+        } catch (Exception e) {
+            Log.e(e, "[REACTION] Global Hardware Swipe failed with Exception.");
+            isHardwareSwiping.set(false); 
         }
-        
-        long viewArea = (long) parent.getWidth() * parent.getHeight();
-        if (viewArea >= minValidArea || parent.getHeight() >= minValidHeight) {
-            String className = parent.getClass().getSimpleName();
-            boolean isGenericWrapper = className.equals("FrameLayout") || 
-                                       className.equals("LinearLayout") || 
-                                       className.equals("RelativeLayout") || 
-                                       className.equals("DecorView") ||
-                                       className.equals("ViewGroup") ||
-                                       className.equals("ViewStub");
-                                       
-            if (!isGenericWrapper) {
-                return parent;
-            }
-        }
-        
-        return null;
     }
 
     private static void executeHardwareTouchSwipe(final View touchTarget, boolean up, final String hostTag, final String contextLog, boolean isTikTok) {
@@ -432,8 +495,6 @@ public class KeyEventHandler {
         
         final float actionX = touchTarget.getWidth() * 0.50f; 
         
-        // SURGICAL FIX: Shifts physical swipe zone for TikTok to upper 35% 
-        // This avoids TikTok's new invisible bottom-half protective layer entirely
         float centerY = touchTarget.getHeight() / 2f;
         float span = touchTarget.getHeight() * 0.60f; 
         if (isTikTok) {
