@@ -566,12 +566,9 @@ public class MirrorDisplay {
 				boolean land = (mode == 1); 
 				
 				if (rotationAnchor == null) {
-					// SURGICAL FIX: Full Screen Rotation Dominance + 0.0f Alpha Security Evader
-					// MATCH_PARENT guarantees forced-portrait apps (TikTok, Douyin) are bullied into rotating.
-					// alpha = 0.0f guarantees the Android OS drops its "Untrusted Touch" occlusion block, letting touches through freely.
+					// RESTORED FIX: Reverted to 1x1 Pixel to completely evade Android OS Untrusted Touch Security.
 					var anchorLp = new WindowManager.LayoutParams(
-							MATCH_PARENT, MATCH_PARENT, TYPE_APPLICATION_OVERLAY, ANCHOR_FLAGS, PixelFormat.TRANSPARENT);
-					anchorLp.alpha = 0.0f; // Critical for Android 12+ 
+							1, 1, TYPE_APPLICATION_OVERLAY, ANCHOR_FLAGS, PixelFormat.TRANSPARENT);
 					anchorLp.gravity = Gravity.TOP | Gravity.START;
 					anchorLp.screenOrientation = land ? SCREEN_ORIENTATION_LANDSCAPE : SCREEN_ORIENTATION_PORTRAIT;
 					
