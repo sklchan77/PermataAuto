@@ -46,7 +46,6 @@ abstract class EventDispatcher {
 
 	public abstract boolean home();
 	
-	// SURGICAL ADDITION: Non-Root Recent Apps Methods
 	public abstract boolean recent();
 	
 	public abstract boolean directRecent();
@@ -276,7 +275,6 @@ abstract class EventDispatcher {
 		public boolean directRecent() {
 			if (AccessibilityEventDispatcherService.dispatchRecent()) return true;
 			
-			// IPC Bypass for non-root Recents
 			var ctx = PermataApplication.get();
 			if (ctx != null) {
 				Intent intent = new Intent("my.app.permata.ACTION_GLOBAL_RECENT");
