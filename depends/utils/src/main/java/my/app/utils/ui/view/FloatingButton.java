@@ -22,10 +22,10 @@ import androidx.annotation.Px;
 import com.google.android.material.floatingactionbutton.FloatingActionButton;
 
 import my.app.utils.R;
-import my.aap.utils.function.DoubleSupplier;
-import my.aap.utils.pref.PreferenceStore;
-import my.aap.utils.pref.PreferenceStore.Pref;
-import my.aap.utils.pref.SharedPreferenceStore;
+import my.app.utils.function.DoubleSupplier;
+import my.app.utils.pref.PreferenceStore;
+import my.app.utils.pref.PreferenceStore.Pref;
+import my.app.utils.pref.SharedPreferenceStore;
 import my.app.utils.ui.UiUtils;
 import my.app.utils.ui.activity.ActivityDelegate;
 import my.app.utils.ui.activity.ActivityListener;
