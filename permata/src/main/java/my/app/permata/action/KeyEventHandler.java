@@ -48,6 +48,7 @@ public class KeyEventHandler {
     private static final Map<Class<?>, Method> webViewMethodCache = new ConcurrentHashMap<>();
     private static final Map<View, Long> scrollTimestamps = Collections.synchronizedMap(new WeakHashMap<>());
 
+    // RESTORED FIX: Returned exactly to your flawlessly working original CSS payload
     private static final String JS_UNIVERSAL_PAYLOAD = "(function(){" +
             "let res = 'Discovery [Layer 2]: JS Registry Miss (No custom formatting applied)'; " +
             "const injectGlobalWipe = function() { " +
@@ -96,9 +97,7 @@ public class KeyEventHandler {
             "      return 'DOUYIN: Standard media UI wipe executed.'; " +
             "    }}," +
             "    {name:\"tiktok\",match:/tiktok/,execute:function(){" +
-            "      var ttCss = ' [data-e2e=\"video-author-avatar\"], [data-e2e=\"nav-login\"], [class*=\"DivHeaderContainer\"], [class*=\"DivSideNavContainer\"], [class*=\"DivBottomContainer\"], [id*=\"login\"], [class*=\"login\"], [class*=\"modal\"], [class*=\"mask\"], [class*=\"overlay\"], [class*=\"bottom-bar\"], [class*=\"app-banner\"], [id*=\"dialog\"] { display: none !important; opacity: 0 !important; pointer-events: none !important; } ' + " +
-            "                  ' [class*=\"DivMediaCardOverlay\"], [class*=\"DivOverlayBottomContent\"], [class*=\"DivCreatorInfoContainer\"], [class*=\"BasePlayerContainer\"]::after { pointer-events: none !important; } ' + " +
-            "                  ' body, html { touch-action: pan-y !important; overflow: auto !important; } '; " +
+            "      var ttCss = ' [data-e2e=\"video-author-avatar\"], [data-e2e=\"nav-login\"], [class*=\"DivHeaderContainer\"], [class*=\"DivSideNavContainer\"], [class*=\"DivBottomContainer\"] { display: none !important; } [class*=\"DivMediaCardOverlay\"], [class*=\"DivOverlayBottomContent\"], [class*=\"DivCreatorInfoContainer\"], [class*=\"BasePlayerContainer\"]::after { pointer-events: none !important; } '; " +
             "      return 'TIKTOK: ' + injectGlobalWipe() + ' | ' + injectSpecificWipe(ttCss, 'permata-tt-css'); " +
             "    }}," +
             "    {name:\"instagram\",match:/instagram/,execute:function(){" +
@@ -261,12 +260,9 @@ public class KeyEventHandler {
                                     final String hostTag = "[Host: " + host + "] ";
                                     Log.i("[DETECTION] " + hostTag + "Resolved. isMediaHost: " + isMediaHost + " | isSnapFeedHost: " + isSnapFeedHost + " | isTikTok: " + isTikTok + " | isDouyin: " + isDouyin);
 
-                                    // SURGICAL FIX: Perfectly Isolated Target Bypass for TikTok
-                                    // ONLY TikTok bypasses the topmost scanner to defeat its transparent shield overlay.
-                                    // Douyin, Facebook, Instagram, and all other hosts will continue using the normal findTopmostTouchTarget method.
                                     View touchTargetView = isTikTok ? resolvedWebView : findTopmostTouchTarget(finalTargetActivity, resolvedWebView);
                                     
-                                    smartScrollWebView(resolvedWebView, touchTargetView, !isNext, hostTag, isMediaHost, isDouyin);
+                                    smartScrollWebView(resolvedWebView, touchTargetView, !isNext, hostTag, isMediaHost, isDouyin, isTikTok);
                                 } else {
                                     Log.i("[DETECTION] WebBrowser is hidden or out of focus. Allowing default media propagation.");
                                 }
@@ -424,7 +420,7 @@ public class KeyEventHandler {
         return null;
     }
 
-    private static void executeHardwareTouchSwipe(final View touchTarget, boolean up, final String hostTag, final String contextLog) {
+    private static void executeHardwareTouchSwipe(final View touchTarget, boolean up, final String hostTag, final String contextLog, boolean isTikTok) {
         if (touchTarget == null || !touchTarget.isAttachedToWindow()) return;
         
         if (!isHardwareSwiping.compareAndSet(false, true)) {
@@ -435,8 +431,16 @@ public class KeyEventHandler {
         final android.os.Handler guaranteedHandler = new android.os.Handler(android.os.Looper.getMainLooper());
         
         final float actionX = touchTarget.getWidth() * 0.50f; 
-        final float centerY = touchTarget.getHeight() / 2f;
+        
+        // SURGICAL FIX: Shifts physical swipe zone for TikTok to upper 35% 
+        // This avoids TikTok's new invisible bottom-half protective layer entirely
+        float centerY = touchTarget.getHeight() / 2f;
         float span = touchTarget.getHeight() * 0.60f; 
+        if (isTikTok) {
+            centerY = touchTarget.getHeight() * 0.35f;
+            span = touchTarget.getHeight() * 0.40f; 
+        }
+        
         final float yStart = up ? (centerY - span / 2f) : (centerY + span / 2f);
         final float yEnd = up ? (centerY + span / 2f) : (centerY - span / 2f);
 
@@ -487,7 +491,7 @@ public class KeyEventHandler {
         }
     }
 
-    private static void smartScrollWebView(final WebView wv, final View touchTarget, boolean up, final String hostTag, boolean isMediaHost, boolean isDouyin) {
+    private static void smartScrollWebView(final WebView wv, final View touchTarget, boolean up, final String hostTag, boolean isMediaHost, boolean isDouyin, boolean isTikTok) {
         if (wv == null || touchTarget == null || !touchTarget.isAttachedToWindow() || touchTarget.getWidth() <= 0 || touchTarget.getHeight() <= 0) return;
 
         long now = android.os.SystemClock.uptimeMillis();
@@ -582,7 +586,7 @@ public class KeyEventHandler {
             if (!wv.isAttachedToWindow() || touchTarget == null || !touchTarget.isAttachedToWindow()) return;
             
             if (isMediaHost) {
-                executeHardwareTouchSwipe(touchTarget, up, hostTag, "Global Hardware Swipe");
+                executeHardwareTouchSwipe(touchTarget, up, hostTag, "Global Hardware Swipe", isTikTok);
             }
         }, 100);
     }
