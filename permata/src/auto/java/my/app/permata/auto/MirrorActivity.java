@@ -13,7 +13,6 @@ import android.annotation.SuppressLint;
 import android.content.Context;
 import android.content.Intent;
 import android.graphics.Color;
-import android.graphics.PorterDuff;
 import android.os.Bundle;
 import android.view.MotionEvent;
 import android.view.SurfaceHolder;
@@ -151,7 +150,6 @@ public class MirrorActivity extends CarActivity implements SurfaceHolder.Callbac
 	}
 
 	static void onBackButtonClick() {
-		// SURGICAL FIX: Unreliable Launcher focus check stripped. Native Back command passes through cleanly.
 		var d = EventDispatcher.get();
 		if (d != null) {
 			d.directBack();
@@ -210,8 +208,8 @@ public class MirrorActivity extends CarActivity implements SurfaceHolder.Callbac
 				v.setId(icons[i]);
 				v.setImageResource(icons[i]);
 				
-				// SURGICAL FIX: PorterDuff SRC_IN forcefully paints black/transparent vectors to pure white
-				if (i == 1 || i == 3) v.setColorFilter(Color.WHITE, PorterDuff.Mode.SRC_IN); 
+				// SURGICAL FIX: Reverted to standard Color.WHITE since the XML viewport is now correctly sized
+				if (i == 1 || i == 3) v.setColorFilter(Color.WHITE); 
 				
 				v.setBackgroundResource(R.drawable.oval_bg);
 				v.setPadding(iconPad, iconPad, iconPad, iconPad);
