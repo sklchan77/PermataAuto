@@ -10,6 +10,7 @@ import android.content.Context;
 import android.content.ContextWrapper;
 import android.content.Intent;
 import android.net.Uri;
+import android.util.DisplayMetrics;
 import android.view.InputDevice;
 import android.view.KeyEvent;
 import android.view.MotionEvent;
@@ -225,13 +226,7 @@ public class KeyEventHandler {
                 // Scenario A: It is a known Native Scroller (TikTok, Douyin, etc.)
                 if (isNativeScroller && !isWebBrowser) {
                     Log.i("[DETECTION] Native Scroller App detected: " + activePkg + ". Firing God-Mode Swipe.");
-                    int width = 1080;
-                    int height = 1920;
-                    if (finalTargetActivity.getWindow() != null && finalTargetActivity.getWindow().getDecorView() != null) {
-                        width = finalTargetActivity.getWindow().getDecorView().getWidth();
-                        height = finalTargetActivity.getWindow().getDecorView().getHeight();
-                    }
-                    executeNativeAppSwipe(!isNext, activePkg, width, height);
+                    executeNativeAppSwipe(!isNext, activePkg);
                     return true;
                 }
 
@@ -428,21 +423,41 @@ public class KeyEventHandler {
         return baseWebView;
     }
 
-    // SURGICAL FIX: A new dedicated Global Swiper for native apps bypassing the local UI tree entirely
-    private static void executeNativeAppSwipe(boolean up, String pkgName, int width, int height) {
+    // SURGICAL FIX: A dedicated Global Swiper utilizing direct hardware DisplayMetrics
+    private static void executeNativeAppSwipe(boolean up, String pkgName) {
         if (!isHardwareSwiping.compareAndSet(false, true)) {
             Log.w("[NATIVE_SWIPE] Sequence already in progress. Dropping overlapping dispatch.");
             return;
         }
 
         final android.os.Handler guaranteedHandler = new android.os.Handler(android.os.Looper.getMainLooper());
-        final float actionX = width * 0.50f; 
         
-        float centerY = height / 2f;
-        float span = height * 0.60f; 
+        // Pull absolute hardware screen dimensions to ignore Ghost Window skewing
+        DisplayMetrics metrics = android.content.res.Resources.getSystem().getDisplayMetrics();
+        int screenWidth = metrics.widthPixels;
+        int screenHeight = metrics.heightPixels;
+
+        // Center X is always safe
+        final float actionX = screenWidth * 0.50f; 
+        
+        // Default swipe parameters
+        float centerY = screenHeight / 2f;
+        float span = screenHeight * 0.50f; 
+
+        // TikTok/Douyin specific logic
         if (pkgName.contains("zhiliaoapp") || pkgName.contains("trill") || pkgName.contains("aweme")) {
-            centerY = height * 0.35f;
-            span = height * 0.40f; 
+            boolean isLandscape = screenWidth > screenHeight;
+            
+            if (isLandscape) {
+                // In landscape, height is squashed. We need an aggressive span to force the page turn,
+                // but we MUST stay in the upper half to avoid the comment/profile UI block.
+                centerY = screenHeight * 0.40f; 
+                span = screenHeight * 0.65f; // Pulls almost the entire available vertical space
+            } else {
+                // Portrait: Standard safe upper-third swipe
+                centerY = screenHeight * 0.35f;
+                span = screenHeight * 0.40f; 
+            }
         }
         
         final float yStart = up ? (centerY - span / 2f) : (centerY + span / 2f);
@@ -455,7 +470,7 @@ public class KeyEventHandler {
             dispatcher.motionEvent(startTime, startTime, MotionEvent.ACTION_DOWN, actionX, yStart);
 
             final int stepCount = 13; 
-            final long swipeDuration = 170; 
+            final long swipeDuration = 170; // Fast swipe to trigger momentum scrolling
             
             for (int i = 1; i <= stepCount; i++) {
                 final float linearT = (float) i / stepCount;
@@ -471,7 +486,7 @@ public class KeyEventHandler {
                 try {
                     long endTime = startTime + swipeDuration + 10;
                     dispatcher.motionEvent(startTime, endTime, MotionEvent.ACTION_UP, actionX, yEnd);
-                    Log.i("[REACTION] Global Hardware Swipe for " + pkgName + " Concluded.");
+                    Log.i("[REACTION] Global Hardware Swipe for " + pkgName + " Concluded. (Landscape Mode: " + (screenWidth > screenHeight) + ")");
                 } finally {
                     isHardwareSwiping.set(false);
                 }
