@@ -24,13 +24,15 @@ import my.app.permata.ui.activity.MainActivity;
 import my.app.utils.async.FutureSupplier;
 import my.app.utils.log.Log;
 
-abstract class EventDispatcher {
+// SURGICAL FIX: Made class public so KeyEventHandler (in another package) can use the God-Mode swiper
+public abstract class EventDispatcher {
 
 	public static void useSu(Su su) {
 		SuDispatcher.instance = completed(new SuDispatcher(su));
 	}
 
-	static EventDispatcher get() {
+	// SURGICAL FIX: Made public for global hardware swipe access
+	public static EventDispatcher get() {
 		int windowCount = AccessibilityEventDispatcherService.getWindowCount();
 		if (windowCount > 1) {
 			return AccessibilityDispatcher.get();
