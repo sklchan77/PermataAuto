@@ -201,6 +201,12 @@ public class MirrorDisplay {
 		}
 	}
 
+	public boolean isDestroyed() {
+		synchronized (lifecycleLock) {
+			return isDestroyed;
+		}
+	}
+
 	public void release() {
 		synchronized (lifecycleLock) {
 			if (isDestroyed) return;
@@ -528,7 +534,6 @@ public class MirrorDisplay {
 							brightness = (br > 0) ? br : 200;
 						}
 						
-						// SURGICAL FIX: Cures the Samsung 100% Brightness Panic Bug
 						Settings.System.putInt(cr, SCREEN_BRIGHTNESS, 1);
 						
 						isDimmed = true;
@@ -664,7 +669,6 @@ public class MirrorDisplay {
 		mainHandler.removeCallbacks(orientationHeartbeat);
 		app.sendBroadcast(new Intent(ACTION_KILL_WEBVIEW));
 		
-		// SURGICAL FIX: Call the synchronous variants to beat the Thread Guillotine
 		restoreBrightness(app, true);
 		restoreAccelRotation(app, true);
 		
@@ -967,7 +971,6 @@ public class MirrorDisplay {
 				
 				resetIdleTimer();
 				var ctx = getContext();
-				// SURGICAL FIX: Dispatches asynchronously when triggered by the UI thread to prevent touch lag
 				restoreBrightness(ctx, false);
 				restoreAccelRotation(ctx, false); 
 				updateOverlayOrientation(false); 
