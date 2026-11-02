@@ -224,7 +224,6 @@ public class MediaSessionCallback extends MediaSessionCompat.Callback
 		currentState = new PlaybackStateCompat.Builder().setActions(SUPPORTED_ACTIONS).build();
 		setPlaybackState(currentState);
 		
-		// SURGICAL FIX: Stealth Startup - Keeps AA Media Tile hidden until actual media begins
 		session.setActive(false);
 
 		audioManager = (AudioManager) ctx.getSystemService(Context.AUDIO_SERVICE);
@@ -468,8 +467,10 @@ public class MediaSessionCallback extends MediaSessionCompat.Callback
 
 		switch (state.getState()) {
 			case STATE_NONE, STATE_STOPPED, STATE_ERROR -> {
+				// SURGICAL FIX: Android Auto 8-Second Watchdog Bypass
+				session.setActive(true);
 				PlaybackStateCompat connectingState = new PlaybackStateCompat.Builder().setActions(SUPPORTED_ACTIONS)
-						.setState(STATE_CONNECTING, 0, 1.0f).build();
+						.setState(STATE_PLAYING, 0, 1.0f).build();
 				setPlaybackState(connectingState);
 
 				my.app.utils.async.Promise<Void> p = new my.app.utils.async.Promise<>();
@@ -506,7 +507,6 @@ public class MediaSessionCallback extends MediaSessionCompat.Callback
 									speed).build();
 					setPlaybackState(newState);
 					
-					// SURGICAL FIX: Bring session out of stealth mode if we start playing
 					session.setActive(true);
 					
 					eng.setPosition(pos);
@@ -529,8 +529,12 @@ public class MediaSessionCallback extends MediaSessionCompat.Callback
 	}
 
 	private FutureSupplier<Void> playFromMediaId(String mediaId, Bundle extras) {
+		// SURGICAL FIX: Android Auto 8-Second Watchdog Bypass
+		// Android Auto expects an immediate STATE_PLAYING (at 1.0f speed) when a media tile is tapped,
+		// or it violently revokes audio focus. We fake the playing state instantly to buy unlimited buffering time.
+		session.setActive(true);
 		PlaybackStateCompat state = new PlaybackStateCompat.Builder().setActions(SUPPORTED_ACTIONS)
-				.setState(STATE_CONNECTING, 0, 1.0f).build();
+				.setState(STATE_PLAYING, 0, 1.0f).build();
 		setPlaybackState(state);
 
 		my.app.utils.async.Promise<Void> delayedPromise = new my.app.utils.async.Promise<>();
@@ -1219,8 +1223,11 @@ public class MediaSessionCallback extends MediaSessionCompat.Callback
 	public void playItem(PlayableItem i, long pos) {
 		playerTask.cancel();
 		setLastPlayed(i, pos);
+		
+		// SURGICAL FIX: Android Auto 8-Second Watchdog Bypass
+		session.setActive(true);
 		PlaybackStateCompat state = new PlaybackStateCompat.Builder().setActions(SUPPORTED_ACTIONS)
-				.setState(STATE_CONNECTING, 0, 1.0f).build();
+				.setState(STATE_PLAYING, 0, 1.0f).build();
 		setPlaybackState(state);
 		
 		wakeCarUiAndRun(() -> {
@@ -1319,8 +1326,6 @@ public class MediaSessionCallback extends MediaSessionCompat.Callback
 
 	private void setPlaybackState(PlaybackStateCompat state) {
 		currentState = state;
-		// A stop or engine switch deactivates the session. Publish resumed playback
-		// through an active session so system media controls can discover it again.
 		if ((state.getState() == STATE_PLAYING) && !session.isActive()) {
 			session.setActive(true);
 		}
@@ -1470,10 +1475,8 @@ public class MediaSessionCallback extends MediaSessionCompat.Callback
 	private FutureSupplier<PlayableItem> prepareItem(PlayableItem i) {
 		if (i == null) return completedNull();
 
-		// Make sure metadata is loaded
 		FutureSupplier<Long> getDur = i.getDuration();
 
-		// Make sure HTTP server is started
 		if (i.isNetResource()) {
 			FutureSupplier<NetServer> start = lib.getVfsManager().getNetServer();
 			if (!start.isDone()) return start.and(getDur, (s, d) -> {
@@ -1677,7 +1680,7 @@ public class MediaSessionCallback extends MediaSessionCompat.Callback
 			} catch (Exception e) {
 				Log.e(e, "Failed to wake Car UI for background play request.");
 			}
-			handler.postDelayed(action, 1500); // Wait exactly 1.5 seconds for Surface and WebView to fully inflate
+			handler.postDelayed(action, 1500);
 		} else {
 			action.run();
 		}
