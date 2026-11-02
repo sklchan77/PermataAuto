@@ -24,7 +24,7 @@ import my.app.permata.ui.activity.MainActivity;
 import my.app.utils.async.FutureSupplier;
 import my.app.utils.log.Log;
 
-// SURGICAL FIX: Made class public so KeyEventHandler (in another package) can use the God-Mode swiper
+// SURGICAL FIX: Made class public so KeyEventHandler can use the God-Mode swiper
 public abstract class EventDispatcher {
 
 	public static void useSu(Su su) {
@@ -71,7 +71,8 @@ public abstract class EventDispatcher {
 		static final XposedDispatcher instance = new XposedDispatcher();
 
 		@NonNull
-		static XposedDispatcher get() {
+        // SURGICAL FIX: Must match parent 'public' access modifier
+		public static XposedDispatcher get() {
 			return instance;
 		}
 
@@ -134,7 +135,8 @@ public abstract class EventDispatcher {
 		private InputMethodManager imm;
 
 		@NonNull
-		static ActivityDispatcher get() {
+        // SURGICAL FIX: Must match parent 'public' access modifier
+		public static ActivityDispatcher get() {
 			return instance;
 		}
 
@@ -227,7 +229,8 @@ public abstract class EventDispatcher {
 		private static final AccessibilityDispatcher instance = new AccessibilityDispatcher();
 
 		@NonNull
-		static AccessibilityDispatcher get() {
+        // SURGICAL FIX: Must match parent 'public' access modifier
+		public static AccessibilityDispatcher get() {
 			return instance;
 		}
 
@@ -324,7 +327,8 @@ public abstract class EventDispatcher {
 		SuDispatcher(Su su) {this.su = su;}
 
 		@Nullable
-		static SuDispatcher get() {
+        // SURGICAL FIX: Must match parent 'public' access modifier
+		public static SuDispatcher get() {
 			return instance.peek();
 		}
 
