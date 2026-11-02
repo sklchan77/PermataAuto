@@ -125,20 +125,39 @@ public class MirrorActivity extends CarActivity implements SurfaceHolder.Callbac
 		}, 5000);
 	}
 
-	// RESTORED FIX: Must remain static so MirrorServiceFS can bind to them
+	// SURGICAL FIX: Restored native Car Intents so MirrorServiceFS can bind to them correctly.
+	// This prevents the buttons from accidentally triggering actions on the physical phone screen.
 	static void onHomeButtonClick() {
-		AccessibilityEventDispatcherService.dispatchHome();
+		var ctx = PermataApplication.get();
+		if (ctx != null) {
+			Intent intent = new Intent(ctx, LauncherActivity.class);
+			intent.setFlags(FLAG_ACTIVITY_NEW_TASK | FLAG_ACTIVITY_CLEAR_TOP | FLAG_ACTIVITY_SINGLE_TOP);
+			ctx.startActivity(intent);
+		}
 		disableAccelRotation();
 	}
 
 	static void onBackButtonClick() {
-		AccessibilityEventDispatcherService.dispatchBack();
+		var d = EventDispatcher.get();
+		if (d != null) {
+			d.directBack();
+		}
 		disableAccelRotation();
 	}
 
 	static void onExitButtonClick() {
 		Log.i("User triggered manual shutdown from Split-Screen toolbar.");
-		MirrorDisplay.close(); // This internally clears the zombie window via setMirroringMode(0)
+		MirrorDisplay.close();
+		
+		// SURGICAL FIX: Forcefully kills the zombie Car UI window for both Split-Screen and Full-Screen modes,
+		// dropping the user perfectly back to the native Car Dashboard.
+		var ctx = PermataApplication.get();
+		if (ctx != null) {
+			Intent intent = new Intent(ctx, LauncherActivity.class);
+			intent.setAction(MainActivityDelegate.INTENT_ACTION_FINISH);
+			intent.setFlags(FLAG_ACTIVITY_NEW_TASK | FLAG_ACTIVITY_CLEAR_TOP | FLAG_ACTIVITY_SINGLE_TOP);
+			ctx.startActivity(intent);
+		}
 	}
 
 	private final class ToolBar extends LinearLayout {
