@@ -223,7 +223,9 @@ public class MediaSessionCallback extends MediaSessionCompat.Callback
 
 		currentState = new PlaybackStateCompat.Builder().setActions(SUPPORTED_ACTIONS).build();
 		setPlaybackState(currentState);
-		session.setActive(true);
+		
+		// SURGICAL FIX: Stealth Startup - Keeps AA Media Tile hidden until actual media begins
+		session.setActive(false);
 
 		audioManager = (AudioManager) ctx.getSystemService(Context.AUDIO_SERVICE);
 
@@ -503,6 +505,10 @@ public class MediaSessionCallback extends MediaSessionCompat.Callback
 							new PlaybackStateCompat.Builder(getPlaybackState()).setState(PlaybackStateCompat.STATE_PLAYING, pos,
 									speed).build();
 					setPlaybackState(newState);
+					
+					// SURGICAL FIX: Bring session out of stealth mode if we start playing
+					session.setActive(true);
+					
 					eng.setPosition(pos);
 					start(eng, speed);
 					p.complete(null);
