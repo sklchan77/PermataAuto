@@ -47,6 +47,10 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
 	private static String clickOnButton;
 	public static boolean isConsentGranted = false;
 	private static AccessibilityEventDispatcherService instance;
+	
+	// SURGICAL FIX: The package tracking memory bank
+	private static volatile String lastActivePackage = null;
+	
 	private final Set<Integer> windowIds =
 			(VERSION.SDK_INT < VERSION_CODES.TIRAMISU) ? Collections.emptySet() : new HashSet<>();
 	private final Path path = new Path();
@@ -84,6 +88,11 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
 
 	public static boolean isAvailable() {
 		return instance != null;
+	}
+
+	// SURGICAL FIX: Allows the KeyEventHandler to query the active native app beneath the overlays
+	public static String getLastActivePackage() {
+		return lastActivePackage;
 	}
 
 	static int getWindowCount() {
@@ -361,11 +370,19 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
 
 		if (type != TYPE_WINDOW_STATE_CHANGED) return;
 
-		if (isConsentGranted && clickOnButton == null) return;
-
 		CharSequence pkg = event.getPackageName();
-		if (pkg == null) return;
-		String pkgName = pkg.toString();
+		String pkgName = (pkg != null) ? pkg.toString() : null;
+
+		// SURGICAL FIX: Silently track the native app on screen, ignoring our own overlays and system keyboards
+		if (pkgName != null && !pkgName.startsWith("my.app.permata") &&
+			!pkgName.equals("com.android.systemui") &&
+			!pkgName.equals("android") &&
+			!pkgName.contains("inputmethod")) {
+			lastActivePackage = pkgName;
+		}
+
+		if (isConsentGranted && clickOnButton == null) return;
+		if (pkgName == null) return;
 
 		var root = getRootInActiveWindow();
 		if (root == null) return;
