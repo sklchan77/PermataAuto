@@ -119,8 +119,6 @@ public class MirrorServiceFS extends CarAppService {
 			if (localSc.getSurface() == null) return;
 			MirrorServiceFS.sc = localSc;
 			
-			// SURGICAL FIX (Issue 2): Zombie Singleton Cache Buster
-			// If the previous instance was manually destroyed by the user, pull a fresh one.
 			if (md == null || md.isDestroyed()) {
 				if (md != null) md.release();
 				md = MirrorDisplay.get();
@@ -235,9 +233,9 @@ public class MirrorServiceFS extends CarAppService {
 							new CarIcon.Builder(createWithResource(getCarContext(), R.drawable.home)).build())
 					.setOnClickListener(MirrorActivity::onHomeButtonClick).build();
 					
-			// SURGICAL FIX (Issue 1): Removed setTint() so it pulls the intrinsic white color naturally
+			// SURGICAL FIX: Chained setTint(CarColor.DEFAULT) to force Android Auto to paint the vector pure white natively.
 			var recentButton = new Action.Builder().setIcon(
-							new CarIcon.Builder(createWithResource(getCarContext(), R.drawable.recent)).build())
+							new CarIcon.Builder(createWithResource(getCarContext(), R.drawable.recent)).setTint(androidx.car.app.model.CarColor.DEFAULT).build())
 					.setOnClickListener(MirrorActivity::onRecentButtonClick).build();
 					
 			var backButton = new Action.Builder().setIcon(
@@ -245,7 +243,7 @@ public class MirrorServiceFS extends CarAppService {
 					.setOnClickListener(MirrorActivity::onBackButtonClick).build();
 					
 			var exitButton = new Action.Builder().setIcon(
-							new CarIcon.Builder(createWithResource(getCarContext(), R.drawable.shutdown)).build())
+							new CarIcon.Builder(createWithResource(getCarContext(), R.drawable.shutdown)).setTint(androidx.car.app.model.CarColor.DEFAULT).build())
 					.setOnClickListener(() -> {
 						Log.i("User triggered manual shutdown.");
 						MirrorDisplay.close();
@@ -266,7 +264,6 @@ public class MirrorServiceFS extends CarAppService {
 		}
 
 		private MirrorDisplay md() {
-			// SURGICAL FIX (Issue 2): Double check pulse before returning
 			if (md == null || md.isDestroyed()) md = MirrorDisplay.get();
 			if (md != null && sc != null) md.setSurface(sc);
 			return md;
