@@ -104,6 +104,7 @@ public class MirrorDisplay {
 	private static volatile boolean isRotationLocked = false;
 	private static volatile boolean isDimmed = false;
 	private static volatile int accel = -1;
+	private static volatile int originalUserRotation = -1; // SURGICAL FIX: Track physical axis perfectly
 	private static volatile int brightnessMode = -1; 
 	private static volatile int brightness = -1;
 	
@@ -441,6 +442,12 @@ public class MirrorDisplay {
 						var v = Settings.System.getInt(cr, ACCELEROMETER_ROTATION, -1);
 						if (v != -1) accel = v;
 					}
+					// SURGICAL FIX: Ensure we securely backup the physical layout orientation before modifying it
+					if (originalUserRotation == -1) {
+						var ur = Settings.System.getInt(cr, USER_ROTATION, -1);
+						if (ur != -1) originalUserRotation = ur;
+					}
+					
 					Settings.System.putInt(cr, ACCELEROMETER_ROTATION, 0);
 					Settings.System.putInt(cr, USER_ROTATION, land ? ROTATION_90 : ROTATION_0);
 					isRotationLocked = true;
@@ -459,9 +466,15 @@ public class MirrorDisplay {
 			synchronized (settingsLock) {
 				if (!isRotationLocked) return;
 				try {
+					var cr = ctx.getContentResolver();
 					if (accel != -1) {
-						Settings.System.putInt(ctx.getContentResolver(), ACCELEROMETER_ROTATION, accel);
+						Settings.System.putInt(cr, ACCELEROMETER_ROTATION, accel);
 						accel = -1;
+					}
+					// SURGICAL FIX: Perfectly restore the native physical axis (fixing stuck landscape phones)
+					if (originalUserRotation != -1) {
+						Settings.System.putInt(cr, USER_ROTATION, originalUserRotation);
+						originalUserRotation = -1;
 					}
 					isRotationLocked = false;
 				} catch (Exception err) {
@@ -566,7 +579,6 @@ public class MirrorDisplay {
 				boolean land = (mode == 1); 
 				
 				if (rotationAnchor == null) {
-					// RESTORED FIX: Reverted to 1x1 Pixel to completely evade Android OS Untrusted Touch Security.
 					var anchorLp = new WindowManager.LayoutParams(
 							1, 1, TYPE_APPLICATION_OVERLAY, ANCHOR_FLAGS, PixelFormat.TRANSPARENT);
 					anchorLp.gravity = Gravity.TOP | Gravity.START;
@@ -613,37 +625,10 @@ public class MirrorDisplay {
 		mainHandler.removeCallbacks(orientationHeartbeat);
 		app.sendBroadcast(new Intent(ACTION_KILL_WEBVIEW));
 		
-		final boolean wasDimmed = isDimmed;
-		final boolean wasRotationLocked = isRotationLocked;
-		final int savedBrightness = brightness;
-		final int savedBrightnessMode = brightnessMode;
-		final int savedAccel = accel;
-
-		isDimmed = false;
-		isRotationLocked = false;
-		brightness = -1;
-		brightnessMode = -1;
-		accel = -1;
+		// SURGICAL FIX: Uses robust methods to perfectly restore states before tearing down variables
+		restoreBrightness(app);
+		restoreAccelRotation(app);
 		
-		if (wasDimmed || wasRotationLocked) {
-			bgExecutor.execute(() -> {
-				synchronized (settingsLock) {
-					try {
-						var cr = app.getContentResolver();
-						if (wasDimmed) {
-							if (savedBrightness > 0) Settings.System.putInt(cr, SCREEN_BRIGHTNESS, savedBrightness);
-							if (savedBrightnessMode != -1) Settings.System.putInt(cr, SCREEN_BRIGHTNESS_MODE, savedBrightnessMode);
-						}
-						if (wasRotationLocked) {
-							if (savedAccel != -1) Settings.System.putInt(cr, ACCELEROMETER_ROTATION, savedAccel);
-						}
-					} catch (Exception err) {
-						Log.e(err, "Emergency teardown write failed.");
-					}
-				}
-			});
-		}
-
 		var a = EventDispatcher.get().getActivity();
 		if (a != null) a.setRequestedOrientation(SCREEN_ORIENTATION_UNSPECIFIED);
 		
