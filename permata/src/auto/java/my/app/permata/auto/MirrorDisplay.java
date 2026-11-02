@@ -271,7 +271,6 @@ public class MirrorDisplay {
 	}
 
 	public boolean motionEvent(MotionEvent e) {
-		// SURGICAL FIX: Continuously record exact time of ALL car touches to prevent ACTION_OUTSIDE false-positives
 		lastInjectedTouchTime = uptimeMillis(); 
 		resetIdleTimer();
 		
@@ -343,7 +342,6 @@ public class MirrorDisplay {
 	}
 
 	public boolean motionEvent(long downTime, long eventTime, int action, float x, float y) {
-		// SURGICAL FIX: Continuously record exact time of ALL car touches to prevent ACTION_OUTSIDE false-positives
 		lastInjectedTouchTime = uptimeMillis(); 
 		resetIdleTimer();
 		
@@ -568,8 +566,12 @@ public class MirrorDisplay {
 				boolean land = (mode == 1); 
 				
 				if (rotationAnchor == null) {
+					// SURGICAL FIX: Full Screen Rotation Dominance + 0.0f Alpha Security Evader
+					// MATCH_PARENT guarantees forced-portrait apps (TikTok, Douyin) are bullied into rotating.
+					// alpha = 0.0f guarantees the Android OS drops its "Untrusted Touch" occlusion block, letting touches through freely.
 					var anchorLp = new WindowManager.LayoutParams(
-							1, 1, TYPE_APPLICATION_OVERLAY, ANCHOR_FLAGS, PixelFormat.TRANSPARENT);
+							MATCH_PARENT, MATCH_PARENT, TYPE_APPLICATION_OVERLAY, ANCHOR_FLAGS, PixelFormat.TRANSPARENT);
+					anchorLp.alpha = 0.0f; // Critical for Android 12+ 
 					anchorLp.gravity = Gravity.TOP | Gravity.START;
 					anchorLp.screenOrientation = land ? SCREEN_ORIENTATION_LANDSCAPE : SCREEN_ORIENTATION_PORTRAIT;
 					
@@ -905,9 +907,6 @@ public class MirrorDisplay {
 		@SuppressLint("ClickableViewAccessibility")
 		@Override
 		public boolean onTouchEvent(MotionEvent event) {
-			// SURGICAL FIX: Widened the exclusion window to 500ms.
-			// This perfectly absorbs the slight processing delay of OS-level Accessibility touches,
-			// ensuring that car-screen touches NEVER trigger a false-positive physical wakeup.
 			if (Math.abs(uptimeMillis() - lastInjectedTouchTime) < 500) return false;
 			if (event.getPointerCount() == 0 || event.getToolType(0) != MotionEvent.TOOL_TYPE_FINGER) return false;
 			
