@@ -53,7 +53,6 @@ public class MirrorActivity extends CarActivity implements SurfaceHolder.Callbac
 			@SuppressLint("ClickableViewAccessibility")
 			@Override
 			public boolean onTouchEvent(MotionEvent e) {
-				// SURGICAL FIX (Issue 2): Zombie Singleton Cache Buster
 				if (md == null || md.isDestroyed()) md = MirrorDisplay.get();
 				if (sc != null && md != null) md.setSurface(sc);
 				tb.show();
@@ -85,7 +84,6 @@ public class MirrorActivity extends CarActivity implements SurfaceHolder.Callbac
 	@Override
 	public void onResume() {
 		super.onResume();
-		// SURGICAL FIX (Issue 2): Zombie Singleton Cache Buster
 		if (md == null || md.isDestroyed()) md = MirrorDisplay.get();
 		if (sc != null && md != null) md.setSurface(sc);
 	}
@@ -155,7 +153,9 @@ public class MirrorActivity extends CarActivity implements SurfaceHolder.Callbac
 	static void onBackButtonClick() {
 		if (PermataApplication.get().isConnectedToAuto()) {
 			var activeApp = LauncherActivity.getActiveInstance();
-			if (activeApp != null && activeApp.hasWindowFocus()) {
+			// SURGICAL FIX: Replaced unreliable hasWindowFocus() with strict Lifecycle State RESUMED check.
+			// It is now impossible for backgrounded apps to accidentally trigger this block.
+			if (activeApp != null && activeApp.getLifecycle().getCurrentState().isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED)) {
 				Log.i("Back button blocked. Already at mirroring home screen.");
 				return;
 			}
@@ -219,7 +219,6 @@ public class MirrorActivity extends CarActivity implements SurfaceHolder.Callbac
 				v.setId(icons[i]);
 				v.setImageResource(icons[i]);
 				
-				// SURGICAL FIX (Issue 1): Use SRC_IN PorterDuff blending to mathematically force a pure white fill over transparent vectors
 				if (i == 1 || i == 3) v.setColorFilter(Color.WHITE, PorterDuff.Mode.SRC_IN); 
 				
 				v.setBackgroundResource(R.drawable.oval_bg);
