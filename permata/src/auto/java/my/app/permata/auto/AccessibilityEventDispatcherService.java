@@ -53,7 +53,6 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
 	private GestureDescription.Builder gb;
 	private Pointer[] pointers = new Pointer[]{new Pointer()};
 	
-	// SURGICAL FIX: Track last move time to create the 30/45 overlap chain
 	private long lastMoveTime = 0;
 
 	private final Handler safetyHandler = new Handler(Looper.getMainLooper());
@@ -77,6 +76,9 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
 				performGlobalAction(GLOBAL_ACTION_BACK);
 			} else if ("my.app.permata.ACTION_GLOBAL_HOME".equals(intent.getAction())) {
 				performGlobalAction(GLOBAL_ACTION_HOME);
+			} else if ("my.app.permata.ACTION_GLOBAL_RECENT".equals(intent.getAction())) { 
+				// SURGICAL ADDITION: Non-Root Recent Apps action
+				performGlobalAction(GLOBAL_ACTION_RECENTS);
 			}
 		}
 	};
@@ -108,6 +110,12 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
 	static boolean dispatchHome() {
 		var ds = instance;
 		return (ds != null) && ds.performGlobalAction(GLOBAL_ACTION_HOME);
+	}
+	
+	// SURGICAL ADDITION: Trigger OS Global Recents menu natively
+	static boolean dispatchRecent() {
+		var ds = instance;
+		return (ds != null) && ds.performGlobalAction(GLOBAL_ACTION_RECENTS);
 	}
 
 	static boolean dispatchTap(float x, float y) {
@@ -159,9 +167,6 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
 			ds.safetyHandler.postDelayed(ds.safetyReleaseRunnable, 500); 
 		}
 		
-		// SURGICAL FIX: 33 FPS Overlap Throttle
-		// Ensures car coordinates do not flood the OS queue, while perfectly maintaining 
-		// the continueStroke gesture chain for Notification / Recents dragging.
 		long now = android.os.SystemClock.uptimeMillis();
 		if (action == ACTION_MOVE) {
 			if (now - ds.lastMoveTime < 30) {
@@ -226,7 +231,6 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
 			ds.safetyHandler.postDelayed(ds.safetyReleaseRunnable, 500); 
 		}
 		
-		// SURGICAL FIX: 33 FPS Overlap Throttle
 		long now = android.os.SystemClock.uptimeMillis();
 		if (action == ACTION_MOVE) {
 			if (now - ds.lastMoveTime < 30) {
@@ -252,7 +256,6 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
 				p.time = eventTime;
 				path.reset();
 				path.moveTo(x, y);
-				// 45ms duration ensures the stroke bridges the 30ms dispatch interval
 				p.sd = new StrokeDescription(path, 0L, 45L, true);
 				addStroke(p.sd);
 			}
@@ -270,7 +273,6 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
 				path.reset();
 				path.moveTo(p.x, p.y);
 				path.lineTo(x, y);
-				// 45ms duration ensures the stroke bridges the 30ms dispatch interval
 				var dur = Math.max(45L, Math.min(eventTime - p.time, getMaxGestureDuration()));
 				p.x = x;
 				p.y = y;
@@ -326,6 +328,7 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
 		IntentFilter filter = new IntentFilter();
 		filter.addAction("my.app.permata.ACTION_GLOBAL_BACK");
 		filter.addAction("my.app.permata.ACTION_GLOBAL_HOME");
+		filter.addAction("my.app.permata.ACTION_GLOBAL_RECENT"); // SURGICAL ADDITION
 		if (VERSION.SDK_INT >= VERSION_CODES.TIRAMISU) {
 			registerReceiver(commandReceiver, filter, Context.RECEIVER_NOT_EXPORTED);
 		} else {
