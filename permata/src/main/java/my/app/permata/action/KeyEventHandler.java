@@ -423,6 +423,42 @@ public class KeyEventHandler {
         return baseWebView;
     }
 
+    // SURGICAL FIX: Restored the helper method required for finding the overlay bounds
+    private static View scanHighestVisibleChild(View parent, long minValidArea, int minValidHeight) {
+        if (parent == null || !parent.isShown() || parent.getVisibility() != View.VISIBLE || parent.getAlpha() < 0.1f) {
+            return null;
+        }
+        
+        if (parent instanceof ViewGroup) {
+            ViewGroup vg = (ViewGroup) parent;
+            for (int i = vg.getChildCount() - 1; i >= 0; i--) {
+                View child = vg.getChildAt(i);
+                View target = scanHighestVisibleChild(child, minValidArea, minValidHeight);
+                
+                if (target != null) {
+                    return target;
+                }
+            }
+        }
+        
+        long viewArea = (long) parent.getWidth() * parent.getHeight();
+        if (viewArea >= minValidArea || parent.getHeight() >= minValidHeight) {
+            String className = parent.getClass().getSimpleName();
+            boolean isGenericWrapper = className.equals("FrameLayout") || 
+                                       className.equals("LinearLayout") || 
+                                       className.equals("RelativeLayout") || 
+                                       className.equals("DecorView") ||
+                                       className.equals("ViewGroup") ||
+                                       className.equals("ViewStub");
+                                       
+            if (!isGenericWrapper) {
+                return parent;
+            }
+        }
+        
+        return null;
+    }
+
     // SURGICAL FIX: A dedicated Global Swiper utilizing direct hardware DisplayMetrics
     private static void executeNativeAppSwipe(boolean up, String pkgName) {
         if (!isHardwareSwiping.compareAndSet(false, true)) {
