@@ -99,6 +99,9 @@ public class MirrorDisplay {
 	
 	private static final ExecutorService bgExecutor = Executors.newSingleThreadExecutor();
 	private static final ExecutorService touchExecutor = Executors.newSingleThreadExecutor();
+	
+	// SURGICAL FIX: Unified lifecycle monitor protects against multi-thread race conditions & deadlocks
+	private static final Object lifecycleLock = new Object(); 
 	private static final Object settingsLock = new Object();
 	
 	private static volatile boolean isRotationLocked = false;
@@ -112,6 +115,8 @@ public class MirrorDisplay {
 	private final Object touchLock = new Object(); 
 	
 	private int refCounter = 0;
+	private boolean isDestroyed = false; // SURGICAL FIX: Zombie prevention flag
+	
 	private FutureSupplier<Session> session = Completed.cancelled();
 	private SurfaceContainer sc;
 	
@@ -134,7 +139,7 @@ public class MirrorDisplay {
 	private final Runnable orientationHeartbeat = new Runnable() {
 		@Override
 		public void run() {
-			if (!isDimmed || sc == null) return;
+			if (!isDimmed || sc == null || isDestroyed) return;
 			
 			try {
 				boolean wantLandscape = PermataApplication.get().isMirroringLandscape();
@@ -150,7 +155,7 @@ public class MirrorDisplay {
 				Log.e(err, "Orientation heartbeat check failed.");
 			}
 			
-			if (isDimmed) {
+			if (isDimmed && !isDestroyed) {
 				mainHandler.postDelayed(this, 3000);
 			}
 		}
@@ -178,66 +183,79 @@ public class MirrorDisplay {
 		}
 	}
 
-	public static synchronized MirrorDisplay get() {
-		if (instance == null) {
-			instance = new MirrorDisplay();
+	public static MirrorDisplay get() {
+		synchronized (lifecycleLock) {
+			if (instance == null) {
+				instance = new MirrorDisplay();
+			}
+			instance.refCounter++;
+			return instance;
 		}
-		instance.refCounter++;
-		return instance;
 	}
 
-	public static synchronized void close() {
-		if (instance == null) return;
-		var sc = instance.sc;
-		instance.cleanUp();
-		if (sc != null) drawMsg(sc, R.string.app_name);
+	public static void close() {
+		synchronized (lifecycleLock) {
+			if (instance == null) return;
+			var scRef = instance.sc;
+			instance.cleanUpLocked();
+			if (scRef != null) drawMsg(scRef, R.string.app_name);
+		}
 	}
 
-	public synchronized void release() {
-		if (--refCounter <= 0) {
-			refCounter = 0;
-			cleanUp();
+	public void release() {
+		synchronized (lifecycleLock) {
+			if (isDestroyed) return;
+			if (--refCounter <= 0) {
+				refCounter = 0;
+				cleanUpLocked();
+			}
 		}
 	}
 
 	public void setSurface(@NonNull SurfaceContainer sc) {
-		var oldSc = this.sc;
-		if (oldSc == sc) return;
-		
-		this.sc = sc;
-		currentMetrics = null; 
-		
-		if (session.isDoneNotFailed()) {
-			try {
-				var vd = this.session.getOrThrow().vd;
-				vd.setSurface(sc.getSurface());
-				vd.resize(sc.getWidth(), sc.getHeight(), sc.getDpi());
-				started();
-			} catch (Throwable err) {
-				Log.d(err);
-				noSession();
+		synchronized (lifecycleLock) {
+			if (isDestroyed) return;
+			var oldSc = this.sc;
+			if (oldSc == sc) return;
+			
+			this.sc = sc;
+			currentMetrics = null; 
+			
+			if (session.isDoneNotFailed()) {
+				try {
+					var vd = this.session.getOrThrow().vd;
+					vd.setSurface(sc.getSurface());
+					vd.resize(sc.getWidth(), sc.getHeight(), sc.getDpi());
+					started();
+				} catch (Throwable err) {
+					Log.d(err);
+					noSession();
+					createSession();
+				}
+			} else {
 				createSession();
 			}
-		} else {
-			createSession();
+			if (oldSc != null) drawMsg(oldSc, R.string.app_name);
 		}
-		if (oldSc != null) drawMsg(oldSc, R.string.app_name);
 	}
 
 	public void releaseSurface(@NonNull SurfaceContainer sc) {
-		var oldSc = this.sc;
-		if (oldSc != sc) return;
-		this.sc = null;
-		
-		if (session.isDoneNotFailed()) {
-			try {
-				Session s = session.getOrThrow();
-				if (s != null && s.vd != null) s.vd.setSurface(null);
-			} catch (Exception e) {
-				Log.e(e, "VirtualDisplay detachment failed.");
+		synchronized (lifecycleLock) {
+			if (isDestroyed) return;
+			var oldSc = this.sc;
+			if (oldSc != sc) return;
+			this.sc = null;
+			
+			if (session.isDoneNotFailed()) {
+				try {
+					Session s = session.getOrThrow();
+					if (s != null && s.vd != null) s.vd.setSurface(null);
+				} catch (Exception e) {
+					Log.e(e, "VirtualDisplay detachment failed.");
+				}
 			}
+			drawMsg(oldSc, R.string.app_name);
 		}
-		drawMsg(oldSc, R.string.app_name);
 	}
 
 	private void resetIdleTimer() {
@@ -303,7 +321,6 @@ public class MirrorDisplay {
 					if (reusableCoords[i].size <= 0.01f) reusableCoords[i].size = 1.0f;
 				}
 				
-				// SURGICAL FIX: Uses exact e.getEventTime() to preserve OS Physics and Velocity Tracker inertia.
 				clonedEvent = MotionEvent.obtain(e.getDownTime(), e.getEventTime(), e.getAction(), cnt, reusableProps, reusableCoords,
 						e.getMetaState(), e.getButtonState(), e.getXPrecision(), e.getYPrecision(), e.getDeviceId(),
 						e.getEdgeFlags(), InputDevice.SOURCE_TOUCHSCREEN, e.getFlags());
@@ -353,7 +370,6 @@ public class MirrorDisplay {
 				reusableCoords[0].pressure = 1.0f;
 				reusableCoords[0].size = 1.0f;
 				
-				// SURGICAL FIX: Directly applies accurate provided eventTime to maintain physical drag consistency.
 				clonedEvent = MotionEvent.obtain(downTime, eventTime, action, 1, reusableProps, reusableCoords,
 						0, 0, 1.0f, 1.0f, 0, 0, InputDevice.SOURCE_TOUCHSCREEN, 0);
 						
@@ -415,7 +431,10 @@ public class MirrorDisplay {
 	}
 
 	private static void disableAccelRotation(Context ctx) {
-		if (instance == null || instance.sc == null) return; 
+		// SURGICAL FIX: Fast-fail to prevent execution if teardown already began
+		synchronized (lifecycleLock) {
+			if (instance == null || instance.sc == null || instance.isDestroyed) return; 
+		}
 
 		var a = EventDispatcher.get().getActivity();
 		boolean land = PermataApplication.get().isMirroringLandscape();
@@ -424,120 +443,137 @@ public class MirrorDisplay {
 			a.setRequestedOrientation(land ? SCREEN_ORIENTATION_LANDSCAPE : SCREEN_ORIENTATION_PORTRAIT);
 		}
 
-		bgExecutor.execute(() -> {
-			synchronized (settingsLock) {
-				if (isRotationLocked) return;
-				try {
-					var cr = ctx.getContentResolver();
-					if (accel == -1) {
-						var v = Settings.System.getInt(cr, ACCELEROMETER_ROTATION, -1);
-						if (v != -1) accel = v;
+		try {
+			bgExecutor.execute(() -> {
+				synchronized (settingsLock) {
+					if (isRotationLocked) return;
+					try {
+						var cr = ctx.getContentResolver();
+						if (accel == -1) {
+							var v = Settings.System.getInt(cr, ACCELEROMETER_ROTATION, -1);
+							if (v != -1) accel = v;
+						}
+						
+						if (originalUserRotation == -1) {
+							var ur = Settings.System.getInt(cr, USER_ROTATION, -1);
+							if (ur != -1) originalUserRotation = ur;
+						}
+						
+						Settings.System.putInt(cr, ACCELEROMETER_ROTATION, 0);
+						Settings.System.putInt(cr, USER_ROTATION, land ? ROTATION_90 : ROTATION_0);
+						isRotationLocked = true;
+					} catch (Exception err) {
+						Log.e(err);
 					}
-					
-					if (originalUserRotation == -1) {
-						var ur = Settings.System.getInt(cr, USER_ROTATION, -1);
-						if (ur != -1) originalUserRotation = ur;
-					}
-					
-					Settings.System.putInt(cr, ACCELEROMETER_ROTATION, 0);
-					Settings.System.putInt(cr, USER_ROTATION, land ? ROTATION_90 : ROTATION_0);
-					isRotationLocked = true;
-				} catch (Exception err) {
-					Log.e(err);
 				}
-			}
-		});
+			});
+		} catch (Exception ex) {
+			Log.e(ex, "Background thread rejected rotation lock instruction");
+		}
 	}
 
 	private static void restoreAccelRotation(Context ctx) {
 		var a = EventDispatcher.get().getActivity();
 		if (a != null) a.setRequestedOrientation(SCREEN_ORIENTATION_UNSPECIFIED);
 
-		bgExecutor.execute(() -> {
-			synchronized (settingsLock) {
-				if (!isRotationLocked) return;
-				try {
-					var cr = ctx.getContentResolver();
-					if (accel != -1) {
-						Settings.System.putInt(cr, ACCELEROMETER_ROTATION, accel);
-						accel = -1;
+		try {
+			bgExecutor.execute(() -> {
+				synchronized (settingsLock) {
+					if (!isRotationLocked) return;
+					try {
+						var cr = ctx.getContentResolver();
+						if (accel != -1) {
+							Settings.System.putInt(cr, ACCELEROMETER_ROTATION, accel);
+							accel = -1;
+						}
+						
+						if (originalUserRotation != -1) {
+							Settings.System.putInt(cr, USER_ROTATION, originalUserRotation);
+							originalUserRotation = -1;
+						}
+						isRotationLocked = false;
+					} catch (Exception err) {
+						Log.e(err);
 					}
-					
-					if (originalUserRotation != -1) {
-						Settings.System.putInt(cr, USER_ROTATION, originalUserRotation);
-						originalUserRotation = -1;
-					}
-					isRotationLocked = false;
-				} catch (Exception err) {
-					Log.e(err);
 				}
-			}
-		});
+			});
+		} catch (Exception ex) {
+			Log.e(ex, "Background thread rejected rotation restore instruction");
+		}
 	}
 
 	private void dimScreen(Context ctx) {
-		bgExecutor.execute(() -> {
-			if (sc == null) return; 
-			
-			synchronized (settingsLock) {
-				if (isDimmed) return;
-				try {
-					var cr = ctx.getContentResolver();
-					
-					if (brightnessMode == -1) {
-						var mode = Settings.System.getInt(cr, SCREEN_BRIGHTNESS_MODE, -1);
-						if (mode != -1) brightnessMode = mode;
+		if (isDestroyed) return;
+		try {
+			bgExecutor.execute(() -> {
+				if (sc == null || isDestroyed) return; 
+				
+				synchronized (settingsLock) {
+					if (isDimmed) return;
+					try {
+						var cr = ctx.getContentResolver();
+						
+						if (brightnessMode == -1) {
+							var mode = Settings.System.getInt(cr, SCREEN_BRIGHTNESS_MODE, -1);
+							if (mode != -1) brightnessMode = mode;
+						}
+						Settings.System.putInt(cr, SCREEN_BRIGHTNESS_MODE, 0); 
+						
+						if (brightness == -1) {
+							var br = Settings.System.getInt(cr, SCREEN_BRIGHTNESS, -1);
+							brightness = (br > 0) ? br : 200;
+						}
+						Settings.System.putInt(cr, SCREEN_BRIGHTNESS, 1);
+						if (!Build.MANUFACTURER.equalsIgnoreCase("Xiaomi")) {
+							Settings.System.putInt(cr, SCREEN_BRIGHTNESS, 0);
+						}
+						
+						isDimmed = true;
+						
+						mainHandler.post(() -> {
+							mainHandler.removeCallbacks(orientationHeartbeat);
+							mainHandler.post(orientationHeartbeat); 
+						});
+					} catch (Exception err) {
+						Log.e(err);
 					}
-					Settings.System.putInt(cr, SCREEN_BRIGHTNESS_MODE, 0); 
-					
-					if (brightness == -1) {
-						var br = Settings.System.getInt(cr, SCREEN_BRIGHTNESS, -1);
-						brightness = (br > 0) ? br : 200;
-					}
-					Settings.System.putInt(cr, SCREEN_BRIGHTNESS, 1);
-					if (!Build.MANUFACTURER.equalsIgnoreCase("Xiaomi")) {
-						Settings.System.putInt(cr, SCREEN_BRIGHTNESS, 0);
-					}
-					
-					isDimmed = true;
-					
-					mainHandler.post(() -> {
-						mainHandler.removeCallbacks(orientationHeartbeat);
-						mainHandler.post(orientationHeartbeat); 
-					});
-				} catch (Exception err) {
-					Log.e(err);
 				}
-			}
-		});
+			});
+		} catch (Exception ex) {
+			Log.e(ex, "Background thread rejected screen dim instruction");
+		}
 	}
 
 	private void restoreBrightness(Context ctx) {
-		bgExecutor.execute(() -> {
-			synchronized (settingsLock) {
-				if (!isDimmed) return;
-				try {
-					var cr = ctx.getContentResolver();
-					if (brightness > 0) {
-						Settings.System.putInt(cr, SCREEN_BRIGHTNESS, brightness);
+		try {
+			bgExecutor.execute(() -> {
+				synchronized (settingsLock) {
+					if (!isDimmed) return;
+					try {
+						var cr = ctx.getContentResolver();
+						if (brightness > 0) {
+							Settings.System.putInt(cr, SCREEN_BRIGHTNESS, brightness);
+						}
+						if (brightnessMode != -1) {
+							Settings.System.putInt(cr, SCREEN_BRIGHTNESS_MODE, brightnessMode);
+							brightnessMode = -1;
+						}
+						
+						isDimmed = false;
+						
+						mainHandler.post(() -> mainHandler.removeCallbacks(orientationHeartbeat));
+					} catch (Exception err) {
+						Log.e(err);
 					}
-					if (brightnessMode != -1) {
-						Settings.System.putInt(cr, SCREEN_BRIGHTNESS_MODE, brightnessMode);
-						brightnessMode = -1;
-					}
-					
-					isDimmed = false;
-					
-					mainHandler.post(() -> mainHandler.removeCallbacks(orientationHeartbeat));
-				} catch (Exception err) {
-					Log.e(err);
 				}
-			}
-		});
+			});
+		} catch (Exception ex) {
+			Log.e(ex, "Background thread rejected brightness restore instruction");
+		}
 	}
 
 	private void started() {
-		if (sc == null) return;
+		if (sc == null || isDestroyed) return;
 		var app = PermataApplication.get();
 		var mode = sc.getWidth() > sc.getHeight() ? 1 : 2;
 
@@ -561,7 +597,7 @@ public class MirrorDisplay {
 			//noinspection deprecation
 			wakeLock = pmg.newWakeLock(PowerManager.SCREEN_DIM_WAKE_LOCK | ACQUIRE_CAUSES_WAKEUP,
 					"Permata:ScreenLock");
-			if (wakeLock != null) wakeLock.acquire(24 * 3600000);
+			if (wakeLock != null) wakeLock.acquire(24 * 3600000); // Max safe acquisition
 		}
 
 		if (SDK_INT >= VERSION_CODES.O) {
@@ -608,7 +644,11 @@ public class MirrorDisplay {
 		setMirroringMode(app, mode);
 	}
 
-	private void cleanUp() {
+	// SURGICAL FIX: Strict internal teardown logic. Must be called from inside lifecycleLock.
+	private void cleanUpLocked() {
+		if (isDestroyed) return;
+		isDestroyed = true;
+		
 		noSession();
 		var app = PermataApplication.get();
 		
@@ -631,6 +671,8 @@ public class MirrorDisplay {
 					var wm = (WindowManager) app.getSystemService(WINDOW_SERVICE);
 					if (oldOverlay != null && oldOverlay.isAttachedToWindow()) wm.removeView(oldOverlay);
 					if (oldAnchor != null && oldAnchor.isAttachedToWindow()) wm.removeView(oldAnchor); 
+				} catch (IllegalArgumentException iae) {
+					Log.w("Zombie view prevented during cleanup execution.");
 				} catch (Exception ignored) {}
 			});
 			
@@ -674,9 +716,15 @@ public class MirrorDisplay {
 		session = p;
 		createSession(p);
 		p.onSuccess(s -> {
-			Log.i("Session created: ", s);
-			session = Completed.completed(s);
-			started();
+			synchronized (lifecycleLock) {
+				if (isDestroyed) {
+					s.close();
+					return;
+				}
+				Log.i("Session created: ", s);
+				session = Completed.completed(s);
+				started();
+			}
 		});
 		PermataApplication.get().getHandler().schedule(() -> {
 			if (!session.isDone()) drawMsg(R.string.unlock_phone_and_grant);
@@ -688,33 +736,35 @@ public class MirrorDisplay {
 		if (sc == null) noSession();
 		if (p.isDone()) return; 
 		ProjectionService.start().onCompletion((mp, err) -> {
-			if (session != p) {
-				if (mp != null) {
-					try { mp.stop(); } catch (Exception ignored) {}
-				}
-				return;
-			}
-			
-			if (sc == null) noSession();
-			if (p.isDone()) return;
-			
-			if (err != null) {
-				if (isCancellation(err)) {
-					drawMsg(R.string.screen_capture_rejected);
-					cleanUp();
+			synchronized (lifecycleLock) {
+				if (isDestroyed || session != p) {
+					if (mp != null) {
+						try { mp.stop(); } catch (Exception ignored) {}
+					}
 					return;
 				}
-				Log.e(err, "Failed to create media projection");
-				retryCreateSession(p);
-			} else if (mp == null) {
-				Log.e("Failed to create media projection");
-				retryCreateSession(p);
-			} else {
-				try {
-					p.complete(new Session(mp, this));
-				} catch (Exception ex) {
-					Log.e(ex, "Failed to create media projection");
+				
+				if (sc == null) noSession();
+				if (p.isDone()) return;
+				
+				if (err != null) {
+					if (isCancellation(err)) {
+						drawMsg(R.string.screen_capture_rejected);
+						cleanUpLocked();
+						return;
+					}
+					Log.e(err, "Failed to create media projection");
 					retryCreateSession(p);
+				} else if (mp == null) {
+					Log.e("Failed to create media projection");
+					retryCreateSession(p);
+				} else {
+					try {
+						p.complete(new Session(mp, this));
+					} catch (Exception ex) {
+						Log.e(ex, "Failed to create media projection");
+						retryCreateSession(p);
+					}
 				}
 			}
 		});
@@ -735,7 +785,7 @@ public class MirrorDisplay {
 	private static void drawMsg(SurfaceContainer sc, @StringRes int msg) {
 		try {
 			var surface = sc.getSurface();
-			if (surface == null) return;
+			if (surface == null || !surface.isValid()) return;
 			var c = surface.lockCanvas(null);
 			if (c == null) return;
 			var w = sc.getWidth();
@@ -766,7 +816,7 @@ public class MirrorDisplay {
 
 	@Nullable
 	private Metrics metrics() {
-		if (sc == null || !session.isDoneNotFailed()) return null;
+		if (sc == null || !session.isDoneNotFailed() || isDestroyed) return null;
 		
 		final Point size = new Point();
 		defaultDisplay.getRealSize(size);
@@ -826,16 +876,18 @@ public class MirrorDisplay {
 		@Override
 		public void onStop() {
 			close();
-			MirrorDisplay md = MirrorDisplay.instance;
-			if (md == null) return;
-			Log.i("Media projection stopped");
-			md.cleanUp();
+			synchronized (lifecycleLock) {
+				MirrorDisplay md = MirrorDisplay.instance;
+				if (md == null) return;
+				Log.i("Media projection stopped");
+				md.cleanUpLocked();
+			}
 		}
 
 		void close() {
 			mp.unregisterCallback(this);
-			vd.release();
-			mp.stop();
+			if (vd != null) vd.release();
+			if (mp != null) mp.stop();
 		}
 	}
 
