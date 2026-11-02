@@ -13,6 +13,7 @@ import android.annotation.SuppressLint;
 import android.content.Context;
 import android.content.Intent;
 import android.graphics.Color;
+import android.graphics.PorterDuff;
 import android.os.Bundle;
 import android.view.MotionEvent;
 import android.view.SurfaceHolder;
@@ -52,6 +53,8 @@ public class MirrorActivity extends CarActivity implements SurfaceHolder.Callbac
 			@SuppressLint("ClickableViewAccessibility")
 			@Override
 			public boolean onTouchEvent(MotionEvent e) {
+				// SURGICAL FIX (Issue 2): Zombie Singleton Cache Buster
+				if (md == null || md.isDestroyed()) md = MirrorDisplay.get();
 				if (sc != null && md != null) md.setSurface(sc);
 				tb.show();
 				
@@ -82,13 +85,15 @@ public class MirrorActivity extends CarActivity implements SurfaceHolder.Callbac
 	@Override
 	public void onResume() {
 		super.onResume();
+		// SURGICAL FIX (Issue 2): Zombie Singleton Cache Buster
+		if (md == null || md.isDestroyed()) md = MirrorDisplay.get();
 		if (sc != null && md != null) md.setSurface(sc);
 	}
 
 	@Override
 	public void onPause() {
 		super.onPause();
-		if (MirrorServiceFS.sc != null && md != null) md.setSurface(MirrorServiceFS.sc);
+		if (MirrorServiceFS.sc != null && md != null && !md.isDestroyed()) md.setSurface(MirrorServiceFS.sc);
 	}
 
 	@Override
@@ -96,6 +101,8 @@ public class MirrorActivity extends CarActivity implements SurfaceHolder.Callbac
 		var r = h.getSurfaceFrame();
 		sc = new SurfaceContainer(h.getSurface(), r.width(), r.height(),
 				getResources().getDisplayMetrics().densityDpi);
+				
+		if (md == null || md.isDestroyed()) md = MirrorDisplay.get();
 		if (md != null) {
 			md.setSurface(sc);
 		}
@@ -105,6 +112,8 @@ public class MirrorActivity extends CarActivity implements SurfaceHolder.Callbac
 	public void surfaceChanged(@NonNull SurfaceHolder h, int format, int width, int height) {
 		sc = new SurfaceContainer(h.getSurface(), width, height,
 				getResources().getDisplayMetrics().densityDpi);
+				
+		if (md == null || md.isDestroyed()) md = MirrorDisplay.get();
 		if (md != null) md.setSurface(sc);
 	}
 
@@ -210,7 +219,8 @@ public class MirrorActivity extends CarActivity implements SurfaceHolder.Callbac
 				v.setId(icons[i]);
 				v.setImageResource(icons[i]);
 				
-				if (i == 1 || i == 3) v.setColorFilter(Color.WHITE); 
+				// SURGICAL FIX (Issue 1): Use SRC_IN PorterDuff blending to mathematically force a pure white fill over transparent vectors
+				if (i == 1 || i == 3) v.setColorFilter(Color.WHITE, PorterDuff.Mode.SRC_IN); 
 				
 				v.setBackgroundResource(R.drawable.oval_bg);
 				v.setPadding(iconPad, iconPad, iconPad, iconPad);
