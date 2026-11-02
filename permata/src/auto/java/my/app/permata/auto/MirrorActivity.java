@@ -134,8 +134,25 @@ public class MirrorActivity extends CarActivity implements SurfaceHolder.Callbac
 		}
 		disableAccelRotation();
 	}
+	
+	// SURGICAL ADDITION: Recent Apps Launcher
+	static void onRecentButtonClick() {
+		var d = EventDispatcher.get();
+		if (d != null) {
+			d.directRecent();
+		}
+		disableAccelRotation();
+	}
 
 	static void onBackButtonClick() {
+		// SURGICAL FIX: The Non-Root Home-Screen Back Blocker
+		// Checks active app footprint in memory natively. No permissions required.
+		var activeApp = LauncherActivity.getActiveInstance();
+		if (activeApp != null && activeApp.hasWindowFocus()) {
+			Log.i("Back button blocked. Already at mirroring home screen.");
+			return;
+		}
+		
 		var d = EventDispatcher.get();
 		if (d != null) {
 			d.directBack();
@@ -170,10 +187,10 @@ public class MirrorActivity extends CarActivity implements SurfaceHolder.Callbac
 		
 		private long downTime;
 		private float downX, downY;
-		private float initialX, initialY; // SURGICAL FIX: Tracks initial layout position to prevent snapping
+		private float initialX, initialY;
 		private View downButton;
 		private boolean moving;
-		private boolean isPositioned = false; // SURGICAL FIX: Prevents layout loops from resetting position
+		private boolean isPositioned = false; 
 
 		public ToolBar(Context ctx) {
 			super(ctx);
@@ -187,13 +204,16 @@ public class MirrorActivity extends CarActivity implements SurfaceHolder.Callbac
 			setLayoutParams(new FrameLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT));
 
 			var iconPad = iconSize / 4;
-			var icons = new int[]{R.drawable.home, R.drawable.back, R.drawable.shutdown};
+			
+			// SURGICAL FIX: Placed menu icon correctly between home and back
+			var icons = new int[]{R.drawable.home, R.drawable.menu, R.drawable.back, R.drawable.shutdown};
 			for (int i = 0; i < icons.length; i++) {
 				var v = new AppCompatImageView(ctx);
 				v.setId(icons[i]);
 				v.setImageResource(icons[i]);
 				
-				if (i == 2) v.setColorFilter(Color.WHITE); 
+				// SURGICAL FIX: Apply white filter to both the new menu icon (1) and shutdown (3)
+				if (i == 1 || i == 3) v.setColorFilter(Color.WHITE); 
 				
 				v.setBackgroundResource(R.drawable.oval_bg);
 				v.setPadding(iconPad, iconPad, iconPad, iconPad);
@@ -205,7 +225,6 @@ public class MirrorActivity extends CarActivity implements SurfaceHolder.Callbac
 				addView(v);
 			}
 			
-			// SURGICAL FIX: Auto-position only fires once during initialization
 			addOnLayoutChangeListener((v, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) -> {
 				if (!isPositioned) { 
 					int pw = ((View)getParent()).getWidth();
@@ -234,7 +253,7 @@ public class MirrorActivity extends CarActivity implements SurfaceHolder.Callbac
 					downTime = uptimeMillis();
 					downX = e.getRawX();
 					downY = e.getRawY();
-					initialX = getX(); // Track where the toolbar currently is
+					initialX = getX(); 
 					initialY = getY();
 					moving = false; 
 					
@@ -248,7 +267,6 @@ public class MirrorActivity extends CarActivity implements SurfaceHolder.Callbac
 					return true;
 				}
 				case MotionEvent.ACTION_MOVE -> {
-					// SURGICAL FIX: Use delta distance instead of absolute raw coordinates to prevent edge-snapping
 					float deltaX = e.getRawX() - downX;
 					float deltaY = e.getRawY() - downY;
 					
@@ -313,6 +331,7 @@ public class MirrorActivity extends CarActivity implements SurfaceHolder.Callbac
 
 		private void handleClick(int viewId) {
 			if (viewId == R.drawable.home) onHomeButtonClick();
+			else if (viewId == R.drawable.menu) onRecentButtonClick(); // SURGICAL ADDITION
 			else if (viewId == R.drawable.back) onBackButtonClick();
 			else if (viewId == R.drawable.shutdown) onExitButtonClick();
 		}
