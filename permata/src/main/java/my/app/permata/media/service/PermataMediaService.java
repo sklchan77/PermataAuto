@@ -307,7 +307,18 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 								if (focusChange == AudioManager.AUDIOFOCUS_LOSS) {
 									Log.w("PermataMediaService: Car Radio stole focus.");
 								} else if (focusChange == AudioManager.AUDIOFOCUS_GAIN) {
-									Log.i("PermataMediaService: Audio focus returned. Enforcing Steering Control anchor.");
+									Log.i("PermataMediaService: Audio focus returned. Enforcing Steering Control anchor and maximizing volume.");
+									
+									// SURGICAL FIX: Cures "Duck Fatigue"
+									// Explicitly forces the OS volume back to 100% hardware maximum the instant the interrupting app finishes.
+									try {
+										AudioManager am = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
+										if (am != null) {
+											int maxVol = am.getStreamMaxVolume(AudioManager.STREAM_MUSIC);
+											am.setStreamVolume(AudioManager.STREAM_MUSIC, maxVol, 0);
+										}
+									} catch (Exception ignored) {}
+									
 									if (session != null && !isTeardownActive) {
 										session.setActive(true);
 										updatePlaybackState(STATE_PLAYING);
@@ -316,10 +327,6 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 							};
 						}
 						
-						// SURGICAL FIX: Cures the Infinite Death Loop
-						// We downgrade the request from AUDIOFOCUS_GAIN to AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK.
-						// This tells the OS to share the audio channel instead of fighting the Car Radio for exclusivity,
-						// permanently preventing the stuttering, racing, and infinite pausing loop in Web Media.
 						audioManager.requestAudioFocus(
 								focusChangeListener,
 								AudioManager.STREAM_MUSIC,
