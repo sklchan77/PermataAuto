@@ -427,7 +427,16 @@ public class LauncherActivity extends AppCompatActivity {
 					for (var app : selectApps) app.selected = AppListView.this.apps.contains(app);
 					Objects.requireNonNull(getAdapter()).notifyDataSetChanged();
 				} else if (appInfo.equals(AppInfo.BACK)) {
-					selectApps();
+					// SURGICAL FIX: Toolbar BACK button now routes globally back to the OS if not in app selection mode
+					if (selectApps != null) {
+						selectApps();
+					} else {
+						if (AccessibilityEventDispatcherService.dispatchBack()) {
+							Log.i("[BACK] AppListView Toolbar triggered Accessibility Back.");
+						} else {
+							EventDispatcher.get().directBack();
+						}
+					}
 				} else {
 					try {
 						var intent = new Intent(Intent.ACTION_MAIN);
