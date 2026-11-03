@@ -34,7 +34,6 @@ public class MediaServiceStarter extends BroadcastReceiver {
 				MirrorServiceFS.sc = null;
 			}
 			
-			// SURGICAL FIX: Wrap in try-catch to prevent Su's internal IOException from crashing the thread pool
 			Su.get().onSuccess(su -> {
 				try {
 					su.shutdown();
