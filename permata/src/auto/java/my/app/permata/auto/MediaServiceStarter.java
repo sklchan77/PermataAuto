@@ -22,7 +22,6 @@ public class MediaServiceStarter extends BroadcastReceiver {
 				c.disconnect();
 			}).onFailure(Log::e);
 		} else if (BluetoothDevice.ACTION_ACL_DISCONNECTED.equals(action)) {
-			// === GUARD CHECK: DO NOT KILL PROJECTION IF ANDROID AUTO IS ACTIVE ===
 			if (PermataApplication.get().isConnectedToAuto()) {
 				Log.i("Bluetooth ACL disconnect event detected, but Android Auto is actively running. Ignoring teardown.");
 				return;
@@ -35,8 +34,14 @@ public class MediaServiceStarter extends BroadcastReceiver {
 				MirrorServiceFS.sc = null;
 			}
 			
-			// Kill the root thread pool zombie
-			Su.get().onSuccess(su -> su.shutdown());
+			// SURGICAL FIX: Wrap in try-catch to prevent Su's internal IOException from crashing the thread pool
+			Su.get().onSuccess(su -> {
+				try {
+					su.shutdown();
+				} catch (Exception e) {
+					Log.w("Su shutdown failed (likely unrooted): " + e.getMessage());
+				}
+			});
 		}
 	}
 }
