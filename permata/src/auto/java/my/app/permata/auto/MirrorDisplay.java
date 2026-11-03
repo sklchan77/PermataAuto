@@ -24,6 +24,7 @@ import static android.view.WindowManager.LayoutParams.FLAG_DISMISS_KEYGUARD;
 import static android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON;
 import static android.view.WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE;
 import static android.view.WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE;
+import static android.view.WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL;
 import static android.view.WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED;
 import static android.view.WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON;
 import static android.view.WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH;
@@ -84,7 +85,7 @@ import my.app.utils.ui.UiUtils;
 public class MirrorDisplay {
 	private static final int OVERLAY_FLAGS =
 			FLAG_NOT_FOCUSABLE | FLAG_KEEP_SCREEN_ON | FLAG_DISMISS_KEYGUARD | FLAG_TURN_SCREEN_ON |
-					FLAG_SHOW_WHEN_LOCKED | FLAG_NOT_TOUCHABLE | FLAG_WATCH_OUTSIDE_TOUCH;
+					FLAG_SHOW_WHEN_LOCKED | FLAG_NOT_TOUCH_MODAL | FLAG_WATCH_OUTSIDE_TOUCH;
 					
 	private static final int ANCHOR_FLAGS = 
 			FLAG_NOT_TOUCHABLE | FLAG_KEEP_SCREEN_ON | FLAG_DISMISS_KEYGUARD | FLAG_SHOW_WHEN_LOCKED | FLAG_ALT_FOCUSABLE_IM;
@@ -133,7 +134,6 @@ public class MirrorDisplay {
 		dimScreen(PermataApplication.get());
 	};
 
-	private int rogueDriftCount = 0;
 	private final Runnable orientationHeartbeat = new Runnable() {
 		@Override
 		public void run() {
@@ -145,22 +145,16 @@ public class MirrorDisplay {
 				boolean isCurrentlyLandscape = (rotation == ROTATION_90 || rotation == ROTATION_270);
 				
 				if (wantLandscape != isCurrentlyLandscape) {
-					rogueDriftCount++;
-					if (rogueDriftCount >= 2) {
-						Log.w("Real rogue app hijacked physical rotation. Forcing self-healing correction.");
-						updateOverlayOrientation(true);
-						disableAccelRotation(PermataApplication.get());
-						rogueDriftCount = 0;
-					}
-				} else {
-					rogueDriftCount = 0;
+					Log.w("Real rogue app hijacked physical rotation. Forcing self-healing correction.");
+					updateOverlayOrientation(true);
+					disableAccelRotation(PermataApplication.get());
 				}
 			} catch (Exception err) {
 				Log.e(err, "Orientation heartbeat check failed.");
 			}
 			
 			if (isDimmed && !isDestroyed) {
-				mainHandler.postDelayed(this, 5000); // SURGICAL FIX: Relaxed heartbeat timer
+				mainHandler.postDelayed(this, 3000); // 3 second heartbeat during idle
 			}
 		}
 	};
@@ -540,13 +534,12 @@ public class MirrorDisplay {
 						}
 						
 						Settings.System.putInt(cr, SCREEN_BRIGHTNESS, 1);
-						
 						isDimmed = true;
-						rogueDriftCount = 0;
 						
 						mainHandler.post(() -> {
 							mainHandler.removeCallbacks(orientationHeartbeat);
-							mainHandler.post(orientationHeartbeat); 
+							// Immediately trigger heartbeat lock, then cycle every 3s
+							orientationHeartbeat.run(); 
 						});
 					} catch (Exception err) {
 						Log.e(err);
@@ -571,10 +564,7 @@ public class MirrorDisplay {
 						Settings.System.putInt(cr, SCREEN_BRIGHTNESS_MODE, brightnessMode);
 						brightnessMode = -1;
 					}
-					
 					isDimmed = false;
-					rogueDriftCount = 0;
-					
 					mainHandler.post(() -> mainHandler.removeCallbacks(orientationHeartbeat));
 				} catch (Exception err) {
 					Log.e(err, "Settings Provider lagged or failed during brightness restore.");
@@ -642,6 +632,7 @@ public class MirrorDisplay {
 							OVERLAY_FLAGS, PixelFormat.TRANSLUCENT);
 					overlayLp.gravity = Gravity.TOP | Gravity.START;
 					overlayLp.screenOrientation = land ? SCREEN_ORIENTATION_LANDSCAPE : SCREEN_ORIENTATION_PORTRAIT;
+					overlayLp.alpha = 0.01f;
 					
 					overlay = new Overlay(app);
 					wm.addView(overlay, overlayLp);
@@ -969,10 +960,12 @@ public class MirrorDisplay {
 		@SuppressLint("ClickableViewAccessibility")
 		@Override
 		public boolean onTouchEvent(MotionEvent event) {
-			if (Math.abs(uptimeMillis() - lastInjectedTouchTime) < 500) return false;
+			// Check if touch came from the physical phone display (id 0) vs car virtual display
+			if (event.getDisplayId() != Display.DEFAULT_DISPLAY) {
+				return false;
+			}
 			
 			int action = event.getActionMasked();
-			// SURGICAL FIX: Action outside is sufficient; bypass the toolType validation that drops legitimate touches
 			if (action == MotionEvent.ACTION_OUTSIDE || action == MotionEvent.ACTION_DOWN || action == MotionEvent.ACTION_POINTER_DOWN) {
 				Log.d("True physical touch on phone detected. Restoring brightness and natural orientation.");
 				
