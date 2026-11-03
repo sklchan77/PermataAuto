@@ -24,14 +24,12 @@ import my.app.permata.ui.activity.MainActivity;
 import my.app.utils.async.FutureSupplier;
 import my.app.utils.log.Log;
 
-// SURGICAL FIX: Made class public so KeyEventHandler can use the God-Mode swiper
 public abstract class EventDispatcher {
 
 	public static void useSu(Su su) {
 		SuDispatcher.instance = completed(new SuDispatcher(su));
 	}
 
-	// SURGICAL FIX: Made public for global hardware swipe access
 	public static EventDispatcher get() {
 		int windowCount = AccessibilityEventDispatcherService.getWindowCount();
 		if (windowCount > 1) {
@@ -43,19 +41,12 @@ public abstract class EventDispatcher {
 	}
 
 	public abstract boolean back();
-	
 	public abstract boolean directBack();
-
 	public abstract boolean home();
-	
 	public abstract boolean recent();
-	
 	public abstract boolean directRecent();
-
 	public abstract boolean tap(float x, float y);
-
 	public abstract boolean motionEvent(MotionEvent e);
-
 	public abstract boolean motionEvent(long downTime, long eventTime, int action, float x, float y);
 
 	public boolean scale(float x, float y, float diff) {
@@ -71,7 +62,6 @@ public abstract class EventDispatcher {
 		static final XposedDispatcher instance = new XposedDispatcher();
 
 		@NonNull
-        // SURGICAL FIX: Must match parent 'public' access modifier
 		public static XposedDispatcher get() {
 			return instance;
 		}
@@ -135,7 +125,6 @@ public abstract class EventDispatcher {
 		private InputMethodManager imm;
 
 		@NonNull
-        // SURGICAL FIX: Must match parent 'public' access modifier
 		public static ActivityDispatcher get() {
 			return instance;
 		}
@@ -229,7 +218,6 @@ public abstract class EventDispatcher {
 		private static final AccessibilityDispatcher instance = new AccessibilityDispatcher();
 
 		@NonNull
-        // SURGICAL FIX: Must match parent 'public' access modifier
 		public static AccessibilityDispatcher get() {
 			return instance;
 		}
@@ -327,7 +315,6 @@ public abstract class EventDispatcher {
 		SuDispatcher(Su su) {this.su = su;}
 
 		@Nullable
-        // SURGICAL FIX: Must match parent 'public' access modifier
 		public static SuDispatcher get() {
 			return instance.peek();
 		}
@@ -358,8 +345,13 @@ public abstract class EventDispatcher {
 		}
 
 		private boolean keyEvent(int code) {
-			su.exec("cmd input keyevent " + code);
-			return true;
+			try {
+				su.exec("cmd input keyevent " + code);
+				return true;
+			} catch (Exception e) {
+				Log.w("Su unavailable, dropping keyEvent: " + code);
+				return false;
+			}
 		}
 
 		@Override
