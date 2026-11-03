@@ -18,6 +18,7 @@ import static android.view.WindowManager.LayoutParams.FLAG_DISMISS_KEYGUARD;
 import static android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON;
 import static android.view.WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE;
 import static android.view.WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE;
+import static android.view.WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL;
 import static android.view.WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED;
 import static android.view.WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON;
 import static android.view.WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH;
@@ -76,8 +77,9 @@ import my.app.utils.log.Log;
 import my.app.utils.ui.UiUtils;
 
 public class MirrorDisplay {
-	// Ghost Layer: Permanently passes touches through, relies on ACTION_OUTSIDE to wake
-	private static final int OVERLAY_FLAGS = FLAG_NOT_FOCUSABLE | FLAG_KEEP_SCREEN_ON | FLAG_DISMISS_KEYGUARD | FLAG_TURN_SCREEN_ON | FLAG_SHOW_WHEN_LOCKED | FLAG_NOT_TOUCHABLE | FLAG_WATCH_OUTSIDE_TOUCH;
+	private static final int OVERLAY_FLAGS_BASE = FLAG_NOT_FOCUSABLE | FLAG_KEEP_SCREEN_ON | FLAG_DISMISS_KEYGUARD | FLAG_TURN_SCREEN_ON | FLAG_SHOW_WHEN_LOCKED | FLAG_WATCH_OUTSIDE_TOUCH;
+	private static final int OVERLAY_FLAGS_ACTIVE = OVERLAY_FLAGS_BASE | FLAG_NOT_TOUCHABLE;
+	private static final int OVERLAY_FLAGS_DIMMED = OVERLAY_FLAGS_BASE | FLAG_NOT_TOUCH_MODAL;
 					
 	private static MirrorDisplay instance;
 	private final Display defaultDisplay;
@@ -115,7 +117,7 @@ public class MirrorDisplay {
 	private final Handler mainHandler = new Handler(Looper.getMainLooper());
 	
 	private final Runnable idleDimRunnable = () -> {
-		Log.d("Idle timeout reached. Dimming screen and engaging Z-Order landscape lock.");
+		Log.d("Idle timeout reached. Dimming screen and locking physical orientation.");
 		dimScreen(PermataApplication.get());
 	};
 
@@ -368,6 +370,7 @@ public class MirrorDisplay {
 				var lp = (WindowManager.LayoutParams) overlay.getLayoutParams();
 				if (lp != null) {
 					boolean land = PermataApplication.get().isMirroringLandscape();
+					lp.flags = isIdle ? OVERLAY_FLAGS_DIMMED : OVERLAY_FLAGS_ACTIVE;
 					lp.screenOrientation = isIdle ? (land ? SCREEN_ORIENTATION_LANDSCAPE : SCREEN_ORIENTATION_PORTRAIT) : ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED;
 					wm.updateViewLayout(overlay, lp);
 				}
@@ -381,6 +384,18 @@ public class MirrorDisplay {
 		} catch (Exception err) {
 			Log.e(err, "Failed to update overlay dynamic state");
 		}
+	}
+
+	// SURGICAL FIX: Compatibility stub for MirrorActivity compilation
+	public static void disableAccelRotation() {
+		var app = PermataApplication.get();
+		app.getHandler().post(() -> {
+			var a = EventDispatcher.get().getActivity();
+			if (a != null) {
+				boolean land = app.isMirroringLandscape();
+				a.setRequestedOrientation(land ? ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE : ActivityInfo.SCREEN_ORIENTATION_PORTRAIT);
+			}
+		});
 	}
 
 	private void dimScreen(Context ctx) {
@@ -487,7 +502,7 @@ public class MirrorDisplay {
 				if (overlay == null) {
 					var overlayLp = new WindowManager.LayoutParams(
 							MATCH_PARENT, MATCH_PARENT, TYPE_APPLICATION_OVERLAY,
-							OVERLAY_FLAGS, PixelFormat.TRANSLUCENT);
+							OVERLAY_FLAGS_DIMMED, PixelFormat.TRANSLUCENT);
 					overlayLp.gravity = Gravity.TOP | Gravity.START;
 					overlayLp.alpha = 0.05f;
 					
@@ -812,16 +827,17 @@ public class MirrorDisplay {
 		@SuppressLint("ClickableViewAccessibility")
 		@Override
 		public boolean onTouchEvent(MotionEvent event) {
+			if (event.getDisplayId() != Display.DEFAULT_DISPLAY) {
+				return false;
+			}
+			
 			int action = event.getActionMasked();
 			if (action == MotionEvent.ACTION_OUTSIDE || action == MotionEvent.ACTION_DOWN || action == MotionEvent.ACTION_POINTER_DOWN) {
-				if (Math.abs(uptimeMillis() - lastInjectedTouchTime) < 500) {
-					return false;
-				}
-				
 				resetIdleTimer();
 				if (isDimmed) {
 					Log.d("True physical touch on phone detected. Restoring brightness and natural orientation.");
 					restoreBrightness(getContext(), false);
+					return true;
 				}
 			}
 			return false; 
