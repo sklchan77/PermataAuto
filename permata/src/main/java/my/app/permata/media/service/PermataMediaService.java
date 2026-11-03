@@ -24,7 +24,9 @@ import android.content.res.Configuration;
 import android.content.res.Resources;
 import android.graphics.Bitmap;
 import android.graphics.Color;
+import android.media.AudioAttributes;
 import android.media.AudioFormat;
+import android.media.AudioFocusRequest;
 import android.media.AudioManager;
 import android.media.AudioTrack;
 import android.os.Binder;
@@ -54,6 +56,7 @@ import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 
 import my.app.permata.BuildConfig;
@@ -122,7 +125,9 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 	private boolean isTeardownActive = false;
 
 	private AudioManager.OnAudioFocusChangeListener focusChangeListener;
-	private long lastWebMediaPlayingTime = 0;
+	private AudioFocusRequest audioFocusRequestOreo;
+	private final AtomicLong lastWebMediaPlayingTime = new AtomicLong(0);
+	private volatile boolean hasAudioFocus = false;
 
 	public MediaLib getLib() {
 		return lib;
@@ -148,8 +153,6 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 						MediaSessionCompat.FLAG_HANDLES_TRANSPORT_CONTROLS
 		);
 		session.setCallback(callback);
-		
-		// SURGICAL FIX: Stealth Startup - Keeps AA Media Tile hidden until actual media begins
 		session.setActive(false);
 
 		Intent mediaButtonIntent = new Intent(Intent.ACTION_MEDIA_BUTTON, null, ctx, MediaButtonReceiver.class);
@@ -246,10 +249,11 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 		if (isTeardownActive) return;
 
 		long now = SystemClock.uptimeMillis();
-		if (now - lastWebMediaPlayingTime < 300) {
+		// SURGICAL FIX: Debounce interval increased to 2000ms to halt racing entirely
+		if (now - lastWebMediaPlayingTime.get() < 2000) {
 			return;
 		}
-		lastWebMediaPlayingTime = now;
+		lastWebMediaPlayingTime.set(now);
 
 		hijackCarAudioAndSteering();
 	}
@@ -278,13 +282,18 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 				if (isTeardownActive) return;
 				try {
 					AudioManager audioManager = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
-					if (audioManager != null) {
+					if (audioManager != null && !hasAudioFocus) {
 						if (focusChangeListener == null) {
 							focusChangeListener = focusChange -> {
 								if (focusChange == AudioManager.AUDIOFOCUS_LOSS) {
 									Log.w("PermataMediaService: Car Radio stole focus.");
+									hasAudioFocus = false;
+								} else if (focusChange == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK) {
+									// Head unit requested ducking - do NOT fight it; do not re-request focus
+									Log.i("PermataMediaService: Audio focus ducking permitted.");
 								} else if (focusChange == AudioManager.AUDIOFOCUS_GAIN) {
 									Log.i("PermataMediaService: Audio focus returned. Enforcing Steering Control anchor.");
+									hasAudioFocus = true;
 									if (session != null && !isTeardownActive) {
 										session.setActive(true);
 										updatePlaybackState(STATE_PLAYING);
@@ -293,13 +302,31 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 							};
 						}
 						
-						// SURGICAL FIX: Restored MAY_DUCK purely to stop the infinite pause loop, 
-						// without any artificial volume modification enforcers.
-						audioManager.requestAudioFocus(
-								focusChangeListener,
-								AudioManager.STREAM_MUSIC,
-								AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK
-						);
+						int result;
+						if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+							if (audioFocusRequestOreo == null) {
+								AudioAttributes playbackAttributes = new AudioAttributes.Builder()
+										.setUsage(AudioAttributes.USAGE_MEDIA)
+										.setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
+										.build();
+								// SURGICAL FIX: Request standard GAIN, accept ducking gracefully
+								audioFocusRequestOreo = new AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
+										.setAudioAttributes(playbackAttributes)
+										.setAcceptsDelayedFocusGain(true)
+										.setWillPauseWhenDucked(false)
+										.setOnAudioFocusChangeListener(focusChangeListener)
+										.build();
+							}
+							result = audioManager.requestAudioFocus(audioFocusRequestOreo);
+						} else {
+							//noinspection deprecation
+							result = audioManager.requestAudioFocus(
+									focusChangeListener,
+									AudioManager.STREAM_MUSIC,
+									AudioManager.AUDIOFOCUS_GAIN
+							);
+						}
+						hasAudioFocus = (result == AudioManager.AUDIOFOCUS_REQUEST_GRANTED);
 					}
 
 					AudioTrack currentTrack = silentAudioTrackRef.get();
@@ -352,11 +379,17 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 	}
 
 	private void releaseAudioFocus() {
+		hasAudioFocus = false;
 		if (focusChangeListener != null) {
 			try {
 				AudioManager audioManager = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
 				if (audioManager != null) {
-					audioManager.abandonAudioFocus(focusChangeListener);
+					if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && audioFocusRequestOreo != null) {
+						audioManager.abandonAudioFocusRequest(audioFocusRequestOreo);
+					} else {
+						//noinspection deprecation
+						audioManager.abandonAudioFocus(focusChangeListener);
+					}
 				}
 			} catch (Exception ignored) {}
 		}
