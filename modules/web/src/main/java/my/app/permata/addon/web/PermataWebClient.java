@@ -67,7 +67,6 @@ public class PermataWebClient extends WebViewClientCompat {
                 "} catch(e) {}";
             view.evaluateJavascript(js, null);
 
-            // SURGICAL FIX: Restored original IntersectionObserver logic that did not trigger Lip-sync issues
             String mediaObserverJs = "(function() { " +
                 "  if (window.__permataMediaObserverAttached) return; " +
                 "  window.__permataMediaObserverAttached = true; " +
