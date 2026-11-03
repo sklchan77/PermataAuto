@@ -22,11 +22,6 @@ import my.app.utils.async.Promise;
 import my.app.utils.function.BooleanConsumer;
 import my.app.utils.log.Log;
 
-/**
- * Production-hardened WebClient.
- * Features: JS debounce, God-Mode DOM Surgery with Blob/MSE Safety, 
- * and Universal Audio Pipeline Reset. (Cold-Start Grace Period Removed)
- */
 public class PermataWebClient extends WebViewClientCompat {
     BooleanConsumer loading;
 
@@ -59,7 +54,6 @@ public class PermataWebClient extends WebViewClientCompat {
         f.onSuccess(a -> a.fireBroadcastEvent(FRAGMENT_CONTENT_CHANGED));
 
         if (!isYoutubeUri(Uri.parse(url))) {
-            // 1. Hardware MediaSession mapping for steering wheel controls
             String js = "try { " +
                 "  if (!window.__permataFrame) { " +
                 "    window.__permataFrame = document.createElement('iframe'); " +
@@ -73,7 +67,7 @@ public class PermataWebClient extends WebViewClientCompat {
                 "} catch(e) {}";
             view.evaluateJavascript(js, null);
 
-            // 2. LEAN UNIVERSAL OBSERVER (No Grace Period, Strict Thresholds)
+            // SURGICAL FIX: Restored original IntersectionObserver logic that did not trigger Lip-sync issues
             String mediaObserverJs = "(function() { " +
                 "  if (window.__permataMediaObserverAttached) return; " +
                 "  window.__permataMediaObserverAttached = true; " +
@@ -99,70 +93,18 @@ public class PermataWebClient extends WebViewClientCompat {
                 "  var intObserver = new IntersectionObserver((entries) => { " +
                 "    entries.forEach(entry => { " +
                 "      var v = entry.target; " +
-                "      /* STRICT DETECTION: Enforce 50% threshold immediately */ " +
                 "      var isValidIntersect = (entry.isIntersecting && entry.intersectionRatio > 0.5); " +
                 "      if (isValidIntersect) { " +
                 "        var isNewMedia = (activeVideo !== v); " +
                 "        activeVideo = v; " +
-                "        " +
-                "        /* Wake up decoder if previously suspended */ " +
-                "        if (v.__permataSuspended) { " +
-                "            v.setAttribute('preload', 'auto'); " +
-                "            v.__permataSuspended = false; " +
-                "        } " +
-                "        " +
-                "        /* --- UNIVERSAL PER-MEDIA CHANGE UNMUTE ENFORCER & AUDIO PIPELINE RESET --- */ " +
                 "        if (isNewMedia) { " +
                 "            v.muted = false; " +
                 "            v.volume = 1.0; " +
-                "            " +
-                "            /* AUDIO PIPELINE RESET: Force hardware decoder sync universally */ " +
-                "            var playPromise = v.play(); " +
-                "            if (playPromise !== undefined) { " +
-                "                playPromise.then(function() { " +
-                "                    /* Micro-seek triggers an instant buffer flush (safe for all HTML5 video) */ " +
-                "                    if (activeVideo === v && v.currentTime !== undefined) { " +
-                "                        v.currentTime += 0.0001; " +
-                "                    } " +
-                "                }).catch(function(e){}); " +
-                "            } " +
-                "            " +
-                "            /* Backup micro-timers to override SPA React/Vue render cycles (FB/IG/TikTok) */ " +
-                "            setTimeout(function() { if (activeVideo === v) { v.muted = false; v.volume = 1.0; } }, 100); " +
-                "            setTimeout(function() { if (activeVideo === v) { v.muted = false; v.volume = 1.0; } }, 400); " +
+                "            v.play().catch(function(e){}); " +
                 "        } " +
-                "        " +
                 "        v.addEventListener('play', onPlayHandler); " +
                 "        v.addEventListener('playing', onPlayHandler); " +
                 "        v.addEventListener('pause', onPauseHandler); " +
-                "        " +
-                "        /* Decoder Surgery: Steal hardware decoders from background videos safely */ " +
-                "        var allVids = document.querySelectorAll('video'); " +
-                "        for (var i = 0; i < allVids.length; i++) { " +
-                "          if (allVids[i] !== v) { " +
-                "            var ov = allVids[i]; " +
-                "            if (!ov.paused) ov.pause(); " +
-                "            ov.muted = true; " +
-                "            " +
-                "            if (!ov.__permataSuspended) { " +
-                "                ov.__permataSuspended = true; " +
-                "                " +
-                "                /* CRITICAL FIX: Check if the video uses MSE (Blob URLs) */ " +
-                "                var currentSource = ov.currentSrc || ov.src || ''; " +
-                "                var isBlob = currentSource.indexOf('blob:') === 0; " +
-                "                " +
-                "                if (!isBlob) { " +
-                "                    /* Safe to flush standard MP4 decoders */ " +
-                "                    ov.setAttribute('preload', 'none'); " +
-                "                    ov.load(); " +
-                "                } else { " +
-                "                    /* For IG/TikTok MSE, just strip preload to stop network fetching. " +
-                "                       DO NOT execute load() or it will fatal-crash the React thread. */ " +
-                "                    ov.setAttribute('preload', 'none'); " +
-                "                } " +
-                "            } " +
-                "          } " +
-                "        } " +
                 "      } else { " +
                 "        if (activeVideo === v) activeVideo = null; " +
                 "        v.removeEventListener('play', onPlayHandler); " +
@@ -172,7 +114,6 @@ public class PermataWebClient extends WebViewClientCompat {
                 "    }); " +
                 "  }, { threshold: [0.0, 0.5] }); " +
                 "  " +
-                "  /* UNIVERSAL BINDING: Dynamically attach to all infinite-scroll injected videos */ " +
                 "  function scanAndBind(node) { " +
                 "    if (node.tagName && node.tagName.toLowerCase() === 'video' && !node.__permataObserved) { " +
                 "      node.__permataObserved = true; " +
