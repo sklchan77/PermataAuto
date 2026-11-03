@@ -127,7 +127,6 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 	private AudioManager.OnAudioFocusChangeListener focusChangeListener;
 	private AudioFocusRequest audioFocusRequestOreo;
 	private final AtomicLong lastWebMediaPlayingTime = new AtomicLong(0);
-	private volatile boolean hasAudioFocus = false;
 
 	public MediaLib getLib() {
 		return lib;
@@ -249,7 +248,6 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 		if (isTeardownActive) return;
 
 		long now = SystemClock.uptimeMillis();
-		// SURGICAL FIX: Debounce interval increased to 2000ms to halt racing entirely
 		if (now - lastWebMediaPlayingTime.get() < 2000) {
 			return;
 		}
@@ -282,18 +280,15 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 				if (isTeardownActive) return;
 				try {
 					AudioManager audioManager = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
-					if (audioManager != null && !hasAudioFocus) {
+					if (audioManager != null) {
 						if (focusChangeListener == null) {
 							focusChangeListener = focusChange -> {
 								if (focusChange == AudioManager.AUDIOFOCUS_LOSS) {
 									Log.w("PermataMediaService: Car Radio stole focus.");
-									hasAudioFocus = false;
 								} else if (focusChange == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK) {
-									// Head unit requested ducking - do NOT fight it; do not re-request focus
 									Log.i("PermataMediaService: Audio focus ducking permitted.");
 								} else if (focusChange == AudioManager.AUDIOFOCUS_GAIN) {
 									Log.i("PermataMediaService: Audio focus returned. Enforcing Steering Control anchor.");
-									hasAudioFocus = true;
 									if (session != null && !isTeardownActive) {
 										session.setActive(true);
 										updatePlaybackState(STATE_PLAYING);
@@ -302,31 +297,28 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 							};
 						}
 						
-						int result;
 						if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
 							if (audioFocusRequestOreo == null) {
 								AudioAttributes playbackAttributes = new AudioAttributes.Builder()
 										.setUsage(AudioAttributes.USAGE_MEDIA)
 										.setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
 										.build();
-								// SURGICAL FIX: Request standard GAIN, accept ducking gracefully
-								audioFocusRequestOreo = new AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
+								audioFocusRequestOreo = new AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK)
 										.setAudioAttributes(playbackAttributes)
 										.setAcceptsDelayedFocusGain(true)
 										.setWillPauseWhenDucked(false)
 										.setOnAudioFocusChangeListener(focusChangeListener)
 										.build();
 							}
-							result = audioManager.requestAudioFocus(audioFocusRequestOreo);
+							audioManager.requestAudioFocus(audioFocusRequestOreo);
 						} else {
 							//noinspection deprecation
-							result = audioManager.requestAudioFocus(
+							audioManager.requestAudioFocus(
 									focusChangeListener,
 									AudioManager.STREAM_MUSIC,
-									AudioManager.AUDIOFOCUS_GAIN
+									AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK
 							);
 						}
-						hasAudioFocus = (result == AudioManager.AUDIOFOCUS_REQUEST_GRANTED);
 					}
 
 					AudioTrack currentTrack = silentAudioTrackRef.get();
@@ -379,7 +371,6 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 	}
 
 	private void releaseAudioFocus() {
-		hasAudioFocus = false;
 		if (focusChangeListener != null) {
 			try {
 				AudioManager audioManager = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
