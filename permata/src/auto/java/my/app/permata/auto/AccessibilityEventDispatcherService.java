@@ -110,7 +110,8 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
 		clickOnButton = text;
 	}
 
-	static boolean dispatchBack() {
+    // SURGICAL FIX: Made public so KeyEventHandler can access it directly from outside the package
+	public static boolean dispatchBack() {
 		var ds = instance;
 		return (ds != null) && ds.performGlobalAction(GLOBAL_ACTION_BACK);
 	}
