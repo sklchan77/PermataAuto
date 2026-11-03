@@ -11,20 +11,13 @@ import static android.content.pm.ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED;
 import static android.os.Build.VERSION.SDK_INT;
 import static android.os.PowerManager.ACQUIRE_CAUSES_WAKEUP;
 import static android.os.SystemClock.uptimeMillis;
-import static android.provider.Settings.System.ACCELEROMETER_ROTATION;
 import static android.provider.Settings.System.SCREEN_BRIGHTNESS;
 import static android.provider.Settings.System.SCREEN_BRIGHTNESS_MODE;
-import static android.provider.Settings.System.USER_ROTATION;
-import static android.view.Surface.ROTATION_0;
-import static android.view.Surface.ROTATION_90;
-import static android.view.Surface.ROTATION_270;
 import static android.view.ViewGroup.LayoutParams.MATCH_PARENT;
-import static android.view.WindowManager.LayoutParams.FLAG_ALT_FOCUSABLE_IM;
 import static android.view.WindowManager.LayoutParams.FLAG_DISMISS_KEYGUARD;
 import static android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON;
 import static android.view.WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE;
 import static android.view.WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE;
-import static android.view.WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL;
 import static android.view.WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED;
 import static android.view.WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON;
 import static android.view.WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH;
@@ -83,13 +76,9 @@ import my.app.utils.log.Log;
 import my.app.utils.ui.UiUtils;
 
 public class MirrorDisplay {
-	private static final int OVERLAY_FLAGS =
-			FLAG_NOT_FOCUSABLE | FLAG_KEEP_SCREEN_ON | FLAG_DISMISS_KEYGUARD | FLAG_TURN_SCREEN_ON |
-					FLAG_SHOW_WHEN_LOCKED | FLAG_NOT_TOUCH_MODAL | FLAG_WATCH_OUTSIDE_TOUCH;
+	// Ghost Layer: Permanently passes touches through, relies on ACTION_OUTSIDE to wake
+	private static final int OVERLAY_FLAGS = FLAG_NOT_FOCUSABLE | FLAG_KEEP_SCREEN_ON | FLAG_DISMISS_KEYGUARD | FLAG_TURN_SCREEN_ON | FLAG_SHOW_WHEN_LOCKED | FLAG_NOT_TOUCHABLE | FLAG_WATCH_OUTSIDE_TOUCH;
 					
-	private static final int ANCHOR_FLAGS = 
-			FLAG_NOT_TOUCHABLE | FLAG_KEEP_SCREEN_ON | FLAG_DISMISS_KEYGUARD | FLAG_SHOW_WHEN_LOCKED | FLAG_ALT_FOCUSABLE_IM;
-			
 	private static MirrorDisplay instance;
 	private final Display defaultDisplay;
 	private final float scaleDiff;
@@ -102,14 +91,11 @@ public class MirrorDisplay {
 	private static final Object lifecycleLock = new Object(); 
 	private static final Object settingsLock = new Object();
 	
-	private static volatile boolean isRotationLocked = false;
 	private static volatile boolean isDimmed = false;
-	private static volatile int accel = -1;
-	private static volatile int originalUserRotation = -1; 
 	private static volatile int brightnessMode = -1; 
 	private static volatile int brightness = -1;
 	
-	private volatile long lastInjectedTouchTime; 
+	private volatile long lastInjectedTouchTime = 0; 
 	private final Object touchLock = new Object(); 
 	
 	private int refCounter = 0;
@@ -119,7 +105,6 @@ public class MirrorDisplay {
 	private SurfaceContainer sc;
 	
 	private Overlay overlay;
-	private View rotationAnchor; 
 	private Metrics currentMetrics;
 	
 	private MotionEvent.PointerProperties[] reusableProps;
@@ -130,33 +115,8 @@ public class MirrorDisplay {
 	private final Handler mainHandler = new Handler(Looper.getMainLooper());
 	
 	private final Runnable idleDimRunnable = () -> {
-		Log.d("Idle timeout reached. Dimming screen.");
+		Log.d("Idle timeout reached. Dimming screen and engaging Z-Order landscape lock.");
 		dimScreen(PermataApplication.get());
-	};
-
-	private final Runnable orientationHeartbeat = new Runnable() {
-		@Override
-		public void run() {
-			if (!isDimmed || sc == null || isDestroyed) return;
-			
-			try {
-				boolean wantLandscape = PermataApplication.get().isMirroringLandscape();
-				int rotation = defaultDisplay.getRotation();
-				boolean isCurrentlyLandscape = (rotation == ROTATION_90 || rotation == ROTATION_270);
-				
-				if (wantLandscape != isCurrentlyLandscape) {
-					Log.w("Real rogue app hijacked physical rotation. Forcing self-healing correction.");
-					updateOverlayOrientation(true);
-					disableAccelRotation(PermataApplication.get());
-				}
-			} catch (Exception err) {
-				Log.e(err, "Orientation heartbeat check failed.");
-			}
-			
-			if (isDimmed && !isDestroyed) {
-				mainHandler.postDelayed(this, 3000); // 3 second heartbeat during idle
-			}
-		}
 	};
 
 	private MirrorDisplay() {
@@ -401,113 +361,25 @@ public class MirrorDisplay {
 		return true;
 	}
 
-	private void updateOverlayOrientation(boolean forceCarPriority) {
+	private void updateOverlayState(boolean isIdle) {
 		try {
-			var wm = (WindowManager) PermataApplication.get().getSystemService(WINDOW_SERVICE);
-			boolean land = PermataApplication.get().isMirroringLandscape();
-			int targetOrientation = forceCarPriority 
-					? (land ? SCREEN_ORIENTATION_LANDSCAPE : SCREEN_ORIENTATION_PORTRAIT) 
-					: ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED;
-
-			if (rotationAnchor != null) {
-				var anchorLp = (WindowManager.LayoutParams) rotationAnchor.getLayoutParams();
-				if (anchorLp != null) {
-					anchorLp.screenOrientation = targetOrientation;
-					wm.updateViewLayout(rotationAnchor, anchorLp);
+			if (overlay != null) {
+				var wm = (WindowManager) PermataApplication.get().getSystemService(WINDOW_SERVICE);
+				var lp = (WindowManager.LayoutParams) overlay.getLayoutParams();
+				if (lp != null) {
+					boolean land = PermataApplication.get().isMirroringLandscape();
+					lp.screenOrientation = isIdle ? (land ? SCREEN_ORIENTATION_LANDSCAPE : SCREEN_ORIENTATION_PORTRAIT) : ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED;
+					wm.updateViewLayout(overlay, lp);
 				}
 			}
 			
-			if (overlay != null) {
-				var overlayLp = (WindowManager.LayoutParams) overlay.getLayoutParams();
-				if (overlayLp != null) {
-					overlayLp.screenOrientation = targetOrientation;
-					wm.updateViewLayout(overlay, overlayLp);
-				}
+			var a = EventDispatcher.get().getActivity();
+			if (a != null) {
+				boolean land = PermataApplication.get().isMirroringLandscape();
+				a.setRequestedOrientation(isIdle ? (land ? SCREEN_ORIENTATION_LANDSCAPE : SCREEN_ORIENTATION_PORTRAIT) : SCREEN_ORIENTATION_UNSPECIFIED);
 			}
 		} catch (Exception err) {
-			Log.e(err, "Failed to update overlay orientation hierarchy");
-		}
-	}
-
-	public static void disableAccelRotation() {
-		var app = PermataApplication.get();
-		app.getHandler().postDelayed(() -> disableAccelRotation(app), 3000);
-	}
-
-	private static void disableAccelRotation(Context ctx) {
-		synchronized (lifecycleLock) {
-			if (instance == null || instance.sc == null || instance.isDestroyed) return; 
-		}
-
-		var a = EventDispatcher.get().getActivity();
-		boolean land = PermataApplication.get().isMirroringLandscape();
-		
-		if (a != null) {
-			a.setRequestedOrientation(land ? SCREEN_ORIENTATION_LANDSCAPE : SCREEN_ORIENTATION_PORTRAIT);
-		}
-
-		try {
-			bgExecutor.execute(() -> {
-				synchronized (settingsLock) {
-					if (isRotationLocked) return;
-					try {
-						var cr = ctx.getContentResolver();
-						if (accel == -1) {
-							var v = Settings.System.getInt(cr, ACCELEROMETER_ROTATION, -1);
-							if (v != -1) accel = v;
-						}
-						
-						if (originalUserRotation == -1) {
-							var ur = Settings.System.getInt(cr, USER_ROTATION, -1);
-							if (ur != -1) originalUserRotation = ur;
-						}
-						
-						Settings.System.putInt(cr, ACCELEROMETER_ROTATION, 0);
-						Settings.System.putInt(cr, USER_ROTATION, land ? ROTATION_90 : ROTATION_0);
-						isRotationLocked = true;
-					} catch (Exception err) {
-						Log.e(err);
-					}
-				}
-			});
-		} catch (Exception ex) {
-			Log.e(ex, "Background thread rejected rotation lock instruction");
-		}
-	}
-
-	private static void restoreAccelRotation(Context ctx, boolean synchronous) {
-		var a = EventDispatcher.get().getActivity();
-		if (a != null) a.setRequestedOrientation(SCREEN_ORIENTATION_UNSPECIFIED);
-
-		Runnable task = () -> {
-			synchronized (settingsLock) {
-				if (!isRotationLocked) return;
-				try {
-					var cr = ctx.getContentResolver();
-					if (accel != -1) {
-						Settings.System.putInt(cr, ACCELEROMETER_ROTATION, accel);
-						accel = -1;
-					}
-					
-					if (originalUserRotation != -1) {
-						Settings.System.putInt(cr, USER_ROTATION, originalUserRotation);
-						originalUserRotation = -1;
-					}
-					isRotationLocked = false;
-				} catch (Exception err) {
-					Log.e(err, "Settings Provider lagged or failed during rotation restore.");
-				}
-			}
-		};
-
-		if (synchronous) {
-			task.run();
-		} else {
-			try {
-				bgExecutor.execute(task);
-			} catch (Exception ex) {
-				Log.e(ex, "Background thread rejected rotation restore instruction");
-			}
+			Log.e(err, "Failed to update overlay dynamic state");
 		}
 	}
 
@@ -536,11 +408,7 @@ public class MirrorDisplay {
 						Settings.System.putInt(cr, SCREEN_BRIGHTNESS, 1);
 						isDimmed = true;
 						
-						mainHandler.post(() -> {
-							mainHandler.removeCallbacks(orientationHeartbeat);
-							// Immediately trigger heartbeat lock, then cycle every 3s
-							orientationHeartbeat.run(); 
-						});
+						mainHandler.post(() -> updateOverlayState(true));
 					} catch (Exception err) {
 						Log.e(err);
 					}
@@ -565,7 +433,8 @@ public class MirrorDisplay {
 						brightnessMode = -1;
 					}
 					isDimmed = false;
-					mainHandler.post(() -> mainHandler.removeCallbacks(orientationHeartbeat));
+					
+					mainHandler.post(() -> updateOverlayState(false));
 				} catch (Exception err) {
 					Log.e(err, "Settings Provider lagged or failed during brightness restore.");
 				}
@@ -590,12 +459,11 @@ public class MirrorDisplay {
 
 		if (app.isMirroringMode()) {
 			app.setMirroringMode(mode);
-			updateOverlayOrientation(true);
+			updateOverlayState(true);
 			return;
 		}
 
 		dimScreen(app);
-		disableAccelRotation(app);
 		resetIdleTimer();
 
 		var pmg = (PowerManager) app.getSystemService(POWER_SERVICE);
@@ -616,23 +484,12 @@ public class MirrorDisplay {
 				var wm = (WindowManager) app.getSystemService(WINDOW_SERVICE);
 				boolean land = (mode == 1); 
 				
-				if (rotationAnchor == null) {
-					var anchorLp = new WindowManager.LayoutParams(
-							1, 1, TYPE_APPLICATION_OVERLAY, ANCHOR_FLAGS, PixelFormat.TRANSPARENT);
-					anchorLp.gravity = Gravity.TOP | Gravity.START;
-					anchorLp.screenOrientation = land ? SCREEN_ORIENTATION_LANDSCAPE : SCREEN_ORIENTATION_PORTRAIT;
-					
-					rotationAnchor = new View(app);
-					wm.addView(rotationAnchor, anchorLp);
-				}
-
 				if (overlay == null) {
 					var overlayLp = new WindowManager.LayoutParams(
 							MATCH_PARENT, MATCH_PARENT, TYPE_APPLICATION_OVERLAY,
 							OVERLAY_FLAGS, PixelFormat.TRANSLUCENT);
 					overlayLp.gravity = Gravity.TOP | Gravity.START;
-					overlayLp.screenOrientation = land ? SCREEN_ORIENTATION_LANDSCAPE : SCREEN_ORIENTATION_PORTRAIT;
-					overlayLp.alpha = 0.01f;
+					overlayLp.alpha = 0.05f;
 					
 					overlay = new Overlay(app);
 					wm.addView(overlay, overlayLp);
@@ -664,31 +521,26 @@ public class MirrorDisplay {
 		var app = PermataApplication.get();
 		
 		mainHandler.removeCallbacks(idleDimRunnable);
-		mainHandler.removeCallbacks(orientationHeartbeat);
 		app.sendBroadcast(new Intent(ACTION_KILL_WEBVIEW));
 		
 		restoreBrightness(app, true);
-		restoreAccelRotation(app, true);
 		
 		var a = EventDispatcher.get().getActivity();
 		if (a != null) a.setRequestedOrientation(SCREEN_ORIENTATION_UNSPECIFIED);
 		
-		if (overlay != null || rotationAnchor != null) {
+		if (overlay != null) {
 			final Overlay oldOverlay = overlay;
-			final View oldAnchor = rotationAnchor;
 			
 			mainHandler.post(() -> {
 				try {
 					var wm = (WindowManager) app.getSystemService(WINDOW_SERVICE);
 					if (oldOverlay != null && oldOverlay.isAttachedToWindow()) wm.removeView(oldOverlay);
-					if (oldAnchor != null && oldAnchor.isAttachedToWindow()) wm.removeView(oldAnchor); 
 				} catch (IllegalArgumentException iae) {
 					Log.w("Zombie view prevented during cleanup execution.");
 				} catch (Exception ignored) {}
 			});
 			
 			overlay = null;
-			rotationAnchor = null;
 		}
 		
 		if (wakeLock != null) {
@@ -960,20 +812,17 @@ public class MirrorDisplay {
 		@SuppressLint("ClickableViewAccessibility")
 		@Override
 		public boolean onTouchEvent(MotionEvent event) {
-			// Check if touch came from the physical phone display (id 0) vs car virtual display
-			if (event.getDisplayId() != Display.DEFAULT_DISPLAY) {
-				return false;
-			}
-			
 			int action = event.getActionMasked();
 			if (action == MotionEvent.ACTION_OUTSIDE || action == MotionEvent.ACTION_DOWN || action == MotionEvent.ACTION_POINTER_DOWN) {
-				Log.d("True physical touch on phone detected. Restoring brightness and natural orientation.");
+				if (Math.abs(uptimeMillis() - lastInjectedTouchTime) < 500) {
+					return false;
+				}
 				
 				resetIdleTimer();
-				var ctx = getContext();
-				restoreBrightness(ctx, false);
-				restoreAccelRotation(ctx, false); 
-				updateOverlayOrientation(false); 
+				if (isDimmed) {
+					Log.d("True physical touch on phone detected. Restoring brightness and natural orientation.");
+					restoreBrightness(getContext(), false);
+				}
 			}
 			return false; 
 		}
