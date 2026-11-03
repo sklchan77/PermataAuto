@@ -215,7 +215,6 @@ public class KeyEventHandler {
                     return true;
                 }
 
-                // SURGICAL FIX: Priority inversion. Native App state ALWAYS overrides background WebFragments.
                 String activePkg = AccessibilityEventDispatcherService.getLastActivePackage();
                 boolean isNativeScroller = activePkg != null && SCROLLER_PACKAGES.contains(activePkg);
                 
@@ -431,7 +430,6 @@ public class KeyEventHandler {
         return baseWebView;
     }
 
-    // SURGICAL FIX: Restored the previously deleted method
     private static View scanHighestVisibleChild(View parent, long minValidArea, int minValidHeight) {
         if (parent == null || !parent.isShown() || parent.getVisibility() != View.VISIBLE || parent.getAlpha() < 0.1f) {
             return null;
@@ -487,12 +485,14 @@ public class KeyEventHandler {
         if (pkgName.contains("zhiliaoapp") || pkgName.contains("trill") || pkgName.contains("aweme")) {
             boolean isLandscape = screenWidth > screenHeight;
             
+            // SURGICAL FIX: "up == false" means NEXT. "up == true" means PREV.
+            // TikTok requires a more aggressive upward physical drag to go back to the previous video
             if (isLandscape) {
-                centerY = screenHeight * 0.40f; 
-                span = screenHeight * 0.65f;
+                centerY = up ? (screenHeight * 0.50f) : (screenHeight * 0.40f); 
+                span = up ? (screenHeight * 0.70f) : (screenHeight * 0.65f);
             } else {
-                centerY = screenHeight * 0.35f;
-                span = screenHeight * 0.40f; 
+                centerY = up ? (screenHeight * 0.50f) : (screenHeight * 0.35f);
+                span = up ? (screenHeight * 0.50f) : (screenHeight * 0.40f); 
             }
         }
         
