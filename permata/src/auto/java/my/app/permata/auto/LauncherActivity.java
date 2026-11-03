@@ -274,9 +274,6 @@ public class LauncherActivity extends AppCompatActivity {
 				this.icon = icon;
 			}
 
-			/**
-			 * @noinspection EqualsWhichDoesntCheckParameterClass
-			 */
 			@Override
 			public boolean equals(Object o) {
 				if (this == o) return true;
@@ -427,7 +424,6 @@ public class LauncherActivity extends AppCompatActivity {
 					for (var app : selectApps) app.selected = AppListView.this.apps.contains(app);
 					Objects.requireNonNull(getAdapter()).notifyDataSetChanged();
 				} else if (appInfo.equals(AppInfo.BACK)) {
-					// SURGICAL FIX: Toolbar BACK button now routes globally back to the OS if not in app selection mode
 					if (selectApps != null) {
 						selectApps();
 					} else {
@@ -445,7 +441,6 @@ public class LauncherActivity extends AppCompatActivity {
 						intent.setFlags(FLAG_ACTIVITY_NEW_TASK);
 						intent.putExtra(INTENT_EXTRA_MODE, PermataApplication.get().getMirroringMode());
 						getContext().startActivity(intent);
-						MirrorDisplay.disableAccelRotation();
 					} catch (Exception err) {
 						Toast.makeText(getContext(), err.getLocalizedMessage(), Toast.LENGTH_LONG).show();
 					}
