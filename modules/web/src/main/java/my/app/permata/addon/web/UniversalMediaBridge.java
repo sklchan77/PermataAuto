@@ -23,7 +23,6 @@ public class UniversalMediaBridge {
     private final WeakReference<WebView> webViewRef;
     private final Handler mainHandler;
     
-    // SURGICAL FIX: Atomic debounce throttle to eliminate endless audio focus ping-ponging
     private final AtomicLong lastBridgePlayTime = new AtomicLong(0);
 
     private final Runnable focusReleaseRunnable = this::doReleaseAudioFocus;
