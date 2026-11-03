@@ -34,7 +34,6 @@ import android.annotation.SuppressLint;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.ActivityInfo;
-import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
 import android.graphics.PixelFormat;
@@ -44,7 +43,6 @@ import android.hardware.display.DisplayManager;
 import android.hardware.display.VirtualDisplay;
 import android.media.AudioManager;
 import android.media.projection.MediaProjection;
-import android.os.Build;
 import android.os.Build.VERSION_CODES;
 import android.os.Handler;
 import android.os.Looper;
@@ -135,6 +133,7 @@ public class MirrorDisplay {
 		dimScreen(PermataApplication.get());
 	};
 
+	private int rogueDriftCount = 0;
 	private final Runnable orientationHeartbeat = new Runnable() {
 		@Override
 		public void run() {
@@ -146,16 +145,22 @@ public class MirrorDisplay {
 				boolean isCurrentlyLandscape = (rotation == ROTATION_90 || rotation == ROTATION_270);
 				
 				if (wantLandscape != isCurrentlyLandscape) {
-					Log.w("Real rogue app hijacked physical rotation. Forcing self-healing correction.");
-					updateOverlayOrientation(true);
-					disableAccelRotation(PermataApplication.get());
+					rogueDriftCount++;
+					if (rogueDriftCount >= 2) {
+						Log.w("Real rogue app hijacked physical rotation. Forcing self-healing correction.");
+						updateOverlayOrientation(true);
+						disableAccelRotation(PermataApplication.get());
+						rogueDriftCount = 0;
+					}
+				} else {
+					rogueDriftCount = 0;
 				}
 			} catch (Exception err) {
 				Log.e(err, "Orientation heartbeat check failed.");
 			}
 			
 			if (isDimmed && !isDestroyed) {
-				mainHandler.postDelayed(this, 3000);
+				mainHandler.postDelayed(this, 5000); // SURGICAL FIX: Relaxed heartbeat timer
 			}
 		}
 	};
@@ -537,6 +542,7 @@ public class MirrorDisplay {
 						Settings.System.putInt(cr, SCREEN_BRIGHTNESS, 1);
 						
 						isDimmed = true;
+						rogueDriftCount = 0;
 						
 						mainHandler.post(() -> {
 							mainHandler.removeCallbacks(orientationHeartbeat);
@@ -567,6 +573,7 @@ public class MirrorDisplay {
 					}
 					
 					isDimmed = false;
+					rogueDriftCount = 0;
 					
 					mainHandler.post(() -> mainHandler.removeCallbacks(orientationHeartbeat));
 				} catch (Exception err) {
@@ -631,8 +638,8 @@ public class MirrorDisplay {
 
 				if (overlay == null) {
 					var overlayLp = new WindowManager.LayoutParams(
-							1, 1, TYPE_APPLICATION_OVERLAY,
-							OVERLAY_FLAGS, PixelFormat.TRANSPARENT);
+							MATCH_PARENT, MATCH_PARENT, TYPE_APPLICATION_OVERLAY,
+							OVERLAY_FLAGS, PixelFormat.TRANSLUCENT);
 					overlayLp.gravity = Gravity.TOP | Gravity.START;
 					overlayLp.screenOrientation = land ? SCREEN_ORIENTATION_LANDSCAPE : SCREEN_ORIENTATION_PORTRAIT;
 					
@@ -963,11 +970,11 @@ public class MirrorDisplay {
 		@Override
 		public boolean onTouchEvent(MotionEvent event) {
 			if (Math.abs(uptimeMillis() - lastInjectedTouchTime) < 500) return false;
-			if (event.getPointerCount() == 0 || event.getToolType(0) != MotionEvent.TOOL_TYPE_FINGER) return false;
 			
 			int action = event.getActionMasked();
+			// SURGICAL FIX: Action outside is sufficient; bypass the toolType validation that drops legitimate touches
 			if (action == MotionEvent.ACTION_OUTSIDE || action == MotionEvent.ACTION_DOWN || action == MotionEvent.ACTION_POINTER_DOWN) {
-				Log.d("True physical touch detected. Disengaging rotation anchor.");
+				Log.d("True physical touch on phone detected. Restoring brightness and natural orientation.");
 				
 				resetIdleTimer();
 				var ctx = getContext();
@@ -975,7 +982,7 @@ public class MirrorDisplay {
 				restoreAccelRotation(ctx, false); 
 				updateOverlayOrientation(false); 
 			}
-			return false;
+			return false; 
 		}
 	}
 }
