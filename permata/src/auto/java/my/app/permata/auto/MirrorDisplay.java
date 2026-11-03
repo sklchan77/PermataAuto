@@ -230,7 +230,7 @@ public class MirrorDisplay {
 	}
 
 	public void tap(float x, float y) {
-		resetIdleTimer();
+		// SURGICAL FIX: Removed resetIdleTimer() so car touches don't wake the phone
 		var m = metrics();
 		if (m == null) return;
 		
@@ -243,7 +243,7 @@ public class MirrorDisplay {
 	}
 
 	public void scale(float x, float y, boolean zoomIn) {
-		resetIdleTimer();
+		// SURGICAL FIX: Removed resetIdleTimer() so car touches don't wake the phone
 		var m = metrics();
 		if (m == null) return;
 		
@@ -257,7 +257,7 @@ public class MirrorDisplay {
 
 	public boolean motionEvent(MotionEvent e) {
 		lastInjectedTouchTime = uptimeMillis(); 
-		resetIdleTimer();
+		// SURGICAL FIX: Removed resetIdleTimer() so car touches don't wake the phone
 		
 		MotionEvent clonedEvent = null;
 
@@ -317,7 +317,7 @@ public class MirrorDisplay {
 
 	public boolean motionEvent(long downTime, long eventTime, int action, float x, float y) {
 		lastInjectedTouchTime = uptimeMillis(); 
-		resetIdleTimer();
+		// SURGICAL FIX: Removed resetIdleTimer() so car touches don't wake the phone
 		
 		MotionEvent clonedEvent = null;
 
@@ -386,7 +386,6 @@ public class MirrorDisplay {
 		}
 	}
 
-	// SURGICAL FIX: Compatibility stub for MirrorActivity compilation
 	public static void disableAccelRotation() {
 		var app = PermataApplication.get();
 		app.getHandler().post(() -> {
@@ -827,7 +826,9 @@ public class MirrorDisplay {
 		@SuppressLint("ClickableViewAccessibility")
 		@Override
 		public boolean onTouchEvent(MotionEvent event) {
-			if (event.getDisplayId() != Display.DEFAULT_DISPLAY) {
+			// SURGICAL FIX: Rely purely on timestamp to filter out car screen injections.
+			// event.getDisplayId() requires API 29+, so we use the injection clock instead.
+			if (Math.abs(uptimeMillis() - lastInjectedTouchTime) < 500) {
 				return false;
 			}
 			
