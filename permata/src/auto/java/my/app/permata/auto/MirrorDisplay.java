@@ -34,6 +34,7 @@ import android.annotation.SuppressLint;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.ActivityInfo;
+import android.content.res.Configuration;
 import android.graphics.Color;
 import android.graphics.Paint;
 import android.graphics.PixelFormat;
@@ -82,7 +83,6 @@ import my.app.utils.log.Log;
 import my.app.utils.ui.UiUtils;
 
 public class MirrorDisplay {
-	// GHOST LAYER SECURED: FLAG_NOT_TOUCHABLE ensures touches permanently pass through to native apps.
 	private static final int OVERLAY_FLAGS = FLAG_NOT_FOCUSABLE | FLAG_KEEP_SCREEN_ON | FLAG_DISMISS_KEYGUARD | FLAG_TURN_SCREEN_ON | FLAG_SHOW_WHEN_LOCKED | FLAG_NOT_TOUCHABLE | FLAG_WATCH_OUTSIDE_TOUCH;
 	private static final int ANCHOR_FLAGS = FLAG_NOT_TOUCHABLE | FLAG_KEEP_SCREEN_ON | FLAG_DISMISS_KEYGUARD | FLAG_SHOW_WHEN_LOCKED | FLAG_ALT_FOCUSABLE_IM;
 					
@@ -136,12 +136,13 @@ public class MirrorDisplay {
 			if (!isDimmed || sc == null || isDestroyed) return;
 			
 			try {
+				// SOFTWARE-ONLY CHECK: Completely bypasses hardware gravity sensor false-positives
 				boolean wantLandscape = PermataApplication.get().isMirroringLandscape();
-				int rotation = defaultDisplay.getRotation();
-				boolean isCurrentlyLandscape = (rotation == ROTATION_90 || rotation == ROTATION_270);
+				int currentUiOrientation = PermataApplication.get().getResources().getConfiguration().orientation;
+				boolean isCurrentlyLandscape = (currentUiOrientation == Configuration.ORIENTATION_LANDSCAPE);
 				
 				if (wantLandscape != isCurrentlyLandscape) {
-					Log.w("Real rogue app hijacked physical rotation. Forcing nuclear self-healing correction.");
+					Log.w("Software UI drifted from landscape. Forcing nuclear self-healing correction.");
 					updateOverlayOrientation(true);
 					disableAccelRotation(PermataApplication.get());
 				}
@@ -425,7 +426,7 @@ public class MirrorDisplay {
 
 	public static void disableAccelRotation() {
 		var app = PermataApplication.get();
-		app.getHandler().postDelayed(() -> disableAccelRotation(app), 0); // No delay, execute nuclear lock instantly
+		app.getHandler().postDelayed(() -> disableAccelRotation(app), 0);
 	}
 
 	private static void disableAccelRotation(Context ctx) {
@@ -961,7 +962,6 @@ public class MirrorDisplay {
 		public boolean onTouchEvent(MotionEvent event) {
 			int action = event.getActionMasked();
 			if (action == MotionEvent.ACTION_OUTSIDE) {
-				// SECURE WAKE: Only restores brightness if > 500ms since car injection
 				if (Math.abs(uptimeMillis() - lastInjectedTouchTime) > 500) {
 					resetIdleTimer();
 					if (isDimmed) {
