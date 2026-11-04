@@ -479,21 +479,11 @@ public class KeyEventHandler {
 
         final float actionX = screenWidth * 0.50f; 
         
-        float centerY = screenHeight / 2f;
-        float span = screenHeight * 0.50f; 
-
-        if (pkgName.contains("zhiliaoapp") || pkgName.contains("trill") || pkgName.contains("aweme")) {
-            boolean isLandscape = screenWidth > screenHeight;
-            // NEXT (Swipe UP physically) -> up == false
-            // PREVIOUS (Swipe DOWN physically) -> up == true
-            if (isLandscape) {
-                centerY = screenHeight * 0.50f; 
-                span = up ? (screenHeight * 0.75f) : (screenHeight * 0.65f); // Expanded span for previous
-            } else {
-                centerY = screenHeight * 0.50f;
-                span = up ? (screenHeight * 0.65f) : (screenHeight * 0.40f); 
-            }
-        }
+        float centerY = screenHeight * 0.50f;
+        
+        // SOFTWARE SAFE ZONE: Span is restricted to 60% of the screen height to strictly avoid 
+        // the top and bottom edge-gesture protection zones which swallow touches.
+        float span = screenHeight * 0.60f; 
         
         final float yStart = up ? (centerY - span / 2f) : (centerY + span / 2f);
         final float yEnd = up ? (centerY + span / 2f) : (centerY - span / 2f);
@@ -505,7 +495,9 @@ public class KeyEventHandler {
             dispatcher.motionEvent(startTime, startTime, MotionEvent.ACTION_DOWN, actionX, yStart);
 
             final int stepCount = 13; 
-            final long swipeDuration = up ? 250 : 170; // Preceding video scroll needs more time
+            // DURATION EXPANSION: 400ms duration for PREVIOUS simulates a deliberate human finger pull 
+            // over a shorter distance, preventing the TikTok gesture recognizer from treating it as a fling-reject.
+            final long swipeDuration = up ? 400 : 170; 
             
             for (int i = 1; i <= stepCount; i++) {
                 final float linearT = (float) i / stepCount;
@@ -545,12 +537,8 @@ public class KeyEventHandler {
         
         final float actionX = touchTarget.getWidth() * 0.50f; 
         
-        float centerY = touchTarget.getHeight() / 2f;
+        float centerY = touchTarget.getHeight() * 0.50f;
         float span = touchTarget.getHeight() * 0.60f; 
-        if (isTikTok) {
-            centerY = touchTarget.getHeight() * 0.50f;
-            span = up ? (touchTarget.getHeight() * 0.75f) : (touchTarget.getHeight() * 0.65f); 
-        }
         
         final float yStart = up ? (centerY - span / 2f) : (centerY + span / 2f);
         final float yEnd = up ? (centerY + span / 2f) : (centerY - span / 2f);
@@ -564,7 +552,7 @@ public class KeyEventHandler {
             eventDown.recycle();
 
             final int stepCount = 13; 
-            final long swipeDuration = up ? 250 : 170; 
+            final long swipeDuration = up ? 400 : 170; 
             
             for (int i = 1; i <= stepCount; i++) {
                 final float linearT = (float) i / stepCount;
