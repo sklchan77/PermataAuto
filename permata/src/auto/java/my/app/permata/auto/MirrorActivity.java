@@ -150,9 +150,17 @@ public class MirrorActivity extends CarActivity implements SurfaceHolder.Callbac
 	}
 
 	static void onBackButtonClick() {
-		var d = EventDispatcher.get();
-		if (d != null) {
-			d.directBack();
+		// SURGICAL FIX: Global Action Routing for identical steering-wheel behavior
+		if (AccessibilityEventDispatcherService.dispatchBack()) {
+			Log.i("[BACK] Floating Toolbar triggered Accessibility Back.");
+		} else {
+			var d = EventDispatcher.get();
+			if (d != null) {
+				d.directBack();
+				Log.i("[BACK] Floating Toolbar triggered EventDispatcher Back.");
+			} else {
+				Log.w("[BACK] Floating Toolbar Back injection completely failed.");
+			}
 		}
 		disableAccelRotation();
 	}
@@ -208,7 +216,6 @@ public class MirrorActivity extends CarActivity implements SurfaceHolder.Callbac
 				v.setId(icons[i]);
 				v.setImageResource(icons[i]);
 				
-				// SURGICAL FIX: Reverted to standard Color.WHITE since the XML viewport is now correctly sized
 				if (i == 1 || i == 3) v.setColorFilter(Color.WHITE); 
 				
 				v.setBackgroundResource(R.drawable.oval_bg);
