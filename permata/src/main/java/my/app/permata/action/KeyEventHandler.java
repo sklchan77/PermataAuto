@@ -71,7 +71,6 @@ public class KeyEventHandler {
     private static final Map<Class<?>, Method> webViewMethodCache = new ConcurrentHashMap<>();
     private static final Map<View, Long> scrollTimestamps = Collections.synchronizedMap(new WeakHashMap<>());
 
-    // SURGICAL FIX: Advanced Geometric UI Scanners added for TikTok, Instagram, and Facebook
     private static final String JS_UNIVERSAL_PAYLOAD = "(function(){" +
             "let res = 'Discovery [Layer 2]: JS Registry Miss (No custom formatting applied)'; " +
             "const injectGlobalWipe = function() { " +
@@ -149,6 +148,7 @@ public class KeyEventHandler {
             "          vids.forEach(function(v){ " +
             "            if(v !== primary && !v.paused) { v.pause(); v.muted = true; } " +
             "          }); " +
+            "          if(primary && primary.muted) { primary.muted = false; primary.volume = 1.0; } " + // SURGICAL FIX: Force un-mute on primary IG video
             "          var els = document.querySelectorAll('span, div, button, a'); " +
             "          els.forEach(function(e){ " +
             "            var t = e.innerText ? e.innerText.trim() : ''; " +
@@ -163,13 +163,21 @@ public class KeyEventHandler {
             "          }); " +
             "        }, 400); " +
             "      } " +
-            "      return 'INSTAGRAM: ' + injectSpecificWipe(igCss, 'permata-ig-css') + ' | Spatial Audio & UI Surgery Armed.'; " +
+            "      return 'INSTAGRAM: ' + injectSpecificWipe(igCss, 'permata-ig-css') + ' | Spatial Audio, Auto-Unmute & UI Surgery Armed.'; " +
             "    }}," +
             "    {name:\"facebook\",match:/facebook/,execute:function(){" +
             "      if (!window.__fbUISurgery) { " +
             "        window.__fbUISurgery = true; " +
             "        setInterval(function(){ " +
             "          var wh = window.innerHeight; var ww = window.innerWidth; " +
+            "          var vids = document.querySelectorAll('video'); " +
+            "          var maxH = 0; var primary = null; " +
+            "          vids.forEach(function(v){ " +
+            "            var r = v.getBoundingClientRect(); " +
+            "            var vis = Math.max(0, Math.min(r.bottom, wh) - Math.max(r.top, 0)); " +
+            "            if(vis > maxH) { maxH = vis; primary = v; } " +
+            "          }); " +
+            "          if(primary && primary.muted) { primary.muted = false; primary.volume = 1.0; } " + // SURGICAL FIX: Force un-mute on primary FB video
             "          var els = document.querySelectorAll('span, div, a, button'); " +
             "          els.forEach(function(e){ " +
             "            var t = e.innerText ? e.innerText.trim() : ''; " +
@@ -194,7 +202,7 @@ public class KeyEventHandler {
             "          }); " +
             "        }, 500); " +
             "      } " +
-            "      return 'FACEBOOK: Surgery precision UI wipe armed.'; " +
+            "      return 'FACEBOOK: Surgery precision UI wipe & Auto-Unmute armed.'; " +
             "    }}," +
             "    {name:\"youtube\",match:/(youtube|youtu)/,execute:function(){" +
             "      let ad=document.querySelector('.ytp-skip-ad-button,.ytp-ad-skip-button,.ytp-skip-button');if(ad)ad.click();" +
