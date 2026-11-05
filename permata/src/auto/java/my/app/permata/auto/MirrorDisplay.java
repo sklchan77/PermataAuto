@@ -136,7 +136,6 @@ public class MirrorDisplay {
 			if (!isDimmed || sc == null || isDestroyed) return;
 			
 			try {
-				// SURGICAL FIX: Strictly uses physical pixel geometry. Bypasses OS accelerometer sensor false-alarms.
 				boolean wantLandscape = PermataApplication.get().isMirroringLandscape();
 				android.util.DisplayMetrics metrics = PermataApplication.get().getResources().getDisplayMetrics();
 				boolean isCurrentlyLandscape = (metrics.widthPixels > metrics.heightPixels);
@@ -493,7 +492,7 @@ public class MirrorDisplay {
 					Log.e(err, "Settings Provider lagged or failed during rotation restore.");
 				}
 			}
-		};
+		} ;
 
 		if (synchronous) {
 			task.run();
