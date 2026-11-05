@@ -30,7 +30,6 @@ import java.util.Set;
 import java.util.WeakHashMap;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicLong;
 
 import my.app.permata.auto.AccessibilityEventDispatcherService;
 import my.app.permata.auto.EventDispatcher;
@@ -48,7 +47,6 @@ public class KeyEventHandler {
     private static volatile Worker worker;
     private static volatile long lastGlobalActionTime = 0L;
     
-    private static final AtomicLong swipeSessionId = new AtomicLong(0);
     private static final AtomicBoolean isHardwareSwiping = new AtomicBoolean(false);
     
     private static final Set<String> SCROLLER_PACKAGES = new HashSet<>(Arrays.asList(
@@ -148,7 +146,7 @@ public class KeyEventHandler {
             "          vids.forEach(function(v){ " +
             "            if(v !== primary && !v.paused) { v.pause(); v.muted = true; } " +
             "          }); " +
-            "          if(primary && primary.muted) { primary.muted = false; primary.volume = 1.0; } " + // SURGICAL FIX: Force un-mute on primary IG video
+            "          if(primary && primary.muted) { primary.muted = false; primary.volume = 1.0; } " +
             "          var els = document.querySelectorAll('span, div, button, a'); " +
             "          els.forEach(function(e){ " +
             "            var t = e.innerText ? e.innerText.trim() : ''; " +
@@ -177,17 +175,20 @@ public class KeyEventHandler {
             "            var vis = Math.max(0, Math.min(r.bottom, wh) - Math.max(r.top, 0)); " +
             "            if(vis > maxH) { maxH = vis; primary = v; } " +
             "          }); " +
-            "          if(primary && primary.muted) { primary.muted = false; primary.volume = 1.0; } " + // SURGICAL FIX: Force un-mute on primary FB video
+            "          if(primary && primary.muted) { primary.muted = false; primary.volume = 1.0; } " +
             "          var els = document.querySelectorAll('span, div, a, button'); " +
             "          els.forEach(function(e){ " +
+            "            var r = e.getBoundingClientRect(); " +
+            "            if(r.width > ww * 0.3 || r.height > wh * 0.3) return; " +
             "            var t = e.innerText ? e.innerText.trim() : ''; " +
-            "            if((t === 'Follow' || t.includes('Original audio') || t === 'Sponsored') && e.getBoundingClientRect().left < ww / 2) { " +
+            "            if((t === 'Follow' || t.includes('Original audio') || t === 'Sponsored') && r.left < ww / 2 && r.top > wh * 0.3) { " +
             "              e.style.opacity = '0'; e.style.pointerEvents = 'none'; " +
             "            } " +
             "          }); " +
             "          var texts = document.querySelectorAll('div[dir=\"auto\"], span[dir=\"auto\"]'); " +
             "          texts.forEach(function(txt){ " +
             "            var r = txt.getBoundingClientRect(); " +
+            "            if (r.width > ww * 0.3 || r.height > wh * 0.3) return; " +
             "            if(r.left >= 0 && r.left < ww * 0.6 && r.top > wh * 0.5 && r.width > 0 && r.height > 0) { " +
             "              var t = txt.innerText ? txt.innerText.trim() : ''; " +
             "              if(t.length > 0 && r.left < ww * 0.4) { txt.style.opacity = '0'; txt.style.pointerEvents = 'none'; } " +
@@ -548,52 +549,16 @@ public class KeyEventHandler {
             Log.w("[NATIVE_SWIPE] Sequence already in progress. Dropping overlapping dispatch.");
             return;
         }
-
-        final android.os.Handler guaranteedHandler = new android.os.Handler(android.os.Looper.getMainLooper());
-        
-        DisplayMetrics metrics = android.content.res.Resources.getSystem().getDisplayMetrics();
-        int screenWidth = metrics.widthPixels;
-        int screenHeight = metrics.heightPixels;
-
-        final float actionX = screenWidth * 0.50f; 
-        float centerY = screenHeight * 0.50f;
-        
-        float span = screenHeight * 0.20f; 
-        
-        final float yStart = up ? (centerY - span / 2f) : (centerY + span / 2f);
-        final float yEnd = up ? (centerY + span / 2f) : (centerY - span / 2f);
-
         try {
-            final long startTime = android.os.SystemClock.uptimeMillis();
-            EventDispatcher dispatcher = EventDispatcher.get();
-            dispatcher.motionEvent(startTime, startTime, MotionEvent.ACTION_DOWN, actionX, yStart);
-
-            final int stepCount = 8; 
-            final long swipeDuration = up ? 90 : 70; 
-            
-            for (int i = 1; i <= stepCount; i++) {
-                final float linearT = (float) i / stepCount;
-                final float currentY = yStart + (yEnd - yStart) * linearT;
-                final long moveTime = startTime + (long) (swipeDuration * linearT);
-                
-                guaranteedHandler.postDelayed(() -> {
-                    dispatcher.motionEvent(startTime, moveTime, MotionEvent.ACTION_MOVE, actionX, currentY);
-                }, (long) (swipeDuration * linearT));
+            Log.i("[NATIVE_SWIPE] Dispatching Accessibility Gesture for " + pkgName);
+            boolean success = AccessibilityEventDispatcherService.dispatchGodModeSwipe(up);
+            if (!success) {
+                Log.w("[NATIVE_SWIPE] Accessibility Gesture failed or service unavailable.");
             }
-
-            guaranteedHandler.postDelayed(() -> {
-                try {
-                    long endTime = startTime + swipeDuration + 10;
-                    dispatcher.motionEvent(startTime, endTime, MotionEvent.ACTION_UP, actionX, yEnd);
-                    Log.i("[REACTION] Global Hardware Swipe for " + pkgName + " Concluded.");
-                } finally {
-                    isHardwareSwiping.set(false);
-                }
-            }, swipeDuration + 10);
-
-        } catch (Exception e) {
-            Log.e(e, "[REACTION] Global Hardware Swipe failed with Exception.");
-            isHardwareSwiping.set(false); 
+        } finally {
+            new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(() -> {
+                isHardwareSwiping.set(false);
+            }, 150);
         }
     }
 
