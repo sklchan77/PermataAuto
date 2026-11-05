@@ -136,13 +136,13 @@ public class MirrorDisplay {
 			if (!isDimmed || sc == null || isDestroyed) return;
 			
 			try {
-				// SOFTWARE-ONLY CHECK: Completely bypasses hardware gravity sensor false-positives
+				// SURGICAL FIX: Strictly uses physical pixel geometry. Bypasses OS accelerometer sensor false-alarms.
 				boolean wantLandscape = PermataApplication.get().isMirroringLandscape();
-				int currentUiOrientation = PermataApplication.get().getResources().getConfiguration().orientation;
-				boolean isCurrentlyLandscape = (currentUiOrientation == Configuration.ORIENTATION_LANDSCAPE);
+				android.util.DisplayMetrics metrics = PermataApplication.get().getResources().getDisplayMetrics();
+				boolean isCurrentlyLandscape = (metrics.widthPixels > metrics.heightPixels);
 				
 				if (wantLandscape != isCurrentlyLandscape) {
-					Log.w("Software UI drifted from landscape. Forcing nuclear self-healing correction.");
+					Log.w("Software UI drifted from landscape (Width <= Height). Forcing nuclear self-healing correction.");
 					updateOverlayOrientation(true);
 					disableAccelRotation(PermataApplication.get());
 				}
