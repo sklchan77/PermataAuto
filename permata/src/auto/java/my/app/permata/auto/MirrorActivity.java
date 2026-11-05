@@ -150,16 +150,19 @@ public class MirrorActivity extends CarActivity implements SurfaceHolder.Callbac
 	}
 
 	static void onBackButtonClick() {
-		// SURGICAL FIX: Global Action Routing for identical steering-wheel behavior
+		// SURGICAL FIX: Layer 1 is standard system back. Layer 2 executes physical Edge-Swipe Back Gesture. Layer 3 attempts intent broadcast fallback.
 		if (AccessibilityEventDispatcherService.dispatchBack()) {
-			Log.i("[BACK] Floating Toolbar triggered Accessibility Back.");
+			Log.i("[BACK] Floating Toolbar triggered standard Accessibility Back.");
 		} else {
-			var d = EventDispatcher.get();
-			if (d != null) {
-				d.directBack();
-				Log.i("[BACK] Floating Toolbar triggered EventDispatcher Back.");
+			Log.w("[BACK] Accessibility Back failed. Attempting Edge-Swipe Gesture Fallback.");
+			if (AccessibilityEventDispatcherService.dispatchBackGesture()) {
+				Log.i("[BACK] Edge-Swipe Back Gesture injected successfully.");
 			} else {
-				Log.w("[BACK] Floating Toolbar Back injection completely failed.");
+				var d = EventDispatcher.get();
+				if (d != null) {
+					d.directBack();
+					Log.w("[BACK] Triggered EventDispatcher Intent Broadcast Back.");
+				}
 			}
 		}
 		disableAccelRotation();
