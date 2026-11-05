@@ -478,26 +478,22 @@ public class KeyEventHandler {
         int screenHeight = metrics.heightPixels;
 
         final float actionX = screenWidth * 0.50f; 
-        
         float centerY = screenHeight * 0.50f;
         
-        // SOFTWARE SAFE ZONE: Span is restricted to 60% of the screen height to strictly avoid 
-        // the top and bottom edge-gesture protection zones which swallow touches.
-        float span = screenHeight * 0.60f; 
+        // NEW PHYSICS: 20% span, anchored dead center.
+        float span = screenHeight * 0.20f; 
         
         final float yStart = up ? (centerY - span / 2f) : (centerY + span / 2f);
         final float yEnd = up ? (centerY + span / 2f) : (centerY - span / 2f);
 
         try {
             final long startTime = android.os.SystemClock.uptimeMillis();
-            
             EventDispatcher dispatcher = EventDispatcher.get();
             dispatcher.motionEvent(startTime, startTime, MotionEvent.ACTION_DOWN, actionX, yStart);
 
-            final int stepCount = 13; 
-            // DURATION EXPANSION: 400ms duration for PREVIOUS simulates a deliberate human finger pull 
-            // over a shorter distance, preventing the TikTok gesture recognizer from treating it as a fling-reject.
-            final long swipeDuration = up ? 400 : 170; 
+            // NEW PHYSICS: 8 steps over 70ms-90ms creates a high-velocity fling.
+            final int stepCount = 8; 
+            final long swipeDuration = up ? 90 : 70; 
             
             for (int i = 1; i <= stepCount; i++) {
                 final float linearT = (float) i / stepCount;
@@ -513,7 +509,7 @@ public class KeyEventHandler {
                 try {
                     long endTime = startTime + swipeDuration + 10;
                     dispatcher.motionEvent(startTime, endTime, MotionEvent.ACTION_UP, actionX, yEnd);
-                    Log.i("[REACTION] Global Hardware Swipe for " + pkgName + " Concluded. (Landscape Mode: " + (screenWidth > screenHeight) + ")");
+                    Log.i("[REACTION] Global Hardware Swipe for " + pkgName + " Concluded.");
                 } finally {
                     isHardwareSwiping.set(false);
                 }
@@ -536,9 +532,10 @@ public class KeyEventHandler {
         final android.os.Handler guaranteedHandler = new android.os.Handler(android.os.Looper.getMainLooper());
         
         final float actionX = touchTarget.getWidth() * 0.50f; 
-        
         float centerY = touchTarget.getHeight() * 0.50f;
-        float span = touchTarget.getHeight() * 0.60f; 
+        
+        // NEW PHYSICS: 20% span of the targeted web view.
+        float span = touchTarget.getHeight() * 0.20f; 
         
         final float yStart = up ? (centerY - span / 2f) : (centerY + span / 2f);
         final float yEnd = up ? (centerY + span / 2f) : (centerY - span / 2f);
@@ -551,8 +548,9 @@ public class KeyEventHandler {
             touchTarget.dispatchTouchEvent(eventDown);
             eventDown.recycle();
 
-            final int stepCount = 13; 
-            final long swipeDuration = up ? 400 : 170; 
+            // NEW PHYSICS: 8 steps over 70ms-90ms.
+            final int stepCount = 8; 
+            final long swipeDuration = up ? 90 : 70; 
             
             for (int i = 1; i <= stepCount; i++) {
                 final float linearT = (float) i / stepCount;
