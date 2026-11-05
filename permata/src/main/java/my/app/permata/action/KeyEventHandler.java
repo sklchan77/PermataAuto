@@ -124,7 +124,22 @@ public class KeyEventHandler {
             "    }}," +
             "    {name:\"instagram\",match:/instagram/,execute:function(){" +
             "      var igCss = ' header, nav, [role=\"navigation\"] { display: none !important; pointer-events: none !important; opacity: 0 !important; visibility: hidden !important; } body, html { overflow: auto !important; touch-action: pan-y !important; } '; " +
-            "      return 'INSTAGRAM: ' + injectSpecificWipe(igCss, 'permata-ig-css'); " +
+            "      if (!window.__igAudioFix) { " +
+            "        window.__igAudioFix = true; " +
+            "        setInterval(function(){ " +
+            "          var vids = document.querySelectorAll('video'); " +
+            "          var maxH = 0; var primary = null; var wh = window.innerHeight; " +
+            "          vids.forEach(function(v){ " +
+            "            var r = v.getBoundingClientRect(); " +
+            "            var vis = Math.max(0, Math.min(r.bottom, wh) - Math.max(r.top, 0)); " +
+            "            if(vis > maxH) { maxH = vis; primary = v; } " +
+            "          }); " +
+            "          vids.forEach(function(v){ " +
+            "            if(v !== primary && !v.paused) { v.pause(); v.muted = true; } " +
+            "          }); " +
+            "        }, 400); " +
+            "      } " +
+            "      return 'INSTAGRAM: ' + injectSpecificWipe(igCss, 'permata-ig-css') + ' | Spatial Audio Fix Armed.'; " +
             "    }}," +
             "    {name:\"youtube\",match:/(youtube|youtu)/,execute:function(){" +
             "      let ad=document.querySelector('.ytp-skip-ad-button,.ytp-ad-skip-button,.ytp-skip-button');if(ad)ad.click();" +
@@ -480,7 +495,6 @@ public class KeyEventHandler {
         final float actionX = screenWidth * 0.50f; 
         float centerY = screenHeight * 0.50f;
         
-        // NEW PHYSICS: 20% span, anchored dead center.
         float span = screenHeight * 0.20f; 
         
         final float yStart = up ? (centerY - span / 2f) : (centerY + span / 2f);
@@ -491,7 +505,6 @@ public class KeyEventHandler {
             EventDispatcher dispatcher = EventDispatcher.get();
             dispatcher.motionEvent(startTime, startTime, MotionEvent.ACTION_DOWN, actionX, yStart);
 
-            // NEW PHYSICS: 8 steps over 70ms-90ms creates a high-velocity fling.
             final int stepCount = 8; 
             final long swipeDuration = up ? 90 : 70; 
             
@@ -534,7 +547,6 @@ public class KeyEventHandler {
         final float actionX = touchTarget.getWidth() * 0.50f; 
         float centerY = touchTarget.getHeight() * 0.50f;
         
-        // NEW PHYSICS: 20% span of the targeted web view.
         float span = touchTarget.getHeight() * 0.20f; 
         
         final float yStart = up ? (centerY - span / 2f) : (centerY + span / 2f);
@@ -548,7 +560,6 @@ public class KeyEventHandler {
             touchTarget.dispatchTouchEvent(eventDown);
             eventDown.recycle();
 
-            // NEW PHYSICS: 8 steps over 70ms-90ms.
             final int stepCount = 8; 
             final long swipeDuration = up ? 90 : 70; 
             
