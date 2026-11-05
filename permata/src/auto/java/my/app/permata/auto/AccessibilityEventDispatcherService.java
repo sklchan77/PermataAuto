@@ -48,7 +48,6 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
 	public static boolean isConsentGranted = false;
 	private static AccessibilityEventDispatcherService instance;
 	
-	// SURGICAL FIX: The package tracking memory bank
 	private static volatile String lastActivePackage = null;
 	
 	private final Set<Integer> windowIds =
@@ -90,7 +89,6 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
 		return instance != null;
 	}
 
-	// SURGICAL FIX: Allows the KeyEventHandler to query the active native app beneath the overlays
 	public static String getLastActivePackage() {
 		return lastActivePackage;
 	}
@@ -110,10 +108,54 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
 		clickOnButton = text;
 	}
 
-    // SURGICAL FIX: Made public so KeyEventHandler can access it directly from outside the package
 	public static boolean dispatchBack() {
 		var ds = instance;
 		return (ds != null) && ds.performGlobalAction(GLOBAL_ACTION_BACK);
+	}
+
+	// SURGICAL FIX: Bulletproof physical edge-swipe gesture to force Android to step backwards
+	public static boolean dispatchBackGesture() {
+		var ds = instance;
+		if (ds == null || VERSION.SDK_INT < VERSION_CODES.N) return false;
+
+		android.util.DisplayMetrics metrics = ds.getResources().getDisplayMetrics();
+		float startX = 0f; // Absolute left edge
+		float endX = metrics.widthPixels * 0.25f; // Drag inward by 25%
+		float centerY = metrics.heightPixels * 0.5f;
+
+		Path swipePath = new Path();
+		swipePath.moveTo(startX, centerY);
+		swipePath.lineTo(endX, centerY);
+
+		GestureDescription.Builder gestureBuilder = new GestureDescription.Builder();
+		gestureBuilder.addStroke(new StrokeDescription(swipePath, 0, 150L));
+
+		return ds.dispatchGesture(gestureBuilder.build(), null, null);
+	}
+
+	// SURGICAL FIX: God-Mode Accessibility Swipe that completely ignores OS-level coordinate inversion
+	public static boolean dispatchGodModeSwipe(boolean up) {
+		var ds = instance;
+		if (ds == null || VERSION.SDK_INT < VERSION_CODES.N) return false;
+
+		android.util.DisplayMetrics metrics = ds.getResources().getDisplayMetrics();
+		float actionX = metrics.widthPixels * 0.50f;
+		float centerY = metrics.heightPixels * 0.50f;
+		float span = metrics.heightPixels * 0.20f;
+
+		float yStart = up ? (centerY - span / 2f) : (centerY + span / 2f);
+		float yEnd = up ? (centerY + span / 2f) : (centerY - span / 2f);
+		
+		long duration = up ? 90L : 70L;
+
+		Path swipePath = new Path();
+		swipePath.moveTo(actionX, yStart);
+		swipePath.lineTo(actionX, yEnd);
+
+		GestureDescription.Builder gestureBuilder = new GestureDescription.Builder();
+		gestureBuilder.addStroke(new StrokeDescription(swipePath, 0, duration));
+
+		return ds.dispatchGesture(gestureBuilder.build(), null, null);
 	}
 
 	static boolean dispatchHome() {
@@ -374,7 +416,6 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
 		CharSequence pkg = event.getPackageName();
 		String pkgName = (pkg != null) ? pkg.toString() : null;
 
-		// SURGICAL FIX: Silently track the native app on screen, ignoring our own overlays and system keyboards
 		if (pkgName != null && !pkgName.startsWith("my.app.permata") &&
 			!pkgName.equals("com.android.systemui") &&
 			!pkgName.equals("android") &&
