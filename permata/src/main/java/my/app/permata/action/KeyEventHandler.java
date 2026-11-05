@@ -71,6 +71,7 @@ public class KeyEventHandler {
     private static final Map<Class<?>, Method> webViewMethodCache = new ConcurrentHashMap<>();
     private static final Map<View, Long> scrollTimestamps = Collections.synchronizedMap(new WeakHashMap<>());
 
+    // SURGICAL FIX: Advanced Geometric UI Scanners added for TikTok, Instagram, and Facebook
     private static final String JS_UNIVERSAL_PAYLOAD = "(function(){" +
             "let res = 'Discovery [Layer 2]: JS Registry Miss (No custom formatting applied)'; " +
             "const injectGlobalWipe = function() { " +
@@ -119,7 +120,17 @@ public class KeyEventHandler {
             "      return 'DOUYIN: Standard media UI wipe executed.'; " +
             "    }}," +
             "    {name:\"tiktok\",match:/tiktok/,execute:function(){" +
-            "      var ttCss = ' [data-e2e=\"video-author-avatar\"], [data-e2e=\"nav-login\"], [class*=\"DivHeaderContainer\"], [class*=\"DivSideNavContainer\"], [class*=\"DivBottomContainer\"] { display: none !important; } [class*=\"DivMediaCardOverlay\"], [class*=\"DivOverlayBottomContent\"], [class*=\"DivCreatorInfoContainer\"], [class*=\"BasePlayerContainer\"]::after { pointer-events: none !important; } '; " +
+            "      var ttCss = ' [data-e2e=\"video-author-avatar\"], [data-e2e=\"nav-login\"], [data-e2e=\"video-desc\"], [data-e2e=\"video-music\"], [data-e2e=\"sponsored-label\"], [class*=\"DivHeaderContainer\"], [class*=\"DivSideNavContainer\"], [class*=\"DivVideoInfoContainer\"], [class*=\"DivTextInfoContainer\"], [class*=\"DivVideoAuthorInfo\"], [class*=\"DivBottomContainer\"] { display: none !important; opacity: 0 !important; pointer-events: none !important; width: 0 !important; height: 0 !important; } [class*=\"DivMediaCardOverlay\"], [class*=\"DivOverlayBottomContent\"], [class*=\"DivCreatorInfoContainer\"], [class*=\"BasePlayerContainer\"]::after { pointer-events: none !important; } '; " +
+            "      if (!window.__ttUISurgery) { " +
+            "        window.__ttUISurgery = true; " +
+            "        setInterval(function(){ " +
+            "          var els = document.querySelectorAll('span, div, button'); " +
+            "          els.forEach(function(e){ " +
+            "            var t = e.innerText ? e.innerText.trim() : ''; " +
+            "            if((t === 'Follow' || t === 'Sponsored') && e.getBoundingClientRect().left < window.innerWidth / 2) { e.style.display = 'none'; } " +
+            "          }); " +
+            "        }, 500); " +
+            "      } " +
             "      return 'TIKTOK: ' + injectGlobalWipe() + ' | ' + injectSpecificWipe(ttCss, 'permata-tt-css'); " +
             "    }}," +
             "    {name:\"instagram\",match:/instagram/,execute:function(){" +
@@ -127,8 +138,9 @@ public class KeyEventHandler {
             "      if (!window.__igAudioFix) { " +
             "        window.__igAudioFix = true; " +
             "        setInterval(function(){ " +
+            "          var wh = window.innerHeight; " +
             "          var vids = document.querySelectorAll('video'); " +
-            "          var maxH = 0; var primary = null; var wh = window.innerHeight; " +
+            "          var maxH = 0; var primary = null; " +
             "          vids.forEach(function(v){ " +
             "            var r = v.getBoundingClientRect(); " +
             "            var vis = Math.max(0, Math.min(r.bottom, wh) - Math.max(r.top, 0)); " +
@@ -137,9 +149,52 @@ public class KeyEventHandler {
             "          vids.forEach(function(v){ " +
             "            if(v !== primary && !v.paused) { v.pause(); v.muted = true; } " +
             "          }); " +
+            "          var els = document.querySelectorAll('span, div, button, a'); " +
+            "          els.forEach(function(e){ " +
+            "            var t = e.innerText ? e.innerText.trim() : ''; " +
+            "            if(t === 'Follow' && e.getBoundingClientRect().left < window.innerWidth / 2) { e.style.display = 'none'; } " +
+            "          }); " +
+            "          var imgs = document.querySelectorAll('img, image'); " +
+            "          imgs.forEach(function(img){ " +
+            "            var r = img.getBoundingClientRect(); " +
+            "            if(r.width >= 20 && r.width <= 60 && r.left < 100 && r.top > wh * 0.2) { " +
+            "              var p = img.closest('a') || img; p.style.display = 'none'; " +
+            "            } " +
+            "          }); " +
             "        }, 400); " +
             "      } " +
-            "      return 'INSTAGRAM: ' + injectSpecificWipe(igCss, 'permata-ig-css') + ' | Spatial Audio Fix Armed.'; " +
+            "      return 'INSTAGRAM: ' + injectSpecificWipe(igCss, 'permata-ig-css') + ' | Spatial Audio & UI Surgery Armed.'; " +
+            "    }}," +
+            "    {name:\"facebook\",match:/facebook/,execute:function(){" +
+            "      if (!window.__fbUISurgery) { " +
+            "        window.__fbUISurgery = true; " +
+            "        setInterval(function(){ " +
+            "          var wh = window.innerHeight; var ww = window.innerWidth; " +
+            "          var els = document.querySelectorAll('span, div, a, button'); " +
+            "          els.forEach(function(e){ " +
+            "            var t = e.innerText ? e.innerText.trim() : ''; " +
+            "            if((t === 'Follow' || t.includes('Original audio') || t === 'Sponsored') && e.getBoundingClientRect().left < ww / 2) { " +
+            "              e.style.opacity = '0'; e.style.pointerEvents = 'none'; " +
+            "            } " +
+            "          }); " +
+            "          var texts = document.querySelectorAll('div[dir=\"auto\"], span[dir=\"auto\"]'); " +
+            "          texts.forEach(function(txt){ " +
+            "            var r = txt.getBoundingClientRect(); " +
+            "            if(r.left >= 0 && r.left < ww * 0.6 && r.top > wh * 0.5 && r.width > 0 && r.height > 0) { " +
+            "              var t = txt.innerText ? txt.innerText.trim() : ''; " +
+            "              if(t.length > 0 && r.left < ww * 0.4) { txt.style.opacity = '0'; txt.style.pointerEvents = 'none'; } " +
+            "            } " +
+            "          }); " +
+            "          var imgs = document.querySelectorAll('image, img'); " +
+            "          imgs.forEach(function(img){ " +
+            "            var r = img.getBoundingClientRect(); " +
+            "            if(r.width >= 20 && r.width <= 60 && r.left < 100 && r.top > wh * 0.5) { " +
+            "              img.style.opacity = '0'; img.style.pointerEvents = 'none'; " +
+            "            } " +
+            "          }); " +
+            "        }, 500); " +
+            "      } " +
+            "      return 'FACEBOOK: Surgery precision UI wipe armed.'; " +
             "    }}," +
             "    {name:\"youtube\",match:/(youtube|youtu)/,execute:function(){" +
             "      let ad=document.querySelector('.ytp-skip-ad-button,.ytp-ad-skip-button,.ytp-skip-button');if(ad)ad.click();" +
