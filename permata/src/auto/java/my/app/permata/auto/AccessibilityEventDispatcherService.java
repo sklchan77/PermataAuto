@@ -113,14 +113,13 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
 		return (ds != null) && ds.performGlobalAction(GLOBAL_ACTION_BACK);
 	}
 
-	// SURGICAL FIX: Bulletproof physical edge-swipe gesture to force Android to step backwards
 	public static boolean dispatchBackGesture() {
 		var ds = instance;
 		if (ds == null || VERSION.SDK_INT < VERSION_CODES.N) return false;
 
 		android.util.DisplayMetrics metrics = ds.getResources().getDisplayMetrics();
-		float startX = 0f; // Absolute left edge
-		float endX = metrics.widthPixels * 0.25f; // Drag inward by 25%
+		float startX = 0f; 
+		float endX = metrics.widthPixels * 0.25f; 
 		float centerY = metrics.heightPixels * 0.5f;
 
 		Path swipePath = new Path();
@@ -133,7 +132,6 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
 		return ds.dispatchGesture(gestureBuilder.build(), null, null);
 	}
 
-	// SURGICAL FIX: God-Mode Accessibility Swipe that completely ignores OS-level coordinate inversion
 	public static boolean dispatchGodModeSwipe(boolean up) {
 		var ds = instance;
 		if (ds == null || VERSION.SDK_INT < VERSION_CODES.N) return false;
