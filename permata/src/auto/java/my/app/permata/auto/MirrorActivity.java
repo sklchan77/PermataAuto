@@ -150,7 +150,6 @@ public class MirrorActivity extends CarActivity implements SurfaceHolder.Callbac
 	}
 
 	static void onBackButtonClick() {
-		// SURGICAL FIX: Layer 1 is standard system back. Layer 2 executes physical Edge-Swipe Back Gesture. Layer 3 attempts intent broadcast fallback.
 		if (AccessibilityEventDispatcherService.dispatchBack()) {
 			Log.i("[BACK] Floating Toolbar triggered standard Accessibility Back.");
 		} else {
