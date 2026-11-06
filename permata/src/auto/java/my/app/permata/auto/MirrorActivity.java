@@ -150,14 +150,12 @@ public class MirrorActivity extends CarActivity implements SurfaceHolder.Callbac
 	}
 
 	static void onBackButtonClick() {
-		Log.i("[BACK] Floating Toolbar Back clicked. Executing Universal Focus-Steal Back.");
-		
-		if (!AccessibilityEventDispatcherService.dispatchUniversalBack()) {
-			Log.w("[BACK] Accessibility Service unavailable. Falling back to EventDispatcher.");
-			var d = EventDispatcher.get();
-			if (d != null) {
-				d.directBack();
-			}
+		Log.i("[BACK] Floating Toolbar Back clicked. Executing EventDispatcher directBack.");
+		var d = EventDispatcher.get();
+		if (d != null) {
+			d.directBack();
+		} else {
+			AccessibilityEventDispatcherService.dispatchBack();
 		}
 		disableAccelRotation();
 	}
