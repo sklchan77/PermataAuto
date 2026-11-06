@@ -113,28 +113,42 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
 		return (ds != null) && ds.performGlobalAction(GLOBAL_ACTION_BACK);
 	}
 
-	public static boolean dispatchBackGesture() {
+	public static boolean dispatchUniversalBack() {
 		var ds = instance;
-		if (ds == null || VERSION.SDK_INT < VERSION_CODES.N) return false;
+		if (ds == null) return false;
 
-		android.util.DisplayMetrics metrics = ds.getResources().getDisplayMetrics();
-		float startX = 0f; 
-		float endX = metrics.widthPixels * 0.25f; 
-		float centerY = metrics.heightPixels * 0.5f;
+		MirrorDisplay.notifyInjectedTouch();
 
-		Path swipePath = new Path();
-		swipePath.moveTo(startX, centerY);
-		swipePath.lineTo(endX, centerY);
+		if (VERSION.SDK_INT >= VERSION_CODES.N) {
+			Path tapPath = new Path();
+			tapPath.moveTo(1f, 1f);
 
-		GestureDescription.Builder gestureBuilder = new GestureDescription.Builder();
-		gestureBuilder.addStroke(new StrokeDescription(swipePath, 0, 150L));
+			GestureDescription.Builder gb = new GestureDescription.Builder();
+			gb.addStroke(new StrokeDescription(tapPath, 0L, 10L));
 
-		return ds.dispatchGesture(gestureBuilder.build(), null, null);
+			return ds.dispatchGesture(gb.build(), new AccessibilityService.GestureResultCallback() {
+				@Override
+				public void onCompleted(GestureDescription gestureDescription) {
+					super.onCompleted(gestureDescription);
+					ds.performGlobalAction(GLOBAL_ACTION_BACK);
+				}
+
+				@Override
+				public void onCancelled(GestureDescription gestureDescription) {
+					super.onCancelled(gestureDescription);
+					ds.performGlobalAction(GLOBAL_ACTION_BACK); 
+				}
+			}, null);
+		} else {
+			return ds.performGlobalAction(GLOBAL_ACTION_BACK);
+		}
 	}
 
 	public static boolean dispatchGodModeSwipe(boolean up) {
 		var ds = instance;
 		if (ds == null || VERSION.SDK_INT < VERSION_CODES.N) return false;
+
+		MirrorDisplay.notifyInjectedTouch();
 
 		android.util.DisplayMetrics metrics = ds.getResources().getDisplayMetrics();
 		float actionX = metrics.widthPixels * 0.50f;
