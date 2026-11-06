@@ -278,8 +278,8 @@ public class KeyEventHandler {
         if (event.getAction() == ACTION_DOWN) {
             
             if (code == KeyEvent.KEYCODE_BACK) {
-                if (AccessibilityEventDispatcherService.dispatchBack()) {
-                    Log.i("[BACK] Dispatched successfully via system AccessibilityService.");
+                if (AccessibilityEventDispatcherService.dispatchUniversalBack()) {
+                    Log.i("[BACK] Dispatched successfully via Universal Focus-Steal AccessibilityService.");
                     return true;
                 }
                 if (EventDispatcher.get().directBack()) {
