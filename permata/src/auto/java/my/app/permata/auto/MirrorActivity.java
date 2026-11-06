@@ -150,18 +150,21 @@ public class MirrorActivity extends CarActivity implements SurfaceHolder.Callbac
 	}
 
 	static void onBackButtonClick() {
-		if (AccessibilityEventDispatcherService.dispatchBack()) {
-			Log.i("[BACK] Floating Toolbar triggered standard Accessibility Back.");
-		} else {
-			Log.w("[BACK] Accessibility Back failed. Attempting Edge-Swipe Gesture Fallback.");
-			if (AccessibilityEventDispatcherService.dispatchBackGesture()) {
-				Log.i("[BACK] Edge-Swipe Back Gesture injected successfully.");
+		Log.i("[BACK] Floating Toolbar Back clicked. Forcing physical Edge-Swipe.");
+		
+		// 1. Force the Phantom Phone Finger Edge-Swipe as primary priority
+		if (AccessibilityEventDispatcherService.dispatchBackGesture()) {
+			Log.i("[BACK] Edge-Swipe Back Gesture injected successfully.");
+		} 
+		else {
+			Log.w("[BACK] Edge-Swipe failed. Attempting EventDispatcher Intent.");
+			var d = EventDispatcher.get();
+			if (d != null) {
+				d.directBack();
 			} else {
-				var d = EventDispatcher.get();
-				if (d != null) {
-					d.directBack();
-					Log.w("[BACK] Triggered EventDispatcher Intent Broadcast Back.");
-				}
+				// Ultimate fallback only if everything else is dead
+				Log.w("[BACK] Intent failed. Firing blind standard Accessibility Back.");
+				AccessibilityEventDispatcherService.dispatchBack();
 			}
 		}
 		disableAccelRotation();
