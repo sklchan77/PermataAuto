@@ -110,38 +110,9 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
 
 	public static boolean dispatchBack() {
 		var ds = instance;
-		return (ds != null) && ds.performGlobalAction(GLOBAL_ACTION_BACK);
-	}
-
-	public static boolean dispatchUniversalBack() {
-		var ds = instance;
 		if (ds == null) return false;
-
 		MirrorDisplay.notifyInjectedTouch();
-
-		if (VERSION.SDK_INT >= VERSION_CODES.N) {
-			Path tapPath = new Path();
-			tapPath.moveTo(1f, 1f);
-
-			GestureDescription.Builder gb = new GestureDescription.Builder();
-			gb.addStroke(new StrokeDescription(tapPath, 0L, 10L));
-
-			return ds.dispatchGesture(gb.build(), new AccessibilityService.GestureResultCallback() {
-				@Override
-				public void onCompleted(GestureDescription gestureDescription) {
-					super.onCompleted(gestureDescription);
-					ds.performGlobalAction(GLOBAL_ACTION_BACK);
-				}
-
-				@Override
-				public void onCancelled(GestureDescription gestureDescription) {
-					super.onCancelled(gestureDescription);
-					ds.performGlobalAction(GLOBAL_ACTION_BACK); 
-				}
-			}, null);
-		} else {
-			return ds.performGlobalAction(GLOBAL_ACTION_BACK);
-		}
+		return ds.performGlobalAction(GLOBAL_ACTION_BACK);
 	}
 
 	public static boolean dispatchGodModeSwipe(boolean up) {
@@ -153,11 +124,17 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
 		android.util.DisplayMetrics metrics = ds.getResources().getDisplayMetrics();
 		float actionX = metrics.widthPixels * 0.50f;
 		float centerY = metrics.heightPixels * 0.50f;
+		
+		// Locked to 20% span to perfectly mirror the Web Browser physics
 		float span = metrics.heightPixels * 0.20f;
 
-		float yStart = up ? (centerY - span / 2f) : (centerY + span / 2f);
-		float yEnd = up ? (centerY + span / 2f) : (centerY - span / 2f);
+		// Correct physical direction:
+		// up == true (Next video): Finger starts at bottom (higher Y) and drags to top (lower Y)
+		// up == false (Prev video): Finger starts at top (lower Y) and drags to bottom (higher Y)
+		float yStart = up ? (centerY + span / 2f) : (centerY - span / 2f);
+		float yEnd = up ? (centerY - span / 2f) : (centerY + span / 2f);
 		
+		// Locked to 70-90ms duration to perfectly mirror the Web Browser physics
 		long duration = up ? 90L : 70L;
 
 		Path swipePath = new Path();
@@ -165,19 +142,23 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
 		swipePath.lineTo(actionX, yEnd);
 
 		GestureDescription.Builder gestureBuilder = new GestureDescription.Builder();
-		gestureBuilder.addStroke(new StrokeDescription(swipePath, 0, duration));
+		gestureBuilder.addStroke(new StrokeDescription(swipePath, 0L, duration));
 
 		return ds.dispatchGesture(gestureBuilder.build(), null, null);
 	}
 
 	static boolean dispatchHome() {
 		var ds = instance;
-		return (ds != null) && ds.performGlobalAction(GLOBAL_ACTION_HOME);
+		if (ds == null) return false;
+		MirrorDisplay.notifyInjectedTouch();
+		return ds.performGlobalAction(GLOBAL_ACTION_HOME);
 	}
 	
 	static boolean dispatchRecent() {
 		var ds = instance;
-		return (ds != null) && ds.performGlobalAction(GLOBAL_ACTION_RECENTS);
+		if (ds == null) return false;
+		MirrorDisplay.notifyInjectedTouch();
+		return ds.performGlobalAction(GLOBAL_ACTION_RECENTS);
 	}
 
 	static boolean dispatchTap(float x, float y) {
