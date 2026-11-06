@@ -238,6 +238,13 @@ public class MirrorDisplay {
 		mainHandler.postDelayed(idleDimRunnable, 6000);
 	}
 
+	public static void notifyInjectedTouch() {
+		var md = instance;
+		if (md != null) {
+			md.lastInjectedTouchTime = uptimeMillis();
+		}
+	}
+
 	public void tap(float x, float y) {
 		lastInjectedTouchTime = uptimeMillis();
 		var m = metrics();
