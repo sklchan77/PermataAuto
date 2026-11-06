@@ -295,22 +295,18 @@ public class KeyEventHandler {
                     return true;
                 }
 
-                String activePkg = AccessibilityEventDispatcherService.getLastActivePackage();
-                boolean isNativeScroller = activePkg != null && SCROLLER_PACKAGES.contains(activePkg);
-                
                 boolean isNext = (code == KeyEvent.KEYCODE_MEDIA_NEXT);
 
-                if (isNativeScroller) {
-                    if (PermataApplication.get().isMirroringMode()) {
-                        lastGlobalActionTime = currentUptime;
-                        Log.i("[DETECTION] Native Scroller App detected: " + activePkg + " during Mirroring. Firing God-Mode Swipe.");
-                        executeNativeAppSwipe(!isNext, activePkg);
-                        return true;
-                    } else {
-                        Log.i("[DETECTION] Native Scroller detected (" + activePkg + ") but Mirroring is OFF. Passthrough to OS.");
-                        return defaultHandler.apply(code, event);
-                    }
+                // --- SURGICAL MIRROR INJECTION START ---
+                if (PermataApplication.get().isMirroringMode()) {
+                    lastGlobalActionTime = currentUptime;
+                    Log.i("[DETECTION] Mirroring active. Routing steering wheel swipe directly to phone glass.");
+                    executeNativeAppSwipe(!isNext, "MirroredScreen");
+                    return true;
                 }
+                // --- SURGICAL MIRROR INJECTION END ---
+                
+                String activePkg = AccessibilityEventDispatcherService.getLastActivePackage();
 
                 ActivityFragment activeFragment = (finalTargetActivity != null) ? finalTargetActivity.getActiveFragment() : null;
                 boolean isWebBrowser = activeFragment != null && 
