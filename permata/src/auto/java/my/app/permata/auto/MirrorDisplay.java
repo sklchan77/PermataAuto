@@ -130,31 +130,6 @@ public class MirrorDisplay {
 		dimScreen(PermataApplication.get());
 	};
 
-	private final Runnable orientationHeartbeat = new Runnable() {
-		@Override
-		public void run() {
-			if (!isDimmed || sc == null || isDestroyed) return;
-			
-			try {
-				boolean wantLandscape = PermataApplication.get().isMirroringLandscape();
-				android.util.DisplayMetrics metrics = PermataApplication.get().getResources().getDisplayMetrics();
-				boolean isCurrentlyLandscape = (metrics.widthPixels > metrics.heightPixels);
-				
-				if (wantLandscape != isCurrentlyLandscape) {
-					Log.w("Software UI drifted from landscape (Width <= Height). Forcing nuclear self-healing correction.");
-					updateOverlayOrientation(true);
-					disableAccelRotation(PermataApplication.get());
-				}
-			} catch (Exception err) {
-				Log.e(err, "Orientation heartbeat check failed.");
-			}
-			
-			if (isDimmed && !isDestroyed) {
-				mainHandler.postDelayed(this, 3000);
-			}
-		}
-	};
-
 	private MirrorDisplay() {
 		var ctx = PermataApplication.get();
 		var vm = (WindowManager) ctx.getSystemService(WINDOW_SERVICE);
@@ -492,7 +467,7 @@ public class MirrorDisplay {
 					Log.e(err, "Settings Provider lagged or failed during rotation restore.");
 				}
 			}
-		} ;
+		};
 
 		if (synchronous) {
 			task.run();
@@ -531,10 +506,8 @@ public class MirrorDisplay {
 						isDimmed = true;
 						
 						mainHandler.post(() -> {
-							mainHandler.removeCallbacks(orientationHeartbeat);
 							updateOverlayOrientation(true);
 							disableAccelRotation(PermataApplication.get());
-							mainHandler.postDelayed(orientationHeartbeat, 3000); 
 						});
 					} catch (Exception err) {
 						Log.e(err);
@@ -562,7 +535,6 @@ public class MirrorDisplay {
 					isDimmed = false;
 					
 					mainHandler.post(() -> {
-						mainHandler.removeCallbacks(orientationHeartbeat);
 						updateOverlayOrientation(false);
 					});
 				} catch (Exception err) {
@@ -663,7 +635,6 @@ public class MirrorDisplay {
 		var app = PermataApplication.get();
 		
 		mainHandler.removeCallbacks(idleDimRunnable);
-		mainHandler.removeCallbacks(orientationHeartbeat);
 		app.sendBroadcast(new Intent(ACTION_KILL_WEBVIEW));
 		
 		restoreBrightness(app, true);
