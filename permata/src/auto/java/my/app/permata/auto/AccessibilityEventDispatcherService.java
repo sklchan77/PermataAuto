@@ -111,8 +111,59 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
 	public static boolean dispatchBack() {
 		var ds = instance;
 		if (ds == null) return false;
-		MirrorDisplay.notifyInjectedTouch();
 		return ds.performGlobalAction(GLOBAL_ACTION_BACK);
+	}
+
+	public static boolean dispatchUniversalBack() {
+		var ds = instance;
+		if (ds == null || VERSION.SDK_INT < VERSION_CODES.N) return false;
+
+		MirrorDisplay.notifyInjectedTouch();
+
+		android.util.DisplayMetrics metrics = ds.getResources().getDisplayMetrics();
+		float centerX = metrics.widthPixels * 0.5f;
+		float centerY = metrics.heightPixels * 0.5f;
+
+		Path swipePath = new Path();
+		swipePath.moveTo(centerX, centerY);
+		swipePath.lineTo(centerX, centerY + 1f); 
+
+		GestureDescription.Builder gb = new GestureDescription.Builder();
+		gb.addStroke(new StrokeDescription(swipePath, 0L, 25L));
+
+		final java.util.concurrent.atomic.AtomicBoolean actionFired = new java.util.concurrent.atomic.AtomicBoolean(false);
+		final Handler failsafeHandler = new Handler(Looper.getMainLooper());
+		
+		final Runnable failsafeRunnable = () -> {
+			if (actionFired.compareAndSet(false, true)) {
+				Log.w("[BACK] FAILSAFE TIMEOUT TRIGGERED! Callbacks died/ANR. Forcing OS Back command.");
+				ds.performGlobalAction(GLOBAL_ACTION_BACK);
+			}
+		};
+		
+		failsafeHandler.postDelayed(failsafeRunnable, 250);
+
+		return ds.dispatchGesture(gb.build(), new AccessibilityService.GestureResultCallback() {
+			@Override
+			public void onCompleted(GestureDescription gestureDescription) {
+				super.onCompleted(gestureDescription);
+				if (actionFired.compareAndSet(false, true)) {
+					failsafeHandler.removeCallbacks(failsafeRunnable);
+					Log.i("[BACK] Center focus-steal tap completed. Phone has focus. Firing OS Back.");
+					ds.performGlobalAction(GLOBAL_ACTION_BACK);
+				}
+			}
+
+			@Override
+			public void onCancelled(GestureDescription gestureDescription) {
+				super.onCancelled(gestureDescription);
+				if (actionFired.compareAndSet(false, true)) {
+					failsafeHandler.removeCallbacks(failsafeRunnable);
+					Log.w("[BACK] Focus-Steal tap cancelled by OS. Firing OS Back anyway as fallback.");
+					ds.performGlobalAction(GLOBAL_ACTION_BACK);
+				}
+			}
+		}, null);
 	}
 
 	public static boolean dispatchGodModeSwipe(boolean up) {
@@ -125,16 +176,11 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
 		float actionX = metrics.widthPixels * 0.50f;
 		float centerY = metrics.heightPixels * 0.50f;
 		
-		// Locked to 20% span to perfectly mirror the Web Browser physics
 		float span = metrics.heightPixels * 0.20f;
 
-		// Correct physical direction:
-		// up == true (Next video): Finger starts at bottom (higher Y) and drags to top (lower Y)
-		// up == false (Prev video): Finger starts at top (lower Y) and drags to bottom (higher Y)
 		float yStart = up ? (centerY + span / 2f) : (centerY - span / 2f);
 		float yEnd = up ? (centerY - span / 2f) : (centerY + span / 2f);
 		
-		// Locked to 70-90ms duration to perfectly mirror the Web Browser physics
 		long duration = up ? 90L : 70L;
 
 		Path swipePath = new Path();
@@ -150,14 +196,12 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
 	static boolean dispatchHome() {
 		var ds = instance;
 		if (ds == null) return false;
-		MirrorDisplay.notifyInjectedTouch();
 		return ds.performGlobalAction(GLOBAL_ACTION_HOME);
 	}
 	
 	static boolean dispatchRecent() {
 		var ds = instance;
 		if (ds == null) return false;
-		MirrorDisplay.notifyInjectedTouch();
 		return ds.performGlobalAction(GLOBAL_ACTION_RECENTS);
 	}
 
