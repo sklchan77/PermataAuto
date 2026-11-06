@@ -31,6 +31,7 @@ import java.util.WeakHashMap;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 
+import my.app.permata.PermataApplication;
 import my.app.permata.auto.AccessibilityEventDispatcherService;
 import my.app.permata.auto.EventDispatcher;
 import my.app.permata.media.service.MediaSessionCallback;
@@ -300,10 +301,15 @@ public class KeyEventHandler {
                 boolean isNext = (code == KeyEvent.KEYCODE_MEDIA_NEXT);
 
                 if (isNativeScroller) {
-                    lastGlobalActionTime = currentUptime;
-                    Log.i("[DETECTION] Native Scroller App detected: " + activePkg + ". Firing God-Mode Swipe.");
-                    executeNativeAppSwipe(!isNext, activePkg);
-                    return true;
+                    if (PermataApplication.get().isMirroringMode()) {
+                        lastGlobalActionTime = currentUptime;
+                        Log.i("[DETECTION] Native Scroller App detected: " + activePkg + " during Mirroring. Firing God-Mode Swipe.");
+                        executeNativeAppSwipe(!isNext, activePkg);
+                        return true;
+                    } else {
+                        Log.i("[DETECTION] Native Scroller detected (" + activePkg + ") but Mirroring is OFF. Passthrough to OS.");
+                        return defaultHandler.apply(code, event);
+                    }
                 }
 
                 ActivityFragment activeFragment = (finalTargetActivity != null) ? finalTargetActivity.getActiveFragment() : null;
