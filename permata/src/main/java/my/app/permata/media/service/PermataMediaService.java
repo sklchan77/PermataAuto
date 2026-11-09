@@ -65,6 +65,7 @@ import my.app.permata.R;
 import my.app.permata.addon.AddonManager;
 import my.app.permata.addon.PermataAddon;
 import my.app.permata.addon.PermataMediaServiceAddon;
+import my.app.permata.auto.MirrorDisplay;
 import my.app.permata.media.lib.DefaultMediaLib;
 import my.app.permata.media.lib.MediaLib;
 import my.app.permata.media.lib.MediaLib.PlayableItem;
@@ -77,6 +78,7 @@ import my.app.utils.ui.UiUtils;
 public class PermataMediaService extends MediaBrowserServiceCompat {
 	public static final String ACTION_MEDIA_SERVICE = "my.app.permata.action.MediaService";
 	public static final String ACTION_HIJACK_FOCUS = "my.app.permata.action.HIJACK_FOCUS";
+	public static final String ACTION_FORCE_SHUTDOWN = "my.app.permata.action.FORCE_SHUTDOWN";
 	public static final String ACTION_WEB_MEDIA_PLAYING = "my.app.permata.action.WEB_MEDIA_PLAYING";
 	public static final String ACTION_WEB_MEDIA_PAUSED = "my.app.permata.action.WEB_MEDIA_PAUSED";
 
@@ -212,6 +214,15 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 	@Override
 	public void onTaskRemoved(Intent rootIntent) {
 		super.onTaskRemoved(rootIntent);
+		
+		// FIXED: If the app is explicitly swiped away in Recents during a mirroring session, kill it immediately.
+		if (PermataApplication.get().isMirroringMode()) {
+			Log.i("App swiped away during Mirroring. Forcing nuclear teardown.");
+			MirrorDisplay.close();
+			executeNuclearTeardown();
+			return;
+		}
+		
 		if (PermataApplication.get().isConnectedToAuto()) return;
 		executeNuclearTeardown();
 	}
@@ -220,7 +231,14 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 	public int onStartCommand(Intent intent, int flags, int startId) {
 		if (intent != null && !isTeardownActive) {
 			String action = intent.getAction();
-			if (ACTION_HIJACK_FOCUS.equals(action)) {
+			
+			// FIXED: Universal shutdown bridge. Phone screen shortcuts can broadcast this intent to kill Mirroring.
+			if (ACTION_FORCE_SHUTDOWN.equals(action)) {
+				Log.i("Universal shutdown intent received from Phone Screen Shortcut.");
+				MirrorDisplay.close();
+				executeNuclearTeardown();
+				return START_NOT_STICKY;
+			} else if (ACTION_HIJACK_FOCUS.equals(action)) {
 				hijackCarAudioAndSteering();
 			} else if (ACTION_WEB_MEDIA_PLAYING.equals(action)) {
 				onWebMediaPlaying();
