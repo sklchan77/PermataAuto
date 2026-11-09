@@ -33,6 +33,7 @@ import com.google.android.apps.auto.sdk.CarActivity;
 
 import my.app.permata.PermataApplication;
 import my.app.permata.R;
+import my.app.permata.media.service.PermataMediaService;
 import my.app.permata.ui.activity.MainActivityDelegate;
 import my.app.utils.concurrent.ReschedulableTask;
 import my.app.utils.log.Log;
@@ -83,6 +84,9 @@ public class MirrorActivity extends CarActivity implements SurfaceHolder.Callbac
 	@Override
 	public void onResume() {
 		super.onResume();
+		// FIXED: Proactively hijack the steering wheel controls the moment mirroring is brought to foreground
+		PermataMediaService.requestFocusAndAnchor(this);
+		
 		if (md == null || md.isDestroyed()) md = MirrorDisplay.get();
 		if (sc != null && md != null) md.setSurface(sc);
 	}
