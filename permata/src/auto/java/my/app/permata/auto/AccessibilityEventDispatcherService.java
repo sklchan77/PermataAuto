@@ -58,20 +58,6 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
 	
 	private long lastMoveTime = 0;
 
-	private final Handler safetyHandler = new Handler(Looper.getMainLooper());
-	private final Runnable safetyReleaseRunnable = () -> {
-		try {
-			if (pointers != null && pointers.length > 0 && pointers[0] != null && pointers[0].sd != null) {
-				Log.w("Virtual finger safety timeout triggered. Forcing ACTION_UP to release phone screen.");
-				long now = android.os.SystemClock.uptimeMillis();
-				buildGesture(pointers[0], now, now, MotionEvent.ACTION_UP, pointers[0].x, pointers[0].y, false);
-				dispatch();
-			}
-		} catch (Exception e) {
-			Log.e(e, "Failed to release virtual finger lock");
-		}
-	};
-
 	private final BroadcastReceiver commandReceiver = new BroadcastReceiver() {
 		@Override
 		public void onReceive(Context context, Intent intent) {
@@ -149,8 +135,10 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
 				super.onCompleted(gestureDescription);
 				if (actionFired.compareAndSet(false, true)) {
 					failsafeHandler.removeCallbacks(failsafeRunnable);
-					Log.i("[BACK] Center focus-steal tap completed. Phone has focus. Firing OS Back.");
-					ds.performGlobalAction(GLOBAL_ACTION_BACK);
+					Log.i("[BACK] Center focus-steal tap completed. Phone has focus. Delaying 100ms for Window Manager...");
+					new Handler(Looper.getMainLooper()).postDelayed(() -> {
+						ds.performGlobalAction(GLOBAL_ACTION_BACK);
+					}, 100);
 				}
 			}
 
@@ -159,8 +147,10 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
 				super.onCancelled(gestureDescription);
 				if (actionFired.compareAndSet(false, true)) {
 					failsafeHandler.removeCallbacks(failsafeRunnable);
-					Log.w("[BACK] Focus-Steal tap cancelled by OS. Firing OS Back anyway as fallback.");
-					ds.performGlobalAction(GLOBAL_ACTION_BACK);
+					Log.w("[BACK] Focus-Steal tap cancelled by OS. Delaying 100ms for fallback Back.");
+					new Handler(Looper.getMainLooper()).postDelayed(() -> {
+						ds.performGlobalAction(GLOBAL_ACTION_BACK);
+					}, 100);
 				}
 			}
 		}, null);
@@ -175,11 +165,11 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
 		android.util.DisplayMetrics metrics = ds.getResources().getDisplayMetrics();
 		float actionX = metrics.widthPixels * 0.50f;
 		float centerY = metrics.heightPixels * 0.50f;
-		
 		float span = metrics.heightPixels * 0.20f;
 
-		float yStart = up ? (centerY + span / 2f) : (centerY - span / 2f);
-		float yEnd = up ? (centerY - span / 2f) : (centerY + span / 2f);
+		// FIXED: Swapped Y direction for steering wheel next/prev inversion
+		float yStart = up ? (centerY - span / 2f) : (centerY + span / 2f);
+		float yEnd = up ? (centerY + span / 2f) : (centerY - span / 2f);
 		
 		long duration = up ? 90L : 70L;
 
@@ -247,12 +237,8 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
 		var ds = instance;
 		if ((VERSION.SDK_INT < VERSION_CODES.O) || (ds == null)) return false;
 		
+		// FIXED: 500ms safety limit decoupled to allow infinite hold-and-drag for floating items
 		var action = e.getActionMasked();
-
-		ds.safetyHandler.removeCallbacks(ds.safetyReleaseRunnable);
-		if (action != MotionEvent.ACTION_UP && action != MotionEvent.ACTION_CANCEL) {
-			ds.safetyHandler.postDelayed(ds.safetyReleaseRunnable, 500); 
-		}
 		
 		long now = android.os.SystemClock.uptimeMillis();
 		if (action == ACTION_MOVE) {
@@ -313,11 +299,7 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
 		var ds = instance;
 		if ((VERSION.SDK_INT < VERSION_CODES.O) || (ds == null)) return false;
 		
-		ds.safetyHandler.removeCallbacks(ds.safetyReleaseRunnable);
-		if (action != MotionEvent.ACTION_UP && action != MotionEvent.ACTION_CANCEL) {
-			ds.safetyHandler.postDelayed(ds.safetyReleaseRunnable, 500); 
-		}
-		
+		// FIXED: 500ms safety limit decoupled to allow infinite hold-and-drag for floating items
 		long now = android.os.SystemClock.uptimeMillis();
 		if (action == ACTION_MOVE) {
 			if (now - ds.lastMoveTime < 30) {
