@@ -27,6 +27,7 @@ import androidx.car.app.validation.HostValidator;
 
 import my.app.permata.PermataApplication;
 import my.app.permata.R;
+import my.app.permata.media.service.PermataMediaService;
 import my.app.utils.concurrent.HandlerExecutor;
 import my.app.utils.function.Cancellable;
 import my.app.utils.log.Log;
@@ -57,7 +58,11 @@ public class MirrorServiceFS extends CarAppService {
 	public void onTaskRemoved(Intent rootIntent) {
 		super.onTaskRemoved(rootIntent);
 
-		if (PermataApplication.get().isConnectedToAuto()) {
+		// FIXED: If the app is explicitly swiped away in Recents during a mirroring session, kill it immediately.
+		if (PermataApplication.get().isMirroringMode()) {
+			Log.i("App swiped away during Mirroring. Forcing shutdown.");
+			MirrorDisplay.close();
+		} else if (PermataApplication.get().isConnectedToAuto()) {
 			Log.i("App swiped away, but Android Auto is ACTIVE. Ignoring shutdown.");
 			return;
 		}
@@ -118,6 +123,9 @@ public class MirrorServiceFS extends CarAppService {
 		public void onSurfaceAvailable(@NonNull SurfaceContainer localSc) {
 			if (localSc.getSurface() == null) return;
 			MirrorServiceFS.sc = localSc;
+			
+			// FIXED: Proactively hijack the steering wheel controls the moment mirroring starts
+			PermataMediaService.requestFocusAndAnchor(getCarContext());
 			
 			if (md == null || md.isDestroyed()) {
 				if (md != null) md.release();
@@ -233,7 +241,6 @@ public class MirrorServiceFS extends CarAppService {
 							new CarIcon.Builder(createWithResource(getCarContext(), R.drawable.home)).build())
 					.setOnClickListener(MirrorActivity::onHomeButtonClick).build();
 					
-			// SURGICAL FIX: Chained setTint(CarColor.DEFAULT) to force Android Auto to paint the vector pure white natively.
 			var recentButton = new Action.Builder().setIcon(
 							new CarIcon.Builder(createWithResource(getCarContext(), R.drawable.recent)).setTint(androidx.car.app.model.CarColor.DEFAULT).build())
 					.setOnClickListener(MirrorActivity::onRecentButtonClick).build();
