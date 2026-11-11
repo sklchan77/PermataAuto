@@ -84,7 +84,7 @@ public class MirrorActivity extends CarActivity implements SurfaceHolder.Callbac
 	@Override
 	public void onResume() {
 		super.onResume();
-		// FIXED: Proactively hijack the steering wheel controls the moment mirroring is brought to foreground
+		Log.i("[FOCUS_TELEMETRY] Proactively hijacking steering wheel on Activity Resume.");
 		PermataMediaService.requestFocusAndAnchor(this);
 		
 		if (md == null || md.isDestroyed()) md = MirrorDisplay.get();
