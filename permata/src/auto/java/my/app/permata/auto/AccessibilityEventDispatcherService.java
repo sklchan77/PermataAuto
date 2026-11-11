@@ -58,6 +58,20 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
 	
 	private long lastMoveTime = 0;
 
+	private final Handler safetyHandler = new Handler(Looper.getMainLooper());
+	private final Runnable safetyReleaseRunnable = () -> {
+		try {
+			if (pointers != null && pointers.length > 0 && pointers[0] != null && pointers[0].sd != null) {
+				Log.w("Virtual finger safety timeout triggered. Forcing ACTION_UP to release phone screen.");
+				long now = android.os.SystemClock.uptimeMillis();
+				buildGesture(pointers[0], now, now, MotionEvent.ACTION_UP, pointers[0].x, pointers[0].y, false);
+				dispatch();
+			}
+		} catch (Exception e) {
+			Log.e(e, "Failed to release virtual finger lock");
+		}
+	};
+
 	private final BroadcastReceiver commandReceiver = new BroadcastReceiver() {
 		@Override
 		public void onReceive(Context context, Intent intent) {
@@ -122,7 +136,7 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
 		
 		final Runnable failsafeRunnable = () -> {
 			if (actionFired.compareAndSet(false, true)) {
-				Log.w("[BACK_TELEMETRY] FAILSAFE TIMEOUT TRIGGERED! Callbacks died/ANR. Forcing OS Back command.");
+				Log.w("[BACK] FAILSAFE TIMEOUT TRIGGERED! Callbacks died/ANR. Forcing OS Back command.");
 				ds.performGlobalAction(GLOBAL_ACTION_BACK);
 			}
 		};
@@ -135,11 +149,8 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
 				super.onCompleted(gestureDescription);
 				if (actionFired.compareAndSet(false, true)) {
 					failsafeHandler.removeCallbacks(failsafeRunnable);
-					Log.i("[BACK_TELEMETRY] 25ms focus-steal tap completed. Starting 500ms WMS Buffer...");
-					new Handler(Looper.getMainLooper()).postDelayed(() -> {
-						Log.i("[BACK_TELEMETRY] 500ms WMS Buffer expired. Phone has focus. Firing GLOBAL_ACTION_BACK.");
-						ds.performGlobalAction(GLOBAL_ACTION_BACK);
-					}, 500);
+					Log.i("[BACK] Center focus-steal tap completed. Phone has focus. Firing OS Back.");
+					ds.performGlobalAction(GLOBAL_ACTION_BACK);
 				}
 			}
 
@@ -148,10 +159,8 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
 				super.onCancelled(gestureDescription);
 				if (actionFired.compareAndSet(false, true)) {
 					failsafeHandler.removeCallbacks(failsafeRunnable);
-					Log.w("[BACK_TELEMETRY] Focus-Steal tap cancelled by OS. Delaying 500ms for fallback Back.");
-					new Handler(Looper.getMainLooper()).postDelayed(() -> {
-						ds.performGlobalAction(GLOBAL_ACTION_BACK);
-					}, 500);
+					Log.w("[BACK] Focus-Steal tap cancelled by OS. Firing OS Back anyway as fallback.");
+					ds.performGlobalAction(GLOBAL_ACTION_BACK);
 				}
 			}
 		}, null);
@@ -166,9 +175,10 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
 		android.util.DisplayMetrics metrics = ds.getResources().getDisplayMetrics();
 		float actionX = metrics.widthPixels * 0.50f;
 		float centerY = metrics.heightPixels * 0.50f;
+		
 		float span = metrics.heightPixels * 0.20f;
 
-		// FIXED: Y direction inverted for accurate steering wheel physics
+		// FIXED (#1): Y direction inverted for accurate steering wheel physics
 		float yStart = up ? (centerY - span / 2f) : (centerY + span / 2f);
 		float yEnd = up ? (centerY + span / 2f) : (centerY - span / 2f);
 		
@@ -239,6 +249,11 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
 		if ((VERSION.SDK_INT < VERSION_CODES.O) || (ds == null)) return false;
 		
 		var action = e.getActionMasked();
+
+		ds.safetyHandler.removeCallbacks(ds.safetyReleaseRunnable);
+		if (action != MotionEvent.ACTION_UP && action != MotionEvent.ACTION_CANCEL) {
+			ds.safetyHandler.postDelayed(ds.safetyReleaseRunnable, 500); 
+		}
 		
 		long now = android.os.SystemClock.uptimeMillis();
 		if (action == ACTION_MOVE) {
@@ -298,6 +313,11 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
 	static boolean dispatchMotionEvent(long downTime, long eventTime, int action, float x, float y) {
 		var ds = instance;
 		if ((VERSION.SDK_INT < VERSION_CODES.O) || (ds == null)) return false;
+		
+		ds.safetyHandler.removeCallbacks(ds.safetyReleaseRunnable);
+		if (action != MotionEvent.ACTION_UP && action != MotionEvent.ACTION_CANCEL) {
+			ds.safetyHandler.postDelayed(ds.safetyReleaseRunnable, 500); 
+		}
 		
 		long now = android.os.SystemClock.uptimeMillis();
 		if (action == ACTION_MOVE) {
