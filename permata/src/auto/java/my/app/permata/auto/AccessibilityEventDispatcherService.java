@@ -122,7 +122,7 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
 		
 		final Runnable failsafeRunnable = () -> {
 			if (actionFired.compareAndSet(false, true)) {
-				Log.w("[BACK] FAILSAFE TIMEOUT TRIGGERED! Callbacks died/ANR. Forcing OS Back command.");
+				Log.w("[BACK_TELEMETRY] FAILSAFE TIMEOUT TRIGGERED! Callbacks died/ANR. Forcing OS Back command.");
 				ds.performGlobalAction(GLOBAL_ACTION_BACK);
 			}
 		};
@@ -135,10 +135,11 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
 				super.onCompleted(gestureDescription);
 				if (actionFired.compareAndSet(false, true)) {
 					failsafeHandler.removeCallbacks(failsafeRunnable);
-					Log.i("[BACK] Center focus-steal tap completed. Phone has focus. Delaying 100ms for Window Manager...");
+					Log.i("[BACK_TELEMETRY] 25ms focus-steal tap completed. Starting 500ms WMS Buffer...");
 					new Handler(Looper.getMainLooper()).postDelayed(() -> {
+						Log.i("[BACK_TELEMETRY] 500ms WMS Buffer expired. Phone has focus. Firing GLOBAL_ACTION_BACK.");
 						ds.performGlobalAction(GLOBAL_ACTION_BACK);
-					}, 100);
+					}, 500);
 				}
 			}
 
@@ -147,10 +148,10 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
 				super.onCancelled(gestureDescription);
 				if (actionFired.compareAndSet(false, true)) {
 					failsafeHandler.removeCallbacks(failsafeRunnable);
-					Log.w("[BACK] Focus-Steal tap cancelled by OS. Delaying 100ms for fallback Back.");
+					Log.w("[BACK_TELEMETRY] Focus-Steal tap cancelled by OS. Delaying 500ms for fallback Back.");
 					new Handler(Looper.getMainLooper()).postDelayed(() -> {
 						ds.performGlobalAction(GLOBAL_ACTION_BACK);
-					}, 100);
+					}, 500);
 				}
 			}
 		}, null);
@@ -167,7 +168,7 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
 		float centerY = metrics.heightPixels * 0.50f;
 		float span = metrics.heightPixels * 0.20f;
 
-		// FIXED: Swapped Y direction for steering wheel next/prev inversion
+		// FIXED: Y direction inverted for accurate steering wheel physics
 		float yStart = up ? (centerY - span / 2f) : (centerY + span / 2f);
 		float yEnd = up ? (centerY + span / 2f) : (centerY - span / 2f);
 		
@@ -237,7 +238,6 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
 		var ds = instance;
 		if ((VERSION.SDK_INT < VERSION_CODES.O) || (ds == null)) return false;
 		
-		// FIXED: 500ms safety limit decoupled to allow infinite hold-and-drag for floating items
 		var action = e.getActionMasked();
 		
 		long now = android.os.SystemClock.uptimeMillis();
@@ -299,7 +299,6 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
 		var ds = instance;
 		if ((VERSION.SDK_INT < VERSION_CODES.O) || (ds == null)) return false;
 		
-		// FIXED: 500ms safety limit decoupled to allow infinite hold-and-drag for floating items
 		long now = android.os.SystemClock.uptimeMillis();
 		if (action == ACTION_MOVE) {
 			if (now - ds.lastMoveTime < 30) {
