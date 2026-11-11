@@ -277,15 +277,8 @@ public class KeyEventHandler {
 
         if (event.getAction() == ACTION_DOWN) {
             
-            if (code == KeyEvent.KEYCODE_BACK) {
-                if (AccessibilityEventDispatcherService.dispatchUniversalBack()) {
-                    Log.i("[BACK] Dispatched successfully via Universal Focus-Steal AccessibilityService.");
-                    return true;
-                }
-                if (EventDispatcher.get().directBack()) {
-                    return true;
-                }
-            }
+            // FIXED (#2): Removed the KEYCODE_BACK intercept block completely.
+            // Phone hardware edge-swipes will now instantly route natively to the Android OS.
 
             if (code == KeyEvent.KEYCODE_MEDIA_NEXT || code == KeyEvent.KEYCODE_MEDIA_PREVIOUS) {
                 
@@ -297,14 +290,12 @@ public class KeyEventHandler {
 
                 boolean isNext = (code == KeyEvent.KEYCODE_MEDIA_NEXT);
 
-                // --- SURGICAL MIRROR INJECTION START ---
                 if (PermataApplication.get().isMirroringMode()) {
                     lastGlobalActionTime = currentUptime;
                     Log.i("[DETECTION] Mirroring active. Routing steering wheel swipe directly to phone glass.");
                     executeNativeAppSwipe(!isNext, "MirroredScreen");
                     return true;
                 }
-                // --- SURGICAL MIRROR INJECTION END ---
                 
                 String activePkg = AccessibilityEventDispatcherService.getLastActivePackage();
 
