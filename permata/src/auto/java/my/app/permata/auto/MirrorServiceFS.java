@@ -57,7 +57,7 @@ public class MirrorServiceFS extends CarAppService {
 	public void onTaskRemoved(Intent rootIntent) {
 		super.onTaskRemoved(rootIntent);
 
-		// FIXED (#3): If the app is explicitly swiped away in Recents during a mirroring session, kill it immediately.
+		// FIXED (#3): App swiped away in Recents forces complete UI shutdown
 		if (PermataApplication.get().isMirroringMode()) {
 			Log.i("[TELEMETRY] App swiped away during Mirroring. Forcing shutdown.");
 			MirrorDisplay.close();
@@ -111,6 +111,11 @@ public class MirrorServiceFS extends CarAppService {
 		private Cancellable scrollUp;
 		
 		private boolean isPanning = false;
+		
+		// FIXED (#4): Tap-to-Lock coordinates storage
+		private float lastClickX = -1f;
+		private float lastClickY = -1f;
+		private long lastClickTime = 0L;
 
 		MirrorScreen(@NonNull CarContext ctx) {
 			super(ctx);
@@ -164,6 +169,12 @@ public class MirrorServiceFS extends CarAppService {
 				scrollUp = null;
 				isPanning = false;
 			}
+			
+			// FIXED (#4): Tap-to-Lock saves exact coordinates
+			lastClickX = x;
+			lastClickY = y;
+			lastClickTime = uptimeMillis();
+			
 			if (md() != null) md().tap(x, y);
 		}
 
@@ -180,8 +191,17 @@ public class MirrorServiceFS extends CarAppService {
 			
 			if (!isPanning || scrollUp == null) {
 				isPanning = true;
-				scrollStartX = MirrorServiceFS.sc.getWidth() / 2f;
-				scrollStartY = MirrorServiceFS.sc.getHeight() / 2f;
+				
+				// FIXED (#4): Tap-to-Lock coordinates bypass
+				if (time - lastClickTime < 1500 && lastClickX >= 0 && lastClickY >= 0) {
+					scrollStartX = lastClickX;
+					scrollStartY = lastClickY;
+					Log.i("[DRAG_TELEMETRY] Tap-to-Lock engaged. Dragging from specific coordinates: " + scrollStartX + ", " + scrollStartY);
+				} else {
+					scrollStartX = MirrorServiceFS.sc.getWidth() / 2f;
+					scrollStartY = MirrorServiceFS.sc.getHeight() / 2f;
+					Log.i("[DRAG_TELEMETRY] No recent tap detected. Defaulting to center screen drag.");
+				}
 				
 				scrollX = scrollStartX;
 				scrollY = scrollStartY;
@@ -192,7 +212,9 @@ public class MirrorServiceFS extends CarAppService {
 				}
 				scrollDownTime = time;
 				
-				scheduleScrollUp(75);
+				// FIXED (#4): 500ms Grace Period
+				Log.i("[DRAG_TELEMETRY] Car OS Scroll Started. 500ms Hold-and-Drag Grace Period started.");
+				scheduleScrollUp(500);
 			}
 			
 			scrollX -= distanceX;
@@ -201,7 +223,7 @@ public class MirrorServiceFS extends CarAppService {
 			
 			if (scrollUp != null) {
 				scrollUp.cancel();
-				scheduleScrollUp(75);
+				scheduleScrollUp(500);
 			}
 		}
 
@@ -218,6 +240,7 @@ public class MirrorServiceFS extends CarAppService {
 				} else {
 					scrollUp = null;
 					isPanning = false;
+					Log.i("[DRAG_TELEMETRY] Grace Period Expired. Forcing ACTION_UP (Releasing balloon).");
 					mDisp.motionEvent(scrollDownTime, time, ACTION_UP, scrollX, scrollY);
 				}
 			}, delay);
