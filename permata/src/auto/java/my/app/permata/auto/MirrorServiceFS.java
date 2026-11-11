@@ -27,7 +27,6 @@ import androidx.car.app.validation.HostValidator;
 
 import my.app.permata.PermataApplication;
 import my.app.permata.R;
-import my.app.permata.media.service.PermataMediaService;
 import my.app.utils.concurrent.HandlerExecutor;
 import my.app.utils.function.Cancellable;
 import my.app.utils.log.Log;
@@ -58,6 +57,7 @@ public class MirrorServiceFS extends CarAppService {
 	public void onTaskRemoved(Intent rootIntent) {
 		super.onTaskRemoved(rootIntent);
 
+		// FIXED (#3): If the app is explicitly swiped away in Recents during a mirroring session, kill it immediately.
 		if (PermataApplication.get().isMirroringMode()) {
 			Log.i("[TELEMETRY] App swiped away during Mirroring. Forcing shutdown.");
 			MirrorDisplay.close();
@@ -122,9 +122,6 @@ public class MirrorServiceFS extends CarAppService {
 		public void onSurfaceAvailable(@NonNull SurfaceContainer localSc) {
 			if (localSc.getSurface() == null) return;
 			MirrorServiceFS.sc = localSc;
-			
-			Log.i("[FOCUS_TELEMETRY] Proactively hijacking steering wheel on surface available.");
-			PermataMediaService.requestFocusAndAnchor(getCarContext());
 			
 			if (md == null || md.isDestroyed()) {
 				if (md != null) md.release();
@@ -195,8 +192,7 @@ public class MirrorServiceFS extends CarAppService {
 				}
 				scrollDownTime = time;
 				
-				Log.i("[DRAG_TELEMETRY] Car OS Scroll Started. 1000ms Hold-and-Drag Grace Period started.");
-				scheduleScrollUp(1000);
+				scheduleScrollUp(75);
 			}
 			
 			scrollX -= distanceX;
@@ -205,8 +201,7 @@ public class MirrorServiceFS extends CarAppService {
 			
 			if (scrollUp != null) {
 				scrollUp.cancel();
-				Log.i("[DRAG_TELEMETRY] Scroll resumed within Grace Period. Drag maintained.");
-				scheduleScrollUp(1000);
+				scheduleScrollUp(75);
 			}
 		}
 
@@ -223,7 +218,6 @@ public class MirrorServiceFS extends CarAppService {
 				} else {
 					scrollUp = null;
 					isPanning = false;
-					Log.i("[DRAG_TELEMETRY] Grace Period Expired. Forcing ACTION_UP (Releasing balloon).");
 					mDisp.motionEvent(scrollDownTime, time, ACTION_UP, scrollX, scrollY);
 				}
 			}, delay);
