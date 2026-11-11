@@ -136,7 +136,7 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
 		
 		final Runnable failsafeRunnable = () -> {
 			if (actionFired.compareAndSet(false, true)) {
-				Log.w("[BACK] FAILSAFE TIMEOUT TRIGGERED! Callbacks died/ANR. Forcing OS Back command.");
+				Log.w("[BACK_TELEMETRY] FAILSAFE TIMEOUT TRIGGERED! Callbacks died/ANR. Forcing OS Back command.");
 				ds.performGlobalAction(GLOBAL_ACTION_BACK);
 			}
 		};
@@ -149,8 +149,11 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
 				super.onCompleted(gestureDescription);
 				if (actionFired.compareAndSet(false, true)) {
 					failsafeHandler.removeCallbacks(failsafeRunnable);
-					Log.i("[BACK] Center focus-steal tap completed. Phone has focus. Firing OS Back.");
-					ds.performGlobalAction(GLOBAL_ACTION_BACK);
+					Log.i("[BACK_TELEMETRY] 25ms focus-steal tap completed. Starting 500ms WMS Buffer...");
+					new Handler(Looper.getMainLooper()).postDelayed(() -> {
+						Log.i("[BACK_TELEMETRY] 500ms WMS Buffer expired. Phone has focus. Firing GLOBAL_ACTION_BACK.");
+						ds.performGlobalAction(GLOBAL_ACTION_BACK);
+					}, 500);
 				}
 			}
 
@@ -159,8 +162,10 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
 				super.onCancelled(gestureDescription);
 				if (actionFired.compareAndSet(false, true)) {
 					failsafeHandler.removeCallbacks(failsafeRunnable);
-					Log.w("[BACK] Focus-Steal tap cancelled by OS. Firing OS Back anyway as fallback.");
-					ds.performGlobalAction(GLOBAL_ACTION_BACK);
+					Log.w("[BACK_TELEMETRY] Focus-Steal tap cancelled by OS. Delaying 500ms for fallback Back.");
+					new Handler(Looper.getMainLooper()).postDelayed(() -> {
+						ds.performGlobalAction(GLOBAL_ACTION_BACK);
+					}, 500);
 				}
 			}
 		}, null);
