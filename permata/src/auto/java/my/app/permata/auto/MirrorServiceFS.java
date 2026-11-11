@@ -58,9 +58,8 @@ public class MirrorServiceFS extends CarAppService {
 	public void onTaskRemoved(Intent rootIntent) {
 		super.onTaskRemoved(rootIntent);
 
-		// FIXED: If the app is explicitly swiped away in Recents during a mirroring session, kill it immediately.
 		if (PermataApplication.get().isMirroringMode()) {
-			Log.i("App swiped away during Mirroring. Forcing shutdown.");
+			Log.i("[TELEMETRY] App swiped away during Mirroring. Forcing shutdown.");
 			MirrorDisplay.close();
 		} else if (PermataApplication.get().isConnectedToAuto()) {
 			Log.i("App swiped away, but Android Auto is ACTIVE. Ignoring shutdown.");
@@ -124,7 +123,7 @@ public class MirrorServiceFS extends CarAppService {
 			if (localSc.getSurface() == null) return;
 			MirrorServiceFS.sc = localSc;
 			
-			// FIXED: Proactively hijack the steering wheel controls the moment mirroring starts
+			Log.i("[FOCUS_TELEMETRY] Proactively hijacking steering wheel on surface available.");
 			PermataMediaService.requestFocusAndAnchor(getCarContext());
 			
 			if (md == null || md.isDestroyed()) {
@@ -196,7 +195,8 @@ public class MirrorServiceFS extends CarAppService {
 				}
 				scrollDownTime = time;
 				
-				scheduleScrollUp(75);
+				Log.i("[DRAG_TELEMETRY] Car OS Scroll Started. 1000ms Hold-and-Drag Grace Period started.");
+				scheduleScrollUp(1000);
 			}
 			
 			scrollX -= distanceX;
@@ -205,7 +205,8 @@ public class MirrorServiceFS extends CarAppService {
 			
 			if (scrollUp != null) {
 				scrollUp.cancel();
-				scheduleScrollUp(75);
+				Log.i("[DRAG_TELEMETRY] Scroll resumed within Grace Period. Drag maintained.");
+				scheduleScrollUp(1000);
 			}
 		}
 
@@ -222,6 +223,7 @@ public class MirrorServiceFS extends CarAppService {
 				} else {
 					scrollUp = null;
 					isPanning = false;
+					Log.i("[DRAG_TELEMETRY] Grace Period Expired. Forcing ACTION_UP (Releasing balloon).");
 					mDisp.motionEvent(scrollDownTime, time, ACTION_UP, scrollX, scrollY);
 				}
 			}, delay);
