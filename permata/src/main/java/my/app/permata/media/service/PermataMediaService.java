@@ -215,9 +215,8 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 	public void onTaskRemoved(Intent rootIntent) {
 		super.onTaskRemoved(rootIntent);
 		
-		// FIXED: If the app is explicitly swiped away in Recents during a mirroring session, kill it immediately.
 		if (PermataApplication.get().isMirroringMode()) {
-			Log.i("App swiped away during Mirroring. Forcing nuclear teardown.");
+			Log.i("[TELEMETRY] App swiped away during Mirroring. Forcing nuclear teardown.");
 			MirrorDisplay.close();
 			executeNuclearTeardown();
 			return;
@@ -232,9 +231,8 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 		if (intent != null && !isTeardownActive) {
 			String action = intent.getAction();
 			
-			// FIXED: Universal shutdown bridge. Phone screen shortcuts can broadcast this intent to kill Mirroring.
 			if (ACTION_FORCE_SHUTDOWN.equals(action)) {
-				Log.i("Universal shutdown intent received from Phone Screen Shortcut.");
+				Log.i("[TELEMETRY] Universal shutdown intent received from Phone Screen Shortcut.");
 				MirrorDisplay.close();
 				executeNuclearTeardown();
 				return START_NOT_STICKY;
@@ -315,27 +313,35 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 							};
 						}
 						
+						int result;
+						Log.i("[FOCUS_TELEMETRY] Requesting AUDIOFOCUS_GAIN (Exclusive Steering Wheel Hijack)...");
 						if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
 							if (audioFocusRequestOreo == null) {
 								AudioAttributes playbackAttributes = new AudioAttributes.Builder()
 										.setUsage(AudioAttributes.USAGE_MEDIA)
 										.setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
 										.build();
-								audioFocusRequestOreo = new AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK)
+								// FIXED: Hard GAIN request to kill the car radio instantly
+								audioFocusRequestOreo = new AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
 										.setAudioAttributes(playbackAttributes)
 										.setAcceptsDelayedFocusGain(true)
 										.setWillPauseWhenDucked(false)
 										.setOnAudioFocusChangeListener(focusChangeListener)
 										.build();
 							}
-							audioManager.requestAudioFocus(audioFocusRequestOreo);
+							result = audioManager.requestAudioFocus(audioFocusRequestOreo);
 						} else {
 							//noinspection deprecation
-							audioManager.requestAudioFocus(
+							result = audioManager.requestAudioFocus(
 									focusChangeListener,
 									AudioManager.STREAM_MUSIC,
-									AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK
+									AudioManager.AUDIOFOCUS_GAIN
 							);
+						}
+						
+						if (result == AudioManager.AUDIOFOCUS_REQUEST_GRANTED) {
+							Log.i("[FOCUS_TELEMETRY] Audio Focus GRANTED. Car Radio forcibly terminated.");
+							Log.i("[FOCUS_TELEMETRY] Silent Audio Anchor started. Steering wheel inputs successfully routed to Permata.");
 						}
 					}
 
