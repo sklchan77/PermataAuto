@@ -67,7 +67,6 @@ public class KeyEventHandler {
             "tv.danmaku.bili"           // Bilibili
     ));
     
-    // NEW: Helper method for the Accessibility BT Loophole
     public static boolean isScrollerPackage(String pkgName) {
         return pkgName != null && SCROLLER_PACKAGES.contains(pkgName);
     }
@@ -271,6 +270,10 @@ public class KeyEventHandler {
 
         var code = event.getKeyCode();
 
+        if (code == KeyEvent.KEYCODE_BACK) {
+            return defaultHandler.apply(code, event);
+        }
+
         MainActivityDelegate targetActivity = activity;
         if (targetActivity == null && cb != null) {
             if (cb.getAssistant() instanceof MainActivityDelegate) {
@@ -281,9 +284,6 @@ public class KeyEventHandler {
         final MainActivityDelegate finalTargetActivity = targetActivity;
 
         if (event.getAction() == ACTION_DOWN) {
-            
-            // KEYCODE_BACK INTERCEPT HAS BEEN DELETED HERE
-
             if (code == KeyEvent.KEYCODE_MEDIA_NEXT || code == KeyEvent.KEYCODE_MEDIA_PREVIOUS) {
                 
                 long currentUptime = android.os.SystemClock.uptimeMillis();
