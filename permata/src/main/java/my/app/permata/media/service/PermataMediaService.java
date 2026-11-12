@@ -265,19 +265,33 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 	private void onWebMediaPlaying() {
 		if (isTeardownActive) return;
 
-		long now = SystemClock.uptimeMillis();
-		if (now - lastWebMediaPlayingTime.get() < 2000) {
-			return;
+		// FIXED (#5): 2000ms Throttle DELETED.
+		// Pulse-and-Release Audio Handoff implementation.
+		Log.i("[AUDIO_TELEMETRY] Web Media PLAYING detected. Yielding Audio Focus to WebView.");
+		
+		// 1. Instantly stop our Silent Track so Chromium isn't ducked.
+		stopSilentAudioAnchor();
+		// 2. Explicitly abandon OS Audio Focus so Chromium can surge to 100% volume natively.
+		releaseAudioFocus();
+		
+		// 3. Keep our MediaSession active so Android Auto keeps routing Steering Wheel buttons to us
+		if (session != null) {
+			session.setActive(true);
+			updatePlaybackState(STATE_PLAYING);
 		}
-		lastWebMediaPlayingTime.set(now);
-
-		hijackCarAudioAndSteering();
 	}
 
 	private void onWebMediaPaused() {
-		if (session != null && !isTeardownActive) {
-			updatePlaybackState(STATE_PLAYING);
+		if (isTeardownActive) return;
+		
+		// FIXED (#5): Re-Anchor Logic.
+		// When Chromium stops playing, immediately reclaim the OS focus to prevent Car Radio takeover.
+		Log.i("[AUDIO_TELEMETRY] Web Media PAUSED detected. Re-engaging Silent AudioTrack Anchor.");
+		
+		if (session != null) {
+			updatePlaybackState(STATE_PLAYING); 
 		}
+		hijackCarAudioAndSteering();
 	}
 
 	private void hijackCarAudioAndSteering() {
@@ -302,11 +316,11 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 						if (focusChangeListener == null) {
 							focusChangeListener = focusChange -> {
 								if (focusChange == AudioManager.AUDIOFOCUS_LOSS) {
-									Log.w("PermataMediaService: Car Radio stole focus.");
+									Log.w("[AUDIO_TELEMETRY] Audio Focus Lost (Chromium or Call took over).");
 								} else if (focusChange == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK) {
-									Log.i("PermataMediaService: Audio focus ducking permitted.");
+									Log.i("[AUDIO_TELEMETRY] Audio focus ducking permitted.");
 								} else if (focusChange == AudioManager.AUDIOFOCUS_GAIN) {
-									Log.i("PermataMediaService: Audio focus returned. Enforcing Steering Control anchor.");
+									Log.i("[AUDIO_TELEMETRY] Audio focus returned. Enforcing Steering Control anchor.");
 									if (session != null && !isTeardownActive) {
 										session.setActive(true);
 										updatePlaybackState(STATE_PLAYING);
@@ -315,13 +329,15 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 							};
 						}
 						
+						// FIXED (#5): Using AUDIOFOCUS_GAIN to definitively kill Car Radio during silent gaps
+						Log.i("[AUDIO_TELEMETRY] Requesting AUDIOFOCUS_GAIN for Silent Anchor.");
 						if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
 							if (audioFocusRequestOreo == null) {
 								AudioAttributes playbackAttributes = new AudioAttributes.Builder()
 										.setUsage(AudioAttributes.USAGE_MEDIA)
 										.setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
 										.build();
-								audioFocusRequestOreo = new AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK)
+								audioFocusRequestOreo = new AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
 										.setAudioAttributes(playbackAttributes)
 										.setAcceptsDelayedFocusGain(true)
 										.setWillPauseWhenDucked(false)
@@ -334,7 +350,7 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 							audioManager.requestAudioFocus(
 									focusChangeListener,
 									AudioManager.STREAM_MUSIC,
-									AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK
+									AudioManager.AUDIOFOCUS_GAIN
 							);
 						}
 					}
@@ -345,6 +361,7 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 					}
 
 					startSilentAudioAnchorInternal();
+					Log.i("[AUDIO_TELEMETRY] Silent AudioTrack started successfully.");
 				} catch (Exception t) {
 					Log.e(t, "PermataMediaService: Audio Hardware thread encountered an exception.");
 				}
@@ -399,6 +416,7 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 						//noinspection deprecation
 						audioManager.abandonAudioFocus(focusChangeListener);
 					}
+					Log.i("[AUDIO_TELEMETRY] OS Audio Focus actively abandoned.");
 				}
 			} catch (Exception ignored) {}
 		}
@@ -411,6 +429,7 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 				try {
 					track.stop();
 					track.release();
+					Log.i("[AUDIO_TELEMETRY] Silent AudioTrack explicitly stopped.");
 				} catch (Exception ignored) {}
 			}
 		}
