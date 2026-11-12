@@ -270,7 +270,27 @@ public class KeyEventHandler {
 
         var code = event.getKeyCode();
 
+        // RESTORED FIX: The Loop-Breaker Bridge for Universal Back
         if (code == KeyEvent.KEYCODE_BACK) {
+            // 1. If we are injecting a back command via the Mirroring Toolbar, let it pass natively to the OS
+            if (AccessibilityEventDispatcherService.isInjectingBack) {
+                Log.i("[BACK_TELEMETRY] Loop-Breaker Active: Permitting OS Back command to reach target app.");
+                return defaultHandler.apply(code, event);
+            }
+            
+            // 2. If you press the physical phone Back button during mirroring, route it to our Universal Back
+            if (PermataApplication.get().isMirroringMode()) {
+                long currentUptime = android.os.SystemClock.uptimeMillis();
+                if (currentUptime - lastGlobalActionTime < 500) {
+                    return true; // Anti-spam throttle
+                }
+                lastGlobalActionTime = currentUptime;
+                
+                Log.i("[BACK] Physical Phone Back intercepted. Executing Universal Back.");
+                AccessibilityEventDispatcherService.dispatchUniversalBack();
+                return true; 
+            }
+            // 3. Standard passthrough for non-mirroring scenarios
             return defaultHandler.apply(code, event);
         }
 
