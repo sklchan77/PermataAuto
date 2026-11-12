@@ -150,6 +150,7 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
 				if (actionFired.compareAndSet(false, true)) {
 					failsafeHandler.removeCallbacks(failsafeRunnable);
 					Log.i("[BACK_TELEMETRY] 25ms focus-steal tap completed. Starting 500ms WMS Buffer...");
+					// FIXED (#2): 500ms Window Manager Delay before firing single Back payload
 					new Handler(Looper.getMainLooper()).postDelayed(() -> {
 						Log.i("[BACK_TELEMETRY] 500ms WMS Buffer expired. Phone has focus. Firing GLOBAL_ACTION_BACK.");
 						ds.performGlobalAction(GLOBAL_ACTION_BACK);
