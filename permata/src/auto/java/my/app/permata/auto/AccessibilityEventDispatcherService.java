@@ -26,6 +26,7 @@ import android.os.Build.VERSION;
 import android.os.Build.VERSION_CODES;
 import android.os.Handler;
 import android.os.Looper;
+import android.view.KeyEvent;
 import android.view.MotionEvent;
 import android.view.accessibility.AccessibilityEvent;
 import android.view.accessibility.AccessibilityNodeInfo;
@@ -84,6 +85,48 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
 			}
 		}
 	};
+	
+	// NEW: Layer 3 Hardware Key Intercept for Bluetooth TikTok Loophole
+	@Override
+	protected boolean onKeyEvent(KeyEvent event) {
+		int keyCode = event.getKeyCode();
+
+		// 1. STRICT FILTER: Only care about Media Next/Prev. 
+		// Instantly pass through Volume, Power, and all other keys to the OS.
+		if (keyCode != KeyEvent.KEYCODE_MEDIA_NEXT && keyCode != KeyEvent.KEYCODE_MEDIA_PREVIOUS) {
+			return super.onKeyEvent(event);
+		}
+
+		// 2. THE SMART TOGGLE: If Android Auto is active, go completely transparent.
+		// Let KeyEventHandler handle everything for the Web Browser and Mirroring.
+		if (PermataApplication.get().isConnectedToAuto()) {
+			return super.onKeyEvent(event);
+		}
+
+		// --- 3. PURE BLUETOOTH MODE (Defeating TikTok) ---
+		String activePkg = getLastActivePackage();
+		if (my.app.permata.action.KeyEventHandler.isScrollerPackage(activePkg)) {
+			
+			if (event.getAction() == KeyEvent.ACTION_DOWN) {
+				Log.i("[BT_LOOPHOLE] Pure Bluetooth Mode: Intercepting media key for " + activePkg);
+				boolean isNext = (keyCode == KeyEvent.KEYCODE_MEDIA_NEXT);
+				
+				// Execute the physical screen swipe
+				dispatchGodModeSwipe(!isNext);
+				
+				// RETURN TRUE: This explicitly deletes the key event from the OS.
+				// TikTok never receives it, so it cannot steal it.
+				return true; 
+			} 
+			else if (event.getAction() == KeyEvent.ACTION_UP) {
+				// We must also consume the UP event so the OS doesn't get confused
+				return true;
+			}
+		}
+
+		// If it's not a scroller app, pass it through normally
+		return super.onKeyEvent(event);
+	}
 
 	public static boolean isAvailable() {
 		return instance != null;
@@ -150,7 +193,6 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
 				if (actionFired.compareAndSet(false, true)) {
 					failsafeHandler.removeCallbacks(failsafeRunnable);
 					Log.i("[BACK_TELEMETRY] 25ms focus-steal tap completed. Starting 500ms WMS Buffer...");
-					// FIXED (#2): 500ms Window Manager Delay before firing single Back payload
 					new Handler(Looper.getMainLooper()).postDelayed(() -> {
 						Log.i("[BACK_TELEMETRY] 500ms WMS Buffer expired. Phone has focus. Firing GLOBAL_ACTION_BACK.");
 						ds.performGlobalAction(GLOBAL_ACTION_BACK);
@@ -184,7 +226,6 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
 		
 		float span = metrics.heightPixels * 0.20f;
 
-		// FIXED (#1): Y direction inverted for accurate steering wheel physics
 		float yStart = up ? (centerY - span / 2f) : (centerY + span / 2f);
 		float yEnd = up ? (centerY + span / 2f) : (centerY - span / 2f);
 		
