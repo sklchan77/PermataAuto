@@ -67,6 +67,11 @@ public class KeyEventHandler {
             "tv.danmaku.bili"           // Bilibili
     ));
     
+    // NEW: Helper method for the Accessibility BT Loophole
+    public static boolean isScrollerPackage(String pkgName) {
+        return pkgName != null && SCROLLER_PACKAGES.contains(pkgName);
+    }
+    
     private static final Map<Class<?>, Method> webViewMethodCache = new ConcurrentHashMap<>();
     private static final Map<View, Long> scrollTimestamps = Collections.synchronizedMap(new WeakHashMap<>());
 
@@ -277,8 +282,7 @@ public class KeyEventHandler {
 
         if (event.getAction() == ACTION_DOWN) {
             
-            // FIXED (#2): Removed the KEYCODE_BACK intercept block completely.
-            // Phone hardware edge-swipes will now instantly route natively to the Android OS.
+            // KEYCODE_BACK INTERCEPT HAS BEEN DELETED HERE
 
             if (code == KeyEvent.KEYCODE_MEDIA_NEXT || code == KeyEvent.KEYCODE_MEDIA_PREVIOUS) {
                 
