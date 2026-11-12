@@ -57,7 +57,6 @@ public class MirrorServiceFS extends CarAppService {
 	public void onTaskRemoved(Intent rootIntent) {
 		super.onTaskRemoved(rootIntent);
 
-		// FIXED (#3): App swiped away in Recents forces complete UI shutdown
 		if (PermataApplication.get().isMirroringMode()) {
 			Log.i("[TELEMETRY] App swiped away during Mirroring. Forcing shutdown.");
 			MirrorDisplay.close();
@@ -112,7 +111,6 @@ public class MirrorServiceFS extends CarAppService {
 		
 		private boolean isPanning = false;
 		
-		// FIXED (#4): Tap-to-Lock coordinates storage
 		private float lastClickX = -1f;
 		private float lastClickY = -1f;
 		private long lastClickTime = 0L;
@@ -170,7 +168,6 @@ public class MirrorServiceFS extends CarAppService {
 				isPanning = false;
 			}
 			
-			// FIXED (#4): Tap-to-Lock saves exact coordinates
 			lastClickX = x;
 			lastClickY = y;
 			lastClickTime = uptimeMillis();
@@ -192,7 +189,6 @@ public class MirrorServiceFS extends CarAppService {
 			if (!isPanning || scrollUp == null) {
 				isPanning = true;
 				
-				// FIXED (#4): Tap-to-Lock coordinates bypass
 				if (time - lastClickTime < 1500 && lastClickX >= 0 && lastClickY >= 0) {
 					scrollStartX = lastClickX;
 					scrollStartY = lastClickY;
@@ -212,7 +208,6 @@ public class MirrorServiceFS extends CarAppService {
 				}
 				scrollDownTime = time;
 				
-				// FIXED (#4): 500ms Grace Period
 				Log.i("[DRAG_TELEMETRY] Car OS Scroll Started. 500ms Hold-and-Drag Grace Period started.");
 				scheduleScrollUp(500);
 			}
