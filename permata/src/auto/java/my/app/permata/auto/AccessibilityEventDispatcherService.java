@@ -50,6 +50,7 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
 	private static AccessibilityEventDispatcherService instance;
 	
 	private static volatile String lastActivePackage = null;
+	public static volatile boolean isInjectingBack = false;
 	
 	private final Set<Integer> windowIds =
 			(VERSION.SDK_INT < VERSION_CODES.TIRAMISU) ? Collections.emptySet() : new HashSet<>();
@@ -98,20 +99,14 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
 			return super.onKeyEvent(event);
 		}
 		
-		String activePkg = getLastActivePackage();
-		if (my.app.permata.action.KeyEventHandler.isScrollerPackage(activePkg)) {
-			
-			if (event.getAction() == KeyEvent.ACTION_DOWN) {
-				Log.i("[BT_LOOPHOLE] Pure Bluetooth Mode: Intercepting media key for " + activePkg);
-				boolean isNext = (keyCode == KeyEvent.KEYCODE_MEDIA_NEXT);
-				
-				dispatchGodModeSwipe(!isNext);
-				
-				return true; 
-			} 
-			else if (event.getAction() == KeyEvent.ACTION_UP) {
-				return true;
-			}
+		// Pure BT Brute-Force: Directly swipe screen on BT inputs
+		if (event.getAction() == KeyEvent.ACTION_DOWN) {
+			Log.i("[BT_LOOPHOLE] Pure Bluetooth Mode: Intercepting media key for direct hardware swipe.");
+			boolean isNext = (keyCode == KeyEvent.KEYCODE_MEDIA_NEXT);
+			dispatchGodModeSwipe(!isNext);
+			return true; 
+		} else if (event.getAction() == KeyEvent.ACTION_UP) {
+			return true;
 		}
 
 		return super.onKeyEvent(event);
@@ -148,59 +143,15 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
 
 	public static boolean dispatchUniversalBack() {
 		var ds = instance;
-		if (ds == null || VERSION.SDK_INT < VERSION_CODES.N) return false;
+		if (ds == null) return false;
 
-		MirrorDisplay.notifyInjectedTouch();
-
-		android.util.DisplayMetrics metrics = ds.getResources().getDisplayMetrics();
+		Log.i("[BACK] Firing standard Universal OS Back command.");
+		isInjectingBack = true;
+		boolean success = ds.performGlobalAction(GLOBAL_ACTION_BACK);
 		
-		float startX = 1f; 
-		float endX = metrics.widthPixels * 0.25f; 
-		float centerY = metrics.heightPixels * 0.5f;
-
-		Path swipePath = new Path();
-		swipePath.moveTo(startX, centerY);
-		swipePath.lineTo(endX, centerY); 
-
-		GestureDescription.Builder gb = new GestureDescription.Builder();
-		gb.addStroke(new StrokeDescription(swipePath, 0L, 150L));
-
-		final java.util.concurrent.atomic.AtomicBoolean actionFired = new java.util.concurrent.atomic.AtomicBoolean(false);
-		final Handler failsafeHandler = new Handler(Looper.getMainLooper());
+		new Handler(Looper.getMainLooper()).postDelayed(() -> isInjectingBack = false, 300);
 		
-		final Runnable failsafeRunnable = () -> {
-			if (actionFired.compareAndSet(false, true)) {
-				Log.w("[BACK_TELEMETRY] Edge-Swipe timeout. Firing GLOBAL_ACTION_BACK fallback.");
-				ds.performGlobalAction(GLOBAL_ACTION_BACK);
-			}
-		};
-		
-		failsafeHandler.postDelayed(failsafeRunnable, 300);
-
-		return ds.dispatchGesture(gb.build(), new AccessibilityService.GestureResultCallback() {
-			@Override
-			public void onCompleted(GestureDescription gestureDescription) {
-				super.onCompleted(gestureDescription);
-				if (actionFired.compareAndSet(false, true)) {
-					failsafeHandler.removeCallbacks(failsafeRunnable);
-					Log.i("[BACK_TELEMETRY] Edge-Swipe injected successfully. Firing GLOBAL_ACTION_BACK secondary failsafe.");
-					
-					new Handler(Looper.getMainLooper()).postDelayed(() -> {
-						ds.performGlobalAction(GLOBAL_ACTION_BACK);
-					}, 50);
-				}
-			}
-
-			@Override
-			public void onCancelled(GestureDescription gestureDescription) {
-				super.onCancelled(gestureDescription);
-				if (actionFired.compareAndSet(false, true)) {
-					failsafeHandler.removeCallbacks(failsafeRunnable);
-					Log.w("[BACK_TELEMETRY] Edge-Swipe cancelled by OS. Firing fallback GLOBAL_ACTION_BACK.");
-					ds.performGlobalAction(GLOBAL_ACTION_BACK);
-				}
-			}
-		}, null);
+		return success;
 	}
 
 	public static boolean dispatchGodModeSwipe(boolean up) {
@@ -490,11 +441,21 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
 		CharSequence pkg = event.getPackageName();
 		String pkgName = (pkg != null) ? pkg.toString() : null;
 
-		if (pkgName != null && !pkgName.startsWith("my.app.permata") &&
-			!pkgName.equals("com.android.systemui") &&
-			!pkgName.equals("android") &&
-			!pkgName.contains("inputmethod")) {
+		if (pkgName != null && !pkgName.equals("com.android.systemui") && !pkgName.equals("android") && !pkgName.contains("inputmethod")) {
+			
+			String prevPackage = lastActivePackage;
 			lastActivePackage = pkgName;
+
+			if (pkgName.startsWith("my.app.permata") && my.app.permata.action.KeyEventHandler.isScrollerPackage(prevPackage)) {
+				Log.i("[WATCHDOG] Exited Mirroring (Scroller -> Permata). Firing gentle session reclaim.");
+				try {
+					Intent reclaimIntent = new Intent(this, my.app.permata.media.service.PermataMediaService.class);
+					reclaimIntent.setAction(my.app.permata.media.service.PermataMediaService.ACTION_RECLAIM_SESSION);
+					startService(reclaimIntent);
+				} catch (Exception e) {
+					Log.e(e, "Watchdog failed to send reclaim intent.");
+				}
+			}
 		}
 
 		if (isConsentGranted && clickOnButton == null) return;
