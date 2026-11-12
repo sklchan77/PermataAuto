@@ -80,6 +80,7 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 	public static final String ACTION_FORCE_SHUTDOWN = "my.app.permata.action.FORCE_SHUTDOWN";
 	public static final String ACTION_WEB_MEDIA_PLAYING = "my.app.permata.action.WEB_MEDIA_PLAYING";
 	public static final String ACTION_WEB_MEDIA_PAUSED = "my.app.permata.action.WEB_MEDIA_PAUSED";
+	public static final String ACTION_RECLAIM_SESSION = "my.app.permata.action.RECLAIM_SESSION"; 
 
 	public static final String INTENT_ATTR_NOTIF_COLOR = "my.app.permata.notif.color";
 	public static final String DEFAULT_NOTIF_COLOR = "#3D2562";
@@ -236,6 +237,12 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 				return START_NOT_STICKY;
 			} else if (ACTION_HIJACK_FOCUS.equals(action)) {
 				hijackCarAudioAndSteering();
+			} else if (ACTION_RECLAIM_SESSION.equals(action)) {
+				Log.i("[WATCHDOG] Reclaiming steering wheel session gracefully without Hardware Audio Focus.");
+				if (session != null) {
+					session.setActive(true);
+					updatePlaybackState(STATE_PLAYING);
+				}
 			} else if (ACTION_WEB_MEDIA_PLAYING.equals(action)) {
 				onWebMediaPlaying();
 			} else if (ACTION_WEB_MEDIA_PAUSED.equals(action)) {
