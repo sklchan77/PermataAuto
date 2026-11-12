@@ -86,24 +86,18 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
 		}
 	};
 	
-	// NEW: Layer 3 Hardware Key Intercept for Bluetooth TikTok Loophole
 	@Override
 	protected boolean onKeyEvent(KeyEvent event) {
 		int keyCode = event.getKeyCode();
 
-		// 1. STRICT FILTER: Only care about Media Next/Prev. 
-		// Instantly pass through Volume, Power, and all other keys to the OS.
 		if (keyCode != KeyEvent.KEYCODE_MEDIA_NEXT && keyCode != KeyEvent.KEYCODE_MEDIA_PREVIOUS) {
 			return super.onKeyEvent(event);
 		}
 
-		// 2. THE SMART TOGGLE: If Android Auto is active, go completely transparent.
-		// Let KeyEventHandler handle everything for the Web Browser and Mirroring.
 		if (PermataApplication.get().isConnectedToAuto()) {
 			return super.onKeyEvent(event);
 		}
-
-		// --- 3. PURE BLUETOOTH MODE (Defeating TikTok) ---
+		
 		String activePkg = getLastActivePackage();
 		if (my.app.permata.action.KeyEventHandler.isScrollerPackage(activePkg)) {
 			
@@ -111,20 +105,15 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
 				Log.i("[BT_LOOPHOLE] Pure Bluetooth Mode: Intercepting media key for " + activePkg);
 				boolean isNext = (keyCode == KeyEvent.KEYCODE_MEDIA_NEXT);
 				
-				// Execute the physical screen swipe
 				dispatchGodModeSwipe(!isNext);
 				
-				// RETURN TRUE: This explicitly deletes the key event from the OS.
-				// TikTok never receives it, so it cannot steal it.
 				return true; 
 			} 
 			else if (event.getAction() == KeyEvent.ACTION_UP) {
-				// We must also consume the UP event so the OS doesn't get confused
 				return true;
 			}
 		}
 
-		// If it's not a scroller app, pass it through normally
 		return super.onKeyEvent(event);
 	}
 
@@ -164,27 +153,29 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
 		MirrorDisplay.notifyInjectedTouch();
 
 		android.util.DisplayMetrics metrics = ds.getResources().getDisplayMetrics();
-		float centerX = metrics.widthPixels * 0.5f;
+		
+		float startX = 1f; 
+		float endX = metrics.widthPixels * 0.25f; 
 		float centerY = metrics.heightPixels * 0.5f;
 
 		Path swipePath = new Path();
-		swipePath.moveTo(centerX, centerY);
-		swipePath.lineTo(centerX, centerY + 1f); 
+		swipePath.moveTo(startX, centerY);
+		swipePath.lineTo(endX, centerY); 
 
 		GestureDescription.Builder gb = new GestureDescription.Builder();
-		gb.addStroke(new StrokeDescription(swipePath, 0L, 25L));
+		gb.addStroke(new StrokeDescription(swipePath, 0L, 150L));
 
 		final java.util.concurrent.atomic.AtomicBoolean actionFired = new java.util.concurrent.atomic.AtomicBoolean(false);
 		final Handler failsafeHandler = new Handler(Looper.getMainLooper());
 		
 		final Runnable failsafeRunnable = () -> {
 			if (actionFired.compareAndSet(false, true)) {
-				Log.w("[BACK_TELEMETRY] FAILSAFE TIMEOUT TRIGGERED! Callbacks died/ANR. Forcing OS Back command.");
+				Log.w("[BACK_TELEMETRY] Edge-Swipe timeout. Firing GLOBAL_ACTION_BACK fallback.");
 				ds.performGlobalAction(GLOBAL_ACTION_BACK);
 			}
 		};
 		
-		failsafeHandler.postDelayed(failsafeRunnable, 250);
+		failsafeHandler.postDelayed(failsafeRunnable, 300);
 
 		return ds.dispatchGesture(gb.build(), new AccessibilityService.GestureResultCallback() {
 			@Override
@@ -192,11 +183,11 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
 				super.onCompleted(gestureDescription);
 				if (actionFired.compareAndSet(false, true)) {
 					failsafeHandler.removeCallbacks(failsafeRunnable);
-					Log.i("[BACK_TELEMETRY] 25ms focus-steal tap completed. Starting 500ms WMS Buffer...");
+					Log.i("[BACK_TELEMETRY] Edge-Swipe injected successfully. Firing GLOBAL_ACTION_BACK secondary failsafe.");
+					
 					new Handler(Looper.getMainLooper()).postDelayed(() -> {
-						Log.i("[BACK_TELEMETRY] 500ms WMS Buffer expired. Phone has focus. Firing GLOBAL_ACTION_BACK.");
 						ds.performGlobalAction(GLOBAL_ACTION_BACK);
-					}, 500);
+					}, 50);
 				}
 			}
 
@@ -205,10 +196,8 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
 				super.onCancelled(gestureDescription);
 				if (actionFired.compareAndSet(false, true)) {
 					failsafeHandler.removeCallbacks(failsafeRunnable);
-					Log.w("[BACK_TELEMETRY] Focus-Steal tap cancelled by OS. Delaying 500ms for fallback Back.");
-					new Handler(Looper.getMainLooper()).postDelayed(() -> {
-						ds.performGlobalAction(GLOBAL_ACTION_BACK);
-					}, 500);
+					Log.w("[BACK_TELEMETRY] Edge-Swipe cancelled by OS. Firing fallback GLOBAL_ACTION_BACK.");
+					ds.performGlobalAction(GLOBAL_ACTION_BACK);
 				}
 			}
 		}, null);
