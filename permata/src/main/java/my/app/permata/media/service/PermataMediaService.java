@@ -33,7 +33,6 @@ import android.os.Binder;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.IBinder;
-import android.os.SystemClock;
 import android.support.v4.media.MediaBrowserCompat.MediaItem;
 import android.support.v4.media.MediaDescriptionCompat;
 import android.support.v4.media.MediaMetadataCompat;
@@ -128,7 +127,6 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 
 	private AudioManager.OnAudioFocusChangeListener focusChangeListener;
 	private AudioFocusRequest audioFocusRequestOreo;
-	private final AtomicLong lastWebMediaPlayingTime = new AtomicLong(0);
 
 	public MediaLib getLib() {
 		return lib;
@@ -215,7 +213,6 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 	public void onTaskRemoved(Intent rootIntent) {
 		super.onTaskRemoved(rootIntent);
 		
-		// FIXED (#3): Intercept Recents swipe to force clean mirror teardown
 		if (PermataApplication.get().isMirroringMode()) {
 			Log.i("[TELEMETRY] App swiped away during Mirroring. Forcing nuclear teardown.");
 			MirrorDisplay.close();
@@ -232,7 +229,6 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 		if (intent != null && !isTeardownActive) {
 			String action = intent.getAction();
 			
-			// FIXED (#3): Universal shutdown bridge
 			if (ACTION_FORCE_SHUTDOWN.equals(action)) {
 				Log.i("[TELEMETRY] Universal shutdown intent received from Phone Screen Shortcut.");
 				MirrorDisplay.close();
@@ -265,16 +261,11 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 	private void onWebMediaPlaying() {
 		if (isTeardownActive) return;
 
-		// FIXED (#5): 2000ms Throttle DELETED.
-		// Pulse-and-Release Audio Handoff implementation.
 		Log.i("[AUDIO_TELEMETRY] Web Media PLAYING detected. Yielding Audio Focus to WebView.");
 		
-		// 1. Instantly stop our Silent Track so Chromium isn't ducked.
 		stopSilentAudioAnchor();
-		// 2. Explicitly abandon OS Audio Focus so Chromium can surge to 100% volume natively.
 		releaseAudioFocus();
 		
-		// 3. Keep our MediaSession active so Android Auto keeps routing Steering Wheel buttons to us
 		if (session != null) {
 			session.setActive(true);
 			updatePlaybackState(STATE_PLAYING);
@@ -284,8 +275,6 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 	private void onWebMediaPaused() {
 		if (isTeardownActive) return;
 		
-		// FIXED (#5): Re-Anchor Logic.
-		// When Chromium stops playing, immediately reclaim the OS focus to prevent Car Radio takeover.
 		Log.i("[AUDIO_TELEMETRY] Web Media PAUSED detected. Re-engaging Silent AudioTrack Anchor.");
 		
 		if (session != null) {
@@ -329,7 +318,6 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 							};
 						}
 						
-						// FIXED (#5): Using AUDIOFOCUS_GAIN to definitively kill Car Radio during silent gaps
 						Log.i("[AUDIO_TELEMETRY] Requesting AUDIOFOCUS_GAIN for Silent Anchor.");
 						if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
 							if (audioFocusRequestOreo == null) {
