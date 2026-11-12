@@ -139,13 +139,7 @@ public class MirrorServiceFS extends CarAppService {
 
 		@Override
 		public void onSurfaceDestroyed(@NonNull SurfaceContainer localSc) {
-			Log.i("MirrorServiceFS: Surface destroyed. Firing Re-Anchor to secure Steering Wheel focus.");
-			
-			try {
-				my.app.permata.media.service.PermataMediaService.requestFocusAndAnchor(getCarContext());
-			} catch (Exception e) {
-				Log.e(e, "Failed to re-anchor steering controls on surface destroy.");
-			}
+			Log.i("MirrorServiceFS: Surface destroyed.");
 			
 			if (scrollUp != null) {
 				scrollUp.cancel();
@@ -259,12 +253,7 @@ public class MirrorServiceFS extends CarAppService {
 		public Template onGetTemplate() {
 			var homeButton = new Action.Builder().setIcon(
 							new CarIcon.Builder(createWithResource(getCarContext(), R.drawable.home)).build())
-					.setOnClickListener(() -> {
-						try {
-							my.app.permata.media.service.PermataMediaService.requestFocusAndAnchor(getCarContext());
-						} catch (Exception ignored) {}
-						MirrorActivity.onHomeButtonClick();
-					}).build();
+					.setOnClickListener(MirrorActivity::onHomeButtonClick).build();
 					
 			var recentButton = new Action.Builder().setIcon(
 							new CarIcon.Builder(createWithResource(getCarContext(), R.drawable.recent)).setTint(androidx.car.app.model.CarColor.DEFAULT).build())
@@ -278,9 +267,6 @@ public class MirrorServiceFS extends CarAppService {
 							new CarIcon.Builder(createWithResource(getCarContext(), R.drawable.shutdown)).setTint(androidx.car.app.model.CarColor.DEFAULT).build())
 					.setOnClickListener(() -> {
 						Log.i("User triggered manual shutdown.");
-						try {
-							my.app.permata.media.service.PermataMediaService.requestFocusAndAnchor(getCarContext());
-						} catch (Exception ignored) {}
 						MirrorDisplay.close();
 					}).build();
 			
