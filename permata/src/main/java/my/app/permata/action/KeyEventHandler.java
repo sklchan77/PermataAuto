@@ -77,7 +77,6 @@ public class KeyEventHandler {
         return pkgName != null && NATIVE_BT_SCROLLERS.contains(pkgName);
     }
     
-    // Fallback for general scroller checks if needed
     public static boolean isScrollerPackage(String pkgName) {
         return isStubbornScroller(pkgName) || isNativeBtScroller(pkgName);
     }
@@ -320,15 +319,7 @@ public class KeyEventHandler {
                 }
 
                 boolean isNext = (code == KeyEvent.KEYCODE_MEDIA_NEXT);
-
-                if (PermataApplication.get().isMirroringMode()) {
-                    lastGlobalActionTime = currentUptime;
-                    Log.i("[DETECTION] Mirroring active. Routing steering wheel swipe directly to phone glass.");
-                    executeNativeAppSwipe(!isNext, "MirroredScreen");
-                    return true;
-                }
                 
-                // --- CORE TELEMETRY BEACON ---
                 String activePkg = AccessibilityEventDispatcherService.getLastActivePackage();
                 ActivityFragment activeFragment = (finalTargetActivity != null) ? finalTargetActivity.getActiveFragment() : null;
                 String fragName = (activeFragment != null) ? activeFragment.getClass().getSimpleName() : "null";
@@ -340,10 +331,158 @@ public class KeyEventHandler {
                 Log.i("[ROUTING_TELEMETRY] Key: " + (isNext ? "NEXT" : "PREV") + 
                       " | ActiveOSPkg: [" + activePkg + "]" + 
                       " | PermataFrag: [" + fragName + "]" + 
-                      " | isWebBrowser: " + isWebBrowser);
-                // ------------------------------
+                      " | isWebBrowser: " + isWebBrowser +
+                      " | isMirroring: " + PermataApplication.get().isMirroringMode());
 
-                // 2. LAYER 2 BT LOOPHOLE
+                // PRIORITY 1: MIRRORED NATIVE SCROLLER (TikTok/Douyin actively on Android Auto display)
+                if (PermataApplication.get().isMirroringMode() && activePkg != null && !activePkg.startsWith("my.app.permata")) {
+                    lastGlobalActionTime = currentUptime;
+                    Log.i("[DETECTION] Split/Mirror Active. Routing swipe to Virtual Display for package: " + activePkg);
+                    
+                    my.app.permata.auto.MirrorDisplay md = my.app.permata.auto.MirrorDisplay.get();
+                    if (md != null) {
+                        int width = 1000;
+                        int height = 1000;
+                        try {
+                            if (finalTargetActivity != null && finalTargetActivity.getResources() != null) {
+                                android.util.DisplayMetrics metrics = finalTargetActivity.getResources().getDisplayMetrics();
+                                width = metrics.widthPixels;
+                                height = metrics.heightPixels;
+                            }
+                        } catch (Exception ignored) {}
+
+                        float actionX = width * 0.50f;
+                        float centerY = height * 0.50f;
+                        float span = height * 0.30f;
+                        
+                        float yStart = (!isNext) ? (centerY - span / 2f) : (centerY + span / 2f);
+                        float yEnd = (!isNext) ? (centerY + span / 2f) : (centerY - span / 2f);
+
+                        long now = android.os.SystemClock.uptimeMillis();
+                        md.motionEvent(now, now, MotionEvent.ACTION_DOWN, actionX, yStart);
+                        md.motionEvent(now, now + 50, MotionEvent.ACTION_MOVE, actionX, centerY);
+                        md.motionEvent(now, now + 100, MotionEvent.ACTION_UP, actionX, yEnd);
+                        Log.i("[NATIVE_SWIPE] Virtual Display hardware swipe injected successfully.");
+                    } else {
+                        Log.w("[NATIVE_SWIPE] MirrorDisplay is null. Cannot inject swipe.");
+                    }
+                    return true;
+                }
+
+                // PRIORITY 2: PERMATA WEB BROWSER
+                if (isWebBrowser) {
+                    lastGlobalActionTime = currentUptime;
+                    if (finalTargetActivity != null) {
+                        finalTargetActivity.post(() -> {
+                            if (finalTargetActivity.getWindow() != null) {
+                                Context ctx = finalTargetActivity.getWindow().getContext();
+                                while (ctx instanceof ContextWrapper) {
+                                    if (ctx instanceof Activity) break;
+                                    ctx = ((ContextWrapper) ctx).getBaseContext();
+                                }
+                                if (ctx instanceof Activity) {
+                                    Activity act = (Activity) ctx;
+                                    if (act.isFinishing() || act.isDestroyed()) return;
+                                }
+                            }
+
+                            WebView resolvedWebView = scanFragmentsForWebView(activeFragment);
+                            boolean isExplicitWebFragment = (resolvedWebView != null);
+
+                            if (resolvedWebView == null || !resolvedWebView.isShown()) {
+                                resolvedWebView = findTopVisibleWebView(finalTargetActivity);
+                            }
+
+                            if (resolvedWebView != null && resolvedWebView.isShown()) {
+                                boolean hasTouchFocus = resolvedWebView.hasFocus();
+                                boolean isFullScreenSize = false;
+                                
+                                if (finalTargetActivity.getWindow() != null && finalTargetActivity.getWindow().getDecorView() != null) {
+                                    int screenHeight = finalTargetActivity.getWindow().getDecorView().getHeight();
+                                    if (screenHeight > 0) {
+                                        isFullScreenSize = resolvedWebView.getHeight() > (screenHeight * 0.5);
+                                    }
+                                }
+
+                                if (isExplicitWebFragment || hasTouchFocus || isFullScreenSize) {
+                                    String currentUrl = resolvedWebView.getUrl();
+                                    String host = "unknown";
+                                    boolean isMediaHost = false;
+                                    boolean isInstagram = false;
+                                    boolean isSnapFeedHost = false;
+                                    boolean isTikTok = false;
+                                    boolean isDouyin = false;
+                                    
+                                    if (currentUrl != null) {
+                                        try {
+                                            host = Uri.parse(currentUrl).getHost();
+                                            if (host != null) {
+                                                if (host.startsWith("www.")) host = host.substring(4);
+                                                
+                                                String h = host.toLowerCase();
+                                                isInstagram = h.contains("instagram");
+                                                isTikTok = h.contains("tiktok");
+                                                isDouyin = h.contains("douyin");
+                                                
+                                                isSnapFeedHost = h.contains("youtube") || h.contains("youtu") || h.contains("facebook") ||
+                                                        h.contains("kuaishou") || h.contains("xiaohongshu") ||
+                                                        h.contains("likee") || h.contains("kwai") || h.contains("snackvideo") ||
+                                                        h.contains("mojapp") || h.contains("sharechat");
+                                                        
+                                                isMediaHost = isInstagram || isSnapFeedHost || h.contains("bilibili") || 
+                                                        h.contains("reddit") || h.contains("twitter") || h.contains("x.com") || 
+                                                        h.contains("pinterest") || h.contains("twitch") || h.contains("weibo") || 
+                                                        h.contains("snapchat") || h.contains("vk") || isDouyin || isTikTok;
+                                            }
+                                        } catch (Exception ignored) {}
+                                    }
+                                    final String hostTag = "[Host: " + host + "] ";
+                                    Log.i("[DETECTION] " + hostTag + "Resolved. isMediaHost: " + isMediaHost + " | isSnapFeedHost: " + isSnapFeedHost + " | isTikTok: " + isTikTok + " | isDouyin: " + isDouyin);
+
+                                    View touchTargetView = isTikTok ? resolvedWebView : findTopmostTouchTarget(finalTargetActivity, resolvedWebView);
+                                    smartScrollWebView(resolvedWebView, touchTargetView, !isNext, hostTag, isMediaHost, isDouyin, isTikTok);
+                                } else {
+                                    Log.i("[DETECTION] WebBrowser is hidden or out of focus. Allowing default media propagation.");
+                                }
+                            }
+                        });
+                    }
+                    return true;
+                }
+
+                // PRIORITY 3: VIRTUAL DISPLAY FALLBACK
+                if (PermataApplication.get().isMirroringMode()) {
+                    lastGlobalActionTime = currentUptime;
+                    Log.i("[DETECTION] Mirroring active (General). Injecting swipe directly into Virtual Display.");
+                    
+                    my.app.permata.auto.MirrorDisplay md = my.app.permata.auto.MirrorDisplay.get();
+                    if (md != null) {
+                        int width = 1000;
+                        int height = 1000;
+                        try {
+                            if (finalTargetActivity != null && finalTargetActivity.getResources() != null) {
+                                android.util.DisplayMetrics metrics = finalTargetActivity.getResources().getDisplayMetrics();
+                                width = metrics.widthPixels;
+                                height = metrics.heightPixels;
+                            }
+                        } catch (Exception ignored) {}
+
+                        float actionX = width * 0.50f;
+                        float centerY = height * 0.50f;
+                        float span = height * 0.30f;
+                        
+                        float yStart = (!isNext) ? (centerY - span / 2f) : (centerY + span / 2f);
+                        float yEnd = (!isNext) ? (centerY + span / 2f) : (centerY - span / 2f);
+
+                        long now = android.os.SystemClock.uptimeMillis();
+                        md.motionEvent(now, now, MotionEvent.ACTION_DOWN, actionX, yStart);
+                        md.motionEvent(now, now + 50, MotionEvent.ACTION_MOVE, actionX, centerY);
+                        md.motionEvent(now, now + 100, MotionEvent.ACTION_UP, actionX, yEnd);
+                    }
+                    return true;
+                }
+
+                // PRIORITY 4: NATIVE PHONE APPS (BLUETOOTH LOOPHOLE WITHOUT MIRRORING)
                 if (activePkg != null && !activePkg.startsWith("my.app.permata")) {
                     if (isStubbornScroller(activePkg)) {
                         Log.i("[BT_LOOPHOLE] Intercepted! Active package '" + activePkg + "' is a STUBBORN Scroller. Triggering Accessibility Swipe.");
@@ -353,96 +492,10 @@ public class KeyEventHandler {
                         Log.i("[DETECTION] Native Passthrough: App '" + activePkg + "' is a Native BT Scroller. Yielding session to OS.");
                         return defaultHandler.apply(code, event);
                     }
-                    Log.i("[DETECTION] Native Passthrough: App '" + activePkg + "' is unknown. Yielding to OS.");
-                    return defaultHandler.apply(code, event);
                 }
 
-                // 3. WEB BROWSER LOGIC
-                if (!isWebBrowser) {
-                    Log.i("[DETECTION] Native Passthrough: Permata active but not in Web Browser.");
-                    return defaultHandler.apply(code, event);
-                }
-
-                lastGlobalActionTime = currentUptime;
-
-                if (finalTargetActivity != null) {
-                    finalTargetActivity.post(() -> {
-                        if (finalTargetActivity.getWindow() != null) {
-                            Context ctx = finalTargetActivity.getWindow().getContext();
-                            while (ctx instanceof ContextWrapper) {
-                                if (ctx instanceof Activity) break;
-                                ctx = ((ContextWrapper) ctx).getBaseContext();
-                            }
-                            if (ctx instanceof Activity) {
-                                Activity act = (Activity) ctx;
-                                if (act.isFinishing() || act.isDestroyed()) return;
-                            }
-                        }
-
-                        WebView resolvedWebView = scanFragmentsForWebView(activeFragment);
-                        boolean isExplicitWebFragment = (resolvedWebView != null);
-
-                        if (resolvedWebView == null || !resolvedWebView.isShown()) {
-                            resolvedWebView = findTopVisibleWebView(finalTargetActivity);
-                        }
-
-                        if (resolvedWebView != null && resolvedWebView.isShown()) {
-                            boolean hasTouchFocus = resolvedWebView.hasFocus();
-                            boolean isFullScreenSize = false;
-                            
-                            if (finalTargetActivity.getWindow() != null && finalTargetActivity.getWindow().getDecorView() != null) {
-                                int screenHeight = finalTargetActivity.getWindow().getDecorView().getHeight();
-                                if (screenHeight > 0) {
-                                    isFullScreenSize = resolvedWebView.getHeight() > (screenHeight * 0.5);
-                                }
-                            }
-
-                            if (isExplicitWebFragment || hasTouchFocus || isFullScreenSize) {
-                                String currentUrl = resolvedWebView.getUrl();
-                                String host = "unknown";
-                                boolean isMediaHost = false;
-                                boolean isInstagram = false;
-                                boolean isSnapFeedHost = false;
-                                boolean isTikTok = false;
-                                boolean isDouyin = false;
-                                
-                                if (currentUrl != null) {
-                                    try {
-                                        host = Uri.parse(currentUrl).getHost();
-                                        if (host != null) {
-                                            if (host.startsWith("www.")) host = host.substring(4);
-                                            
-                                            String h = host.toLowerCase();
-                                            isInstagram = h.contains("instagram");
-                                            isTikTok = h.contains("tiktok");
-                                            isDouyin = h.contains("douyin");
-                                            
-                                            isSnapFeedHost = h.contains("youtube") || h.contains("youtu") || h.contains("facebook") ||
-                                                    h.contains("kuaishou") || h.contains("xiaohongshu") ||
-                                                    h.contains("likee") || h.contains("kwai") || h.contains("snackvideo") ||
-                                                    h.contains("mojapp") || h.contains("sharechat");
-                                                    
-                                            isMediaHost = isInstagram || isSnapFeedHost || h.contains("bilibili") || 
-                                                    h.contains("reddit") || h.contains("twitter") || h.contains("x.com") || 
-                                                    h.contains("pinterest") || h.contains("twitch") || h.contains("weibo") || 
-                                                    h.contains("snapchat") || h.contains("vk") || isDouyin || isTikTok;
-                                        }
-                                    } catch (Exception ignored) {}
-                                }
-                                final String hostTag = "[Host: " + host + "] ";
-                                Log.i("[DETECTION] " + hostTag + "Resolved. isMediaHost: " + isMediaHost + " | isSnapFeedHost: " + isSnapFeedHost + " | isTikTok: " + isTikTok + " | isDouyin: " + isDouyin);
-
-                                View touchTargetView = isTikTok ? resolvedWebView : findTopmostTouchTarget(finalTargetActivity, resolvedWebView);
-                                
-                                smartScrollWebView(resolvedWebView, touchTargetView, !isNext, hostTag, isMediaHost, isDouyin, isTikTok);
-                            } else {
-                                Log.i("[DETECTION] WebBrowser is hidden or out of focus. Allowing default media propagation.");
-                            }
-                        }
-                    });
-                }
-                
-                return true; 
+                Log.i("[DETECTION] Native Passthrough: Unknown routing state. Yielding to OS.");
+                return defaultHandler.apply(code, event);
             }
         }
 
