@@ -317,21 +317,35 @@ public class KeyEventHandler {
                     return true;
                 }
                 
+                // --- CORE TELEMETRY BEACON ---
                 String activePkg = AccessibilityEventDispatcherService.getLastActivePackage();
-
                 ActivityFragment activeFragment = (finalTargetActivity != null) ? finalTargetActivity.getActiveFragment() : null;
+                String fragName = (activeFragment != null) ? activeFragment.getClass().getSimpleName() : "null";
+                
                 boolean isWebBrowser = activeFragment != null && 
                         activeFragment.getClass().getName().endsWith("WebBrowserFragment") && 
                         !activeFragment.getClass().getName().endsWith("YoutubeFragment");
 
-                if (!isWebBrowser) {
+                Log.i("[ROUTING_TELEMETRY] Key: " + (isNext ? "NEXT" : "PREV") + 
+                      " | ActiveOSPkg: [" + activePkg + "]" + 
+                      " | PermataFrag: [" + fragName + "]" + 
+                      " | isWebBrowser: " + isWebBrowser);
+                // ------------------------------
+
+                // 2. LAYER 2 BT LOOPHOLE
+                if (activePkg != null && !activePkg.startsWith("my.app.permata")) {
                     if (isScrollerPackage(activePkg)) {
-                        Log.i("[BT_LOOPHOLE] Layer 2 Intercept: Steering Wheel command routed to Native App -> " + activePkg);
+                        Log.i("[BT_LOOPHOLE] Intercepted! Active package '" + activePkg + "' is a known scroller. Triggering Global Accessibility Swipe.");
                         executeNativeAppSwipe(!isNext, activePkg);
-                        return true; 
+                        return true; // Consume key to prevent double-scroll in Douyin/FB
                     }
-                    
-                    Log.i("[DETECTION] Native Passthrough: Let OS handle media key for package -> " + activePkg);
+                    Log.i("[DETECTION] Native Passthrough: App '" + activePkg + "' is not a known scroller. Yielding to OS.");
+                    return defaultHandler.apply(code, event);
+                }
+
+                // 3. WEB BROWSER LOGIC
+                if (!isWebBrowser) {
+                    Log.i("[DETECTION] Native Passthrough: Permata active but not in Web Browser.");
                     return defaultHandler.apply(code, event);
                 }
 
