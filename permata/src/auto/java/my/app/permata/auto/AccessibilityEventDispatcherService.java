@@ -450,21 +450,21 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
 
 			if (!pkgName.equals(prevPackage)) {
 				Log.i("[WATCHDOG_TELEMETRY] Foreground App Changed: [" + prevPackage + "] -> [" + pkgName + "]");
-			}
 
-			if (my.app.permata.action.KeyEventHandler.isStubbornScroller(pkgName)) {
-				Log.i("[WATCHDOG] Stubborn Scroller active (" + pkgName + "). Firing AGGRESSIVE reclaim to steal steering wheel.");
-				sendReclaimIntent(this, my.app.permata.media.service.PermataMediaService.ACTION_AGGRESSIVE_RECLAIM);
-			} 
-			else if (my.app.permata.action.KeyEventHandler.isNativeBtScroller(pkgName)) {
-				Log.i("[WATCHDOG] Native BT Scroller active (" + pkgName + "). Yielding media session so app can self-scroll.");
-			} 
-			else if (pkgName.startsWith("my.app.permata")) {
-				boolean wasStubborn = my.app.permata.action.KeyEventHandler.isStubbornScroller(prevPackage);
-				boolean wasNative = my.app.permata.action.KeyEventHandler.isNativeBtScroller(prevPackage);
-				if (wasStubborn || wasNative) {
-					Log.i("[WATCHDOG] Returned to Permata. Firing GENTLE session reclaim.");
-					sendReclaimIntent(this, my.app.permata.media.service.PermataMediaService.ACTION_RECLAIM_SESSION);
+				if (my.app.permata.action.KeyEventHandler.isStubbornScroller(pkgName)) {
+					Log.i("[WATCHDOG] Stubborn Scroller active (" + pkgName + "). Firing AGGRESSIVE reclaim to steal steering wheel.");
+					sendReclaimIntent(this, my.app.permata.media.service.PermataMediaService.ACTION_AGGRESSIVE_RECLAIM);
+				} 
+				else if (my.app.permata.action.KeyEventHandler.isNativeBtScroller(pkgName)) {
+					Log.i("[WATCHDOG] Native BT Scroller active (" + pkgName + "). Yielding media session so app can self-scroll.");
+				} 
+				else if (pkgName.startsWith("my.app.permata")) {
+					boolean wasStubborn = my.app.permata.action.KeyEventHandler.isStubbornScroller(prevPackage);
+					boolean wasNative = my.app.permata.action.KeyEventHandler.isNativeBtScroller(prevPackage);
+					if (wasStubborn || wasNative) {
+						Log.i("[WATCHDOG] Returned to Permata. Firing GENTLE session reclaim.");
+						sendReclaimIntent(this, my.app.permata.media.service.PermataMediaService.ACTION_RECLAIM_SESSION);
+					}
 				}
 			}
 		}
