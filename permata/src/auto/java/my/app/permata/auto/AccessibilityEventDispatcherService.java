@@ -452,21 +452,19 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
 				Log.i("[WATCHDOG_TELEMETRY] Foreground App Changed: [" + prevPackage + "] -> [" + pkgName + "]");
 			}
 
-			if (my.app.permata.action.KeyEventHandler.isScrollerPackage(pkgName)) {
-				Log.i("[WATCHDOG] Native Scroller active. Reclaiming Layer 2 Bluetooth session.");
-				try {
-					Intent reclaimIntent = new Intent(this, my.app.permata.media.service.PermataMediaService.class);
-					reclaimIntent.setAction(my.app.permata.media.service.PermataMediaService.ACTION_RECLAIM_SESSION);
-					startService(reclaimIntent);
-				} catch (Exception e) {}
-			} else if (pkgName.startsWith("my.app.permata") && my.app.permata.action.KeyEventHandler.isScrollerPackage(prevPackage)) {
-				Log.i("[WATCHDOG] Exited Mirroring (Scroller -> Permata). Firing gentle session reclaim.");
-				try {
-					Intent reclaimIntent = new Intent(this, my.app.permata.media.service.PermataMediaService.class);
-					reclaimIntent.setAction(my.app.permata.media.service.PermataMediaService.ACTION_RECLAIM_SESSION);
-					startService(reclaimIntent);
-				} catch (Exception e) {
-					Log.e(e, "Watchdog failed to send reclaim intent.");
+			if (my.app.permata.action.KeyEventHandler.isStubbornScroller(pkgName)) {
+				Log.i("[WATCHDOG] Stubborn Scroller active (" + pkgName + "). Firing AGGRESSIVE reclaim to steal steering wheel.");
+				sendReclaimIntent(this, my.app.permata.media.service.PermataMediaService.ACTION_AGGRESSIVE_RECLAIM);
+			} 
+			else if (my.app.permata.action.KeyEventHandler.isNativeBtScroller(pkgName)) {
+				Log.i("[WATCHDOG] Native BT Scroller active (" + pkgName + "). Yielding media session so app can self-scroll.");
+			} 
+			else if (pkgName.startsWith("my.app.permata")) {
+				boolean wasStubborn = my.app.permata.action.KeyEventHandler.isStubbornScroller(prevPackage);
+				boolean wasNative = my.app.permata.action.KeyEventHandler.isNativeBtScroller(prevPackage);
+				if (wasStubborn || wasNative) {
+					Log.i("[WATCHDOG] Returned to Permata. Firing GENTLE session reclaim.");
+					sendReclaimIntent(this, my.app.permata.media.service.PermataMediaService.ACTION_RECLAIM_SESSION);
 				}
 			}
 		}
@@ -497,6 +495,16 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
 			checkAndClickMediaProjectionConsent(root, pkgName);
 		} finally {
 			root.recycle(); 
+		}
+	}
+
+	private void sendReclaimIntent(Context context, String action) {
+		try {
+			Intent reclaimIntent = new Intent(context, my.app.permata.media.service.PermataMediaService.class);
+			reclaimIntent.setAction(action);
+			context.startService(reclaimIntent);
+		} catch (Exception e) {
+			Log.e(e, "Watchdog failed to send intent: " + action);
 		}
 	}
 
