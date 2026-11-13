@@ -65,6 +65,7 @@ import my.app.permata.R;
 import my.app.permata.addon.AddonManager;
 import my.app.permata.addon.PermataAddon;
 import my.app.permata.addon.PermataMediaServiceAddon;
+import my.app.permata.auto.AccessibilityEventDispatcherService;
 import my.app.permata.auto.MirrorDisplay;
 import my.app.permata.media.lib.DefaultMediaLib;
 import my.app.permata.media.lib.MediaLib;
@@ -162,7 +163,6 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 		notifColor = Color.parseColor(DEFAULT_NOTIF_COLOR);
 		App.get().getScheduler().schedule(lib::cleanUpPrefs, 1, TimeUnit.HOURS);
 
-		Log.d("PermataMediaService created");
 		for (PermataAddon a : AddonManager.get().getAddons()) {
 			if (a instanceof PermataMediaServiceAddon)
 				((PermataMediaServiceAddon) a).onServiceCreate(callback);
@@ -217,7 +217,6 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 		super.onTaskRemoved(rootIntent);
 		
 		if (PermataApplication.get().isMirroringMode()) {
-			Log.i("[TELEMETRY] App swiped away during Mirroring. Forcing nuclear teardown.");
 			MirrorDisplay.close();
 			executeNuclearTeardown();
 			return;
@@ -233,20 +232,17 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 			String action = intent.getAction();
 			
 			if (ACTION_FORCE_SHUTDOWN.equals(action)) {
-				Log.i("[TELEMETRY] Universal shutdown intent received from Phone Screen Shortcut.");
 				MirrorDisplay.close();
 				executeNuclearTeardown();
 				return START_NOT_STICKY;
 			} else if (ACTION_HIJACK_FOCUS.equals(action)) {
 				hijackCarAudioAndSteering();
 			} else if (ACTION_RECLAIM_SESSION.equals(action)) {
-				Log.i("[WATCHDOG] Reclaiming steering wheel session gracefully without Hardware Audio Focus.");
 				if (session != null) {
 					session.setActive(true);
 					updatePlaybackState(STATE_PLAYING);
 				}
 			} else if (ACTION_AGGRESSIVE_RECLAIM.equals(action)) {
-				Log.i("[WATCHDOG] AGGRESSIVE Reclaim: Forcing MAY_DUCK AudioFocus to pierce stubborn app.");
 				if (session != null) {
 					session.setMetadata(new MediaMetadataCompat.Builder()
 							.putString(MediaMetadataCompat.METADATA_KEY_TITLE, "IHU Web Mode Active")
@@ -338,9 +334,15 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 
 	private void onWebMediaPlaying() {
 		if (isTeardownActive) return;
+		
+		// FOREGROUND GATE: Only process Web Media play state if Permata is actively on the screen
+		String activePkg = AccessibilityEventDispatcherService.getLastActivePackage();
+		if (activePkg != null && !activePkg.startsWith("my.app.permata")) {
+			Log.i("[AUDIO_TELEMETRY] Blocked WebMedia PLAY command: Native App [" + activePkg + "] is in foreground.");
+			return;
+		}
 
 		Log.i("[AUDIO_TELEMETRY] Web Media PLAYING detected. Yielding Audio Focus to WebView.");
-		
 		stopSilentAudioAnchor();
 		releaseAudioFocus();
 		
@@ -353,8 +355,14 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 	private void onWebMediaPaused() {
 		if (isTeardownActive) return;
 		
-		Log.i("[AUDIO_TELEMETRY] Web Media PAUSED detected. Re-engaging Silent AudioTrack Anchor.");
+		// FOREGROUND GATE: Only process Web Media pause state if Permata is actively on the screen
+		String activePkg = AccessibilityEventDispatcherService.getLastActivePackage();
+		if (activePkg != null && !activePkg.startsWith("my.app.permata")) {
+			Log.i("[AUDIO_TELEMETRY] Blocked WebMedia PAUSE command: Native App [" + activePkg + "] is in foreground.");
+			return;
+		}
 		
+		Log.i("[AUDIO_TELEMETRY] Web Media PAUSED detected. Re-engaging Silent AudioTrack Anchor.");
 		if (session != null) {
 			updatePlaybackState(STATE_PLAYING); 
 		}
