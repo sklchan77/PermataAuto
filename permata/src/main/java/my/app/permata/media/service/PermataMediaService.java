@@ -81,6 +81,7 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 	public static final String ACTION_WEB_MEDIA_PLAYING = "my.app.permata.action.WEB_MEDIA_PLAYING";
 	public static final String ACTION_WEB_MEDIA_PAUSED = "my.app.permata.action.WEB_MEDIA_PAUSED";
 	public static final String ACTION_RECLAIM_SESSION = "my.app.permata.action.RECLAIM_SESSION"; 
+	public static final String ACTION_AGGRESSIVE_RECLAIM = "my.app.permata.action.AGGRESSIVE_RECLAIM"; 
 
 	public static final String INTENT_ATTR_NOTIF_COLOR = "my.app.permata.notif.color";
 	public static final String DEFAULT_NOTIF_COLOR = "#3D2562";
@@ -243,6 +244,13 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 					session.setActive(true);
 					updatePlaybackState(STATE_PLAYING);
 				}
+			} else if (ACTION_AGGRESSIVE_RECLAIM.equals(action)) {
+				Log.i("[WATCHDOG] AGGRESSIVE Reclaim: Forcing MAY_DUCK AudioFocus to pierce stubborn app.");
+				if (session != null) {
+					session.setActive(true);
+					updatePlaybackState(STATE_PLAYING);
+				}
+				forceAggressiveReclaim();
 			} else if (ACTION_WEB_MEDIA_PLAYING.equals(action)) {
 				onWebMediaPlaying();
 			} else if (ACTION_WEB_MEDIA_PAUSED.equals(action)) {
@@ -262,6 +270,33 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 			context.startService(hijackIntent);
 		} catch (Exception e) {
 			Log.e(e, "PermataMediaService: Failed static requestFocusAndAnchor.");
+		}
+	}
+
+	private void forceAggressiveReclaim() {
+		try {
+			AudioManager audioManager = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
+			if (audioManager != null) {
+				if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+					AudioAttributes playbackAttributes = new AudioAttributes.Builder()
+							.setUsage(AudioAttributes.USAGE_MEDIA)
+							.setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
+							.build();
+					
+					AudioFocusRequest duckRequest = new AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK)
+							.setAudioAttributes(playbackAttributes)
+							.setAcceptsDelayedFocusGain(false)
+							.setWillPauseWhenDucked(false)
+							.build();
+					audioManager.requestAudioFocus(duckRequest);
+				} else {
+					//noinspection deprecation
+					audioManager.requestAudioFocus(null, AudioManager.STREAM_MUSIC, AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK);
+				}
+				Log.i("[AUDIO_TELEMETRY] Aggressive Reclaim: Transient Duck focus requested successfully.");
+			}
+		} catch (Exception e) {
+			Log.e(e, "Aggressive reclaim failed.");
 		}
 	}
 
