@@ -50,25 +50,31 @@ public class KeyEventHandler {
     
     private static final AtomicBoolean isHardwareSwiping = new AtomicBoolean(false);
     
-    private static final Set<String> SCROLLER_PACKAGES = new HashSet<>(Arrays.asList(
+    // GROUP 1: The Bullies. These apps ignore BT keys and steal the media session.
+    private static final Set<String> STUBBORN_SCROLLERS = new HashSet<>(Arrays.asList(
             "com.zhiliaoapp.musically", // TikTok Global
             "com.ss.android.ugc.trill", // TikTok Asia
-            "com.ss.android.ugc.aweme", // Douyin
             "com.instagram.android",    // Instagram
-            "com.facebook.katana",      // Facebook
-            "com.snapchat.android",     // Snapchat
-            "com.reddit.frontpage",     // Reddit
-            "com.twitter.android",      // X/Twitter
-            "com.smile.gifmaker",       // Kuaishou
-            "com.kwai.video",           // Kwai
-            "com.xingin.xhs",           // Xiaohongshu
-            "in.mohalla.video",         // Moj
-            "in.mohalla.sharechat",     // Sharechat
-            "tv.danmaku.bili"           // Bilibili
+            "com.snapchat.android"      // Snapchat
+    ));
+
+    // GROUP 2: The Good Citizens. These apps natively support BT Next/Prev keys.
+    private static final Set<String> NATIVE_BT_SCROLLERS = new HashSet<>(Arrays.asList(
+            "com.ss.android.ugc.aweme",     // Douyin (CN)
+            "com.facebook.katana",          // Facebook
+            "app.revanced.android.youtube", // YouTube Vanced
+            "com.google.android.youtube",   // YouTube
+            "com.reddit.frontpage",         // Reddit
+            "com.twitter.android",          // X/Twitter
+            "tv.danmaku.bili"               // Bilibili
     ));
     
-    public static boolean isScrollerPackage(String pkgName) {
-        return pkgName != null && SCROLLER_PACKAGES.contains(pkgName);
+    public static boolean isStubbornScroller(String pkgName) {
+        return pkgName != null && STUBBORN_SCROLLERS.contains(pkgName);
+    }
+
+    public static boolean isNativeBtScroller(String pkgName) {
+        return pkgName != null && NATIVE_BT_SCROLLERS.contains(pkgName);
     }
     
     private static final Map<Class<?>, Method> webViewMethodCache = new ConcurrentHashMap<>();
@@ -334,12 +340,15 @@ public class KeyEventHandler {
 
                 // 2. LAYER 2 BT LOOPHOLE
                 if (activePkg != null && !activePkg.startsWith("my.app.permata")) {
-                    if (isScrollerPackage(activePkg)) {
-                        Log.i("[BT_LOOPHOLE] Intercepted! Active package '" + activePkg + "' is a known scroller. Triggering Global Accessibility Swipe.");
+                    if (isStubbornScroller(activePkg)) {
+                        Log.i("[BT_LOOPHOLE] Intercepted! Active package '" + activePkg + "' is a STUBBORN Scroller. Triggering Accessibility Swipe.");
                         executeNativeAppSwipe(!isNext, activePkg);
-                        return true; // Consume key to prevent double-scroll in Douyin/FB
+                        return true; 
+                    } else if (isNativeBtScroller(activePkg)) {
+                        Log.i("[DETECTION] Native Passthrough: App '" + activePkg + "' is a Native BT Scroller. Yielding session to OS.");
+                        return defaultHandler.apply(code, event);
                     }
-                    Log.i("[DETECTION] Native Passthrough: App '" + activePkg + "' is not a known scroller. Yielding to OS.");
+                    Log.i("[DETECTION] Native Passthrough: App '" + activePkg + "' is unknown. Yielding to OS.");
                     return defaultHandler.apply(code, event);
                 }
 
