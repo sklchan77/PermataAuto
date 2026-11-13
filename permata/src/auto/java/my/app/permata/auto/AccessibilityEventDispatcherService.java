@@ -61,13 +61,17 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
 	private long lastMoveTime = 0;
 
 	private final Handler safetyHandler = new Handler(Looper.getMainLooper());
+	
 	private final Runnable safetyReleaseRunnable = () -> {
 		try {
-			if (pointers != null && pointers.length > 0 && pointers[0] != null && pointers[0].sd != null) {
-				Log.w("Virtual finger safety timeout triggered. Forcing ACTION_UP to release phone screen.");
-				long now = android.os.SystemClock.uptimeMillis();
-				buildGesture(pointers[0], now, now, MotionEvent.ACTION_UP, pointers[0].x, pointers[0].y, false);
-				dispatch();
+			if (pointers != null && pointers.length > 0 && pointers[0] != null) {
+				// STRICT NULL CHECK: Prevents the crash when dragging mirrored screen
+				if (pointers[0].sd != null) {
+					Log.w("Virtual finger safety timeout triggered. Forcing ACTION_UP to release phone screen.");
+					long now = android.os.SystemClock.uptimeMillis();
+					buildGesture(pointers[0], now, now, MotionEvent.ACTION_UP, pointers[0].x, pointers[0].y, false);
+					dispatch();
+				}
 			}
 		} catch (Exception e) {
 			Log.e(e, "Failed to release virtual finger lock");
@@ -121,6 +125,21 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
 		if (ds == null) return false;
 
 		Log.i("[BACK] Firing standard Universal OS Back command.");
+        
+        // VIRTUAL DISPLAY BACK: Inject directly into car screen instead of asleep phone screen
+        if (PermataApplication.get().isMirroringMode()) {
+            Log.i("[BACK] Mirroring mode active. Injecting KEYCODE_BACK directly to Virtual Display.");
+            my.app.permata.auto.MirrorDisplay md = my.app.permata.auto.MirrorDisplay.get();
+            if (md != null) {
+                long now = android.os.SystemClock.uptimeMillis();
+                md.keyEvent(new android.view.KeyEvent(now, now, android.view.KeyEvent.ACTION_DOWN, android.view.KeyEvent.KEYCODE_BACK, 0));
+                md.keyEvent(new android.view.KeyEvent(now, now, android.view.KeyEvent.ACTION_UP, android.view.KeyEvent.KEYCODE_BACK, 0));
+                return true;
+            } else {
+                Log.w("[BACK] MirrorDisplay instance not found. Falling back to global action.");
+            }
+        }
+        
 		isInjectingBack = true;
 		boolean success = ds.performGlobalAction(GLOBAL_ACTION_BACK);
 		
