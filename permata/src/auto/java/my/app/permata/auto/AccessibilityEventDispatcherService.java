@@ -67,14 +67,14 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
 			if (pointers != null && pointers.length > 0 && pointers[0] != null) {
 				// STRICT NULL CHECK: Prevents the crash when dragging mirrored screen
 				if (pointers[0].sd != null) {
-					Log.w("Virtual finger safety timeout triggered. Forcing ACTION_UP to release phone screen.");
+					Log.w("[DRAG_TELEMETRY] Virtual finger safety timeout triggered. Forcing ACTION_UP to release phone screen.");
 					long now = android.os.SystemClock.uptimeMillis();
 					buildGesture(pointers[0], now, now, MotionEvent.ACTION_UP, pointers[0].x, pointers[0].y, false);
 					dispatch();
 				}
 			}
 		} catch (Exception e) {
-			Log.e(e, "Failed to release virtual finger lock");
+			Log.e(e, "[DRAG_TELEMETRY] Failed to release virtual finger lock safely.");
 		}
 	};
 
@@ -124,19 +124,45 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
 		var ds = instance;
 		if (ds == null) return false;
 
-		Log.i("[BACK] Firing standard Universal OS Back command.");
+		Log.i("[BACK_TELEMETRY] Firing standard Universal OS Back command.");
         
-        // VIRTUAL DISPLAY BACK: Inject directly into car screen instead of asleep phone screen
+        // VIRTUAL DISPLAY BACK: Inject directly into car screen using Reflection to avoid compiler errors
         if (PermataApplication.get().isMirroringMode()) {
-            Log.i("[BACK] Mirroring mode active. Injecting KEYCODE_BACK directly to Virtual Display.");
+            Log.i("[BACK_TELEMETRY] Mirroring mode active. Attempting Virtual Display Back.");
             my.app.permata.auto.MirrorDisplay md = my.app.permata.auto.MirrorDisplay.get();
+            
             if (md != null) {
                 long now = android.os.SystemClock.uptimeMillis();
-                md.keyEvent(new android.view.KeyEvent(now, now, android.view.KeyEvent.ACTION_DOWN, android.view.KeyEvent.KEYCODE_BACK, 0));
-                md.keyEvent(new android.view.KeyEvent(now, now, android.view.KeyEvent.ACTION_UP, android.view.KeyEvent.KEYCODE_BACK, 0));
-                return true;
+                android.view.KeyEvent down = new android.view.KeyEvent(now, now, android.view.KeyEvent.ACTION_DOWN, android.view.KeyEvent.KEYCODE_BACK, 0);
+                android.view.KeyEvent up = new android.view.KeyEvent(now, now, android.view.KeyEvent.ACTION_UP, android.view.KeyEvent.KEYCODE_BACK, 0);
+                
+                boolean injected = false;
+                String[] methods = {"keyEvent", "injectKeyEvent", "dispatchKeyEvent", "sendKeyEvent", "injectInputEvent"};
+                
+                for (String mName : methods) {
+                    try {
+                        java.lang.reflect.Method m = md.getClass().getMethod(mName, android.view.KeyEvent.class);
+                        m.invoke(md, down);
+                        m.invoke(md, up);
+                        injected = true;
+                        Log.i("[BACK_TELEMETRY] Injected Virtual Display back successfully using: " + mName + "(KeyEvent)");
+                        break;
+                    } catch (Exception ignored) {}
+                    
+                    try {
+                        java.lang.reflect.Method m = md.getClass().getMethod(mName, android.view.InputEvent.class);
+                        m.invoke(md, down);
+                        m.invoke(md, up);
+                        injected = true;
+                        Log.i("[BACK_TELEMETRY] Injected Virtual Display back successfully using: " + mName + "(InputEvent)");
+                        break;
+                    } catch (Exception ignored) {}
+                }
+                
+                if (injected) return true;
+                Log.w("[BACK_TELEMETRY] No KeyEvent method exposed in MirrorDisplay. Falling back to global action.");
             } else {
-                Log.w("[BACK] MirrorDisplay instance not found. Falling back to global action.");
+                Log.w("[BACK_TELEMETRY] MirrorDisplay instance is null. Falling back to global phone action.");
             }
         }
         
@@ -176,7 +202,7 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
 		swipePath.moveTo(actionX, yStart);
 		swipePath.lineTo(actionX, yEnd);
 
-		Log.i("[SWIPE_TELEMETRY] Submitting Accessibility Swipe to OS. Up=" + up + ", Duration=" + duration + "ms");
+		Log.i("[SWIPE_TELEMETRY] Submitting Accessibility Swipe to OS Phone Glass. Up=" + up + ", Duration=" + duration + "ms");
 
 		GestureDescription.Builder gestureBuilder = new GestureDescription.Builder();
 		gestureBuilder.addStroke(new StrokeDescription(swipePath, 0L, duration));
@@ -496,15 +522,15 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
 
 		try {
 			if (clickOnButton != null) {
-				Log.i("Event received: ", event);
-				Log.i("Finding button by text: ", clickOnButton);
+				Log.i("[CONSENT_TELEMETRY] Event received: ", event);
+				Log.i("[CONSENT_TELEMETRY] Finding button by text: ", clickOnButton);
 				var btn = root.findAccessibilityNodeInfosByText(clickOnButton);
 				if (btn.isEmpty()) {
-					Log.i("Button not found. Trying to find by id: android:id/button1.");
+					Log.i("[CONSENT_TELEMETRY] Button not found by text. Trying fallback id: android:id/button1.");
 					btn = root.findAccessibilityNodeInfosByViewId("android:id/button1");
 				}
 				if (!btn.isEmpty()) {
-					Log.i("Button '", btn.get(0).getText(), "' found. Performing click.");
+					Log.i("[CONSENT_TELEMETRY] Button '" + btn.get(0).getText() + "' found. Performing click.");
 					performClickNode(btn.get(0));
 					clickOnButton = null;
 					return;
@@ -559,7 +585,7 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
 				if (nodes != null && !nodes.isEmpty()) {
 					for (var node : nodes) {
 						if (node != null && performClickNode(node)) {
-							Log.i("Auto-clicked MediaProjection consent button: ", text);
+							Log.i("[CONSENT_TELEMETRY] Auto-clicked MediaProjection consent button matching string: " + text);
 							isConsentGranted = true;
 							return;
 						}
@@ -571,7 +597,7 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
 			if (btn1 != null && !btn1.isEmpty()) {
 				for (var node : btn1) {
 					if (node != null && performClickNode(node)) {
-						Log.i("Auto-clicked MediaProjection consent by ID: android:id/button1");
+						Log.i("[CONSENT_TELEMETRY] Auto-clicked MediaProjection consent using fallback ID: android:id/button1");
 						isConsentGranted = true;
 						return;
 					}
