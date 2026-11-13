@@ -77,6 +77,11 @@ public class KeyEventHandler {
         return pkgName != null && NATIVE_BT_SCROLLERS.contains(pkgName);
     }
     
+    // Fallback for general scroller checks if needed
+    public static boolean isScrollerPackage(String pkgName) {
+        return isStubbornScroller(pkgName) || isNativeBtScroller(pkgName);
+    }
+    
     private static final Map<Class<?>, Method> webViewMethodCache = new ConcurrentHashMap<>();
     private static final Map<View, Long> scrollTimestamps = Collections.synchronizedMap(new WeakHashMap<>());
 
