@@ -131,7 +131,14 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
 
 	public static boolean dispatchGodModeSwipe(boolean up) {
 		var ds = instance;
-		if (ds == null || VERSION.SDK_INT < VERSION_CODES.N) return false;
+		if (ds == null) {
+			Log.w("[SWIPE_TELEMETRY] Failed: Accessibility Service instance is null.");
+			return false;
+		}
+		if (VERSION.SDK_INT < VERSION_CODES.N) {
+			Log.w("[SWIPE_TELEMETRY] Failed: Android API < N.");
+			return false;
+		}
 
 		MirrorDisplay.notifyInjectedTouch();
 
@@ -150,10 +157,27 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
 		swipePath.moveTo(actionX, yStart);
 		swipePath.lineTo(actionX, yEnd);
 
+		Log.i("[SWIPE_TELEMETRY] Submitting Accessibility Swipe to OS. Up=" + up + ", Duration=" + duration + "ms");
+
 		GestureDescription.Builder gestureBuilder = new GestureDescription.Builder();
 		gestureBuilder.addStroke(new StrokeDescription(swipePath, 0L, duration));
 
-		return ds.dispatchGesture(gestureBuilder.build(), null, null);
+		boolean accepted = ds.dispatchGesture(gestureBuilder.build(), new AccessibilityService.GestureResultCallback() {
+			@Override
+			public void onCompleted(GestureDescription gestureDescription) {
+				super.onCompleted(gestureDescription);
+				Log.i("[SWIPE_TELEMETRY] SUCCESS: OS confirmed physical swipe executed on glass.");
+			}
+
+			@Override
+			public void onCancelled(GestureDescription gestureDescription) {
+				super.onCancelled(gestureDescription);
+				Log.w("[SWIPE_TELEMETRY] CANCELLED: OS actively aborted the swipe gesture.");
+			}
+		}, null);
+		
+		Log.i("[SWIPE_TELEMETRY] dispatchGesture() submission result: " + accepted);
+		return accepted;
 	}
 
 	static boolean dispatchHome() {
@@ -423,6 +447,10 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
 			
 			String prevPackage = lastActivePackage;
 			lastActivePackage = pkgName;
+
+			if (!pkgName.equals(prevPackage)) {
+				Log.i("[WATCHDOG_TELEMETRY] Foreground App Changed: [" + prevPackage + "] -> [" + pkgName + "]");
+			}
 
 			if (my.app.permata.action.KeyEventHandler.isScrollerPackage(pkgName)) {
 				Log.i("[WATCHDOG] Native Scroller active. Reclaiming Layer 2 Bluetooth session.");
