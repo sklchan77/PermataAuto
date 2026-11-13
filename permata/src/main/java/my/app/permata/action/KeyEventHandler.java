@@ -273,6 +273,7 @@ public class KeyEventHandler {
         }
 
         if (worker != null) {
+            Log.i("[WORKER_TELEMETRY] KeyEventHandler worker thread actively handling ongoing sequence.");
             if (worker.handle(event)) return true;
             worker = null;
             return false;
@@ -289,11 +290,12 @@ public class KeyEventHandler {
             if (PermataApplication.get().isMirroringMode()) {
                 long currentUptime = android.os.SystemClock.uptimeMillis();
                 if (currentUptime - lastGlobalActionTime < 500) {
+                    Log.w("[BACK_TELEMETRY] Input dropped: Back button spam detected.");
                     return true; 
                 }
                 lastGlobalActionTime = currentUptime;
                 
-                Log.i("[BACK] Physical Phone Back intercepted. Executing Universal Back.");
+                Log.i("[BACK_TELEMETRY] Physical Phone Back intercepted. Executing Universal Back fallback.");
                 AccessibilityEventDispatcherService.dispatchUniversalBack();
                 return true; 
             }
@@ -314,7 +316,7 @@ public class KeyEventHandler {
                 
                 long currentUptime = android.os.SystemClock.uptimeMillis();
                 if (currentUptime - lastGlobalActionTime < 250) {
-                    Log.w("[CHECK] Input dropped: Button spam detected (< 250ms)");
+                    Log.w("[CHECK] Input dropped: Media button spam detected (< 250ms)");
                     return true;
                 }
 
@@ -337,7 +339,7 @@ public class KeyEventHandler {
                 // PRIORITY 1: MIRRORED NATIVE SCROLLER (TikTok/Douyin actively on Android Auto display)
                 if (PermataApplication.get().isMirroringMode() && activePkg != null && !activePkg.startsWith("my.app.permata")) {
                     lastGlobalActionTime = currentUptime;
-                    Log.i("[DETECTION] Split/Mirror Active. Routing swipe to Virtual Display for package: " + activePkg);
+                    Log.i("[DETECTION] Split/Mirror Active. Routing swipe directly to Virtual Display for package: " + activePkg);
                     
                     my.app.permata.auto.MirrorDisplay md = my.app.permata.auto.MirrorDisplay.get();
                     if (md != null) {
@@ -349,7 +351,9 @@ public class KeyEventHandler {
                                 width = metrics.widthPixels;
                                 height = metrics.heightPixels;
                             }
-                        } catch (Exception ignored) {}
+                        } catch (Exception e) {
+                            Log.w("[NATIVE_SWIPE] Failed to read display metrics for Virtual Display. Defaulting to 1000x1000.");
+                        }
 
                         float actionX = width * 0.50f;
                         float centerY = height * 0.50f;
@@ -358,13 +362,15 @@ public class KeyEventHandler {
                         float yStart = (!isNext) ? (centerY - span / 2f) : (centerY + span / 2f);
                         float yEnd = (!isNext) ? (centerY + span / 2f) : (centerY - span / 2f);
 
+                        Log.i("[NATIVE_SWIPE] Virtual Display coordinates calculated: X=" + actionX + ", Y_Start=" + yStart + ", Y_End=" + yEnd + " (Screen: " + width + "x" + height + ")");
+
                         long now = android.os.SystemClock.uptimeMillis();
                         md.motionEvent(now, now, MotionEvent.ACTION_DOWN, actionX, yStart);
                         md.motionEvent(now, now + 50, MotionEvent.ACTION_MOVE, actionX, centerY);
                         md.motionEvent(now, now + 100, MotionEvent.ACTION_UP, actionX, yEnd);
                         Log.i("[NATIVE_SWIPE] Virtual Display hardware swipe injected successfully.");
                     } else {
-                        Log.w("[NATIVE_SWIPE] MirrorDisplay is null. Cannot inject swipe.");
+                        Log.w("[NATIVE_SWIPE] MirrorDisplay is null. Cannot inject swipe into Virtual Display.");
                     }
                     return true;
                 }
@@ -442,7 +448,7 @@ public class KeyEventHandler {
                                     View touchTargetView = isTikTok ? resolvedWebView : findTopmostTouchTarget(finalTargetActivity, resolvedWebView);
                                     smartScrollWebView(resolvedWebView, touchTargetView, !isNext, hostTag, isMediaHost, isDouyin, isTikTok);
                                 } else {
-                                    Log.i("[DETECTION] WebBrowser is hidden or out of focus. Allowing default media propagation.");
+                                    Log.w("[DETECTION] WebBrowser matched but WebView is hidden/out-of-focus. Allowing default media propagation.");
                                 }
                             }
                         });
@@ -450,10 +456,10 @@ public class KeyEventHandler {
                     return true;
                 }
 
-                // PRIORITY 3: VIRTUAL DISPLAY FALLBACK
+                // PRIORITY 3: VIRTUAL DISPLAY FALLBACK (General Mirroring Intercept)
                 if (PermataApplication.get().isMirroringMode()) {
                     lastGlobalActionTime = currentUptime;
-                    Log.i("[DETECTION] Mirroring active (General). Injecting swipe directly into Virtual Display.");
+                    Log.i("[DETECTION] Mirroring active (General fallback). Injecting swipe directly into Virtual Display.");
                     
                     my.app.permata.auto.MirrorDisplay md = my.app.permata.auto.MirrorDisplay.get();
                     if (md != null) {
@@ -465,7 +471,9 @@ public class KeyEventHandler {
                                 width = metrics.widthPixels;
                                 height = metrics.heightPixels;
                             }
-                        } catch (Exception ignored) {}
+                        } catch (Exception e) {
+                            Log.w("[NATIVE_SWIPE] Failed to read display metrics for Virtual Display. Defaulting to 1000x1000.");
+                        }
 
                         float actionX = width * 0.50f;
                         float centerY = height * 0.50f;
@@ -473,11 +481,15 @@ public class KeyEventHandler {
                         
                         float yStart = (!isNext) ? (centerY - span / 2f) : (centerY + span / 2f);
                         float yEnd = (!isNext) ? (centerY + span / 2f) : (centerY - span / 2f);
+                        
+                        Log.i("[NATIVE_SWIPE] Virtual Display fallback coordinates calculated: X=" + actionX + ", Y_Start=" + yStart + ", Y_End=" + yEnd + " (Screen: " + width + "x" + height + ")");
 
                         long now = android.os.SystemClock.uptimeMillis();
                         md.motionEvent(now, now, MotionEvent.ACTION_DOWN, actionX, yStart);
                         md.motionEvent(now, now + 50, MotionEvent.ACTION_MOVE, actionX, centerY);
                         md.motionEvent(now, now + 100, MotionEvent.ACTION_UP, actionX, yEnd);
+                    } else {
+                        Log.w("[NATIVE_SWIPE] MirrorDisplay is null. Cannot inject swipe into Virtual Display.");
                     }
                     return true;
                 }
@@ -485,7 +497,7 @@ public class KeyEventHandler {
                 // PRIORITY 4: NATIVE PHONE APPS (BLUETOOTH LOOPHOLE WITHOUT MIRRORING)
                 if (activePkg != null && !activePkg.startsWith("my.app.permata")) {
                     if (isStubbornScroller(activePkg)) {
-                        Log.i("[BT_LOOPHOLE] Intercepted! Active package '" + activePkg + "' is a STUBBORN Scroller. Triggering Accessibility Swipe.");
+                        Log.i("[BT_LOOPHOLE] Intercepted! Active package '" + activePkg + "' is a STUBBORN Scroller. Triggering Accessibility Swipe on Phone Glass.");
                         executeNativeAppSwipe(!isNext, activePkg);
                         return true; 
                     } else if (isNativeBtScroller(activePkg)) {
@@ -494,7 +506,7 @@ public class KeyEventHandler {
                     }
                 }
 
-                Log.i("[DETECTION] Native Passthrough: Unknown routing state. Yielding to OS.");
+                Log.i("[DETECTION] Native Passthrough: Unknown routing state for package [" + activePkg + "]. Yielding to OS.");
                 return defaultHandler.apply(code, event);
             }
         }
@@ -511,6 +523,7 @@ public class KeyEventHandler {
 
         var action = event.getAction();
         if (action == ACTION_MULTIPLE) {
+            Log.i("[WORKER_TELEMETRY] Double-click action configured. Yielding to explicit ACTION_MULTIPLE trigger.");
             performAction(dblClickAction, cb, finalTargetActivity, uptimeMillis());
             return true;
         }
@@ -525,10 +538,12 @@ public class KeyEventHandler {
 
         if (((clickAction == dblClickAction) && (clickAction == longClickAction)) ||
                 ((dblClickAction == Action.NONE) && (longClickAction == Action.NONE))) {
+            Log.i("[WORKER_TELEMETRY] Single discrete click detected and executing instantly.");
             performAction(clickAction, cb, finalTargetActivity, uptimeMillis());
             return true;
         }
 
+        Log.i("[WORKER_TELEMETRY] Multi-state key action queued (long press/double click). Worker engaged.");
         worker = new Worker(cb, finalTargetActivity, k, clickAction, dblClickAction, longClickAction);
         return true;
     }
@@ -605,7 +620,7 @@ public class KeyEventHandler {
             return topCandidate;
         }
         
-        Log.i("[SURGERY] Target Locked -> Layer: [Fallback Base WebView] | No overlay passed the filters.");
+        Log.w("[SURGERY] Target Locked -> Layer: [Fallback Base WebView] | No overlay passed the filters.");
         return baseWebView;
     }
 
@@ -650,7 +665,7 @@ public class KeyEventHandler {
             return;
         }
         try {
-            Log.i("[NATIVE_SWIPE] Dispatching Accessibility Gesture for " + pkgName);
+            Log.i("[NATIVE_SWIPE] Dispatching Accessibility Gesture for Phone Glass: " + pkgName);
             boolean success = AccessibilityEventDispatcherService.dispatchGodModeSwipe(up);
             if (!success) {
                 Log.w("[NATIVE_SWIPE] Accessibility Gesture failed or service unavailable.");
@@ -682,6 +697,7 @@ public class KeyEventHandler {
 
         try {
             final long startTime = android.os.SystemClock.uptimeMillis();
+            Log.i("[REACTION] " + hostTag + contextLog + " Initiated. Y_Start: " + yStart + ", Y_End: " + yEnd);
             
             MotionEvent eventDown = MotionEvent.obtain(startTime, startTime, MotionEvent.ACTION_DOWN, actionX, yStart, 0);
             eventDown.setSource(InputDevice.SOURCE_TOUCHSCREEN); 
@@ -714,7 +730,7 @@ public class KeyEventHandler {
                         eventUp.setSource(InputDevice.SOURCE_TOUCHSCREEN); 
                         touchTarget.dispatchTouchEvent(eventUp);
                         eventUp.recycle();
-                        Log.i("[REACTION] " + hostTag + contextLog + " Concluded.");
+                        Log.i("[REACTION] " + hostTag + contextLog + " Concluded successfully.");
                     }
                 } finally {
                     isHardwareSwiping.set(false);
@@ -815,6 +831,7 @@ public class KeyEventHandler {
                 int backupKey = up ? KeyEvent.KEYCODE_PAGE_UP : KeyEvent.KEYCODE_PAGE_DOWN;
                 wv.dispatchKeyEvent(new KeyEvent(KeyEvent.ACTION_DOWN, backupKey));
                 wv.dispatchKeyEvent(new KeyEvent(KeyEvent.ACTION_UP, backupKey));
+                Log.i(hostTag + "[REACTION] JS Scroll and KEYCODE_PAGE dispatched to WebView.");
             }
         }
 
@@ -860,6 +877,7 @@ public class KeyEventHandler {
         public void run() {
             if (worker != this) return;
             if (up) {
+                Log.i("[WORKER_TELEMETRY] Firing mapped Click Action.");
                 handle(clickAction);
                 return;
             }
@@ -870,8 +888,10 @@ public class KeyEventHandler {
             if (diff < LONG_CLICK_INTERVAL) {
                 sched(LONG_CLICK_INTERVAL - diff);
             } else if (diff > 15000) { 
+                Log.w("[WORKER_TELEMETRY] Worker thread timed out (>15s). Terminating.");
                 worker = null;
             } else {
+                Log.i("[WORKER_TELEMETRY] Firing mapped Long Click Action.");
                 longClickTime = time;
                 handle(longClickAction);
                 worker = this;
@@ -886,6 +906,7 @@ public class KeyEventHandler {
                 case ACTION_DOWN -> {
                     if (!up) {
                         if ((longClickAction == clickAction) || (longClickAction == Action.NONE)) {
+                            Log.i("[WORKER_TELEMETRY] Firing mapped Click Action on Down stroke.");
                             handle(clickAction);
                         }
                     }
@@ -896,8 +917,10 @@ public class KeyEventHandler {
 
                     if (holdTime <= DBL_CLICK_INTERVAL) {
                         if (up) {
+                            Log.i("[WORKER_TELEMETRY] Double tap window matched. Firing DblClick Action.");
                             handle(dblClickAction);
                         } else if (dblClickAction == clickAction) {
+                            Log.i("[WORKER_TELEMETRY] Click action executed via fallback on UP stroke.");
                             handle(clickAction);
                         } else {
                             up = true;
@@ -913,6 +936,7 @@ public class KeyEventHandler {
                     return true;
                 }
                 case ACTION_MULTIPLE -> {
+                    Log.i("[WORKER_TELEMETRY] Direct multi-action triggered. Firing DblClick Action.");
                     handle(dblClickAction);
                     return true;
                 }
