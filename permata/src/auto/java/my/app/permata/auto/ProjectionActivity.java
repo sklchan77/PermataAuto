@@ -59,6 +59,26 @@ public class ProjectionActivity extends ActivityBase {
 		}
 	}
 
+    // --- SYSTEM GESTURE BACK / EDGE SWIPE FIX ---
+    @Override
+    public void onBackPressed() {
+        Log.i("[SHUTDOWN] Phone edge Back swipe detected. Tearing down Mirroring.");
+        
+        // 1. Kill the car display projection
+        my.app.permata.auto.MirrorDisplay.close();
+        
+        // 2. Fire the nuclear teardown in PermataMediaService
+        Intent shutdownIntent = new Intent(this, my.app.permata.media.service.PermataMediaService.class);
+        shutdownIntent.setAction(my.app.permata.media.service.PermataMediaService.ACTION_FORCE_SHUTDOWN);
+        startService(shutdownIntent);
+        
+        // Let the Android system execute the visual back-out
+        super.onBackPressed();
+        
+        // 3. CRITICAL: Un-hijack the phone screen by destroying the task completely
+        finishAndRemoveTask();
+    }
+
 	@Override
 	protected void onStart() {
 		super.onStart();
