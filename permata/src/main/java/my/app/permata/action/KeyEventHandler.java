@@ -270,19 +270,16 @@ public class KeyEventHandler {
 
         var code = event.getKeyCode();
 
-        // RESTORED FIX: The Loop-Breaker Bridge for Universal Back
         if (code == KeyEvent.KEYCODE_BACK) {
-            // 1. If we are injecting a back command via the Mirroring Toolbar, let it pass natively to the OS
             if (AccessibilityEventDispatcherService.isInjectingBack) {
                 Log.i("[BACK_TELEMETRY] Loop-Breaker Active: Permitting OS Back command to reach target app.");
                 return defaultHandler.apply(code, event);
             }
             
-            // 2. If you press the physical phone Back button during mirroring, route it to our Universal Back
             if (PermataApplication.get().isMirroringMode()) {
                 long currentUptime = android.os.SystemClock.uptimeMillis();
                 if (currentUptime - lastGlobalActionTime < 500) {
-                    return true; // Anti-spam throttle
+                    return true; 
                 }
                 lastGlobalActionTime = currentUptime;
                 
@@ -290,7 +287,6 @@ public class KeyEventHandler {
                 AccessibilityEventDispatcherService.dispatchUniversalBack();
                 return true; 
             }
-            // 3. Standard passthrough for non-mirroring scenarios
             return defaultHandler.apply(code, event);
         }
 
@@ -329,6 +325,12 @@ public class KeyEventHandler {
                         !activeFragment.getClass().getName().endsWith("YoutubeFragment");
 
                 if (!isWebBrowser) {
+                    if (isScrollerPackage(activePkg)) {
+                        Log.i("[BT_LOOPHOLE] Layer 2 Intercept: Steering Wheel command routed to Native App -> " + activePkg);
+                        executeNativeAppSwipe(!isNext, activePkg);
+                        return true; 
+                    }
+                    
                     Log.i("[DETECTION] Native Passthrough: Let OS handle media key for package -> " + activePkg);
                     return defaultHandler.apply(code, event);
                 }
