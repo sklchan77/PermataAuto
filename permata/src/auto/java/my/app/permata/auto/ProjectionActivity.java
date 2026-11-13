@@ -51,6 +51,7 @@ public class ProjectionActivity extends ActivityBase {
 	@Override
 	protected void onDestroy() {
 		super.onDestroy();
+		Log.i("[LIFECYCLE_TELEMETRY] ProjectionActivity onDestroy called. Cleaning up observers.");
 		if (promise != null) promise.cancel();
 		// Patch: Clean up dangling observer to prevent memory leak
 		if (accessibilityObserver != null) {
@@ -62,7 +63,7 @@ public class ProjectionActivity extends ActivityBase {
     // --- SYSTEM GESTURE BACK / EDGE SWIPE FIX ---
     @Override
     public void onBackPressed() {
-        Log.i("[SHUTDOWN] Phone edge Back swipe detected. Tearing down Mirroring.");
+        Log.i("[SHUTDOWN_TELEMETRY] Phone edge Back swipe / System Back gesture detected. Tearing down Mirroring session.");
         
         // 1. Kill the car display projection
         my.app.permata.auto.MirrorDisplay.close();
@@ -76,6 +77,7 @@ public class ProjectionActivity extends ActivityBase {
         super.onBackPressed();
         
         // 3. CRITICAL: Un-hijack the phone screen by destroying the task completely
+        Log.i("[SHUTDOWN_TELEMETRY] Executing finishAndRemoveTask() to release physical phone screen.");
         finishAndRemoveTask();
     }
 
@@ -89,6 +91,7 @@ public class ProjectionActivity extends ActivityBase {
 			return;
 		}
 		starting = true;
+		Log.i("[LIFECYCLE_TELEMETRY] ProjectionActivity onStart triggered. Beginning permission sequence.");
 		checkOverlayPermission().thenIgnoreResult(this::checkWriteSettingsPermission)
 				.thenIgnoreResult(this::checkAccessibilityPermission)
 				.thenIgnoreResult(this::requestRootPermission)
@@ -98,11 +101,12 @@ public class ProjectionActivity extends ActivityBase {
 					starting = false;
 					finish();
 					if (err != null) {
-						if (!isCancellation(err)) Log.i(err, "Screen capture request failed");
+						if (!isCancellation(err)) Log.i(err, "[LIFECYCLE_TELEMETRY] Screen capture request failed during setup.");
 					} else if (i == null) {
-						Log.i("Screen capture request rejected");
+						Log.i("[LIFECYCLE_TELEMETRY] Screen capture request rejected by user/system.");
 						p.cancel();
 					} else {
+						Log.i("[LIFECYCLE_TELEMETRY] All permissions granted. Passing intent back to caller.");
 						p.complete(i);
 					}
 				});
@@ -110,32 +114,34 @@ public class ProjectionActivity extends ActivityBase {
 
 	private FutureSupplier<?> checkOverlayPermission() {
 		if (Settings.canDrawOverlays(this)) return completedVoid();
-		Log.i("Requesting ACTION_MANAGE_OVERLAY_PERMISSION permission");
+		Log.i("[SETUP_TELEMETRY] Requesting ACTION_MANAGE_OVERLAY_PERMISSION permission");
 		try {
 			return startActivityForResult(() -> new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
 					Uri.parse("package:" + getPackageName())));
 		} catch (Exception e) {
-			Log.e(e, "Settings intent blocked by OS.");
+			Log.e(e, "[SETUP_TELEMETRY] Settings intent blocked by OS.");
 			return completedVoid();
 		}
 	}
 
 	private FutureSupplier<?> checkWriteSettingsPermission() {
 		if (Settings.System.canWrite(this)) return completedVoid();
-		Log.i("Requesting ACTION_MANAGE_WRITE_SETTINGS permission");
+		Log.i("[SETUP_TELEMETRY] Requesting ACTION_MANAGE_WRITE_SETTINGS permission");
 		try {
 			return startActivityForResult(() -> new Intent(Settings.ACTION_MANAGE_WRITE_SETTINGS,
 					Uri.parse("package:" + getPackageName())));
 		} catch (Exception e) {
-			Log.e(e, "Settings intent blocked by OS.");
+			Log.e(e, "[SETUP_TELEMETRY] Settings intent blocked by OS.");
 			return completedVoid();
 		}
 	}
 
 	private FutureSupplier<?> checkAccessibilityPermission() {
-		if ((Build.VERSION.SDK_INT < Build.VERSION_CODES.O) || isAccessibilityEnabled())
+		if ((Build.VERSION.SDK_INT < Build.VERSION_CODES.O) || isAccessibilityEnabled()) {
+		    Log.i("[SETUP_TELEMETRY] Accessibility already enabled or SDK < O.");
 			return completedVoid();
-		Log.i("Requesting ACTION_ACCESSIBILITY_SETTINGS permission");
+		}
+		Log.i("[SETUP_TELEMETRY] Requesting ACTION_ACCESSIBILITY_SETTINGS permission");
 		var p = new Promise<>();
 		try {
 			var intent = new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS);
@@ -146,6 +152,7 @@ public class ProjectionActivity extends ActivityBase {
 				@Override
 				public void onChange(boolean selfChange) {
 					if (!isAccessibilityEnabled()) return;
+					Log.i("[SETUP_TELEMETRY] Accessibility granted via Settings Observer.");
 					getContentResolver().unregisterContentObserver(this);
 					accessibilityObserver = null;
 					p.complete(null);
@@ -173,6 +180,7 @@ public class ProjectionActivity extends ActivityBase {
 	}
 
 	private FutureSupplier<?> requestRootPermission() {
+	    Log.i("[SETUP_TELEMETRY] Validating SU (Root) access for PROJECT_MEDIA ops.");
 		return Su.get().onSuccess(su -> {
 			EventDispatcher.useSu(su);
 			su.exec("appops set " + getPackageName() + " PROJECT_MEDIA allow");
@@ -180,7 +188,7 @@ public class ProjectionActivity extends ActivityBase {
 	}
 
 	private FutureSupplier<Intent> requestScreenCapturePermission() {
-		Log.i("Requesting screen cast permission");
+		Log.i("[SETUP_TELEMETRY] Requesting screen cast permission intent.");
 		AccessibilityEventDispatcherService.autoClickOnButton(
 				getString(R.string.media_projection_action_text));
 		var mm = (MediaProjectionManager) getSystemService(MEDIA_PROJECTION_SERVICE);
