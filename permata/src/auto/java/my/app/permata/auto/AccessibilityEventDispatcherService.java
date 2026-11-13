@@ -22,11 +22,11 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.graphics.Path;
+import android.media.AudioManager;
 import android.os.Build.VERSION;
 import android.os.Build.VERSION_CODES;
 import android.os.Handler;
 import android.os.Looper;
-import android.view.KeyEvent;
 import android.view.MotionEvent;
 import android.view.accessibility.AccessibilityEvent;
 import android.view.accessibility.AccessibilityNodeInfo;
@@ -86,31 +86,6 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
 			}
 		}
 	};
-	
-	@Override
-	protected boolean onKeyEvent(KeyEvent event) {
-		int keyCode = event.getKeyCode();
-
-		if (keyCode != KeyEvent.KEYCODE_MEDIA_NEXT && keyCode != KeyEvent.KEYCODE_MEDIA_PREVIOUS) {
-			return super.onKeyEvent(event);
-		}
-
-		if (PermataApplication.get().isConnectedToAuto()) {
-			return super.onKeyEvent(event);
-		}
-		
-		// Pure BT Brute-Force: Directly swipe screen on BT inputs
-		if (event.getAction() == KeyEvent.ACTION_DOWN) {
-			Log.i("[BT_LOOPHOLE] Pure Bluetooth Mode: Intercepting media key for direct hardware swipe.");
-			boolean isNext = (keyCode == KeyEvent.KEYCODE_MEDIA_NEXT);
-			dispatchGodModeSwipe(!isNext);
-			return true; 
-		} else if (event.getAction() == KeyEvent.ACTION_UP) {
-			return true;
-		}
-
-		return super.onKeyEvent(event);
-	}
 
 	public static boolean isAvailable() {
 		return instance != null;
@@ -423,8 +398,11 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
 
 	@Override
 	public void onAccessibilityEvent(AccessibilityEvent event) {
-		if (!PermataApplication.get().isConnectedToAuto()) {
-			return;
+		AudioManager am = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
+		boolean isBtConnected = am != null && (am.isBluetoothA2dpOn() || am.isBluetoothScoOn());
+		
+		if (!PermataApplication.get().isConnectedToAuto() && !isBtConnected) {
+			return; 
 		}
 
 		var type = event.getEventType();
@@ -446,7 +424,14 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
 			String prevPackage = lastActivePackage;
 			lastActivePackage = pkgName;
 
-			if (pkgName.startsWith("my.app.permata") && my.app.permata.action.KeyEventHandler.isScrollerPackage(prevPackage)) {
+			if (my.app.permata.action.KeyEventHandler.isScrollerPackage(pkgName)) {
+				Log.i("[WATCHDOG] Native Scroller active. Reclaiming Layer 2 Bluetooth session.");
+				try {
+					Intent reclaimIntent = new Intent(this, my.app.permata.media.service.PermataMediaService.class);
+					reclaimIntent.setAction(my.app.permata.media.service.PermataMediaService.ACTION_RECLAIM_SESSION);
+					startService(reclaimIntent);
+				} catch (Exception e) {}
+			} else if (pkgName.startsWith("my.app.permata") && my.app.permata.action.KeyEventHandler.isScrollerPackage(prevPackage)) {
 				Log.i("[WATCHDOG] Exited Mirroring (Scroller -> Permata). Firing gentle session reclaim.");
 				try {
 					Intent reclaimIntent = new Intent(this, my.app.permata.media.service.PermataMediaService.class);
