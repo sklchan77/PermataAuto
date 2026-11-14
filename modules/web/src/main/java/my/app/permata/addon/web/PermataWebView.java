@@ -255,9 +255,9 @@ public class PermataWebView extends WebView
 	@SuppressLint("ClickableViewAccessibility")
 	@Override
 	public boolean onTouchEvent(MotionEvent event) {
-		// FIX #4: Lock steering wheel priority to Web Browser when touched
 		if (event.getActionMasked() == MotionEvent.ACTION_DOWN) {
 			my.app.permata.action.KeyEventHandler.manualTouchFocus = my.app.permata.action.KeyEventHandler.TARGET_WEB;
+			Log.i("[INPUT_TELEMETRY]", "PermataWebView touched (Action DOWN). Touch-Focus locked to TARGET_WEB.");
 		}
 
 		if (isCar()) {
