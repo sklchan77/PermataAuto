@@ -55,8 +55,10 @@ public class MirrorActivity extends CarActivity implements SurfaceHolder.Callbac
 			@SuppressLint("ClickableViewAccessibility")
 			@Override
 			public boolean onTouchEvent(MotionEvent e) {
-				// FIX #4: Lock steering wheel routing to Mirroring aggressively on touch
-				KeyEventHandler.manualTouchFocus = KeyEventHandler.TARGET_MIRROR;
+				if (e.getActionMasked() == MotionEvent.ACTION_DOWN) {
+					KeyEventHandler.manualTouchFocus = KeyEventHandler.TARGET_MIRROR;
+					Log.i("[INPUT_TELEMETRY] Phone Mirror Screen touched (Action DOWN). Touch-Focus locked to TARGET_MIRROR.");
+				}
 				
 				if (md == null || md.isDestroyed()) md = MirrorDisplay.get();
 				if (sc != null && md != null) md.setSurface(sc);
@@ -174,7 +176,6 @@ public class MirrorActivity extends CarActivity implements SurfaceHolder.Callbac
 			shutdownIntent.setAction(PermataMediaService.ACTION_FORCE_SHUTDOWN);
 			ctx.startService(shutdownIntent);
 
-			// FIX #3: Obliterate Dummy App by forcing phone to native Home Screen
 			Intent goHome = new Intent(Intent.ACTION_MAIN);
 			goHome.addCategory(Intent.CATEGORY_HOME);
 			goHome.setFlags(FLAG_ACTIVITY_NEW_TASK | FLAG_ACTIVITY_CLEAR_TASK);
