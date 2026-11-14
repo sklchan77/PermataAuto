@@ -229,7 +229,14 @@ public abstract class EventDispatcher {
 
 		@Override
 		public boolean directBack() {
-			if (AccessibilityEventDispatcherService.dispatchBack()) return true;
+			if (AccessibilityEventDispatcherService.dispatchUniversalBack()) return true;
+			
+			var a = getActivity();
+			if (a != null) {
+				a.dispatchKeyEvent(new KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_BACK));
+				a.dispatchKeyEvent(new KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_BACK));
+				return true;
+			}
 			
 			var ctx = PermataApplication.get();
 			if (ctx != null) {
