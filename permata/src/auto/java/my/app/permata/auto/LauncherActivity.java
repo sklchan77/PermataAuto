@@ -56,6 +56,7 @@ import java.util.Objects;
 
 import my.app.permata.PermataApplication;
 import my.app.permata.R;
+import my.app.permata.media.service.PermataMediaService;
 import my.app.permata.ui.activity.MainActivityDelegate;
 import my.app.permata.ui.activity.MainActivityPrefs;
 import my.app.utils.collection.CollectionUtils;
@@ -101,7 +102,12 @@ public class LauncherActivity extends AppCompatActivity {
 		getOnBackPressedDispatcher().addCallback(new OnBackPressedCallback(true) {
 			@Override
 			public void handleOnBackPressed() {
-				if (v.selectApps != null) v.selectApps();
+				if (v.selectApps != null) {
+					v.selectApps();
+				} else {
+					// FIX #3: Back button on Dummy Home Screen forces Teardown
+					executeNuclearExit();
+				}
 			}
 		});
 		PermataApplication.get().getHandler()
@@ -134,7 +140,17 @@ public class LauncherActivity extends AppCompatActivity {
 						SCREEN_ORIENTATION_SENSOR_PORTRAIT);
 	}
 
-	private static final class AppListView extends RecyclerView {
+	// FIX #3: Obliterate dummy app and tear down mirroring
+	private void executeNuclearExit() {
+		Log.i("[SHUTDOWN] Nuclear exit triggered from LauncherActivity.");
+		MirrorDisplay.close();
+		Intent shutdownIntent = new Intent(this, PermataMediaService.class);
+		shutdownIntent.setAction(PermataMediaService.ACTION_FORCE_SHUTDOWN);
+		startService(shutdownIntent);
+		finishAndRemoveTask();
+	}
+
+	private final class AppListView extends RecyclerView {
 		private final List<AppInfo> apps;
 		private SelectAppInfo[] selectApps;
 		private final Animation animation;
@@ -410,7 +426,7 @@ public class LauncherActivity extends AppCompatActivity {
 				icon.startAnimation(animation);
 
 				if (appInfo.equals(AppInfo.EXIT)) {
-					MirrorDisplay.close();
+					executeNuclearExit();
 				} else if (appInfo.equals(AppInfo.ADD)) {
 					var pm = getContext().getPackageManager();
 					var allApps = loadAllAppList(pm);
