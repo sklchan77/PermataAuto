@@ -155,7 +155,7 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
                 
                 if (injected) return true;
                 
-                return false; 
+                Log.w("[OUTPUT_TELEMETRY]", "Virtual Display injection failed (Unrooted). Falling back to Global Action Back.");
             }
         }
         
@@ -393,7 +393,7 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
 		return true;
 	}
 
-	@RequiresApi(api = VERSION_CODES.N)
+	@RequiresApi(api = VERSION.CODES.N)
 	private void addStroke(StrokeDescription sd) {
 		if (gb == null) gb = new GestureDescription.Builder();
 		gb.addStroke(sd);
