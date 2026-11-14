@@ -162,17 +162,17 @@ public class ProjectionService extends Service {
 
 	@Override
 	public void onTaskRemoved(Intent rootIntent) {
-		super.onTaskRemoved(rootIntent);
-
-		if (PermataApplication.get().isConnectedToAuto()) {
-			Log.i("App swiped away, but Android Auto is ACTIVE. Ignoring shutdown.");
-			return;
-		}
-
-		Log.i("App swiped away from Recents. Killing ProjectionService.");
-		stop();
-		stopSelf();
-	}
+        if (PermataApplication.get().isConnectedToAuto() || PermataApplication.get().isMirroringMode()) {
+            Log.i("[LIFECYCLE_TELEMETRY] App swiped away from Recents, but Android Auto is ACTIVE. Enforcing survival.");
+            // CRITICAL: Return immediately. Do not call stop(), stopSelf(), or super.onTaskRemoved()
+            return;
+        }
+        
+        Log.i("[LIFECYCLE_TELEMETRY] App swiped away. Stopping ProjectionService.");
+        stop();
+        stopSelf();
+        super.onTaskRemoved(rootIntent);
+    }
 
 	@Nullable
 	@Override
