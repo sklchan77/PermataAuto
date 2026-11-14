@@ -134,6 +134,7 @@ public abstract class EventDispatcher {
 			var a = getActivity();
 			if (a == null) return AccessibilityDispatcher.get().back();
 			//noinspection deprecation
+			Log.i("[OUTPUT_TELEMETRY]", "ActivityDispatcher injecting native onBackPressed()");
 			a.onBackPressed();
 			return true;
 		}
@@ -163,6 +164,7 @@ public abstract class EventDispatcher {
 			AppCompatActivity a = getActivity();
 			if (a == null) return AccessibilityDispatcher.get().tap(x, y);
 			var time = uptimeMillis();
+			Log.i("[OUTPUT_TELEMETRY]", "ActivityDispatcher injecting local touch sequence at X:" + x + " Y:" + y);
 			var e = obtain(time, time, ACTION_DOWN, x, y, 0);
 			a.dispatchTouchEvent(e);
 			e.recycle();
@@ -176,6 +178,7 @@ public abstract class EventDispatcher {
 		public boolean motionEvent(MotionEvent e) {
 			var a = getActivity();
 			if (a == null) return AccessibilityDispatcher.get().motionEvent(e);
+			Log.i("[OUTPUT_TELEMETRY]", "ActivityDispatcher injecting local MotionEvent: " + e.getActionMasked());
 			a.dispatchTouchEvent(e);
 			return true;
 		}
@@ -186,6 +189,7 @@ public abstract class EventDispatcher {
 			if (a == null)
 				return AccessibilityDispatcher.get().motionEvent(downTime, eventTime, action, x, y);
 			var e = obtain(downTime, eventTime, action, x, y, 0);
+			Log.i("[OUTPUT_TELEMETRY]", "ActivityDispatcher injecting local single touch: " + action + " at X:" + x + " Y:" + y);
 			a.dispatchTouchEvent(e);
 			e.recycle();
 			return true;
@@ -233,6 +237,7 @@ public abstract class EventDispatcher {
 			
 			var a = getActivity();
 			if (a != null) {
+				Log.i("[OUTPUT_TELEMETRY]", "AccessibilityDispatcher injecting local KeyEvent.KEYCODE_BACK");
 				a.dispatchKeyEvent(new KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_BACK));
 				a.dispatchKeyEvent(new KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_BACK));
 				return true;
@@ -240,6 +245,7 @@ public abstract class EventDispatcher {
 			
 			var ctx = PermataApplication.get();
 			if (ctx != null) {
+				Log.i("[OUTPUT_TELEMETRY]", "AccessibilityDispatcher broadcasting Global ACTION_GLOBAL_BACK");
 				Intent intent = new Intent("my.app.permata.ACTION_GLOBAL_BACK");
 				intent.setPackage(ctx.getPackageName()); 
 				ctx.sendBroadcast(intent);
@@ -256,6 +262,7 @@ public abstract class EventDispatcher {
 			
 			var ctx = PermataApplication.get();
 			if (ctx != null) {
+				Log.i("[OUTPUT_TELEMETRY]", "AccessibilityDispatcher broadcasting Global ACTION_GLOBAL_HOME");
 				Intent intent = new Intent("my.app.permata.ACTION_GLOBAL_HOME");
 				intent.setPackage(ctx.getPackageName()); 
 				ctx.sendBroadcast(intent);
@@ -277,6 +284,7 @@ public abstract class EventDispatcher {
 			
 			var ctx = PermataApplication.get();
 			if (ctx != null) {
+				Log.i("[OUTPUT_TELEMETRY]", "AccessibilityDispatcher broadcasting Global ACTION_GLOBAL_RECENT");
 				Intent intent = new Intent("my.app.permata.ACTION_GLOBAL_RECENT");
 				intent.setPackage(ctx.getPackageName()); 
 				ctx.sendBroadcast(intent);
@@ -353,16 +361,17 @@ public abstract class EventDispatcher {
 
 		private boolean keyEvent(int code) {
 			try {
+				Log.i("[OUTPUT_TELEMETRY]", "SuDispatcher injecting shell cmd input keyevent " + code);
 				su.exec("cmd input keyevent " + code);
 				return true;
 			} catch (Exception e) {
-				Log.w("Su unavailable, dropping keyEvent: " + code);
 				return false;
 			}
 		}
 
 		@Override
 		public boolean tap(float x, float y) {
+			Log.i("[OUTPUT_TELEMETRY]", "SuDispatcher injecting shell cmd input tap " + (int) x + " " + (int) y);
 			su.exec("cmd input tap " + (int) x + " " + (int) y);
 			return true;
 		}
@@ -380,10 +389,10 @@ public abstract class EventDispatcher {
 				case ACTION_UP -> a = "UP ";
 				case ACTION_MOVE -> a = "MOVE ";
 				default -> {
-					Log.d("Unable to send event with action ", action);
 					return false;
 				}
 			}
+			Log.i("[OUTPUT_TELEMETRY]", "SuDispatcher injecting shell cmd input motionevent " + a + (int) x + " " + (int) y);
 			su.exec("cmd input motionevent " + a + (int) x + " " + (int) y);
 			return true;
 		}
