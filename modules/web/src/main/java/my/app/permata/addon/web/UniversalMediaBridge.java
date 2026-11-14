@@ -31,6 +31,37 @@ public class UniversalMediaBridge {
         this.contextRef = new WeakReference<>(context);
         this.webViewRef = new WeakReference<>(webView);
         this.mainHandler = new Handler(Looper.getMainLooper());
+        
+        // Inject the 10ms micro-seek payload to fix audio latency/drift on car head units
+        injectAudioSyncScript(webView);
+    }
+
+    private void injectAudioSyncScript(WebView webView) {
+        if (webView == null) return;
+        
+        String microSeekPayload = "(function() {" +
+            "  if (window.__permataAudioSyncInjected) return;" +
+            "  window.__permataAudioSyncInjected = true;" +
+            "  document.addEventListener('playing', function(e) {" +
+            "      const media = e.target;" +
+            "      if (media && (media.tagName === 'VIDEO' || media.tagName === 'AUDIO')) {" +
+            "          setTimeout(() => {" +
+            "              if (!media.paused && media.readyState >= 2) {" +
+            "                  media.currentTime = media.currentTime + 0.01;" +
+            "                  console.log('[JavaBridge] Audio pipeline flushed and re-synced via 10ms micro-seek.');" +
+            "              }" +
+            "          }, 250);" +
+            "      }" +
+            "  }, true);" +
+            "})();";
+            
+        mainHandler.post(() -> {
+            try {
+                webView.evaluateJavascript(microSeekPayload, null);
+            } catch (Exception e) {
+                Log.w(TAG, "Failed to inject audio sync script.");
+            }
+        });
     }
 
     @JavascriptInterface
