@@ -27,6 +27,7 @@ import androidx.car.app.validation.HostValidator;
 
 import my.app.permata.PermataApplication;
 import my.app.permata.R;
+import my.app.permata.action.KeyEventHandler;
 import my.app.utils.concurrent.HandlerExecutor;
 import my.app.utils.function.Cancellable;
 import my.app.utils.log.Log;
@@ -58,21 +59,16 @@ public class MirrorServiceFS extends CarAppService {
 		super.onTaskRemoved(rootIntent);
 
 		if (PermataApplication.get().isMirroringMode()) {
-			Log.i("[TELEMETRY] App swiped away during Mirroring. Forcing shutdown.");
 			MirrorDisplay.close();
 		} else if (PermataApplication.get().isConnectedToAuto()) {
-			Log.i("App swiped away, but Android Auto is ACTIVE. Ignoring shutdown.");
 			return;
 		}
-
-		Log.i("App swiped away from Recents. Killing MirrorServiceFS.");
 		
 		if (md != null) {
 			md.release();
 			md = null;
 		}
 		sc = null;
-		
 		stopSelf();
 	}
 
@@ -84,11 +80,6 @@ public class MirrorServiceFS extends CarAppService {
 			@Override
 			public Screen onCreateScreen(@NonNull Intent intent) {
 				return new MirrorScreen(getCarContext());
-			}
-
-			@Override
-			public void onNewIntent(@NonNull Intent intent) {
-				super.onNewIntent(intent);
 			}
 		};
 	}
@@ -118,7 +109,6 @@ public class MirrorServiceFS extends CarAppService {
 		MirrorScreen(@NonNull CarContext ctx) {
 			super(ctx);
 			ctx.getCarService(AppManager.class).setSurfaceCallback(this);
-			Log.i("MirrorScreen created. API level: ", ctx.getCarAppApiLevel());
 		}
 
 		@Override
@@ -139,8 +129,6 @@ public class MirrorServiceFS extends CarAppService {
 
 		@Override
 		public void onSurfaceDestroyed(@NonNull SurfaceContainer localSc) {
-			Log.i("MirrorServiceFS: Surface destroyed.");
-			
 			if (scrollUp != null) {
 				scrollUp.cancel();
 				scrollUp = null;
@@ -151,17 +139,13 @@ public class MirrorServiceFS extends CarAppService {
 				md.releaseSurface(localSc);
 			}
 			MirrorServiceFS.sc = null;
-
-			new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(() -> {
-				if (!PermataApplication.get().isConnectedToAuto()) {
-					Log.i("Hard disconnect detected (Engine Off/Unplug). Forcing complete cleanup.");
-					MirrorDisplay.close();
-				}
-			}, 5000);
 		}
 
 		@Override
 		public void onClick(float x, float y) {
+			// FIX #4: Lock steering wheel routing to Mirroring aggressively on touch
+			KeyEventHandler.manualTouchFocus = KeyEventHandler.TARGET_MIRROR;
+
 			if (scrollUp != null) {
 				scrollUp.cancel();
 				scrollUp = null;
@@ -177,6 +161,9 @@ public class MirrorServiceFS extends CarAppService {
 
 		@Override
 		public void onScroll(float distanceX, float distanceY) {
+			// FIX #4
+			KeyEventHandler.manualTouchFocus = KeyEventHandler.TARGET_MIRROR;
+
 			var mDisp = md();
 			if (mDisp == null || MirrorServiceFS.sc == null) return;
 			
@@ -192,11 +179,9 @@ public class MirrorServiceFS extends CarAppService {
 				if (time - lastClickTime < 1500 && lastClickX >= 0 && lastClickY >= 0) {
 					scrollStartX = lastClickX;
 					scrollStartY = lastClickY;
-					Log.i("[DRAG_TELEMETRY] Tap-to-Lock engaged. Dragging from specific coordinates: " + scrollStartX + ", " + scrollStartY);
 				} else {
 					scrollStartX = MirrorServiceFS.sc.getWidth() / 2f;
 					scrollStartY = MirrorServiceFS.sc.getHeight() / 2f;
-					Log.i("[DRAG_TELEMETRY] No recent tap detected. Defaulting to center screen drag.");
 				}
 				
 				scrollX = scrollStartX;
@@ -208,8 +193,8 @@ public class MirrorServiceFS extends CarAppService {
 				}
 				scrollDownTime = time;
 				
-				Log.i("[DRAG_TELEMETRY] Car OS Scroll Started. 500ms Hold-and-Drag Grace Period started.");
-				scheduleScrollUp(500);
+				// FIX #2: Reduced timeout from 500 to 200 for faster drop tracking
+				scheduleScrollUp(200);
 			}
 			
 			scrollX -= distanceX;
@@ -218,7 +203,7 @@ public class MirrorServiceFS extends CarAppService {
 			
 			if (scrollUp != null) {
 				scrollUp.cancel();
-				scheduleScrollUp(500);
+				scheduleScrollUp(200);
 			}
 		}
 
@@ -235,7 +220,6 @@ public class MirrorServiceFS extends CarAppService {
 				} else {
 					scrollUp = null;
 					isPanning = false;
-					Log.i("[DRAG_TELEMETRY] Grace Period Expired. Forcing ACTION_UP (Releasing balloon).");
 					mDisp.motionEvent(scrollDownTime, time, ACTION_UP, scrollX, scrollY);
 				}
 			}, delay);
@@ -243,6 +227,7 @@ public class MirrorServiceFS extends CarAppService {
 
 		@Override
 		public void onScale(float focusX, float focusY, float scaleFactor) {
+			KeyEventHandler.manualTouchFocus = KeyEventHandler.TARGET_MIRROR;
 			scrollStartX = focusX;
 			scrollStartY = focusY;
 			if (md() != null) md().scale(focusX, focusY, scaleFactor > 1f);
@@ -265,15 +250,10 @@ public class MirrorServiceFS extends CarAppService {
 					
 			var exitButton = new Action.Builder().setIcon(
 							new CarIcon.Builder(createWithResource(getCarContext(), R.drawable.shutdown)).setTint(androidx.car.app.model.CarColor.DEFAULT).build())
-					.setOnClickListener(() -> {
-						Log.i("User triggered manual shutdown.");
-						MirrorDisplay.close();
-					}).build();
-			
-			PanModeListener panModeListener = isPanningMode -> Log.d("Pan Mode toggled: " + isPanningMode);
+					.setOnClickListener(MirrorActivity::onExitButtonClick).build();
 			
 			return new NavigationTemplate.Builder()
-					.setPanModeListener(panModeListener)
+					.setPanModeListener(isPanningMode -> {})
 					.setMapActionStrip(new ActionStrip.Builder().addAction(Action.PAN).build())
 					.setActionStrip(new ActionStrip.Builder()
 							.addAction(homeButton)
