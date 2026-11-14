@@ -17,7 +17,6 @@ import static android.provider.Settings.System.SCREEN_BRIGHTNESS_MODE;
 import static android.provider.Settings.System.USER_ROTATION;
 import static android.view.Surface.ROTATION_0;
 import static android.view.Surface.ROTATION_90;
-import static android.view.Surface.ROTATION_270;
 import static android.view.ViewGroup.LayoutParams.MATCH_PARENT;
 import static android.view.WindowManager.LayoutParams.FLAG_ALT_FOCUSABLE_IM;
 import static android.view.WindowManager.LayoutParams.FLAG_DISMISS_KEYGUARD;
@@ -84,7 +83,7 @@ import my.app.utils.ui.UiUtils;
 
 public class MirrorDisplay {
 	private static final int OVERLAY_FLAGS = FLAG_NOT_FOCUSABLE | FLAG_KEEP_SCREEN_ON | FLAG_DISMISS_KEYGUARD | FLAG_TURN_SCREEN_ON | FLAG_SHOW_WHEN_LOCKED | FLAG_NOT_TOUCHABLE | FLAG_WATCH_OUTSIDE_TOUCH;
-	private static final int ANCHOR_FLAGS = FLAG_NOT_TOUCHABLE | FLAG_KEEP_SCREEN_ON | FLAG_DISMISS_KEYGUARD | FLAG_SHOW_WHEN_LOCKED | FLAG_ALT_FOCUSABLE_IM;
+	private static final int ANCHOR_FLAGS = FLAG_NOT_FOCUSABLE | FLAG_NOT_TOUCHABLE | FLAG_KEEP_SCREEN_ON | FLAG_DISMISS_KEYGUARD | FLAG_SHOW_WHEN_LOCKED | FLAG_ALT_FOCUSABLE_IM;
 					
 	private static MirrorDisplay instance;
 	private final Display defaultDisplay;
@@ -195,7 +194,6 @@ public class MirrorDisplay {
 			this.sc = sc;
 			currentMetrics = null; 
 			
-			// FIX #6: Re-dim and re-lock rotation when mirror is active again
 			dimScreen(PermataApplication.get());
 			disableAccelRotation(PermataApplication.get());
 			
@@ -224,7 +222,6 @@ public class MirrorDisplay {
 			if (oldSc != sc) return;
 			this.sc = null;
 			
-			// FIX #6: Instantly restore phone to fully unlocked and bright when car surface is minimized
 			restoreBrightness(PermataApplication.get(), true);
 			restoreAccelRotation(PermataApplication.get(), true);
 			
@@ -232,9 +229,7 @@ public class MirrorDisplay {
 				try {
 					Session s = session.getOrThrow();
 					if (s != null && s.vd != null) s.vd.setSurface(null);
-				} catch (Exception e) {
-					Log.e(e, "VirtualDisplay detachment failed.");
-				}
+				} catch (Exception e) {}
 			}
 			drawMsg(oldSc, R.string.app_name);
 		}
@@ -325,13 +320,9 @@ public class MirrorDisplay {
 					try {
 						EventDispatcher d = dispatcher();
 						if (d != null) d.motionEvent(finalEvent);
-					} catch (Exception ex) {
-						Log.e(ex, "Async touch injection failed.");
-					}
+					} catch (Exception ex) {}
 				});
-			} catch (Exception rejectedException) {
-				Log.e(rejectedException, "Touch thread rejected execution.");
-			}
+			} catch (Exception rejectedException) {}
 		}
 		
 		return true;
@@ -360,9 +351,7 @@ public class MirrorDisplay {
 				clonedEvent = MotionEvent.obtain(downTime, eventTime, action, 1, reusableProps, reusableCoords,
 						0, 0, 1.0f, 1.0f, 0, 0, InputDevice.SOURCE_TOUCHSCREEN, 0);
 						
-			} catch (Exception ex) {
-				Log.e(ex, "Single touch motion builder failed.");
-			}
+			} catch (Exception ex) {}
 		}
 
 		if (clonedEvent != null) {
@@ -372,13 +361,9 @@ public class MirrorDisplay {
 					try {
 						EventDispatcher d = dispatcher();
 						if (d != null) d.motionEvent(finalEvent);
-					} catch (Exception ex) {
-						Log.e(ex, "Async single touch injection failed.");
-					}
+					} catch (Exception ex) {}
 				});
-			} catch (Exception rejectedException) {
-				Log.e(rejectedException, "Touch thread rejected execution.");
-			}
+			} catch (Exception rejectedException) {}
 		}
 		
 		return true;
@@ -407,9 +392,7 @@ public class MirrorDisplay {
 					wm.updateViewLayout(overlay, overlayLp);
 				}
 			}
-		} catch (Exception err) {
-			Log.e(err, "Failed to update overlay orientation hierarchy");
-		}
+		} catch (Exception err) {}
 	}
 
 	public static void disableAccelRotation() {
@@ -453,9 +436,7 @@ public class MirrorDisplay {
 					}
 				}
 			});
-		} catch (Exception ex) {
-			Log.e(ex, "Background thread rejected rotation lock instruction");
-		}
+		} catch (Exception ex) {}
 	}
 
 	private static void restoreAccelRotation(Context ctx, boolean synchronous) {
@@ -477,9 +458,7 @@ public class MirrorDisplay {
 						originalUserRotation = -1;
 					}
 					isRotationLocked = false;
-				} catch (Exception err) {
-					Log.e(err, "Settings Provider lagged or failed during rotation restore.");
-				}
+				} catch (Exception err) {}
 			}
 		};
 
@@ -488,9 +467,7 @@ public class MirrorDisplay {
 		} else {
 			try {
 				bgExecutor.execute(task);
-			} catch (Exception ex) {
-				Log.e(ex, "Background thread rejected rotation restore instruction");
-			}
+			} catch (Exception ex) {}
 		}
 	}
 
@@ -523,14 +500,10 @@ public class MirrorDisplay {
 							updateOverlayOrientation(true);
 							disableAccelRotation(PermataApplication.get());
 						});
-					} catch (Exception err) {
-						Log.e(err);
-					}
+					} catch (Exception err) {}
 				}
 			});
-		} catch (Exception ex) {
-			Log.e(ex, "Background thread rejected screen dim instruction");
-		}
+		} catch (Exception ex) {}
 	}
 
 	private void restoreBrightness(Context ctx, boolean synchronous) {
@@ -551,9 +524,7 @@ public class MirrorDisplay {
 					mainHandler.post(() -> {
 						updateOverlayOrientation(false);
 					});
-				} catch (Exception err) {
-					Log.e(err, "Settings Provider lagged or failed during brightness restore.");
-				}
+				} catch (Exception err) {}
 			}
 		};
 
@@ -562,9 +533,7 @@ public class MirrorDisplay {
 		} else {
 			try {
 				bgExecutor.execute(restoreTask);
-			} catch (Exception ex) {
-				Log.e(ex, "Background thread rejected brightness restore instruction");
-			}
+			} catch (Exception ex) {}
 		}
 	}
 
@@ -630,10 +599,7 @@ public class MirrorDisplay {
 		try {
 			app.startService(new Intent(app, XposedEventDispatcherService.class));
 		} catch (IllegalStateException ise) {
-			Log.w("Background Service restrictions active, ignoring Xposed Service startup.");
-		} catch (Exception err) {
-			Log.e(err, "Failed to start XposedEventDispatcherService");
-		}
+		} catch (Exception err) {}
 
 		var amgr = (AudioManager) app.getSystemService(Context.AUDIO_SERVICE);
 		if (amgr != null) AudioManagerCompat.requestAudioFocus(amgr, audioFocusReq);
@@ -667,7 +633,6 @@ public class MirrorDisplay {
 					if (oldOverlay != null && oldOverlay.isAttachedToWindow()) wm.removeView(oldOverlay);
 					if (oldAnchor != null && oldAnchor.isAttachedToWindow()) wm.removeView(oldAnchor); 
 				} catch (IllegalArgumentException iae) {
-					Log.w("Zombie view prevented during cleanup execution.");
 				} catch (Exception ignored) {}
 			});
 			
@@ -687,9 +652,7 @@ public class MirrorDisplay {
 
 		try {
 			app.stopService(new Intent(app, XposedEventDispatcherService.class));
-		} catch (Exception err) {
-			Log.d(err, "Failed to stop XposedEventDispatcherService");
-		}
+		} catch (Exception err) {}
 
 		var amgr = (AudioManager) app.getSystemService(Context.AUDIO_SERVICE);
 		if (amgr != null) AudioManagerCompat.abandonAudioFocusRequest(amgr, audioFocusReq);
