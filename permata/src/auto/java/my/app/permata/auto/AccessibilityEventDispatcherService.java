@@ -126,7 +126,7 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
 
 		Log.i("[BACK_TELEMETRY] Firing standard Universal OS Back command.");
         
-        // VIRTUAL DISPLAY BACK: Inject directly into car screen using Reflection to avoid compiler errors
+        // VIRTUAL DISPLAY BACK: Inject directly into car screen using Reflection fallback chain
         if (PermataApplication.get().isMirroringMode()) {
             Log.i("[BACK_TELEMETRY] Mirroring mode active. Attempting Virtual Display Back.");
             my.app.permata.auto.MirrorDisplay md = my.app.permata.auto.MirrorDisplay.get();
@@ -160,7 +160,18 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
                 }
                 
                 if (injected) return true;
-                Log.w("[BACK_TELEMETRY] No KeyEvent method exposed in MirrorDisplay. Falling back to global action.");
+                
+                // Fallback to ROOT shell if Reflection injection fails (often required for Virtual Display control)
+                Log.w("[BACK_TELEMETRY] No KeyEvent method exposed in MirrorDisplay. Attempting Root shell keyevent injection...");
+                try {
+                    my.app.permata.auto.Su.get().onSuccess(su -> {
+                        su.exec("input keyevent 4");
+                        Log.i("[BACK_TELEMETRY] Successfully injected Root shell KEYCODE_BACK (4).");
+                    });
+                    return true;
+                } catch (Exception suError) {
+                    Log.w("[BACK_TELEMETRY] Root shell injection failed. Falling back to global action.");
+                }
             } else {
                 Log.w("[BACK_TELEMETRY] MirrorDisplay instance is null. Falling back to global phone action.");
             }
