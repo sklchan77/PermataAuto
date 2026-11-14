@@ -143,8 +143,8 @@ public class MirrorServiceFS extends CarAppService {
 
 		@Override
 		public void onClick(float x, float y) {
-			// FIX #4: Lock steering wheel routing to Mirroring aggressively on touch
 			KeyEventHandler.manualTouchFocus = KeyEventHandler.TARGET_MIRROR;
+			Log.i("[INPUT_TELEMETRY] Car Mirror Screen clicked at X:" + x + " Y:" + y + ". Touch-Focus locked to TARGET_MIRROR.");
 
 			if (scrollUp != null) {
 				scrollUp.cancel();
@@ -161,7 +161,6 @@ public class MirrorServiceFS extends CarAppService {
 
 		@Override
 		public void onScroll(float distanceX, float distanceY) {
-			// FIX #4
 			KeyEventHandler.manualTouchFocus = KeyEventHandler.TARGET_MIRROR;
 
 			var mDisp = md();
@@ -175,6 +174,7 @@ public class MirrorServiceFS extends CarAppService {
 			
 			if (!isPanning || scrollUp == null) {
 				isPanning = true;
+				Log.i("[INPUT_TELEMETRY] Car Mirror Screen scroll initiated. Touch-Focus locked to TARGET_MIRROR.");
 				
 				if (time - lastClickTime < 1500 && lastClickX >= 0 && lastClickY >= 0) {
 					scrollStartX = lastClickX;
@@ -193,7 +193,6 @@ public class MirrorServiceFS extends CarAppService {
 				}
 				scrollDownTime = time;
 				
-				// FIX #2: Reduced timeout from 500 to 200 for faster drop tracking
 				scheduleScrollUp(200);
 			}
 			
@@ -228,6 +227,7 @@ public class MirrorServiceFS extends CarAppService {
 		@Override
 		public void onScale(float focusX, float focusY, float scaleFactor) {
 			KeyEventHandler.manualTouchFocus = KeyEventHandler.TARGET_MIRROR;
+			Log.i("[INPUT_TELEMETRY] Car Mirror Screen scaled at X:" + focusX + " Y:" + focusY + ". Touch-Focus locked to TARGET_MIRROR.");
 			scrollStartX = focusX;
 			scrollStartY = focusY;
 			if (md() != null) md().scale(focusX, focusY, scaleFactor > 1f);
