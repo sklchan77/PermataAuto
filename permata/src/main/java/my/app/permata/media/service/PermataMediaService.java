@@ -65,7 +65,6 @@ import my.app.permata.R;
 import my.app.permata.addon.AddonManager;
 import my.app.permata.addon.PermataAddon;
 import my.app.permata.addon.PermataMediaServiceAddon;
-import my.app.permata.auto.AccessibilityEventDispatcherService;
 import my.app.permata.auto.MirrorDisplay;
 import my.app.permata.media.lib.DefaultMediaLib;
 import my.app.permata.media.lib.MediaLib;
@@ -216,13 +215,12 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 	public void onTaskRemoved(Intent rootIntent) {
 		super.onTaskRemoved(rootIntent);
 		
-		if (PermataApplication.get().isMirroringMode()) {
-			MirrorDisplay.close();
-			executeNuclearTeardown();
+		// SAFETY GATE: Never tear down the media session if Android Auto or Mirroring is active
+		if (PermataApplication.get().isMirroringMode() || PermataApplication.get().isConnectedToAuto()) {
+			Log.i("[TELEMETRY] App swiped away during Android Auto/Mirroring. Preserving audio session.");
 			return;
 		}
 		
-		if (PermataApplication.get().isConnectedToAuto()) return;
 		executeNuclearTeardown();
 	}
 
@@ -335,16 +333,23 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 	private void onWebMediaPlaying() {
 		if (isTeardownActive) return;
 		
-		// FOREGROUND GATE: Only process Web Media play state if Permata is actively on the screen
-		String activePkg = AccessibilityEventDispatcherService.getLastActivePackage();
-		if (activePkg != null && !activePkg.startsWith("my.app.permata")) {
+		String activePkg = my.app.permata.auto.AccessibilityEventDispatcherService.getLastActivePackage();
+		boolean isPermataOrAA = activePkg != null && (activePkg.startsWith("my.app.permata") || activePkg.equals("com.google.android.projection.gearhead"));
+		
+		if (!isPermataOrAA) {
 			Log.i("[AUDIO_TELEMETRY] Blocked WebMedia PLAY command: Native App [" + activePkg + "] is in foreground.");
 			return;
 		}
 
-		Log.i("[AUDIO_TELEMETRY] Web Media PLAYING detected. Yielding Audio Focus to WebView.");
-		stopSilentAudioAnchor();
-		releaseAudioFocus();
+		// SAFETY GATE: If connected to the car screen, force the silent track to stay alive
+		// This guarantees the Honda Jazz steering wheel connection is never dropped.
+		if (PermataApplication.get().isConnectedToAuto() || PermataApplication.get().isMirroringMode()) {
+			Log.i("[AUDIO_TELEMETRY] Web Media PLAYING. Android Auto active: Forcing Silent Anchor to stay alive.");
+		} else {
+			Log.i("[AUDIO_TELEMETRY] Web Media PLAYING detected. Yielding Audio Focus to WebView.");
+			stopSilentAudioAnchor();
+			releaseAudioFocus();
+		}
 		
 		if (session != null) {
 			session.setActive(true);
@@ -355,9 +360,10 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 	private void onWebMediaPaused() {
 		if (isTeardownActive) return;
 		
-		// FOREGROUND GATE: Only process Web Media pause state if Permata is actively on the screen
-		String activePkg = AccessibilityEventDispatcherService.getLastActivePackage();
-		if (activePkg != null && !activePkg.startsWith("my.app.permata")) {
+		String activePkg = my.app.permata.auto.AccessibilityEventDispatcherService.getLastActivePackage();
+		boolean isPermataOrAA = activePkg != null && (activePkg.startsWith("my.app.permata") || activePkg.equals("com.google.android.projection.gearhead"));
+		
+		if (!isPermataOrAA) {
 			Log.i("[AUDIO_TELEMETRY] Blocked WebMedia PAUSE command: Native App [" + activePkg + "] is in foreground.");
 			return;
 		}
