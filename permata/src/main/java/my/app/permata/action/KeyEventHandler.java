@@ -322,21 +322,13 @@ public class KeyEventHandler {
                 boolean isWebBrowser = activeFragment != null && 
                         activeFragment.getClass().getName().endsWith("WebBrowserFragment") && 
                         !activeFragment.getClass().getName().endsWith("YoutubeFragment");
+                        
+                boolean isMirroring = PermataApplication.get().isMirroringMode();
 
-                boolean forceMirror = (manualTouchFocus == TARGET_MIRROR);
-                boolean forceWeb = (manualTouchFocus == TARGET_WEB);
-                
-                String focusStr = forceMirror ? "TARGET_MIRROR" : (forceWeb ? "TARGET_WEB" : "TARGET_AUTO");
+                if (manualTouchFocus == TARGET_WEB && !isWebBrowser) manualTouchFocus = TARGET_AUTO;
+                if (manualTouchFocus == TARGET_MIRROR && !isMirroring) manualTouchFocus = TARGET_AUTO;
 
-                Log.i("[ROUTING_TELEMETRY]", "Steering Wheel Key: " + (isNext ? "NEXT" : "PREV") + 
-                      " | ActiveOSPkg: [" + activePkg + "]" + 
-                      " | PermataFrag: [" + fragName + "]" + 
-                      " | isWebBrowser: " + isWebBrowser +
-                      " | manualTouchFocus: " + focusStr +
-                      " | isMirroring: " + PermataApplication.get().isMirroringMode());
-
-                // PRIORITY 1: MIRRORED NATIVE SCROLLER
-                if (forceMirror || (PermataApplication.get().isMirroringMode() && activePkg != null && !activePkg.startsWith("my.app.permata"))) {
+                if (manualTouchFocus == TARGET_MIRROR || (isMirroring && activePkg != null && !activePkg.startsWith("my.app.permata"))) {
                     lastGlobalActionTime = currentUptime;
                     Log.i("[ROUTING_TELEMETRY]", "Routing Priority 1 (Mirroring): Injecting steering swipe to Virtual Display for package " + activePkg);
                     
@@ -367,8 +359,7 @@ public class KeyEventHandler {
                     return true;
                 }
 
-                // PRIORITY 2: PERMATA WEB BROWSER
-                if (forceWeb || isWebBrowser) {
+                if (manualTouchFocus == TARGET_WEB || isWebBrowser) {
                     lastGlobalActionTime = currentUptime;
                     Log.i("[ROUTING_TELEMETRY]", "Routing Priority 2 (Web Browser): Trigerring JS / Hardware Swipe inside PermataWebView.");
                     if (finalTargetActivity != null) {
@@ -431,49 +422,18 @@ public class KeyEventHandler {
                     return true;
                 }
 
-                // PRIORITY 3: VIRTUAL DISPLAY FALLBACK
-                if (PermataApplication.get().isMirroringMode()) {
-                    lastGlobalActionTime = currentUptime;
-                    Log.i("[ROUTING_TELEMETRY]", "Routing Priority 3 (Fallback Mirroring): Injecting steering swipe to Virtual Display.");
-                    my.app.permata.auto.MirrorDisplay md = my.app.permata.auto.MirrorDisplay.get();
-                    if (md != null) {
-                        int width = 1000;
-                        int height = 1000;
-                        try {
-                            if (finalTargetActivity != null && finalTargetActivity.getResources() != null) {
-                                android.util.DisplayMetrics metrics = finalTargetActivity.getResources().getDisplayMetrics();
-                                width = metrics.widthPixels;
-                                height = metrics.heightPixels;
-                            }
-                        } catch (Exception ignored) {}
-
-                        float actionX = width * 0.50f;
-                        float centerY = height * 0.50f;
-                        float span = height * 0.30f;
-                        
-                        float yStart = (!isNext) ? (centerY - span / 2f) : (centerY + span / 2f);
-                        float yEnd = (!isNext) ? (centerY + span / 2f) : (centerY - span / 2f);
-
-                        long now = android.os.SystemClock.uptimeMillis();
-                        md.motionEvent(now, now, MotionEvent.ACTION_DOWN, actionX, yStart);
-                        md.motionEvent(now, now + 50, MotionEvent.ACTION_MOVE, actionX, centerY);
-                        md.motionEvent(now, now + 100, MotionEvent.ACTION_UP, actionX, yEnd);
-                    }
-                    return true;
+                if (activePkg != null && activePkg.startsWith("my.app.permata")) {
+                    Log.i("[ROUTING_TELEMETRY]", "Routing Priority 3 (Local Media/IPTV): Yielding to PermataMediaService.");
+                    return defaultHandler.apply(code, event);
                 }
 
-                if (activePkg != null && !activePkg.startsWith("my.app.permata")) {
-                    if (isStubbornScroller(activePkg)) {
-                        Log.i("[ROUTING_TELEMETRY]", "Routing Priority 4 (Native Stubborn): Firing God-Mode Swipe to phone glass.");
-                        executeNativeAppSwipe(!isNext, activePkg);
-                        return true; 
-                    } else if (isNativeBtScroller(activePkg)) {
-                        Log.i("[ROUTING_TELEMETRY]", "Routing Priority 5 (Native Good): Yielding to OS for native app BT scrolling.");
-                        return defaultHandler.apply(code, event);
-                    }
+                if (activePkg != null && isStubbornScroller(activePkg)) {
+                    Log.i("[ROUTING_TELEMETRY]", "Routing Priority 4 (Native Stubborn): Firing God-Mode Swipe to phone glass.");
+                    executeNativeAppSwipe(!isNext, activePkg);
+                    return true; 
                 }
 
-                Log.i("[ROUTING_TELEMETRY]", "Routing Failure: No routing conditions met. Yielding to OS default.");
+                Log.i("[ROUTING_TELEMETRY]", "Routing Priority 5 (Yield): Yielding to OS for native app BT scrolling.");
                 return defaultHandler.apply(code, event);
             }
         }
