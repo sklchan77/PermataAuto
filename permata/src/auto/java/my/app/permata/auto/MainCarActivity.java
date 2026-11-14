@@ -47,6 +47,7 @@ import com.google.android.apps.auto.sdk.CarActivity;
 import com.google.android.apps.auto.sdk.CarUiController;
 
 import my.app.permata.R;
+import my.app.permata.action.KeyEventHandler;
 import my.app.permata.media.service.PermataMediaServiceConnection;
 import my.app.permata.ui.activity.PermataActivity;
 import my.app.permata.ui.activity.MainActivityDelegate;
@@ -89,8 +90,6 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 		super.onCreate(savedInstanceState);
 		initCarActivity(this);
 
-		// === SURGICAL INJECTION: PULL THE HIJACK TRIGGER ===
-		// Fires an instantaneous intent to forcefully grab Audio Focus upon UI render
 		try {
 			Intent hijackIntent = new Intent(this, my.app.permata.media.service.PermataMediaService.class);
 			hijackIntent.setAction(my.app.permata.media.service.PermataMediaService.ACTION_HIJACK_FOCUS);
@@ -99,7 +98,6 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 		} catch (Exception e) {
 			Log.e(e, "MainCarActivity: Failed to fire hijack intent on creation.");
 		}
-		// ===================================================
 
 		PermataMediaServiceConnection s = service;
 
@@ -134,8 +132,8 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 		super.onResume();
 		getActivityDelegate().onSuccess(MainActivityDelegate::onActivityResume);
 		
-		// === SURGICAL INJECTION: RECLAIM HIJACK ON RESUME ===
-		// Forces the car to hand back steering wheel control every time the app is foregrounded
+		KeyEventHandler.manualTouchFocus = KeyEventHandler.TARGET_WEB;
+		
 		try {
 			Intent hijackIntent = new Intent(this, my.app.permata.media.service.PermataMediaService.class);
 			hijackIntent.setAction(my.app.permata.media.service.PermataMediaService.ACTION_HIJACK_FOCUS);
@@ -144,8 +142,14 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 		} catch (Exception e) {
 			Log.e(e, "MainCarActivity: Failed to fire hijack intent on resume.");
 		}
-		// ====================================================
+	}
 
+	@Override
+	public boolean dispatchTouchEvent(MotionEvent ev) {
+		if (ev.getActionMasked() == MotionEvent.ACTION_DOWN) {
+			KeyEventHandler.manualTouchFocus = KeyEventHandler.TARGET_WEB;
+		}
+		return super.dispatchTouchEvent(ev);
 	}
 
 	@Override
