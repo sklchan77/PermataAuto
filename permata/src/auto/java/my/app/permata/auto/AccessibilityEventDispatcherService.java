@@ -65,7 +65,6 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
 	private final Runnable safetyReleaseRunnable = () -> {
 		try {
 			if (pointers != null && pointers.length > 0 && pointers[0] != null) {
-				// STRICT NULL CHECK: Prevents the crash when dragging mirrored screen
 				if (pointers[0].sd != null) {
 					Log.w("[DRAG_TELEMETRY] Virtual finger safety timeout triggered. Forcing ACTION_UP to release phone screen.");
 					long now = android.os.SystemClock.uptimeMillis();
@@ -126,7 +125,6 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
 
 		Log.i("[BACK_TELEMETRY] Firing standard Universal OS Back command.");
         
-        // VIRTUAL DISPLAY BACK: Inject directly into car screen using Reflection fallback chain
         if (PermataApplication.get().isMirroringMode()) {
             Log.i("[BACK_TELEMETRY] Mirroring mode active. Attempting Virtual Display Back.");
             my.app.permata.auto.MirrorDisplay md = my.app.permata.auto.MirrorDisplay.get();
@@ -161,17 +159,8 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
                 
                 if (injected) return true;
                 
-                // Fallback to ROOT shell if Reflection injection fails (often required for Virtual Display control)
-                Log.w("[BACK_TELEMETRY] No KeyEvent method exposed in MirrorDisplay. Attempting Root shell keyevent injection...");
-                try {
-                    my.app.permata.auto.Su.get().onSuccess(su -> {
-                        su.exec("input keyevent 4");
-                        Log.i("[BACK_TELEMETRY] Successfully injected Root shell KEYCODE_BACK (4).");
-                    });
-                    return true;
-                } catch (Exception suError) {
-                    Log.w("[BACK_TELEMETRY] Root shell injection failed. Falling back to global action.");
-                }
+                Log.w("[BACK_TELEMETRY] No KeyEvent method exposed in MirrorDisplay. Returning FALSE to trigger unrooted EventDispatcher fallback.");
+                return false; 
             } else {
                 Log.w("[BACK_TELEMETRY] MirrorDisplay instance is null. Falling back to global phone action.");
             }
@@ -213,8 +202,6 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
 		swipePath.moveTo(actionX, yStart);
 		swipePath.lineTo(actionX, yEnd);
 
-		Log.i("[SWIPE_TELEMETRY] Submitting Accessibility Swipe to OS Phone Glass. Up=" + up + ", Duration=" + duration + "ms");
-
 		GestureDescription.Builder gestureBuilder = new GestureDescription.Builder();
 		gestureBuilder.addStroke(new StrokeDescription(swipePath, 0L, duration));
 
@@ -222,17 +209,14 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
 			@Override
 			public void onCompleted(GestureDescription gestureDescription) {
 				super.onCompleted(gestureDescription);
-				Log.i("[SWIPE_TELEMETRY] SUCCESS: OS confirmed physical swipe executed on glass.");
 			}
 
 			@Override
 			public void onCancelled(GestureDescription gestureDescription) {
 				super.onCancelled(gestureDescription);
-				Log.w("[SWIPE_TELEMETRY] CANCELLED: OS actively aborted the swipe gesture.");
 			}
 		}, null);
 		
-		Log.i("[SWIPE_TELEMETRY] dispatchGesture() submission result: " + accepted);
 		return accepted;
 	}
 
@@ -297,15 +281,7 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
 			ds.safetyHandler.postDelayed(ds.safetyReleaseRunnable, 500); 
 		}
 		
-		long now = android.os.SystemClock.uptimeMillis();
-		if (action == ACTION_MOVE) {
-			if (now - ds.lastMoveTime < 30) {
-				return true; 
-			}
-			ds.lastMoveTime = now;
-		} else if (action == ACTION_DOWN) {
-			ds.lastMoveTime = now;
-		}
+		// FIX #2: Removed ACTION_MOVE 30ms throttling here to allow 1:1 fluid dragging for popups.
 
 		var pointers = ds.pointers;
 		var cnt = e.getPointerCount();
@@ -361,15 +337,7 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
 			ds.safetyHandler.postDelayed(ds.safetyReleaseRunnable, 500); 
 		}
 		
-		long now = android.os.SystemClock.uptimeMillis();
-		if (action == ACTION_MOVE) {
-			if (now - ds.lastMoveTime < 30) {
-				return true;
-			}
-			ds.lastMoveTime = now;
-		} else if (action == ACTION_DOWN) {
-			ds.lastMoveTime = now;
-		}
+		// FIX #2: Removed ACTION_MOVE 30ms throttling here.
 		
 		if ((x < 0f) || (y < 0f)) return true;
 		var p = instance.pointers[0];
@@ -505,20 +473,13 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
 			lastActivePackage = pkgName;
 
 			if (!pkgName.equals(prevPackage)) {
-				Log.i("[WATCHDOG_TELEMETRY] Foreground App Changed: [" + prevPackage + "] -> [" + pkgName + "]");
-
 				if (my.app.permata.action.KeyEventHandler.isStubbornScroller(pkgName)) {
-					Log.i("[WATCHDOG] Stubborn Scroller active (" + pkgName + "). Firing AGGRESSIVE reclaim to steal steering wheel.");
 					sendReclaimIntent(this, my.app.permata.media.service.PermataMediaService.ACTION_AGGRESSIVE_RECLAIM);
-				} 
-				else if (my.app.permata.action.KeyEventHandler.isNativeBtScroller(pkgName)) {
-					Log.i("[WATCHDOG] Native BT Scroller active (" + pkgName + "). Yielding media session so app can self-scroll.");
 				} 
 				else if (pkgName.startsWith("my.app.permata")) {
 					boolean wasStubborn = my.app.permata.action.KeyEventHandler.isStubbornScroller(prevPackage);
 					boolean wasNative = my.app.permata.action.KeyEventHandler.isNativeBtScroller(prevPackage);
 					if (wasStubborn || wasNative) {
-						Log.i("[WATCHDOG] Returned to Permata. Firing GENTLE session reclaim.");
 						sendReclaimIntent(this, my.app.permata.media.service.PermataMediaService.ACTION_RECLAIM_SESSION);
 					}
 				}
@@ -533,21 +494,16 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
 
 		try {
 			if (clickOnButton != null) {
-				Log.i("[CONSENT_TELEMETRY] Event received: ", event);
-				Log.i("[CONSENT_TELEMETRY] Finding button by text: ", clickOnButton);
 				var btn = root.findAccessibilityNodeInfosByText(clickOnButton);
 				if (btn.isEmpty()) {
-					Log.i("[CONSENT_TELEMETRY] Button not found by text. Trying fallback id: android:id/button1.");
 					btn = root.findAccessibilityNodeInfosByViewId("android:id/button1");
 				}
 				if (!btn.isEmpty()) {
-					Log.i("[CONSENT_TELEMETRY] Button '" + btn.get(0).getText() + "' found. Performing click.");
 					performClickNode(btn.get(0));
 					clickOnButton = null;
 					return;
 				}
 			}
-
 			checkAndClickMediaProjectionConsent(root, pkgName);
 		} finally {
 			root.recycle(); 
@@ -596,7 +552,6 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
 				if (nodes != null && !nodes.isEmpty()) {
 					for (var node : nodes) {
 						if (node != null && performClickNode(node)) {
-							Log.i("[CONSENT_TELEMETRY] Auto-clicked MediaProjection consent button matching string: " + text);
 							isConsentGranted = true;
 							return;
 						}
@@ -608,7 +563,6 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
 			if (btn1 != null && !btn1.isEmpty()) {
 				for (var node : btn1) {
 					if (node != null && performClickNode(node)) {
-						Log.i("[CONSENT_TELEMETRY] Auto-clicked MediaProjection consent using fallback ID: android:id/button1");
 						isConsentGranted = true;
 						return;
 					}
