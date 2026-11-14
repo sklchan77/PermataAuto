@@ -3,6 +3,7 @@ package my.app.permata.auto;
 import static android.content.Intent.FLAG_ACTIVITY_NEW_TASK;
 import static android.content.Intent.FLAG_ACTIVITY_SINGLE_TOP;
 import static android.content.Intent.FLAG_ACTIVITY_CLEAR_TOP;
+import static android.content.Intent.FLAG_ACTIVITY_CLEAR_TASK;
 import static android.os.SystemClock.uptimeMillis;
 import static android.view.ViewGroup.LayoutParams.MATCH_PARENT;
 import static android.view.ViewGroup.LayoutParams.WRAP_CONTENT;
@@ -33,6 +34,7 @@ import com.google.android.apps.auto.sdk.CarActivity;
 
 import my.app.permata.PermataApplication;
 import my.app.permata.R;
+import my.app.permata.action.KeyEventHandler;
 import my.app.permata.media.service.PermataMediaService;
 import my.app.permata.ui.activity.MainActivityDelegate;
 import my.app.utils.concurrent.ReschedulableTask;
@@ -53,6 +55,9 @@ public class MirrorActivity extends CarActivity implements SurfaceHolder.Callbac
 			@SuppressLint("ClickableViewAccessibility")
 			@Override
 			public boolean onTouchEvent(MotionEvent e) {
+				// FIX #4: Lock steering wheel routing to Mirroring aggressively on touch
+				KeyEventHandler.manualTouchFocus = KeyEventHandler.TARGET_MIRROR;
+				
 				if (md == null || md.isDestroyed()) md = MirrorDisplay.get();
 				if (sc != null && md != null) md.setSurface(sc);
 				tb.show();
@@ -84,7 +89,7 @@ public class MirrorActivity extends CarActivity implements SurfaceHolder.Callbac
 	@Override
 	public void onResume() {
 		super.onResume();
-		Log.i("[FOCUS_TELEMETRY] Proactively hijacking steering wheel on Activity Resume.");
+		KeyEventHandler.manualTouchFocus = KeyEventHandler.TARGET_MIRROR;
 		PermataMediaService.requestFocusAndAnchor(this);
 		
 		if (md == null || md.isDestroyed()) md = MirrorDisplay.get();
@@ -129,7 +134,6 @@ public class MirrorActivity extends CarActivity implements SurfaceHolder.Callbac
 
 		new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(() -> {
 			if (!PermataApplication.get().isConnectedToAuto()) {
-				Log.i("Hard disconnect detected. Forcing complete cleanup.");
 				MirrorDisplay.close();
 			}
 		}, 5000);
@@ -154,33 +158,27 @@ public class MirrorActivity extends CarActivity implements SurfaceHolder.Callbac
 	}
 
 	static void onBackButtonClick() {
-		Log.i("[BACK] Floating Toolbar Back clicked. Executing Universal Focus-Steal Back.");
-		
 		if (!AccessibilityEventDispatcherService.dispatchUniversalBack()) {
-			Log.w("[BACK] Accessibility Service unavailable. Falling back to EventDispatcher.");
 			var d = EventDispatcher.get();
-			if (d != null) {
-				d.directBack();
-			}
+			if (d != null) d.directBack();
 		}
 		disableAccelRotation();
 	}
 
 	static void onExitButtonClick() {
-		Log.i("[SHUTDOWN] User triggered manual shutdown from Split-Screen toolbar.");
 		MirrorDisplay.close();
 		
 		var ctx = PermataApplication.get();
 		if (ctx != null) {
-			// CRITICAL FIX: Fire the nuclear teardown intent to PermataMediaService
 			Intent shutdownIntent = new Intent(ctx, PermataMediaService.class);
 			shutdownIntent.setAction(PermataMediaService.ACTION_FORCE_SHUTDOWN);
 			ctx.startService(shutdownIntent);
 
-			Intent intent = new Intent(ctx, LauncherActivity.class);
-			intent.setAction(MainActivityDelegate.INTENT_ACTION_FINISH);
-			intent.setFlags(FLAG_ACTIVITY_NEW_TASK | FLAG_ACTIVITY_CLEAR_TOP | FLAG_ACTIVITY_SINGLE_TOP);
-			ctx.startActivity(intent);
+			// FIX #3: Obliterate Dummy App by forcing phone to native Home Screen
+			Intent goHome = new Intent(Intent.ACTION_MAIN);
+			goHome.addCategory(Intent.CATEGORY_HOME);
+			goHome.setFlags(FLAG_ACTIVITY_NEW_TASK | FLAG_ACTIVITY_CLEAR_TASK);
+			ctx.startActivity(goHome);
 		}
 	}
 
