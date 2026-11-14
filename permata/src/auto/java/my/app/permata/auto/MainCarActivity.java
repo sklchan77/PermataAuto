@@ -143,15 +143,6 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 	}
 
 	@Override
-	public boolean dispatchTouchEvent(MotionEvent ev) {
-		if (ev.getActionMasked() == MotionEvent.ACTION_DOWN) {
-			KeyEventHandler.manualTouchFocus = KeyEventHandler.TARGET_WEB;
-			Log.i("[INPUT_TELEMETRY] Car Web Browser touched (Action DOWN). Touch-Focus locked to TARGET_WEB.");
-		}
-		return super.dispatchTouchEvent(ev);
-	}
-
-	@Override
 	@SuppressWarnings("unchecked")
 	public void onDestroy() {
 		super.onDestroy();
