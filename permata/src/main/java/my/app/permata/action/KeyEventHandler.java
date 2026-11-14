@@ -45,7 +45,6 @@ public class KeyEventHandler {
     private static final int DBL_CLICK_INTERVAL = 500;
     private static final int LONG_CLICK_INTERVAL = 1000;
 
-    // FIX #4: Manual Steering Priority Tracker
     public static final int TARGET_AUTO = 0;
     public static final int TARGET_MIRROR = 1;
     public static final int TARGET_WEB = 2;
@@ -56,7 +55,6 @@ public class KeyEventHandler {
     
     private static final AtomicBoolean isHardwareSwiping = new AtomicBoolean(false);
     
-    // GROUP 1: The Bullies. These apps ignore BT keys and steal the media session.
     private static final Set<String> STUBBORN_SCROLLERS = new HashSet<>(Arrays.asList(
             "com.zhiliaoapp.musically", // TikTok Global
             "com.ss.android.ugc.trill", // TikTok Asia
@@ -64,7 +62,6 @@ public class KeyEventHandler {
             "com.snapchat.android"      // Snapchat
     ));
 
-    // GROUP 2: The Good Citizens. These apps natively support BT Next/Prev keys.
     private static final Set<String> NATIVE_BT_SCROLLERS = new HashSet<>(Arrays.asList(
             "com.ss.android.ugc.aweme",     // Douyin (CN)
             "com.facebook.katana",          // Facebook
@@ -320,18 +317,28 @@ public class KeyEventHandler {
                 boolean isNext = (code == KeyEvent.KEYCODE_MEDIA_NEXT);
                 String activePkg = AccessibilityEventDispatcherService.getLastActivePackage();
                 ActivityFragment activeFragment = (finalTargetActivity != null) ? finalTargetActivity.getActiveFragment() : null;
+                String fragName = (activeFragment != null) ? activeFragment.getClass().getSimpleName() : "null";
                 
                 boolean isWebBrowser = activeFragment != null && 
                         activeFragment.getClass().getName().endsWith("WebBrowserFragment") && 
                         !activeFragment.getClass().getName().endsWith("YoutubeFragment");
 
-                // FIX #4: Absolute override based on last physical touch
                 boolean forceMirror = (manualTouchFocus == TARGET_MIRROR);
                 boolean forceWeb = (manualTouchFocus == TARGET_WEB);
+                
+                String focusStr = forceMirror ? "TARGET_MIRROR" : (forceWeb ? "TARGET_WEB" : "TARGET_AUTO");
+
+                Log.i("[ROUTING_TELEMETRY]", "Steering Wheel Key: " + (isNext ? "NEXT" : "PREV") + 
+                      " | ActiveOSPkg: [" + activePkg + "]" + 
+                      " | PermataFrag: [" + fragName + "]" + 
+                      " | isWebBrowser: " + isWebBrowser +
+                      " | manualTouchFocus: " + focusStr +
+                      " | isMirroring: " + PermataApplication.get().isMirroringMode());
 
                 // PRIORITY 1: MIRRORED NATIVE SCROLLER
                 if (forceMirror || (PermataApplication.get().isMirroringMode() && activePkg != null && !activePkg.startsWith("my.app.permata"))) {
                     lastGlobalActionTime = currentUptime;
+                    Log.i("[ROUTING_TELEMETRY]", "Routing Priority 1 (Mirroring): Injecting steering swipe to Virtual Display for package " + activePkg);
                     
                     my.app.permata.auto.MirrorDisplay md = my.app.permata.auto.MirrorDisplay.get();
                     if (md != null) {
@@ -363,6 +370,7 @@ public class KeyEventHandler {
                 // PRIORITY 2: PERMATA WEB BROWSER
                 if (forceWeb || isWebBrowser) {
                     lastGlobalActionTime = currentUptime;
+                    Log.i("[ROUTING_TELEMETRY]", "Routing Priority 2 (Web Browser): Trigerring JS / Hardware Swipe inside PermataWebView.");
                     if (finalTargetActivity != null) {
                         finalTargetActivity.post(() -> {
                             if (finalTargetActivity.getWindow() != null) {
@@ -423,9 +431,10 @@ public class KeyEventHandler {
                     return true;
                 }
 
-                // PRIORITY 3: VIRTUAL DISPLAY FALLBACK (General Mirroring Intercept)
+                // PRIORITY 3: VIRTUAL DISPLAY FALLBACK
                 if (PermataApplication.get().isMirroringMode()) {
                     lastGlobalActionTime = currentUptime;
+                    Log.i("[ROUTING_TELEMETRY]", "Routing Priority 3 (Fallback Mirroring): Injecting steering swipe to Virtual Display.");
                     my.app.permata.auto.MirrorDisplay md = my.app.permata.auto.MirrorDisplay.get();
                     if (md != null) {
                         int width = 1000;
@@ -455,13 +464,16 @@ public class KeyEventHandler {
 
                 if (activePkg != null && !activePkg.startsWith("my.app.permata")) {
                     if (isStubbornScroller(activePkg)) {
+                        Log.i("[ROUTING_TELEMETRY]", "Routing Priority 4 (Native Stubborn): Firing God-Mode Swipe to phone glass.");
                         executeNativeAppSwipe(!isNext, activePkg);
                         return true; 
                     } else if (isNativeBtScroller(activePkg)) {
+                        Log.i("[ROUTING_TELEMETRY]", "Routing Priority 5 (Native Good): Yielding to OS for native app BT scrolling.");
                         return defaultHandler.apply(code, event);
                     }
                 }
 
+                Log.i("[ROUTING_TELEMETRY]", "Routing Failure: No routing conditions met. Yielding to OS default.");
                 return defaultHandler.apply(code, event);
             }
         }
@@ -512,9 +524,7 @@ public class KeyEventHandler {
             
             Object result = getWebViewMethod.invoke(activeFragment);
             if (result instanceof WebView) return (WebView) result;
-        } catch (Exception e) {
-            Log.e(e, "[REACTION] Discovery: Failed to scan for WebView.");
-        }
+        } catch (Exception e) {}
         return null;
     }
 
@@ -602,9 +612,6 @@ public class KeyEventHandler {
         }
         try {
             boolean success = AccessibilityEventDispatcherService.dispatchGodModeSwipe(up);
-            if (!success) {
-                Log.w("[NATIVE_SWIPE] Accessibility Gesture failed or service unavailable.");
-            }
         } finally {
             new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(() -> {
                 isHardwareSwiping.set(false);
