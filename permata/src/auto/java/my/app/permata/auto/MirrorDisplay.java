@@ -126,7 +126,6 @@ public class MirrorDisplay {
 	private final Handler mainHandler = new Handler(Looper.getMainLooper());
 	
 	private final Runnable idleDimRunnable = () -> {
-		Log.d("Idle timeout reached. Dimming screen and engaging nuclear rotation lock.");
 		dimScreen(PermataApplication.get());
 	};
 
@@ -196,6 +195,10 @@ public class MirrorDisplay {
 			this.sc = sc;
 			currentMetrics = null; 
 			
+			// FIX #6: Re-dim and re-lock rotation when mirror is active again
+			dimScreen(PermataApplication.get());
+			disableAccelRotation(PermataApplication.get());
+			
 			if (session.isDoneNotFailed()) {
 				try {
 					var vd = this.session.getOrThrow().vd;
@@ -220,6 +223,10 @@ public class MirrorDisplay {
 			var oldSc = this.sc;
 			if (oldSc != sc) return;
 			this.sc = null;
+			
+			// FIX #6: Instantly restore phone to fully unlocked and bright when car surface is minimized
+			restoreBrightness(PermataApplication.get(), true);
+			restoreAccelRotation(PermataApplication.get(), true);
 			
 			if (session.isDoneNotFailed()) {
 				try {
@@ -709,7 +716,6 @@ public class MirrorDisplay {
 					s.close();
 					return;
 				}
-				Log.i("Session created: ", s);
 				session = Completed.completed(s);
 				started();
 			}
@@ -730,9 +736,7 @@ public class MirrorDisplay {
 			try {
 				Session oldSession = session.getOrThrow();
 				if (oldSession != null) oldSession.close();
-			} catch (Exception e) {
-				Log.e(e, "Failed to guillotine previous session.");
-			}
+			} catch (Exception e) {}
 			session = Completed.cancelled();
 		}
 		
@@ -759,16 +763,13 @@ public class MirrorDisplay {
 						cleanUpLocked();
 						return;
 					}
-					Log.e(err, "Failed to create media projection");
 					retryCreateSession(p);
 				} else if (mp == null) {
-					Log.e("Failed to create media projection");
 					retryCreateSession(p);
 				} else {
 					try {
 						p.complete(new Session(mp, MirrorDisplay.this));
 					} catch (Exception ex) {
-						Log.e(ex, "Failed to create VirtualDisplay");
 						retryCreateSession(p);
 					}
 				}
@@ -779,7 +780,6 @@ public class MirrorDisplay {
 	private void retryCreateSession(Promise<Session> p) {
 		PermataApplication.get().getHandler().schedule(() -> {
 			if (p.isDone()) return;
-			Log.i("Retrying to create media projection");
 			createSession(p);
 		}, 3000);
 	}
@@ -809,15 +809,11 @@ public class MirrorDisplay {
 			c.translate(w / 2f, h / 2f - sl.getHeight() / 2f);
 			sl.draw(c);
 			surface.unlockCanvasAndPost(c);
-		} catch (Exception err) {
-			Log.d(err, "Failed to draw message on surface");
-		}
+		} catch (Exception err) {}
 	}
 
 	private EventDispatcher dispatcher() {
-		var d = EventDispatcher.get();
-		Log.d(d);
-		return d;
+		return EventDispatcher.get();
 	}
 
 	@Nullable
@@ -876,7 +872,6 @@ public class MirrorDisplay {
 			vd = mp.createVirtualDisplay(name, sc.getWidth(), sc.getHeight(), sc.getDpi(),
 					DisplayManager.VIRTUAL_DISPLAY_FLAG_OWN_CONTENT_ONLY, sc.getSurface(), null, null);
 			if (vd == null) throw new RuntimeException("Failed to create VirtualDisplay");
-			Log.i("VirtualDisplay created");
 		}
 
 		@Override
@@ -885,7 +880,6 @@ public class MirrorDisplay {
 			synchronized (lifecycleLock) {
 				MirrorDisplay md = MirrorDisplay.instance;
 				if (md == null) return;
-				Log.i("Media projection stopped");
 				md.cleanUpLocked();
 			}
 		}
@@ -942,7 +936,6 @@ public class MirrorDisplay {
 				if (Math.abs(uptimeMillis() - lastInjectedTouchTime) > 500) {
 					resetIdleTimer();
 					if (isDimmed) {
-						Log.d("True physical touch on phone detected. Restoring brightness and natural orientation.");
 						restoreBrightness(getContext(), false);
 						restoreAccelRotation(getContext(), false);
 					}
