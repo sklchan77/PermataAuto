@@ -155,16 +155,7 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
                 
                 if (injected) return true;
                 
-                if (VERSION.SDK_INT >= VERSION_CODES.N) {
-                    Log.i("[OUTPUT_TELEMETRY]", "Unrooted Mirroring Back: Injecting Edge-Swipe Gesture on Phone Glass.");
-                    android.util.DisplayMetrics metrics = instance.getResources().getDisplayMetrics();
-                    Path swipePath = new Path();
-                    swipePath.moveTo(10f, metrics.heightPixels * 0.5f); 
-                    swipePath.lineTo(metrics.widthPixels * 0.4f, metrics.heightPixels * 0.5f); 
-                    GestureDescription.Builder gestureBuilder = new GestureDescription.Builder();
-                    gestureBuilder.addStroke(new StrokeDescription(swipePath, 0L, 150L));
-                    instance.dispatchGesture(gestureBuilder.build(), null, null);
-                }
+                Log.w("[OUTPUT_TELEMETRY]", "Virtual Display injection failed (Unrooted). Falling back directly to Global Action Back.");
             }
         }
         
