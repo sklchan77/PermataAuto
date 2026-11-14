@@ -167,11 +167,16 @@ public class MirrorActivity extends CarActivity implements SurfaceHolder.Callbac
 	}
 
 	static void onExitButtonClick() {
-		Log.i("User triggered manual shutdown from Split-Screen toolbar.");
+		Log.i("[SHUTDOWN] User triggered manual shutdown from Split-Screen toolbar.");
 		MirrorDisplay.close();
 		
 		var ctx = PermataApplication.get();
 		if (ctx != null) {
+			// CRITICAL FIX: Fire the nuclear teardown intent to PermataMediaService
+			Intent shutdownIntent = new Intent(ctx, PermataMediaService.class);
+			shutdownIntent.setAction(PermataMediaService.ACTION_FORCE_SHUTDOWN);
+			ctx.startService(shutdownIntent);
+
 			Intent intent = new Intent(ctx, LauncherActivity.class);
 			intent.setAction(MainActivityDelegate.INTENT_ACTION_FINISH);
 			intent.setFlags(FLAG_ACTIVITY_NEW_TASK | FLAG_ACTIVITY_CLEAR_TOP | FLAG_ACTIVITY_SINGLE_TOP);
