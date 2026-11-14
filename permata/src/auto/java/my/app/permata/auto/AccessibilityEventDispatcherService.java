@@ -66,25 +66,25 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
 		try {
 			if (pointers != null && pointers.length > 0 && pointers[0] != null) {
 				if (pointers[0].sd != null) {
-					Log.w("[DRAG_TELEMETRY] Virtual finger safety timeout triggered. Forcing ACTION_UP to release phone screen.");
 					long now = android.os.SystemClock.uptimeMillis();
 					buildGesture(pointers[0], now, now, MotionEvent.ACTION_UP, pointers[0].x, pointers[0].y, false);
 					dispatch();
 				}
 			}
-		} catch (Exception e) {
-			Log.e(e, "[DRAG_TELEMETRY] Failed to release virtual finger lock safely.");
-		}
+		} catch (Exception e) {}
 	};
 
 	private final BroadcastReceiver commandReceiver = new BroadcastReceiver() {
 		@Override
 		public void onReceive(Context context, Intent intent) {
 			if ("my.app.permata.ACTION_GLOBAL_BACK".equals(intent.getAction())) {
+				Log.i("[OUTPUT_TELEMETRY]", "Accessibility API dispatching Global Action: GLOBAL_ACTION_BACK");
 				performGlobalAction(GLOBAL_ACTION_BACK);
 			} else if ("my.app.permata.ACTION_GLOBAL_HOME".equals(intent.getAction())) {
+				Log.i("[OUTPUT_TELEMETRY]", "Accessibility API dispatching Global Action: GLOBAL_ACTION_HOME");
 				performGlobalAction(GLOBAL_ACTION_HOME);
-			} else if ("my.app.permata.ACTION_GLOBAL_RECENT".equals(intent.getAction())) { 
+			} else if ("my.app.permata.ACTION_GLOBAL_RECENT".equals(intent.getAction())) {
+				Log.i("[OUTPUT_TELEMETRY]", "Accessibility API dispatching Global Action: GLOBAL_ACTION_RECENTS");
 				performGlobalAction(GLOBAL_ACTION_RECENTS);
 			}
 		}
@@ -108,25 +108,21 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
 	}
 
 	static void autoClickOnButton(@Nullable String text) {
-		if (clickOnButton != null) Log.i("Disabled auto click on button with text: ", clickOnButton);
-		if (text != null) Log.i("Enabled auto click on button with text: ", text);
 		clickOnButton = text;
 	}
 
 	public static boolean dispatchBack() {
 		var ds = instance;
 		if (ds == null) return false;
+		Log.i("[OUTPUT_TELEMETRY]", "Accessibility API dispatching Global Action: GLOBAL_ACTION_BACK");
 		return ds.performGlobalAction(GLOBAL_ACTION_BACK);
 	}
 
 	public static boolean dispatchUniversalBack() {
 		var ds = instance;
 		if (ds == null) return false;
-
-		Log.i("[BACK_TELEMETRY] Firing standard Universal OS Back command.");
         
         if (PermataApplication.get().isMirroringMode()) {
-            Log.i("[BACK_TELEMETRY] Mirroring mode active. Attempting Virtual Display Back.");
             my.app.permata.auto.MirrorDisplay md = my.app.permata.auto.MirrorDisplay.get();
             
             if (md != null) {
@@ -143,7 +139,7 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
                         m.invoke(md, down);
                         m.invoke(md, up);
                         injected = true;
-                        Log.i("[BACK_TELEMETRY] Injected Virtual Display back successfully using: " + mName + "(KeyEvent)");
+                        Log.i("[OUTPUT_TELEMETRY]", "Virtual Display Back successfully injected using: " + mName + "(KeyEvent)");
                         break;
                     } catch (Exception ignored) {}
                     
@@ -152,21 +148,19 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
                         m.invoke(md, down);
                         m.invoke(md, up);
                         injected = true;
-                        Log.i("[BACK_TELEMETRY] Injected Virtual Display back successfully using: " + mName + "(InputEvent)");
+                        Log.i("[OUTPUT_TELEMETRY]", "Virtual Display Back successfully injected using: " + mName + "(InputEvent)");
                         break;
                     } catch (Exception ignored) {}
                 }
                 
                 if (injected) return true;
                 
-                Log.w("[BACK_TELEMETRY] No KeyEvent method exposed in MirrorDisplay. Returning FALSE to trigger unrooted EventDispatcher fallback.");
                 return false; 
-            } else {
-                Log.w("[BACK_TELEMETRY] MirrorDisplay instance is null. Falling back to global phone action.");
             }
         }
         
 		isInjectingBack = true;
+		Log.i("[OUTPUT_TELEMETRY]", "Accessibility API dispatching Global Action: GLOBAL_ACTION_BACK (Universal)");
 		boolean success = ds.performGlobalAction(GLOBAL_ACTION_BACK);
 		
 		new Handler(Looper.getMainLooper()).postDelayed(() -> isInjectingBack = false, 300);
@@ -177,11 +171,9 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
 	public static boolean dispatchGodModeSwipe(boolean up) {
 		var ds = instance;
 		if (ds == null) {
-			Log.w("[SWIPE_TELEMETRY] Failed: Accessibility Service instance is null.");
 			return false;
 		}
 		if (VERSION.SDK_INT < VERSION_CODES.N) {
-			Log.w("[SWIPE_TELEMETRY] Failed: Android API < N.");
 			return false;
 		}
 
@@ -204,6 +196,8 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
 
 		GestureDescription.Builder gestureBuilder = new GestureDescription.Builder();
 		gestureBuilder.addStroke(new StrokeDescription(swipePath, 0L, duration));
+		
+		Log.i("[OUTPUT_TELEMETRY]", "Accessibility API injecting Hardware Swipe (God-Mode). Y-Start: " + yStart + " Y-End: " + yEnd);
 
 		boolean accepted = ds.dispatchGesture(gestureBuilder.build(), new AccessibilityService.GestureResultCallback() {
 			@Override
@@ -223,12 +217,14 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
 	static boolean dispatchHome() {
 		var ds = instance;
 		if (ds == null) return false;
+		Log.i("[OUTPUT_TELEMETRY]", "Accessibility API dispatching Global Action: GLOBAL_ACTION_HOME");
 		return ds.performGlobalAction(GLOBAL_ACTION_HOME);
 	}
 	
 	static boolean dispatchRecent() {
 		var ds = instance;
 		if (ds == null) return false;
+		Log.i("[OUTPUT_TELEMETRY]", "Accessibility API dispatching Global Action: GLOBAL_ACTION_RECENTS");
 		return ds.performGlobalAction(GLOBAL_ACTION_RECENTS);
 	}
 
@@ -239,6 +235,7 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
 		ds.path.reset();
 		ds.path.moveTo(x, y);
 		var gb = new GestureDescription.Builder().addStroke(new StrokeDescription(ds.path, 0L, 50L));
+		Log.i("[OUTPUT_TELEMETRY]", "Accessibility API dispatching Tap. X: " + x + ", Y: " + y);
 		return ds.dispatchSingleGesture(gb.build());
 	}
 
@@ -267,6 +264,7 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
 			path.lineTo(x + 10, y);
 			ds.addStroke(new StrokeDescription(path, 0L, dur, false));
 		}
+		Log.i("[OUTPUT_TELEMETRY]", "Accessibility API dispatching Scale. X: " + x + ", Y: " + y);
 		return ds.dispatch();
 	}
 
@@ -280,8 +278,6 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
 		if (action != MotionEvent.ACTION_UP && action != MotionEvent.ACTION_CANCEL) {
 			ds.safetyHandler.postDelayed(ds.safetyReleaseRunnable, 500); 
 		}
-		
-		// FIX #2: Removed ACTION_MOVE 30ms throttling here to allow 1:1 fluid dragging for popups.
 
 		var pointers = ds.pointers;
 		var cnt = e.getPointerCount();
@@ -317,6 +313,9 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
 		} else {
 			idx = 0;
 		}
+		
+		Log.i("[OUTPUT_TELEMETRY]", "Accessibility API dispatching Multi-Touch MotionEvent: ACTION=" + action + " Pointers=" + cnt);
+		
 		for (; idx < cnt; idx++) {
 			var x = e.getX(idx);
 			var y = e.getY(idx);
@@ -337,10 +336,11 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
 			ds.safetyHandler.postDelayed(ds.safetyReleaseRunnable, 500); 
 		}
 		
-		// FIX #2: Removed ACTION_MOVE 30ms throttling here.
-		
 		if ((x < 0f) || (y < 0f)) return true;
 		var p = instance.pointers[0];
+		
+		Log.i("[OUTPUT_TELEMETRY]", "Accessibility API dispatching Single-Touch MotionEvent: ACTION=" + action + " X=" + x + " Y=" + y);
+		
 		return ds.buildGesture(p, downTime, eventTime, action, x, y, false) && ds.dispatch();
 	}
 
@@ -387,7 +387,6 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
 				addStroke(sd);
 			}
 			default -> {
-				Log.d("Unable to dispatch event with action ", action);
 				return false;
 			}
 		}
@@ -515,9 +514,7 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
 			Intent reclaimIntent = new Intent(context, my.app.permata.media.service.PermataMediaService.class);
 			reclaimIntent.setAction(action);
 			context.startService(reclaimIntent);
-		} catch (Exception e) {
-			Log.e(e, "Watchdog failed to send intent: " + action);
-		}
+		} catch (Exception e) {}
 	}
 
 	private void checkAndClickMediaProjectionConsent(AccessibilityNodeInfo root, String pkgName) {
