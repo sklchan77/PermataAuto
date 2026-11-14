@@ -99,19 +99,29 @@ public class LauncherActivity extends AppCompatActivity {
 		w.addFlags(
 				FLAG_KEEP_SCREEN_ON | FLAG_TURN_SCREEN_ON | FLAG_DISMISS_KEYGUARD | FLAG_SHOW_WHEN_LOCKED);
 		w.getDecorView().setSystemUiVisibility(FULLSCREEN_FLAGS);
+		
 		getOnBackPressedDispatcher().addCallback(new OnBackPressedCallback(true) {
 			@Override
 			public void handleOnBackPressed() {
 				if (v.selectApps != null) {
 					v.selectApps();
 				} else {
-					// FIX #3: Back button on Dummy Home Screen forces Teardown
 					executeNuclearExit();
 				}
 			}
 		});
+		
 		PermataApplication.get().getHandler()
 				.postDelayed(() -> v.configure(this, getResources().getConfiguration()), 1000);
+	}
+	
+	private void executeNuclearExit() {
+		Log.i("[SHUTDOWN] Nuclear exit triggered from LauncherActivity.");
+		MirrorDisplay.close();
+		Intent shutdownIntent = new Intent(this, PermataMediaService.class);
+		shutdownIntent.setAction(PermataMediaService.ACTION_FORCE_SHUTDOWN);
+		startService(shutdownIntent);
+		finishAndRemoveTask();
 	}
 
 	@Override
@@ -138,16 +148,6 @@ public class LauncherActivity extends AppCompatActivity {
 		setRequestedOrientation(
 				land ? SCREEN_ORIENTATION_SENSOR_LANDSCAPE :
 						SCREEN_ORIENTATION_SENSOR_PORTRAIT);
-	}
-
-	// FIX #3: Obliterate dummy app and tear down mirroring
-	private void executeNuclearExit() {
-		Log.i("[SHUTDOWN] Nuclear exit triggered from LauncherActivity.");
-		MirrorDisplay.close();
-		Intent shutdownIntent = new Intent(this, PermataMediaService.class);
-		shutdownIntent.setAction(PermataMediaService.ACTION_FORCE_SHUTDOWN);
-		startService(shutdownIntent);
-		finishAndRemoveTask();
 	}
 
 	private final class AppListView extends RecyclerView {
