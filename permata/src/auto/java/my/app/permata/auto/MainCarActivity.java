@@ -133,15 +133,22 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 		getActivityDelegate().onSuccess(MainActivityDelegate::onActivityResume);
 		
 		KeyEventHandler.manualTouchFocus = KeyEventHandler.TARGET_WEB;
+		Log.i("[INPUT_TELEMETRY] MainCarActivity onResume: Touch-Focus Priority aggressively locked to TARGET_WEB.");
 		
 		try {
 			Intent hijackIntent = new Intent(this, my.app.permata.media.service.PermataMediaService.class);
 			hijackIntent.setAction(my.app.permata.media.service.PermataMediaService.ACTION_HIJACK_FOCUS);
 			startService(hijackIntent);
-			Log.i("MainCarActivity: Hijack Intent fired successfully on resume.");
-		} catch (Exception e) {
-			Log.e(e, "MainCarActivity: Failed to fire hijack intent on resume.");
+		} catch (Exception e) {}
+	}
+
+	@Override
+	public boolean dispatchTouchEvent(MotionEvent ev) {
+		if (ev.getActionMasked() == MotionEvent.ACTION_DOWN) {
+			KeyEventHandler.manualTouchFocus = KeyEventHandler.TARGET_WEB;
+			Log.i("[INPUT_TELEMETRY] Car Web Browser touched (Action DOWN). Touch-Focus locked to TARGET_WEB.");
 		}
+		return super.dispatchTouchEvent(ev);
 	}
 
 	@Override
@@ -267,7 +274,6 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 
 	@Override
 	public boolean onKeyUp(int keyCode, KeyEvent keyEvent) {
-		Log.i(keyEvent);
 		MainActivityDelegate d = delegate.peek();
 		if (d == null) return super.onKeyUp(keyCode, keyEvent);
 
@@ -298,7 +304,6 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 
 	@Override
 	public boolean onKeyDown(int keyCode, KeyEvent keyEvent) {
-		Log.i(keyEvent);
 		MainActivityDelegate d = delegate.peek();
 		if (d == null) return super.onKeyDown(keyCode, keyEvent);
 		if (!d.getPrefs().useDpadCursor(d)) return d.onKeyDown(keyCode, keyEvent, super::onKeyDown);
