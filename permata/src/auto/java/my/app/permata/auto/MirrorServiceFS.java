@@ -104,7 +104,6 @@ public class MirrorServiceFS extends CarAppService {
 		
 		private float lastClickX = -1f;
 		private float lastClickY = -1f;
-		private long lastClickTime = 0L;
 
 		MirrorScreen(@NonNull CarContext ctx) {
 			super(ctx);
@@ -144,7 +143,7 @@ public class MirrorServiceFS extends CarAppService {
 		@Override
 		public void onClick(float x, float y) {
 			KeyEventHandler.manualTouchFocus = KeyEventHandler.TARGET_MIRROR;
-			Log.i("[INPUT_TELEMETRY] Car Mirror Screen clicked at X:" + x + " Y:" + y + ". Touch-Focus locked to TARGET_MIRROR.");
+			Log.i("[INPUT_TELEMETRY]", "Car Mirror Screen clicked at X:" + x + " Y:" + y + ". Touch-Focus locked to TARGET_MIRROR.");
 
 			if (scrollUp != null) {
 				scrollUp.cancel();
@@ -154,7 +153,6 @@ public class MirrorServiceFS extends CarAppService {
 			
 			lastClickX = x;
 			lastClickY = y;
-			lastClickTime = uptimeMillis();
 			
 			if (md() != null) md().tap(x, y);
 		}
@@ -174,9 +172,9 @@ public class MirrorServiceFS extends CarAppService {
 			
 			if (!isPanning || scrollUp == null) {
 				isPanning = true;
-				Log.i("[INPUT_TELEMETRY] Car Mirror Screen scroll initiated. Touch-Focus locked to TARGET_MIRROR.");
+				Log.i("[INPUT_TELEMETRY]", "Car Mirror Screen scroll initiated. Touch-Focus locked to TARGET_MIRROR.");
 				
-				if (time - lastClickTime < 1500 && lastClickX >= 0 && lastClickY >= 0) {
+				if (lastClickX >= 0 && lastClickY >= 0) {
 					scrollStartX = lastClickX;
 					scrollStartY = lastClickY;
 				} else {
@@ -193,7 +191,7 @@ public class MirrorServiceFS extends CarAppService {
 				}
 				scrollDownTime = time;
 				
-				scheduleScrollUp(200);
+				scheduleScrollUp(500);
 			}
 			
 			scrollX -= distanceX;
@@ -202,7 +200,7 @@ public class MirrorServiceFS extends CarAppService {
 			
 			if (scrollUp != null) {
 				scrollUp.cancel();
-				scheduleScrollUp(200);
+				scheduleScrollUp(500);
 			}
 		}
 
@@ -227,7 +225,7 @@ public class MirrorServiceFS extends CarAppService {
 		@Override
 		public void onScale(float focusX, float focusY, float scaleFactor) {
 			KeyEventHandler.manualTouchFocus = KeyEventHandler.TARGET_MIRROR;
-			Log.i("[INPUT_TELEMETRY] Car Mirror Screen scaled at X:" + focusX + " Y:" + focusY + ". Touch-Focus locked to TARGET_MIRROR.");
+			Log.i("[INPUT_TELEMETRY]", "Car Mirror Screen scaled at X:" + focusX + " Y:" + focusY + ". Touch-Focus locked to TARGET_MIRROR.");
 			scrollStartX = focusX;
 			scrollStartY = focusY;
 			if (md() != null) md().scale(focusX, focusY, scaleFactor > 1f);
