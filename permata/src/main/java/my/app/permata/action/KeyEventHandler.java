@@ -8,6 +8,7 @@ import static android.view.KeyEvent.ACTION_UP;
 import android.app.Activity;
 import android.content.Context;
 import android.content.ContextWrapper;
+import android.content.Intent;
 import android.net.Uri;
 import android.util.DisplayMetrics;
 import android.view.InputDevice;
@@ -32,6 +33,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 import my.app.permata.PermataApplication;
 import my.app.permata.auto.AccessibilityEventDispatcherService;
+import my.app.permata.auto.EventDispatcher;
 import my.app.permata.media.service.MediaSessionCallback;
 import my.app.permata.ui.activity.MainActivityDelegate;
 import my.app.utils.function.IntObjectFunction;
@@ -43,8 +45,6 @@ public class KeyEventHandler {
     private static final int DBL_CLICK_INTERVAL = 500;
     private static final int LONG_CLICK_INTERVAL = 1000;
 
-    // COMPILER DUMMIES: Restored to prevent compilation crashes in PermataWebView and MirrorActivity.
-    // The routing engine completely ignores these and uses the stateless blind-broadcast loop.
     public static final int TARGET_AUTO = 0;
     public static final int TARGET_MIRROR = 1;
     public static final int TARGET_WEB = 2;
@@ -55,10 +55,38 @@ public class KeyEventHandler {
     
     private static final AtomicBoolean isHardwareSwiping = new AtomicBoolean(false);
     
+    private static final Set<String> STUBBORN_SCROLLERS = new HashSet<>(Arrays.asList(
+            "com.zhiliaoapp.musically", // TikTok Global
+            "com.ss.android.ugc.trill", // TikTok Asia
+            "com.instagram.android",    // Instagram
+            "com.snapchat.android"      // Snapchat
+    ));
+
+    private static final Set<String> NATIVE_BT_SCROLLERS = new HashSet<>(Arrays.asList(
+            "com.ss.android.ugc.aweme",     // Douyin (CN)
+            "com.facebook.katana",          // Facebook
+            "app.revanced.android.youtube", // YouTube Vanced
+            "com.google.android.youtube",   // YouTube
+            "com.reddit.frontpage",         // Reddit
+            "com.twitter.android",          // X/Twitter
+            "tv.danmaku.bili"               // Bilibili
+    ));
+    
+    public static boolean isStubbornScroller(String pkgName) {
+        return pkgName != null && STUBBORN_SCROLLERS.contains(pkgName);
+    }
+
+    public static boolean isNativeBtScroller(String pkgName) {
+        return pkgName != null && NATIVE_BT_SCROLLERS.contains(pkgName);
+    }
+    
+    public static boolean isScrollerPackage(String pkgName) {
+        return isStubbornScroller(pkgName) || isNativeBtScroller(pkgName);
+    }
+    
     private static final Map<Class<?>, Method> webViewMethodCache = new ConcurrentHashMap<>();
     private static final Map<View, Long> scrollTimestamps = Collections.synchronizedMap(new WeakHashMap<>());
 
-    // RESTORED: Your original massive, robust JS surgery payload
     private static final String JS_UNIVERSAL_PAYLOAD = "(function(){" +
             "let res = 'Discovery [Layer 2]: JS Registry Miss (No custom formatting applied)'; " +
             "const injectGlobalWipe = function() { " +
@@ -260,15 +288,9 @@ public class KeyEventHandler {
             }
         }
 
-        // SURVIVAL FETCH: Ensure we always have a live UI reference even after a RECENT kill
-        boolean isUiDead = false;
-        if (targetActivity == null) {
-            isUiDead = true;
-        } else if (targetActivity.getAppActivity() == null) {
-            isUiDead = true;
-        } else if (targetActivity.getAppActivity() instanceof Activity) {
-            isUiDead = ((Activity) targetActivity.getAppActivity()).isDestroyed();
-        }
+        // SURVIVAL FETCH: If the Recents menu killed the UI memory, grab the live Car Screen instance
+        boolean isUiDead = (targetActivity == null || targetActivity.getAppActivity() == null || 
+                           (targetActivity.getAppActivity() instanceof Activity && ((Activity) targetActivity.getAppActivity()).isDestroyed()));
 
         if (isUiDead) {
             if (my.app.permata.auto.MainCarActivity.activeInstance != null) {
@@ -288,90 +310,142 @@ public class KeyEventHandler {
                 
                 long currentUptime = android.os.SystemClock.uptimeMillis();
                 if (currentUptime - lastGlobalActionTime < 250) {
-                    return true; // Prevent rapid-fire double inputs
+                    return true;
                 }
-                lastGlobalActionTime = currentUptime;
+
                 boolean isNext = (code == KeyEvent.KEYCODE_MEDIA_NEXT);
+                String activePkg = AccessibilityEventDispatcherService.getLastActivePackage();
+                ActivityFragment activeFragment = (finalTargetActivity != null) ? finalTargetActivity.getActiveFragment() : null;
+                String fragName = (activeFragment != null) ? activeFragment.getClass().getSimpleName() : "null";
+                
+                boolean isWebBrowser = activeFragment != null && 
+                        activeFragment.getClass().getName().endsWith("WebBrowserFragment") && 
+                        !activeFragment.getClass().getName().endsWith("YoutubeFragment");
+                        
+                boolean isMirroring = PermataApplication.get().isMirroringMode();
 
-                boolean injectedAny = false;
+                if (manualTouchFocus == TARGET_WEB && !isWebBrowser) manualTouchFocus = TARGET_AUTO;
+                if (manualTouchFocus == TARGET_MIRROR && !isMirroring) manualTouchFocus = TARGET_AUTO;
 
-                Log.i("[ROUTING_TELEMETRY]", "Executing Bulletproof Catch-All Steering Input: Mirroring + Web + Media");
+                boolean forceMirror = (manualTouchFocus == TARGET_MIRROR) && isMirroring;
+                boolean forceWeb = (manualTouchFocus == TARGET_WEB) && isWebBrowser;
+                
+                String focusStr = forceMirror ? "TARGET_MIRROR" : (forceWeb ? "TARGET_WEB" : "TARGET_AUTO");
 
-                // 1. BLIND BROADCAST TO MIRRORING DISPLAY (Executes seamlessly if active)
-                try {
-                    if (PermataApplication.get().isMirroringMode()) {
-                        my.app.permata.auto.MirrorDisplay md = my.app.permata.auto.MirrorDisplay.get();
-                        if (md != null) {
-                            int width = 1000, height = 1000;
+                Log.i("[ROUTING_TELEMETRY]", "Steering Wheel Key: " + (isNext ? "NEXT" : "PREV") + 
+                      " | ActiveOSPkg: [" + activePkg + "]" + 
+                      " | PermataFrag: [" + fragName + "]" + 
+                      " | isWebBrowser: " + isWebBrowser +
+                      " | manualTouchFocus: " + focusStr +
+                      " | isMirroring: " + isMirroring);
+
+                if (forceMirror || (isMirroring && activePkg != null && !activePkg.startsWith("my.app.permata"))) {
+                    lastGlobalActionTime = currentUptime;
+                    Log.i("[ROUTING_TELEMETRY]", "Routing Priority 1 (Mirroring): Injecting steering swipe to Virtual Display for package " + activePkg);
+                    
+                    my.app.permata.auto.MirrorDisplay md = my.app.permata.auto.MirrorDisplay.get();
+                    if (md != null) {
+                        int width = 1000;
+                        int height = 1000;
+                        try {
                             if (finalTargetActivity != null && finalTargetActivity.getResources() != null) {
                                 android.util.DisplayMetrics metrics = finalTargetActivity.getResources().getDisplayMetrics();
                                 width = metrics.widthPixels;
                                 height = metrics.heightPixels;
                             }
-                            float actionX = width * 0.50f;
-                            float centerY = height * 0.50f;
-                            float span = height * 0.30f;
-                            float yStart = (!isNext) ? (centerY - span / 2f) : (centerY + span / 2f);
-                            float yEnd = (!isNext) ? (centerY + span / 2f) : (centerY - span / 2f);
-                            
-                            long now = android.os.SystemClock.uptimeMillis();
-                            md.motionEvent(now, now, MotionEvent.ACTION_DOWN, actionX, yStart);
-                            md.motionEvent(now, now + 50, MotionEvent.ACTION_MOVE, actionX, centerY);
-                            md.motionEvent(now, now + 100, MotionEvent.ACTION_UP, actionX, yEnd);
-                            injectedAny = true;
-                        }
-                    }
-                } catch (Exception ignored) {}
+                        } catch (Exception ignored) {}
 
-                // 2. BLIND BROADCAST TO WEB BROWSER (Executes seamlessly if any WebView is alive)
-                if (finalTargetActivity != null) {
-                    try {
-                        WebView resolvedWebView = null;
-                        ActivityFragment frag = finalTargetActivity.getActiveFragment();
-                        if (frag != null) {
-                            resolvedWebView = scanFragmentsForWebView(frag);
-                        }
-                        if (resolvedWebView == null) {
-                            resolvedWebView = findTopVisibleWebView(finalTargetActivity);
-                        }
+                        float actionX = width * 0.50f;
+                        float centerY = height * 0.50f;
+                        float span = height * 0.30f;
                         
-                        if (resolvedWebView != null && resolvedWebView.isShown()) {
-                            final WebView wv = resolvedWebView;
-                            finalTargetActivity.post(() -> {
-                                String currentUrl = wv.getUrl();
-                                String host = "unknown";
-                                boolean isMediaHost = false;
-                                boolean isDouyin = false;
-                                boolean isTikTok = false;
-                                
-                                if (currentUrl != null) {
-                                    try {
-                                        host = Uri.parse(currentUrl).getHost();
-                                        if (host != null) {
-                                            if (host.startsWith("www.")) host = host.substring(4);
-                                            String h = host.toLowerCase();
-                                            isTikTok = h.contains("tiktok");
-                                            isDouyin = h.contains("douyin");
-                                            isMediaHost = isTikTok || isDouyin || h.contains("instagram") || h.contains("youtube") || h.contains("facebook") || h.contains("bilibili");
-                                        }
-                                    } catch (Exception ignored) {}
-                                }
-                                View touchTargetView = isTikTok ? wv : findTopmostTouchTarget(finalTargetActivity, wv);
-                                
-                                // RESTORED: Calling your original smartScroll logic!
-                                smartScrollWebView(wv, touchTargetView, !isNext, "[Host: " + host + "] ", isMediaHost, isDouyin, isTikTok);
-                            });
-                            injectedAny = true;
-                        }
-                    } catch (Exception ignored) {}
+                        float yStart = (!isNext) ? (centerY - span / 2f) : (centerY + span / 2f);
+                        float yEnd = (!isNext) ? (centerY + span / 2f) : (centerY - span / 2f);
+
+                        long now = android.os.SystemClock.uptimeMillis();
+                        md.motionEvent(now, now, MotionEvent.ACTION_DOWN, actionX, yStart);
+                        md.motionEvent(now, now + 50, MotionEvent.ACTION_MOVE, actionX, centerY);
+                        md.motionEvent(now, now + 100, MotionEvent.ACTION_UP, actionX, yEnd);
+                    }
+                    return true;
                 }
 
-                // 3. MEDIA (Fallback): If no active screens were found, yield to ExoPlayer/VLC for IPTV.
-                if (!injectedAny) {
+                if (forceWeb || isWebBrowser) {
+                    lastGlobalActionTime = currentUptime;
+                    Log.i("[ROUTING_TELEMETRY]", "Routing Priority 2 (Web Browser): Trigerring JS / Hardware Swipe inside PermataWebView.");
+                    if (finalTargetActivity != null) {
+                        finalTargetActivity.post(() -> {
+                            if (finalTargetActivity.getWindow() != null) {
+                                Context ctx = finalTargetActivity.getWindow().getContext();
+                                while (ctx instanceof ContextWrapper) {
+                                    if (ctx instanceof Activity) break;
+                                    ctx = ((ContextWrapper) ctx).getBaseContext();
+                                }
+                                if (ctx instanceof Activity) {
+                                    Activity act = (Activity) ctx;
+                                    if (act.isFinishing() || act.isDestroyed()) return;
+                                }
+                            }
+
+                            WebView resolvedWebView = scanFragmentsForWebView(activeFragment);
+                            boolean isExplicitWebFragment = (resolvedWebView != null);
+
+                            if (resolvedWebView == null || !resolvedWebView.isShown()) {
+                                resolvedWebView = findTopVisibleWebView(finalTargetActivity);
+                            }
+
+                            if (resolvedWebView != null && resolvedWebView.isShown()) {
+                                boolean hasTouchFocus = resolvedWebView.hasFocus();
+                                boolean isFullScreenSize = false;
+                                
+                                if (finalTargetActivity.getWindow() != null && finalTargetActivity.getWindow().getDecorView() != null) {
+                                    int screenHeight = finalTargetActivity.getWindow().getDecorView().getHeight();
+                                    if (screenHeight > 0) {
+                                        isFullScreenSize = resolvedWebView.getHeight() > (screenHeight * 0.5);
+                                    }
+                                }
+
+                                if (isExplicitWebFragment || hasTouchFocus || isFullScreenSize) {
+                                    String currentUrl = resolvedWebView.getUrl();
+                                    String host = "unknown";
+                                    boolean isMediaHost = false;
+                                    boolean isDouyin = false;
+                                    boolean isTikTok = false;
+                                    
+                                    if (currentUrl != null) {
+                                        try {
+                                            host = Uri.parse(currentUrl).getHost();
+                                            if (host != null) {
+                                                if (host.startsWith("www.")) host = host.substring(4);
+                                                String h = host.toLowerCase();
+                                                isTikTok = h.contains("tiktok");
+                                                isDouyin = h.contains("douyin");
+                                                isMediaHost = isTikTok || isDouyin || h.contains("instagram") || h.contains("youtube") || h.contains("facebook") || h.contains("bilibili");
+                                            }
+                                        } catch (Exception ignored) {}
+                                    }
+                                    View touchTargetView = isTikTok ? resolvedWebView : findTopmostTouchTarget(finalTargetActivity, resolvedWebView);
+                                    smartScrollWebView(resolvedWebView, touchTargetView, !isNext, "[Host: " + host + "] ", isMediaHost, isDouyin, isTikTok);
+                                }
+                            }
+                        });
+                    }
+                    return true;
+                }
+
+                if (activePkg != null && activePkg.startsWith("my.app.permata")) {
+                    Log.i("[ROUTING_TELEMETRY]", "Routing Priority 3 (Local Media/IPTV): Yielding to PermataMediaService.");
                     return defaultHandler.apply(code, event);
                 }
 
-                return true; 
+                if (activePkg != null && isStubbornScroller(activePkg)) {
+                    Log.i("[ROUTING_TELEMETRY]", "Routing Priority 4 (Native Stubborn): Firing God-Mode Swipe to phone glass.");
+                    executeNativeAppSwipe(!isNext, activePkg);
+                    return true; 
+                }
+
+                Log.i("[ROUTING_TELEMETRY]", "Routing Priority 5 (Yield): Yielding to OS for native app BT scrolling.");
+                return defaultHandler.apply(code, event);
             }
         }
 
@@ -503,7 +577,19 @@ public class KeyEventHandler {
         return null;
     }
 
-    // RESTORED: Your original intelligent hardware touch swipe injection
+    private static void executeNativeAppSwipe(boolean up, String pkgName) {
+        if (!isHardwareSwiping.compareAndSet(false, true)) {
+            return;
+        }
+        try {
+            boolean success = AccessibilityEventDispatcherService.dispatchGodModeSwipe(up);
+        } finally {
+            new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(() -> {
+                isHardwareSwiping.set(false);
+            }, 150);
+        }
+    }
+
     private static void executeHardwareTouchSwipe(final View touchTarget, boolean up, final String hostTag, final String contextLog, boolean isTikTok) {
         if (touchTarget == null || !touchTarget.isAttachedToWindow()) return;
         
@@ -566,7 +652,6 @@ public class KeyEventHandler {
         }
     }
 
-    // RESTORED: Your original Webview scroller with the Douyin full-screen injection
     private static void smartScrollWebView(final WebView wv, final View touchTarget, boolean up, final String hostTag, boolean isMediaHost, boolean isDouyin, boolean isTikTok) {
         if (wv == null || touchTarget == null || !touchTarget.isAttachedToWindow() || touchTarget.getWidth() <= 0 || touchTarget.getHeight() <= 0) return;
 
