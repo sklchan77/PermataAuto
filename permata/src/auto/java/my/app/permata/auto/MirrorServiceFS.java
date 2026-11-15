@@ -22,19 +22,15 @@ import androidx.car.app.model.ActionStrip;
 import androidx.car.app.model.CarIcon;
 import androidx.car.app.model.Template;
 import androidx.car.app.navigation.model.NavigationTemplate;
-import androidx.car.app.navigation.model.PanModeListener;
 import androidx.car.app.validation.HostValidator;
 
 import my.app.permata.PermataApplication;
 import my.app.permata.R;
-import my.app.permata.action.KeyEventHandler;
 import my.app.utils.concurrent.HandlerExecutor;
 import my.app.utils.function.Cancellable;
 import my.app.utils.log.Log;
 
 public class MirrorServiceFS extends CarAppService {
-	private static final float SCROLL_SENSITIVITY = 2.0f;
-	
 	private MirrorDisplay md;
 	static SurfaceContainer sc;
 
@@ -58,9 +54,11 @@ public class MirrorServiceFS extends CarAppService {
 	public void onTaskRemoved(Intent rootIntent) {
 		super.onTaskRemoved(rootIntent);
 
-		if (PermataApplication.get().isMirroringMode() || PermataApplication.get().isConnectedToAuto()) {
-			Log.i("[LIFECYCLE_TELEMETRY]", "App swiped away in Recents, but Mirroring/Auto is active. Forcing MirrorServiceFS survival.");
-			return; 
+		// CLEAN TEARDOWN: Ensuring brightness and rotation recover safely.
+		if (PermataApplication.get().isMirroringMode()) {
+			MirrorDisplay.close();
+		} else if (PermataApplication.get().isConnectedToAuto()) {
+			return;
 		}
 		
 		if (md != null) {
@@ -98,12 +96,6 @@ public class MirrorServiceFS extends CarAppService {
 		private long scrollDownTime;
 		private long scrollMoveTime;
 		private Cancellable scrollUp;
-		
-		private boolean isPanning = false;
-		
-		private float lastClickX = -1f;
-		private float lastClickY = -1f;
-		private long lastClickTime = 0L; 
 
 		MirrorScreen(@NonNull CarContext ctx) {
 			super(ctx);
@@ -131,9 +123,7 @@ public class MirrorServiceFS extends CarAppService {
 			if (scrollUp != null) {
 				scrollUp.cancel();
 				scrollUp = null;
-				isPanning = false;
 			}
-			
 			if (md != null) {
 				md.releaseSurface(localSc);
 			}
@@ -142,59 +132,32 @@ public class MirrorServiceFS extends CarAppService {
 
 		@Override
 		public void onClick(float x, float y) {
-			KeyEventHandler.manualTouchFocus = KeyEventHandler.TARGET_MIRROR;
-			Log.i("[INPUT_TELEMETRY]", "Car Mirror Screen clicked at X:" + x + " Y:" + y + ". Touch-Focus locked to TARGET_MIRROR.");
-
 			if (scrollUp != null) {
 				scrollUp.cancel();
 				scrollUp = null;
-				isPanning = false;
 			}
-			
-			lastClickX = x;
-			lastClickY = y;
-			lastClickTime = uptimeMillis();
-			
 			if (md() != null) md().tap(x, y);
 		}
 
 		@Override
 		public void onScroll(float distanceX, float distanceY) {
-			KeyEventHandler.manualTouchFocus = KeyEventHandler.TARGET_MIRROR;
-
 			var mDisp = md();
 			if (mDisp == null || MirrorServiceFS.sc == null) return;
-			
-			distanceX *= SCROLL_SENSITIVITY;
-			distanceY *= SCROLL_SENSITIVITY;
 			
 			var time = uptimeMillis();
 			scrollMoveTime = time;
 			
-			if (!isPanning || scrollUp == null) {
-				isPanning = true;
-				
-				long fakedDownTime = time;
-
-				if (lastClickX >= 0 && lastClickY >= 0 && (time - lastClickTime < 1500)) {
-					scrollStartX = lastClickX;
-					scrollStartY = lastClickY;
-					fakedDownTime = time - 600; 
-					Log.i("[INPUT_TELEMETRY]", "Recent tap detected. Injecting synthetic 600ms Long-Press to enable dragging.");
-				} else {
-					scrollStartX = MirrorServiceFS.sc.getWidth() / 2f;
-					scrollStartY = MirrorServiceFS.sc.getHeight() / 2f;
-				}
+			if (scrollUp == null) {
+				scrollStartX = MirrorServiceFS.sc.getWidth() / 2f;
+				scrollStartY = MirrorServiceFS.sc.getHeight() / 2f;
 				
 				scrollX = scrollStartX;
 				scrollY = scrollStartY;
 				
-				if (!mDisp.motionEvent(fakedDownTime, time, ACTION_DOWN, scrollX, scrollY)) {
-					isPanning = false;
+				if (!mDisp.motionEvent(time, time, ACTION_DOWN, scrollX, scrollY)) {
 					return;
 				}
-				scrollDownTime = fakedDownTime;
-				
+				scrollDownTime = time;
 				scheduleScrollUp(500);
 			}
 			
@@ -220,7 +183,6 @@ public class MirrorServiceFS extends CarAppService {
 					scheduleScrollUp(end - time);
 				} else {
 					scrollUp = null;
-					isPanning = false;
 					mDisp.motionEvent(scrollDownTime, time, ACTION_UP, scrollX, scrollY);
 				}
 			}, delay);
@@ -228,8 +190,6 @@ public class MirrorServiceFS extends CarAppService {
 
 		@Override
 		public void onScale(float focusX, float focusY, float scaleFactor) {
-			KeyEventHandler.manualTouchFocus = KeyEventHandler.TARGET_MIRROR;
-			Log.i("[INPUT_TELEMETRY]", "Car Mirror Screen scaled at X:" + focusX + " Y:" + focusY + ". Touch-Focus locked to TARGET_MIRROR.");
 			scrollStartX = focusX;
 			scrollStartY = focusY;
 			if (md() != null) md().scale(focusX, focusY, scaleFactor > 1f);
