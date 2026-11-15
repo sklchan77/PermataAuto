@@ -34,7 +34,6 @@ import com.google.android.apps.auto.sdk.CarActivity;
 
 import my.app.permata.PermataApplication;
 import my.app.permata.R;
-import my.app.permata.action.KeyEventHandler;
 import my.app.permata.media.service.PermataMediaService;
 import my.app.permata.ui.activity.MainActivityDelegate;
 import my.app.utils.concurrent.ReschedulableTask;
@@ -56,8 +55,7 @@ public class MirrorActivity extends CarActivity implements SurfaceHolder.Callbac
 			@Override
 			public boolean onTouchEvent(MotionEvent e) {
 				if (e.getActionMasked() == MotionEvent.ACTION_DOWN) {
-					KeyEventHandler.manualTouchFocus = KeyEventHandler.TARGET_MIRROR;
-					Log.i("[INPUT_TELEMETRY] Phone Mirror Screen touched (Action DOWN). Touch-Focus locked to TARGET_MIRROR.");
+					Log.i("[INPUT_TELEMETRY] Phone Mirror Screen touched (Action DOWN).");
 				}
 				
 				if (md == null || md.isDestroyed()) md = MirrorDisplay.get();
@@ -91,7 +89,6 @@ public class MirrorActivity extends CarActivity implements SurfaceHolder.Callbac
 	@Override
 	public void onResume() {
 		super.onResume();
-		KeyEventHandler.manualTouchFocus = KeyEventHandler.TARGET_MIRROR;
 		PermataMediaService.requestFocusAndAnchor(this);
 		
 		if (md == null || md.isDestroyed()) md = MirrorDisplay.get();
