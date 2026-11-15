@@ -45,6 +45,7 @@ public class KeyEventHandler {
     private static final int DBL_CLICK_INTERVAL = 500;
     private static final int LONG_CLICK_INTERVAL = 1000;
 
+    // COMPILER DUMMIES: Restored to prevent compilation crashes in PermataWebView and MirrorActivity.
     public static final int TARGET_AUTO = 0;
     public static final int TARGET_MIRROR = 1;
     public static final int TARGET_WEB = 2;
@@ -328,37 +329,13 @@ public class KeyEventHandler {
                 if (currentUptime - lastGlobalActionTime < 250) {
                     return true;
                 }
-
+                lastGlobalActionTime = currentUptime;
                 boolean isNext = (code == KeyEvent.KEYCODE_MEDIA_NEXT);
-                String activePkg = AccessibilityEventDispatcherService.getLastActivePackage();
-                ActivityFragment activeFragment = (finalTargetActivity != null) ? finalTargetActivity.getActiveFragment() : null;
-                String fragName = (activeFragment != null) ? activeFragment.getClass().getSimpleName() : "null";
-                
-                boolean isWebBrowser = activeFragment != null && 
-                        activeFragment.getClass().getName().endsWith("WebBrowserFragment") && 
-                        !activeFragment.getClass().getName().endsWith("YoutubeFragment");
-                        
-                boolean isMirroring = PermataApplication.get().isMirroringMode();
 
-                if (manualTouchFocus == TARGET_WEB && !isWebBrowser) manualTouchFocus = TARGET_AUTO;
-                if (manualTouchFocus == TARGET_MIRROR && !isMirroring) manualTouchFocus = TARGET_AUTO;
+                Log.i("[ROUTING_TELEMETRY]", "Executing True Catch-All: Firing to Mirror, Web, and Media simultaneously.");
 
-                boolean forceMirror = (manualTouchFocus == TARGET_MIRROR) && isMirroring;
-                boolean forceWeb = (manualTouchFocus == TARGET_WEB) && isWebBrowser;
-                
-                String focusStr = forceMirror ? "TARGET_MIRROR" : (forceWeb ? "TARGET_WEB" : "TARGET_AUTO");
-
-                Log.i("[ROUTING_TELEMETRY]", "Steering Wheel Key: " + (isNext ? "NEXT" : "PREV") + 
-                      " | ActiveOSPkg: [" + activePkg + "]" + 
-                      " | PermataFrag: [" + fragName + "]" + 
-                      " | isWebBrowser: " + isWebBrowser +
-                      " | manualTouchFocus: " + focusStr +
-                      " | isMirroring: " + isMirroring);
-
-                if (forceMirror || (isMirroring && activePkg != null && !activePkg.startsWith("my.app.permata"))) {
-                    lastGlobalActionTime = currentUptime;
-                    Log.i("[ROUTING_TELEMETRY]", "Routing Priority 1 (Mirroring): Injecting steering swipe to Virtual Display for package " + activePkg);
-                    
+                // 1. FIRE TO MIRRORING SCREEN
+                try {
                     my.app.permata.auto.MirrorDisplay md = my.app.permata.auto.MirrorDisplay.get();
                     if (md != null) {
                         int width = 1000;
@@ -383,14 +360,12 @@ public class KeyEventHandler {
                         md.motionEvent(now, now + 50, MotionEvent.ACTION_MOVE, actionX, centerY);
                         md.motionEvent(now, now + 100, MotionEvent.ACTION_UP, actionX, yEnd);
                     }
-                    return true;
-                }
+                } catch (Exception ignored) {}
 
-                if (forceWeb || isWebBrowser) {
-                    lastGlobalActionTime = currentUptime;
-                    Log.i("[ROUTING_TELEMETRY]", "Routing Priority 2 (Web Browser): Trigerring JS / Hardware Swipe inside PermataWebView.");
-                    if (finalTargetActivity != null) {
-                        finalTargetActivity.post(() -> {
+                // 2. FIRE TO WEB BROWSER
+                if (finalTargetActivity != null) {
+                    finalTargetActivity.post(() -> {
+                        try {
                             if (finalTargetActivity.getWindow() != null) {
                                 Context ctx = finalTargetActivity.getWindow().getContext();
                                 while (ctx instanceof ContextWrapper) {
@@ -403,65 +378,46 @@ public class KeyEventHandler {
                                 }
                             }
 
-                            WebView resolvedWebView = scanFragmentsForWebView(activeFragment);
-                            boolean isExplicitWebFragment = (resolvedWebView != null);
+                            WebView resolvedWebView = null;
+                            ActivityFragment activeFragment = finalTargetActivity.getActiveFragment();
+                            if (activeFragment != null) {
+                                resolvedWebView = scanFragmentsForWebView(activeFragment);
+                            }
 
                             if (resolvedWebView == null || !resolvedWebView.isShown()) {
                                 resolvedWebView = findTopVisibleWebView(finalTargetActivity);
                             }
 
                             if (resolvedWebView != null && resolvedWebView.isShown()) {
-                                boolean hasTouchFocus = resolvedWebView.hasFocus();
-                                boolean isFullScreenSize = false;
+                                String currentUrl = resolvedWebView.getUrl();
+                                String host = "unknown";
+                                boolean isMediaHost = false;
+                                boolean isDouyin = false;
+                                boolean isTikTok = false;
                                 
-                                if (finalTargetActivity.getWindow() != null && finalTargetActivity.getWindow().getDecorView() != null) {
-                                    int screenHeight = finalTargetActivity.getWindow().getDecorView().getHeight();
-                                    if (screenHeight > 0) {
-                                        isFullScreenSize = resolvedWebView.getHeight() > (screenHeight * 0.5);
-                                    }
+                                if (currentUrl != null) {
+                                    try {
+                                        host = Uri.parse(currentUrl).getHost();
+                                        if (host != null) {
+                                            if (host.startsWith("www.")) host = host.substring(4);
+                                            String h = host.toLowerCase();
+                                            isTikTok = h.contains("tiktok");
+                                            isDouyin = h.contains("douyin");
+                                            isMediaHost = isTikTok || isDouyin || h.contains("instagram") || h.contains("youtube") || h.contains("facebook") || h.contains("bilibili");
+                                        }
+                                    } catch (Exception ignored) {}
                                 }
-
-                                if (isExplicitWebFragment || hasTouchFocus || isFullScreenSize) {
-                                    String currentUrl = resolvedWebView.getUrl();
-                                    String host = "unknown";
-                                    boolean isMediaHost = false;
-                                    boolean isDouyin = false;
-                                    boolean isTikTok = false;
-                                    
-                                    if (currentUrl != null) {
-                                        try {
-                                            host = Uri.parse(currentUrl).getHost();
-                                            if (host != null) {
-                                                if (host.startsWith("www.")) host = host.substring(4);
-                                                String h = host.toLowerCase();
-                                                isTikTok = h.contains("tiktok");
-                                                isDouyin = h.contains("douyin");
-                                                isMediaHost = isTikTok || isDouyin || h.contains("instagram") || h.contains("youtube") || h.contains("facebook") || h.contains("bilibili");
-                                            }
-                                        } catch (Exception ignored) {}
-                                    }
-                                    View touchTargetView = isTikTok ? resolvedWebView : findTopmostTouchTarget(finalTargetActivity, resolvedWebView);
-                                    smartScrollWebView(resolvedWebView, touchTargetView, !isNext, "[Host: " + host + "] ", isMediaHost, isDouyin, isTikTok);
-                                }
+                                View touchTargetView = isTikTok ? resolvedWebView : findTopmostTouchTarget(finalTargetActivity, resolvedWebView);
+                                smartScrollWebView(resolvedWebView, touchTargetView, !isNext, "[Host: " + host + "] ", isMediaHost, isDouyin, isTikTok);
                             }
-                        });
-                    }
-                    return true;
+                        } catch (Exception ignored) {}
+                    });
                 }
 
-                if (activePkg != null && activePkg.startsWith("my.app.permata")) {
-                    Log.i("[ROUTING_TELEMETRY]", "Routing Priority 3 (Local Media/IPTV): Yielding to PermataMediaService.");
-                    return defaultHandler.apply(code, event);
-                }
+                // 3. FIRE TO MEDIA/IPTV (Always executed)
+                defaultHandler.apply(code, event);
 
-                if (activePkg != null && isStubbornScroller(activePkg)) {
-                    Log.i("[ROUTING_TELEMETRY]", "Routing Priority 4 (Native Stubborn): Firing God-Mode Swipe to phone glass.");
-                    executeNativeAppSwipe(!isNext, activePkg);
-                    return true; 
-                }
-
-                Log.i("[ROUTING_TELEMETRY]", "Routing Priority 5 (Yield): Yielding to OS for native app BT scrolling.");
-                return defaultHandler.apply(code, event);
+                return true; 
             }
         }
 
