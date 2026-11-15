@@ -102,9 +102,6 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
         var ds = instance;
         if (ds == null) return false;
         
-        // RESTORED: The 1x1 pixel tap to clear UI focus before dispatching the BACK command
-        dispatchTap(1f, 1f);
-        
         if (PermataApplication.get().isMirroringMode()) {
             my.app.permata.auto.MirrorDisplay md = my.app.permata.auto.MirrorDisplay.get();
             if (md != null) {
@@ -133,6 +130,9 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
                 if (injected) return true;
             }
         }
+        
+        // FIX: Moved the 1x1 tap down so it only touches the phone screen if we fall back to a global OS action.
+        dispatchTap(1f, 1f);
         
         isInjectingBack = true;
         boolean success = ds.performGlobalAction(GLOBAL_ACTION_BACK);
