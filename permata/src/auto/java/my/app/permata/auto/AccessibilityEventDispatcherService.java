@@ -22,7 +22,6 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.graphics.Path;
-import android.media.AudioManager;
 import android.os.Build.VERSION;
 import android.os.Build.VERSION_CODES;
 import android.os.Handler;
@@ -49,7 +48,6 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
 	public static boolean isConsentGranted = false;
 	private static AccessibilityEventDispatcherService instance;
 	
-	private static volatile String lastActivePackage = null;
 	public static volatile boolean isInjectingBack = false;
 	
 	private final Set<Integer> windowIds =
@@ -78,10 +76,6 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
 		return instance != null;
 	}
 
-	public static String getLastActivePackage() {
-		return lastActivePackage;
-	}
-
 	static int getWindowCount() {
 		var ds = instance;
 		if (ds == null) return -1;
@@ -98,7 +92,6 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
 	public static boolean dispatchBack() {
 		var ds = instance;
 		if (ds == null) return false;
-		Log.i("[OUTPUT_TELEMETRY]", "Accessibility API dispatching Global Action: GLOBAL_ACTION_BACK");
 		return ds.performGlobalAction(GLOBAL_ACTION_BACK);
 	}
 
@@ -152,63 +145,15 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
 		return success;
 	}
 
-	public static boolean dispatchGodModeSwipe(boolean up) {
-		var ds = instance;
-		if (ds == null) {
-			return false;
-		}
-		if (VERSION.SDK_INT < VERSION_CODES.N) {
-			return false;
-		}
-
-		MirrorDisplay.notifyInjectedTouch();
-
-		android.util.DisplayMetrics metrics = ds.getResources().getDisplayMetrics();
-		float actionX = metrics.widthPixels * 0.50f;
-		float centerY = metrics.heightPixels * 0.50f;
-		
-		float span = metrics.heightPixels * 0.20f;
-
-		float yStart = up ? (centerY - span / 2f) : (centerY + span / 2f);
-		float yEnd = up ? (centerY + span / 2f) : (centerY - span / 2f);
-		
-		long duration = up ? 90L : 70L;
-
-		Path swipePath = new Path();
-		swipePath.moveTo(actionX, yStart);
-		swipePath.lineTo(actionX, yEnd);
-
-		GestureDescription.Builder gestureBuilder = new GestureDescription.Builder();
-		gestureBuilder.addStroke(new StrokeDescription(swipePath, 0L, duration));
-		
-		Log.i("[OUTPUT_TELEMETRY]", "Accessibility API injecting Hardware Swipe (God-Mode). Y-Start: " + yStart + " Y-End: " + yEnd);
-
-		boolean accepted = ds.dispatchGesture(gestureBuilder.build(), new AccessibilityService.GestureResultCallback() {
-			@Override
-			public void onCompleted(GestureDescription gestureDescription) {
-				super.onCompleted(gestureDescription);
-			}
-
-			@Override
-			public void onCancelled(GestureDescription gestureDescription) {
-				super.onCancelled(gestureDescription);
-			}
-		}, null);
-		
-		return accepted;
-	}
-
 	static boolean dispatchHome() {
 		var ds = instance;
 		if (ds == null) return false;
-		Log.i("[OUTPUT_TELEMETRY]", "Accessibility API dispatching Global Action: GLOBAL_ACTION_HOME");
 		return ds.performGlobalAction(GLOBAL_ACTION_HOME);
 	}
 	
 	static boolean dispatchRecent() {
 		var ds = instance;
 		if (ds == null) return false;
-		Log.i("[OUTPUT_TELEMETRY]", "Accessibility API dispatching Global Action: GLOBAL_ACTION_RECENTS");
 		return ds.performGlobalAction(GLOBAL_ACTION_RECENTS);
 	}
 
@@ -219,7 +164,6 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
 		ds.path.reset();
 		ds.path.moveTo(x, y);
 		var gb = new GestureDescription.Builder().addStroke(new StrokeDescription(ds.path, 0L, 1L));
-		Log.i("[OUTPUT_TELEMETRY]", "Accessibility API dispatching Tap. X: " + x + ", Y: " + y);
 		return ds.dispatchGesture(gb.build(), null, null);
 	}
 
@@ -248,7 +192,6 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
 			path.lineTo(x + 10, y);
 			ds.addStroke(new StrokeDescription(path, 0L, dur, false));
 		}
-		Log.i("[OUTPUT_TELEMETRY]", "Accessibility API dispatching Scale. X: " + x + ", Y: " + y);
 		return ds.dispatch();
 	}
 
@@ -292,8 +235,6 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
 			idx = 0;
 		}
 		
-		Log.i("[OUTPUT_TELEMETRY]", "Accessibility API dispatching Multi-Touch MotionEvent: ACTION=" + action + " Pointers=" + cnt);
-		
 		for (; idx < cnt; idx++) {
 			var x = e.getX(idx);
 			var y = e.getY(idx);
@@ -310,8 +251,6 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
 		if ((VERSION.SDK_INT < VERSION_CODES.O) || (ds == null)) return false;
 		if ((x < 0f) || (y < 0f)) return true;
 		var p = instance.pointers[0];
-		
-		Log.i("[OUTPUT_TELEMETRY]", "Accessibility API dispatching Single-Touch MotionEvent: ACTION=" + action + " X=" + x + " Y=" + y);
 		
 		return ds.buildGesture(p, downTime, eventTime, action, x, y, false) && ds.dispatch();
 	}
@@ -411,13 +350,6 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
 
 	@Override
 	public void onAccessibilityEvent(AccessibilityEvent event) {
-		AudioManager am = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
-		boolean isBtConnected = am != null && (am.isBluetoothA2dpOn() || am.isBluetoothScoOn());
-		
-		if (!PermataApplication.get().isConnectedToAuto() && !isBtConnected) {
-			return; 
-		}
-
 		var type = event.getEventType();
 		if ((VERSION.SDK_INT >= VERSION_CODES.TIRAMISU) && (type == TYPE_WINDOWS_CHANGED)) {
 			if (event.getDisplayId() != DEFAULT_DISPLAY) return;
@@ -429,29 +361,10 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
 
 		if (type != TYPE_WINDOW_STATE_CHANGED) return;
 
-		CharSequence pkg = event.getPackageName();
-		String pkgName = (pkg != null) ? pkg.toString() : null;
-
-		if (pkgName != null && !pkgName.equals("com.android.systemui") && !pkgName.equals("android") && !pkgName.contains("inputmethod")) {
-			
-			String prevPackage = lastActivePackage;
-			lastActivePackage = pkgName;
-
-			if (!pkgName.equals(prevPackage)) {
-				if (my.app.permata.action.KeyEventHandler.isStubbornScroller(pkgName)) {
-					sendReclaimIntent(this, my.app.permata.media.service.PermataMediaService.ACTION_AGGRESSIVE_RECLAIM);
-				} 
-				else if (pkgName.startsWith("my.app.permata")) {
-					boolean wasStubborn = my.app.permata.action.KeyEventHandler.isStubbornScroller(prevPackage);
-					boolean wasNative = my.app.permata.action.KeyEventHandler.isNativeBtScroller(prevPackage);
-					if (wasStubborn || wasNative) {
-						sendReclaimIntent(this, my.app.permata.media.service.PermataMediaService.ACTION_RECLAIM_SESSION);
-					}
-				}
-			}
-		}
-
 		if (isConsentGranted && clickOnButton == null) return;
+        
+        CharSequence pkg = event.getPackageName();
+		String pkgName = (pkg != null) ? pkg.toString() : null;
 		if (pkgName == null) return;
 
 		var root = getRootInActiveWindow();
@@ -473,14 +386,6 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
 		} finally {
 			root.recycle(); 
 		}
-	}
-
-	private void sendReclaimIntent(Context context, String action) {
-		try {
-			Intent reclaimIntent = new Intent(context, my.app.permata.media.service.PermataMediaService.class);
-			reclaimIntent.setAction(action);
-			context.startService(reclaimIntent);
-		} catch (Exception e) {}
 	}
 
 	private void checkAndClickMediaProjectionConsent(AccessibilityNodeInfo root, String pkgName) {
