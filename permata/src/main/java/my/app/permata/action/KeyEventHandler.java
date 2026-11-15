@@ -304,7 +304,6 @@ public class KeyEventHandler {
             }
         }
 
-        // SURVIVAL FETCH: Dynamically fetch active UI to survive a "Recents Apps" UI Kill
         boolean isUiDead = false;
         if (targetActivity == null) {
             isUiDead = true;
@@ -346,7 +345,6 @@ public class KeyEventHandler {
                         
                 boolean isMirroring = PermataApplication.get().isMirroringMode();
 
-                // Clean up stale Touch-Focus Locks so Local Media/IPTV is never hijacked incorrectly
                 if (manualTouchFocus == TARGET_WEB && !isWebBrowser) manualTouchFocus = TARGET_AUTO;
                 if (manualTouchFocus == TARGET_MIRROR && !isMirroring) manualTouchFocus = TARGET_AUTO;
 
@@ -362,7 +360,6 @@ public class KeyEventHandler {
                       " | manualTouchFocus: " + focusStr +
                       " | isMirroring: " + isMirroring);
 
-                // PRIORITY 1: MIRRORING SESSION 
                 if (forceMirror || (isMirroring && activePkg != null && !activePkg.startsWith("my.app.permata"))) {
                     lastGlobalActionTime = currentUptime;
                     Log.i("[ROUTING_TELEMETRY]", "Routing Priority 1 (Mirroring): Injecting steering swipe to Virtual Display for package " + activePkg);
@@ -394,7 +391,6 @@ public class KeyEventHandler {
                     return true;
                 }
 
-                // PRIORITY 2: PERMATA AUTO WEB BROWSER
                 if (forceWeb || isWebBrowser) {
                     lastGlobalActionTime = currentUptime;
                     Log.i("[ROUTING_TELEMETRY]", "Routing Priority 2 (Web Browser): Trigerring JS / Hardware Swipe inside PermataWebView.");
@@ -458,20 +454,17 @@ public class KeyEventHandler {
                     return true;
                 }
 
-                // PRIORITY 3: PERMATA LOCAL MEDIA / IPTV / YOUTUBE (Yield to ExoPlayer default handler)
                 if (activePkg != null && activePkg.startsWith("my.app.permata")) {
                     Log.i("[ROUTING_TELEMETRY]", "Routing Priority 3 (Local Media/IPTV): Yielding to PermataMediaService.");
                     return defaultHandler.apply(code, event);
                 }
 
-                // PRIORITY 4: DEFAULT AUTO (Stubborn Native Apps on Phone)
                 if (activePkg != null && isStubbornScroller(activePkg)) {
                     Log.i("[ROUTING_TELEMETRY]", "Routing Priority 4 (Native Stubborn): Firing God-Mode Swipe to phone glass.");
                     executeNativeAppSwipe(!isNext, activePkg);
                     return true; 
                 }
 
-                // PRIORITY 5: YIELD TO OS
                 Log.i("[ROUTING_TELEMETRY]", "Routing Priority 5 (Yield): Yielding to OS for native app BT scrolling.");
                 return defaultHandler.apply(code, event);
             }
