@@ -102,6 +102,9 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
         var ds = instance;
         if (ds == null) return false;
         
+        // RESTORED: The 1x1 pixel tap to clear UI focus before dispatching the BACK command
+        dispatchTap(1f, 1f);
+        
         if (PermataApplication.get().isMirroringMode()) {
             my.app.permata.auto.MirrorDisplay md = my.app.permata.auto.MirrorDisplay.get();
             if (md != null) {
