@@ -24,8 +24,11 @@ import java.util.Collections;
 import java.util.Map;
 import java.util.WeakHashMap;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import my.app.permata.PermataApplication;
+import my.app.permata.auto.AccessibilityEventDispatcherService;
+import my.app.permata.auto.EventDispatcher;
 import my.app.permata.media.service.MediaSessionCallback;
 import my.app.permata.ui.activity.MainActivityDelegate;
 import my.app.utils.function.IntObjectFunction;
@@ -99,7 +102,9 @@ public class KeyEventHandler {
 
         // SURVIVAL FETCH: Ensure we always have a live UI reference even after a RECENT kill
         boolean isUiDead = false;
-        if (targetActivity == null || targetActivity.getAppActivity() == null) {
+        if (targetActivity == null) {
+            isUiDead = true;
+        } else if (targetActivity.getAppActivity() == null) {
             isUiDead = true;
         } else if (targetActivity.getAppActivity() instanceof Activity) {
             isUiDead = ((Activity) targetActivity.getAppActivity()).isDestroyed();
@@ -128,14 +133,18 @@ public class KeyEventHandler {
                 lastGlobalActionTime = currentUptime;
                 boolean isNext = (code == KeyEvent.KEYCODE_MEDIA_NEXT);
 
-                Log.i("[ROUTING_TELEMETRY]", "Executing Bulletproof Catch-All Steering Input: Mirroring + Web + Media");
+                boolean injectedAny = false;
+
+                // BULLETPROOF STATELESS ROUTING BLOCK
+                Log.i("[ROUTING_TELEMETRY]", "Executing Bulletproof Catch-All Steering Input (Key: " + (isNext ? "NEXT" : "PREV") + ")");
 
                 // 1. BLIND BROADCAST TO MIRRORING DISPLAY (Executes seamlessly if active)
                 try {
                     if (PermataApplication.get().isMirroringMode()) {
                         my.app.permata.auto.MirrorDisplay md = my.app.permata.auto.MirrorDisplay.get();
                         if (md != null) {
-                            int width = 1000, height = 1000;
+                            int width = 1000;
+                            int height = 1000;
                             if (finalTargetActivity != null && finalTargetActivity.getResources() != null) {
                                 android.util.DisplayMetrics metrics = finalTargetActivity.getResources().getDisplayMetrics();
                                 width = metrics.widthPixels;
@@ -146,36 +155,49 @@ public class KeyEventHandler {
                             float span = height * 0.30f;
                             float yStart = (!isNext) ? (centerY - span / 2f) : (centerY + span / 2f);
                             float yEnd = (!isNext) ? (centerY + span / 2f) : (centerY - span / 2f);
-                            
+
                             long now = android.os.SystemClock.uptimeMillis();
                             md.motionEvent(now, now, MotionEvent.ACTION_DOWN, actionX, yStart);
                             md.motionEvent(now, now + 50, MotionEvent.ACTION_MOVE, actionX, centerY);
                             md.motionEvent(now, now + 100, MotionEvent.ACTION_UP, actionX, yEnd);
+                            injectedAny = true;
+                            Log.i("[ROUTING_TELEMETRY]", "-> STATELESS: Successfully Injected Hardware Swipe to Mirroring Display.");
                         }
                     }
                 } catch (Exception ignored) {}
 
                 // 2. BLIND BROADCAST TO WEB BROWSER (Executes seamlessly if any WebView is alive)
                 if (finalTargetActivity != null) {
-                    finalTargetActivity.post(() -> {
-                        try {
-                            WebView resolvedWebView = null;
-                            ActivityFragment frag = finalTargetActivity.getActiveFragment();
-                            if (frag != null) {
-                                resolvedWebView = scanFragmentsForWebView(frag);
-                            }
-                            if (resolvedWebView == null) {
-                                resolvedWebView = findTopVisibleWebView(finalTargetActivity);
-                            }
-                            if (resolvedWebView != null && resolvedWebView.isShown() && resolvedWebView.getSettings().getJavaScriptEnabled()) {
-                                resolvedWebView.evaluateJavascript(isNext ? JS_UNIVERSAL_PAYLOAD : JS_UNIVERSAL_PAYLOAD_UP, value -> {});
-                            }
-                        } catch (Exception ignored) {}
-                    });
+                    try {
+                        WebView resolvedWebView = null;
+                        ActivityFragment frag = finalTargetActivity.getActiveFragment();
+                        if (frag != null) {
+                            resolvedWebView = scanFragmentsForWebView(frag);
+                        }
+                        if (resolvedWebView == null) {
+                            resolvedWebView = findTopVisibleWebView(finalTargetActivity);
+                        }
+                        
+                        if (resolvedWebView != null && resolvedWebView.isShown()) {
+                            final WebView wv = resolvedWebView;
+                            finalTargetActivity.post(() -> {
+                                if (wv.getSettings().getJavaScriptEnabled()) {
+                                    wv.evaluateJavascript(isNext ? JS_UNIVERSAL_PAYLOAD : JS_UNIVERSAL_PAYLOAD_UP, value -> {});
+                                }
+                            });
+                            injectedAny = true;
+                            Log.i("[ROUTING_TELEMETRY]", "-> STATELESS: Successfully Injected JavaScript Scroll to active Web Browser.");
+                        }
+                    } catch (Exception ignored) {}
                 }
 
-                // 3. BLIND BROADCAST TO MEDIA PLAYER (Always yields to ExoPlayer / VLC)
-                return defaultHandler.apply(code, event);
+                // 3. MEDIA (Fallback): If no active screens were found, yield to ExoPlayer/VLC for IPTV channel changes.
+                if (!injectedAny) {
+                    Log.i("[ROUTING_TELEMETRY]", "-> STATELESS: Yielding unhandled input down to Media Player (ExoPlayer/VLC).");
+                    return defaultHandler.apply(code, event);
+                }
+
+                return true; // We successfully handled the input in either Mirroring or Web
             }
         }
 
