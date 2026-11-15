@@ -65,6 +65,8 @@ import my.app.utils.ui.menu.OverlayMenu;
  * @author sklchan77
  */
 public class MainCarActivity extends CarActivity implements PermataActivity {
+	public static MainCarActivity activeInstance;
+	
 	static PermataMediaServiceConnection service;
 	@SuppressWarnings("unchecked")
 	@NonNull
@@ -130,10 +132,8 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 	@Override
 	public void onResume() {
 		super.onResume();
+		activeInstance = this;
 		getActivityDelegate().onSuccess(MainActivityDelegate::onActivityResume);
-		
-		KeyEventHandler.manualTouchFocus = KeyEventHandler.TARGET_WEB;
-		Log.i("[INPUT_TELEMETRY] MainCarActivity onResume: Touch-Focus Priority aggressively locked to TARGET_WEB.");
 		
 		try {
 			Intent hijackIntent = new Intent(this, my.app.permata.media.service.PermataMediaService.class);
@@ -143,9 +143,16 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 	}
 
 	@Override
+	public void onPause() {
+		super.onPause();
+		if (activeInstance == this) activeInstance = null;
+	}
+
+	@Override
 	@SuppressWarnings("unchecked")
 	public void onDestroy() {
 		super.onDestroy();
+		if (activeInstance == this) activeInstance = null;
 		getActivityDelegate().onSuccess(MainActivityDelegate::onActivityDestroy)
 				.thenRun(() -> ActivityDelegate.setContextToDelegate(null));
 		delegate = (FutureSupplier<MainActivityDelegate>) NO_DELEGATE;
@@ -153,7 +160,6 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 
 	@Override
 	public void onConfigurationChanged(Configuration configuration) {
-		Log.i("Configuration changed: ", configuration);
 		super.onConfigurationChanged(configuration);
 	}
 
