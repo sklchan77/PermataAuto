@@ -48,6 +48,7 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
 	public static boolean isConsentGranted = false;
 	private static AccessibilityEventDispatcherService instance;
 	
+	private static volatile String lastActivePackage = null;
 	public static volatile boolean isInjectingBack = false;
 	
 	private final Set<Integer> windowIds =
@@ -74,6 +75,11 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
 
 	public static boolean isAvailable() {
 		return instance != null;
+	}
+	
+	// Restored for PermataMediaService compilation
+	public static String getLastActivePackage() {
+		return lastActivePackage;
 	}
 
 	static int getWindowCount() {
@@ -360,11 +366,14 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
 		}
 
 		if (type != TYPE_WINDOW_STATE_CHANGED) return;
+		
+		CharSequence pkg = event.getPackageName();
+		String pkgName = (pkg != null) ? pkg.toString() : null;
+		if (pkgName != null) {
+		    lastActivePackage = pkgName;
+		}
 
 		if (isConsentGranted && clickOnButton == null) return;
-        
-        CharSequence pkg = event.getPackageName();
-		String pkgName = (pkg != null) ? pkg.toString() : null;
 		if (pkgName == null) return;
 
 		var root = getRootInActiveWindow();
