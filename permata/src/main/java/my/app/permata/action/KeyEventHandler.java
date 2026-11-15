@@ -45,7 +45,6 @@ public class KeyEventHandler {
     private static final int DBL_CLICK_INTERVAL = 500;
     private static final int LONG_CLICK_INTERVAL = 1000;
 
-    // COMPILER DUMMIES: Restored to prevent compilation crashes in PermataWebView and MirrorActivity.
     public static final int TARGET_AUTO = 0;
     public static final int TARGET_MIRROR = 1;
     public static final int TARGET_WEB = 2;
@@ -305,7 +304,6 @@ public class KeyEventHandler {
             }
         }
 
-        // SURVIVAL FETCH: If the Recents menu killed the UI memory, grab the live Car Screen or Phone Screen instance
         boolean isUiDead = (targetActivity == null || targetActivity.getAppActivity() == null || 
                            (targetActivity.getAppActivity() instanceof Activity && ((Activity) targetActivity.getAppActivity()).isDestroyed()));
 
@@ -350,7 +348,8 @@ public class KeyEventHandler {
 
                         float actionX = width * 0.50f;
                         float centerY = height * 0.50f;
-                        float span = height * 0.30f;
+                        // SPAN UPDATED: 20% to match native BT hardware swipe exactly.
+                        float span = height * 0.20f;
                         
                         float yStart = (!isNext) ? (centerY - span / 2f) : (centerY + span / 2f);
                         float yEnd = (!isNext) ? (centerY + span / 2f) : (centerY - span / 2f);
@@ -414,7 +413,7 @@ public class KeyEventHandler {
                     });
                 }
 
-                // 3. FIRE TO MEDIA/IPTV (Always executed)
+                // 3. FIRE TO MEDIA/IPTV
                 defaultHandler.apply(code, event);
 
                 return true; 
