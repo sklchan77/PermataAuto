@@ -281,6 +281,22 @@ public class KeyEventHandler {
 
         var code = event.getKeyCode();
 
+        if (code == KeyEvent.KEYCODE_BACK) {
+            if (AccessibilityEventDispatcherService.isInjectingBack) {
+                return defaultHandler.apply(code, event);
+            }
+            if (PermataApplication.get().isMirroringMode()) {
+                long currentUptime = android.os.SystemClock.uptimeMillis();
+                if (currentUptime - lastGlobalActionTime < 500) {
+                    return true; 
+                }
+                lastGlobalActionTime = currentUptime;
+                AccessibilityEventDispatcherService.dispatchUniversalBack();
+                return true; 
+            }
+            return defaultHandler.apply(code, event);
+        }
+
         MainActivityDelegate targetActivity = activity;
         if (targetActivity == null && cb != null) {
             if (cb.getAssistant() instanceof MainActivityDelegate) {
@@ -288,7 +304,7 @@ public class KeyEventHandler {
             }
         }
 
-        // SURVIVAL FETCH: If the Recents menu killed the UI memory, grab the live Car Screen instance
+        // SURVIVAL FETCH: If the Recents menu killed the UI memory, grab the live Car Screen or Phone Screen instance
         boolean isUiDead = (targetActivity == null || targetActivity.getAppActivity() == null || 
                            (targetActivity.getAppActivity() instanceof Activity && ((Activity) targetActivity.getAppActivity()).isDestroyed()));
 
