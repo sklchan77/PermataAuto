@@ -7,7 +7,6 @@ import static android.content.Intent.FLAG_ACTIVITY_CLEAR_TASK;
 import static android.os.SystemClock.uptimeMillis;
 import static android.view.ViewGroup.LayoutParams.MATCH_PARENT;
 import static android.view.ViewGroup.LayoutParams.WRAP_CONTENT;
-import static my.app.permata.auto.MirrorDisplay.disableAccelRotation;
 import static my.app.utils.ui.UiUtils.toPx;
 
 import android.annotation.SuppressLint;
@@ -145,7 +144,6 @@ public class MirrorActivity extends CarActivity implements SurfaceHolder.Callbac
 			intent.setFlags(FLAG_ACTIVITY_NEW_TASK | FLAG_ACTIVITY_CLEAR_TOP | FLAG_ACTIVITY_SINGLE_TOP);
 			ctx.startActivity(intent);
 		}
-		disableAccelRotation();
 	}
 	
 	static void onRecentButtonClick() {
@@ -153,7 +151,6 @@ public class MirrorActivity extends CarActivity implements SurfaceHolder.Callbac
 		if (d != null) {
 			d.directRecent();
 		}
-		disableAccelRotation();
 	}
 
 	static void onBackButtonClick() {
@@ -161,7 +158,6 @@ public class MirrorActivity extends CarActivity implements SurfaceHolder.Callbac
 			var d = EventDispatcher.get();
 			if (d != null) d.directBack();
 		}
-		disableAccelRotation();
 	}
 
 	static void onExitButtonClick() {
