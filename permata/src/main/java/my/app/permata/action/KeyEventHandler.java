@@ -37,12 +37,18 @@ public class KeyEventHandler {
     private static final int DBL_CLICK_INTERVAL = 500;
     private static final int LONG_CLICK_INTERVAL = 1000;
 
+    // COMPILER DUMMIES: Restored to prevent compilation crashes in PermataWebView and MirrorActivity.
+    // The routing engine completely ignores these and uses the stateless blind-broadcast loop.
+    public static final int TARGET_AUTO = 0;
+    public static final int TARGET_MIRROR = 1;
+    public static final int TARGET_WEB = 2;
+    public static volatile int manualTouchFocus = TARGET_AUTO;
+
     private static volatile Worker worker;
     private static volatile long lastGlobalActionTime = 0L;
     
     private static final Map<Class<?>, Method> webViewMethodCache = new ConcurrentHashMap<>();
 
-    // Universal JS payload to scroll any active WebView
     private static final String JS_UNIVERSAL_PAYLOAD = "(function(){" +
             "  try {" +
             "    var amount = window.innerHeight * 0.85;" +
