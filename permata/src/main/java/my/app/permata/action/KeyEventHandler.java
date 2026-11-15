@@ -24,7 +24,6 @@ import java.util.Collections;
 import java.util.Map;
 import java.util.WeakHashMap;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.atomic.AtomicBoolean;
 
 import my.app.permata.PermataApplication;
 import my.app.permata.media.service.MediaSessionCallback;
@@ -38,19 +37,12 @@ public class KeyEventHandler {
     private static final int DBL_CLICK_INTERVAL = 500;
     private static final int LONG_CLICK_INTERVAL = 1000;
 
-    public static final int TARGET_AUTO = 0;
-    public static final int TARGET_MIRROR = 1;
-    public static final int TARGET_WEB = 2;
-    public static volatile int manualTouchFocus = TARGET_AUTO;
-
     private static volatile Worker worker;
     private static volatile long lastGlobalActionTime = 0L;
     
-    private static final AtomicBoolean isHardwareSwiping = new AtomicBoolean(false);
-    
     private static final Map<Class<?>, Method> webViewMethodCache = new ConcurrentHashMap<>();
-    private static final Map<View, Long> scrollTimestamps = Collections.synchronizedMap(new WeakHashMap<>());
 
+    // Universal JS payload to scroll any active WebView
     private static final String JS_UNIVERSAL_PAYLOAD = "(function(){" +
             "  try {" +
             "    var amount = window.innerHeight * 0.85;" +
@@ -99,10 +91,9 @@ public class KeyEventHandler {
             }
         }
 
+        // SURVIVAL FETCH: Ensure we always have a live UI reference even after a RECENT kill
         boolean isUiDead = false;
-        if (targetActivity == null) {
-            isUiDead = true;
-        } else if (targetActivity.getAppActivity() == null) {
+        if (targetActivity == null || targetActivity.getAppActivity() == null) {
             isUiDead = true;
         } else if (targetActivity.getAppActivity() instanceof Activity) {
             isUiDead = ((Activity) targetActivity.getAppActivity()).isDestroyed();
@@ -126,37 +117,39 @@ public class KeyEventHandler {
                 
                 long currentUptime = android.os.SystemClock.uptimeMillis();
                 if (currentUptime - lastGlobalActionTime < 250) {
-                    return true;
+                    return true; // Prevent rapid-fire double inputs
                 }
                 lastGlobalActionTime = currentUptime;
                 boolean isNext = (code == KeyEvent.KEYCODE_MEDIA_NEXT);
 
                 Log.i("[ROUTING_TELEMETRY]", "Executing Bulletproof Catch-All Steering Input: Mirroring + Web + Media");
 
-                // 1. BLIND BROADCAST TO MIRRORING (Executes if Virtual Display is active)
+                // 1. BLIND BROADCAST TO MIRRORING DISPLAY (Executes seamlessly if active)
                 try {
-                    my.app.permata.auto.MirrorDisplay md = my.app.permata.auto.MirrorDisplay.get();
-                    if (md != null && PermataApplication.get().isMirroringMode()) {
-                        int width = 1000;
-                        int height = 1000;
-                        if (finalTargetActivity != null && finalTargetActivity.getResources() != null) {
-                            android.util.DisplayMetrics metrics = finalTargetActivity.getResources().getDisplayMetrics();
-                            width = metrics.widthPixels;
-                            height = metrics.heightPixels;
+                    if (PermataApplication.get().isMirroringMode()) {
+                        my.app.permata.auto.MirrorDisplay md = my.app.permata.auto.MirrorDisplay.get();
+                        if (md != null) {
+                            int width = 1000, height = 1000;
+                            if (finalTargetActivity != null && finalTargetActivity.getResources() != null) {
+                                android.util.DisplayMetrics metrics = finalTargetActivity.getResources().getDisplayMetrics();
+                                width = metrics.widthPixels;
+                                height = metrics.heightPixels;
+                            }
+                            float actionX = width * 0.50f;
+                            float centerY = height * 0.50f;
+                            float span = height * 0.30f;
+                            float yStart = (!isNext) ? (centerY - span / 2f) : (centerY + span / 2f);
+                            float yEnd = (!isNext) ? (centerY + span / 2f) : (centerY - span / 2f);
+                            
+                            long now = android.os.SystemClock.uptimeMillis();
+                            md.motionEvent(now, now, MotionEvent.ACTION_DOWN, actionX, yStart);
+                            md.motionEvent(now, now + 50, MotionEvent.ACTION_MOVE, actionX, centerY);
+                            md.motionEvent(now, now + 100, MotionEvent.ACTION_UP, actionX, yEnd);
                         }
-                        float actionX = width * 0.50f;
-                        float centerY = height * 0.50f;
-                        float span = height * 0.30f;
-                        float yStart = (!isNext) ? (centerY - span / 2f) : (centerY + span / 2f);
-                        float yEnd = (!isNext) ? (centerY + span / 2f) : (centerY - span / 2f);
-                        long now = android.os.SystemClock.uptimeMillis();
-                        md.motionEvent(now, now, MotionEvent.ACTION_DOWN, actionX, yStart);
-                        md.motionEvent(now, now + 50, MotionEvent.ACTION_MOVE, actionX, centerY);
-                        md.motionEvent(now, now + 100, MotionEvent.ACTION_UP, actionX, yEnd);
                     }
                 } catch (Exception ignored) {}
 
-                // 2. BLIND BROADCAST TO WEB BROWSER (Executes if any WebView is alive)
+                // 2. BLIND BROADCAST TO WEB BROWSER (Executes seamlessly if any WebView is alive)
                 if (finalTargetActivity != null) {
                     finalTargetActivity.post(() -> {
                         try {
@@ -168,16 +161,14 @@ public class KeyEventHandler {
                             if (resolvedWebView == null) {
                                 resolvedWebView = findTopVisibleWebView(finalTargetActivity);
                             }
-                            if (resolvedWebView != null && resolvedWebView.isShown()) {
-                                if (resolvedWebView.getSettings().getJavaScriptEnabled()) {
-                                    resolvedWebView.evaluateJavascript(isNext ? JS_UNIVERSAL_PAYLOAD : JS_UNIVERSAL_PAYLOAD_UP, value -> {});
-                                }
+                            if (resolvedWebView != null && resolvedWebView.isShown() && resolvedWebView.getSettings().getJavaScriptEnabled()) {
+                                resolvedWebView.evaluateJavascript(isNext ? JS_UNIVERSAL_PAYLOAD : JS_UNIVERSAL_PAYLOAD_UP, value -> {});
                             }
                         } catch (Exception ignored) {}
                     });
                 }
 
-                // 3. BLIND BROADCAST TO MEDIA (Always yields to ExoPlayer / VLC)
+                // 3. BLIND BROADCAST TO MEDIA PLAYER (Always yields to ExoPlayer / VLC)
                 return defaultHandler.apply(code, event);
             }
         }
