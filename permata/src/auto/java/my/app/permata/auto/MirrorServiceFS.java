@@ -58,10 +58,9 @@ public class MirrorServiceFS extends CarAppService {
 	public void onTaskRemoved(Intent rootIntent) {
 		super.onTaskRemoved(rootIntent);
 
-		if (PermataApplication.get().isMirroringMode()) {
-			MirrorDisplay.close();
-		} else if (PermataApplication.get().isConnectedToAuto()) {
-			return;
+		if (PermataApplication.get().isMirroringMode() || PermataApplication.get().isConnectedToAuto()) {
+			Log.i("[LIFECYCLE_TELEMETRY]", "App swiped away in Recents, but Mirroring/Auto is active. Forcing MirrorServiceFS survival.");
+			return; 
 		}
 		
 		if (md != null) {
@@ -104,6 +103,7 @@ public class MirrorServiceFS extends CarAppService {
 		
 		private float lastClickX = -1f;
 		private float lastClickY = -1f;
+		private long lastClickTime = 0L; 
 
 		MirrorScreen(@NonNull CarContext ctx) {
 			super(ctx);
@@ -153,6 +153,7 @@ public class MirrorServiceFS extends CarAppService {
 			
 			lastClickX = x;
 			lastClickY = y;
+			lastClickTime = uptimeMillis();
 			
 			if (md() != null) md().tap(x, y);
 		}
@@ -172,11 +173,14 @@ public class MirrorServiceFS extends CarAppService {
 			
 			if (!isPanning || scrollUp == null) {
 				isPanning = true;
-				Log.i("[INPUT_TELEMETRY]", "Car Mirror Screen scroll initiated. Touch-Focus locked to TARGET_MIRROR.");
 				
-				if (lastClickX >= 0 && lastClickY >= 0) {
+				long fakedDownTime = time;
+
+				if (lastClickX >= 0 && lastClickY >= 0 && (time - lastClickTime < 1500)) {
 					scrollStartX = lastClickX;
 					scrollStartY = lastClickY;
+					fakedDownTime = time - 600; 
+					Log.i("[INPUT_TELEMETRY]", "Recent tap detected. Injecting synthetic 600ms Long-Press to enable dragging.");
 				} else {
 					scrollStartX = MirrorServiceFS.sc.getWidth() / 2f;
 					scrollStartY = MirrorServiceFS.sc.getHeight() / 2f;
@@ -185,11 +189,11 @@ public class MirrorServiceFS extends CarAppService {
 				scrollX = scrollStartX;
 				scrollY = scrollStartY;
 				
-				if (!mDisp.motionEvent(time, time, ACTION_DOWN, scrollX, scrollY)) {
+				if (!mDisp.motionEvent(fakedDownTime, time, ACTION_DOWN, scrollX, scrollY)) {
 					isPanning = false;
 					return;
 				}
-				scrollDownTime = time;
+				scrollDownTime = fakedDownTime;
 				
 				scheduleScrollUp(500);
 			}
