@@ -305,7 +305,12 @@ public class KeyEventHandler {
         }
 
         // SURVIVAL FETCH: Dynamically fetch active UI to survive a "Recents Apps" UI Kill
-        if (targetActivity == null || targetActivity.getAppActivity() == null || targetActivity.getAppActivity().isDestroyed()) {
+        boolean isUiDead = (targetActivity == null || targetActivity.getAppActivity() == null);
+        if (!isUiDead && (targetActivity.getAppActivity() instanceof Activity)) {
+            isUiDead = ((Activity) targetActivity.getAppActivity()).isDestroyed();
+        }
+
+        if (isUiDead) {
             if (my.app.permata.auto.MainCarActivity.activeInstance != null) {
                 MainActivityDelegate carDelegate = my.app.permata.auto.MainCarActivity.activeInstance.getActivityDelegate().peek();
                 if (carDelegate != null) targetActivity = carDelegate;
