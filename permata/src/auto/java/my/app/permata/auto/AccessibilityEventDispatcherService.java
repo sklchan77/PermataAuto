@@ -218,7 +218,7 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
 		if ((x < 0f) || (y < 0f)) return true;
 		ds.path.reset();
 		ds.path.moveTo(x, y);
-		var gb = new GestureDescription.Builder().addStroke(new StrokeDescription(ds.path, 0L, 50L));
+		var gb = new GestureDescription.Builder().addStroke(new StrokeDescription(ds.path, 0L, 1L));
 		Log.i("[OUTPUT_TELEMETRY]", "Accessibility API dispatching Tap. X: " + x + ", Y: " + y);
 		return ds.dispatchGesture(gb.build(), null, null);
 	}
