@@ -106,6 +106,14 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
             my.app.permata.auto.MirrorDisplay md = my.app.permata.auto.MirrorDisplay.get();
             if (md != null) {
                 long now = android.os.SystemClock.uptimeMillis();
+                
+                // SURGICAL FIX: Inject the 1x1 focus-clearing tap directly into the Virtual Display. 
+                // This protects your landscape orientation but makes it physically impossible to wake the phone.
+                try {
+                    md.motionEvent(now, now, android.view.MotionEvent.ACTION_DOWN, 1f, 1f);
+                    md.motionEvent(now, now + 10, android.view.MotionEvent.ACTION_UP, 1f, 1f);
+                } catch (Exception ignored) {}
+
                 android.view.KeyEvent down = new android.view.KeyEvent(now, now, android.view.KeyEvent.ACTION_DOWN, android.view.KeyEvent.KEYCODE_BACK, 0);
                 android.view.KeyEvent up = new android.view.KeyEvent(now, now, android.view.KeyEvent.ACTION_UP, android.view.KeyEvent.KEYCODE_BACK, 0);
                 
@@ -131,7 +139,7 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
             }
         }
         
-        // FIX: Moved the 1x1 tap down so it only touches the phone screen if we fall back to a global OS action.
+        // If not in mirroring mode, or if Virtual Display fails, fall back to global Accessibility tap
         dispatchTap(1f, 1f);
         
         isInjectingBack = true;
