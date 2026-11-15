@@ -22,6 +22,7 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.graphics.Path;
+import android.media.AudioManager;
 import android.os.Build.VERSION;
 import android.os.Build.VERSION_CODES;
 import android.os.Handler;
@@ -44,70 +45,65 @@ import my.app.permata.PermataApplication;
 import my.app.utils.log.Log;
 
 public class AccessibilityEventDispatcherService extends AccessibilityService {
-	private static String clickOnButton;
-	public static boolean isConsentGranted = false;
-	private static AccessibilityEventDispatcherService instance;
-	
-	private static volatile String lastActivePackage = null;
-	public static volatile boolean isInjectingBack = false;
-	
-	private final Set<Integer> windowIds =
-			(VERSION.SDK_INT < VERSION_CODES.TIRAMISU) ? Collections.emptySet() : new HashSet<>();
-	private final Path path = new Path();
-	private GestureDescription.Builder gb;
-	private Pointer[] pointers = new Pointer[]{new Pointer()};
+    private static String clickOnButton;
+    public static boolean isConsentGranted = false;
+    private static AccessibilityEventDispatcherService instance;
+    
+    private static volatile String lastActivePackage = null;
+    public static volatile boolean isInjectingBack = false;
+    
+    private final Set<Integer> windowIds =
+            (VERSION.SDK_INT < VERSION_CODES.TIRAMISU) ? Collections.emptySet() : new HashSet<>();
+    private final Path path = new Path();
+    private GestureDescription.Builder gb;
+    private Pointer[] pointers = new Pointer[]{new Pointer()};
 
-	private final BroadcastReceiver commandReceiver = new BroadcastReceiver() {
-		@Override
-		public void onReceive(Context context, Intent intent) {
-			if ("my.app.permata.ACTION_GLOBAL_BACK".equals(intent.getAction())) {
-				Log.i("[OUTPUT_TELEMETRY]", "Accessibility API dispatching Global Action: GLOBAL_ACTION_BACK");
-				performGlobalAction(GLOBAL_ACTION_BACK);
-			} else if ("my.app.permata.ACTION_GLOBAL_HOME".equals(intent.getAction())) {
-				Log.i("[OUTPUT_TELEMETRY]", "Accessibility API dispatching Global Action: GLOBAL_ACTION_HOME");
-				performGlobalAction(GLOBAL_ACTION_HOME);
-			} else if ("my.app.permata.ACTION_GLOBAL_RECENT".equals(intent.getAction())) {
-				Log.i("[OUTPUT_TELEMETRY]", "Accessibility API dispatching Global Action: GLOBAL_ACTION_RECENTS");
-				performGlobalAction(GLOBAL_ACTION_RECENTS);
-			}
-		}
-	};
+    private final BroadcastReceiver commandReceiver = new BroadcastReceiver() {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            if ("my.app.permata.ACTION_GLOBAL_BACK".equals(intent.getAction())) {
+                performGlobalAction(GLOBAL_ACTION_BACK);
+            } else if ("my.app.permata.ACTION_GLOBAL_HOME".equals(intent.getAction())) {
+                performGlobalAction(GLOBAL_ACTION_HOME);
+            } else if ("my.app.permata.ACTION_GLOBAL_RECENT".equals(intent.getAction())) {
+                performGlobalAction(GLOBAL_ACTION_RECENTS);
+            }
+        }
+    };
 
-	public static boolean isAvailable() {
-		return instance != null;
-	}
-	
-	// Restored for PermataMediaService compilation
-	public static String getLastActivePackage() {
-		return lastActivePackage;
-	}
+    public static boolean isAvailable() {
+        return instance != null;
+    }
 
-	static int getWindowCount() {
-		var ds = instance;
-		if (ds == null) return -1;
-		int cnt =
-				(VERSION.SDK_INT >= VERSION_CODES.TIRAMISU) ? ds.windowIds.size() :
-						ds.listWindows().size();
-		return cnt;
-	}
+    public static String getLastActivePackage() {
+        return lastActivePackage;
+    }
 
-	static void autoClickOnButton(@Nullable String text) {
-		clickOnButton = text;
-	}
+    static int getWindowCount() {
+        var ds = instance;
+        if (ds == null) return -1;
+        int cnt =
+                (VERSION.SDK_INT >= VERSION_CODES.TIRAMISU) ? ds.windowIds.size() :
+                        ds.listWindows().size();
+        return cnt;
+    }
 
-	public static boolean dispatchBack() {
-		var ds = instance;
-		if (ds == null) return false;
-		return ds.performGlobalAction(GLOBAL_ACTION_BACK);
-	}
+    static void autoClickOnButton(@Nullable String text) {
+        clickOnButton = text;
+    }
 
-	public static boolean dispatchUniversalBack() {
-		var ds = instance;
-		if (ds == null) return false;
+    public static boolean dispatchBack() {
+        var ds = instance;
+        if (ds == null) return false;
+        return ds.performGlobalAction(GLOBAL_ACTION_BACK);
+    }
+
+    public static boolean dispatchUniversalBack() {
+        var ds = instance;
+        if (ds == null) return false;
         
         if (PermataApplication.get().isMirroringMode()) {
             my.app.permata.auto.MirrorDisplay md = my.app.permata.auto.MirrorDisplay.get();
-            
             if (md != null) {
                 long now = android.os.SystemClock.uptimeMillis();
                 android.view.KeyEvent down = new android.view.KeyEvent(now, now, android.view.KeyEvent.ACTION_DOWN, android.view.KeyEvent.KEYCODE_BACK, 0);
@@ -115,376 +111,389 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
                 
                 boolean injected = false;
                 String[] methods = {"keyEvent", "injectKeyEvent", "dispatchKeyEvent", "sendKeyEvent", "injectInputEvent"};
-                
                 for (String mName : methods) {
                     try {
                         java.lang.reflect.Method m = md.getClass().getMethod(mName, android.view.KeyEvent.class);
                         m.invoke(md, down);
                         m.invoke(md, up);
                         injected = true;
-                        Log.i("[OUTPUT_TELEMETRY]", "Virtual Display Back successfully injected using: " + mName + "(KeyEvent)");
                         break;
                     } catch (Exception ignored) {}
-                    
                     try {
                         java.lang.reflect.Method m = md.getClass().getMethod(mName, android.view.InputEvent.class);
                         m.invoke(md, down);
                         m.invoke(md, up);
                         injected = true;
-                        Log.i("[OUTPUT_TELEMETRY]", "Virtual Display Back successfully injected using: " + mName + "(InputEvent)");
                         break;
                     } catch (Exception ignored) {}
                 }
-                
                 if (injected) return true;
-                
-                Log.w("[OUTPUT_TELEMETRY]", "Virtual Display injection failed (Unrooted). Falling back directly to Global Action Back.");
             }
         }
         
-		isInjectingBack = true;
-		Log.i("[OUTPUT_TELEMETRY]", "Accessibility API dispatching Global Action: GLOBAL_ACTION_BACK (Universal)");
-		boolean success = ds.performGlobalAction(GLOBAL_ACTION_BACK);
-		
-		new Handler(Looper.getMainLooper()).postDelayed(() -> isInjectingBack = false, 300);
-		
-		return success;
-	}
+        isInjectingBack = true;
+        boolean success = ds.performGlobalAction(GLOBAL_ACTION_BACK);
+        new Handler(Looper.getMainLooper()).postDelayed(() -> isInjectingBack = false, 300);
+        return success;
+    }
 
-	static boolean dispatchHome() {
-		var ds = instance;
-		if (ds == null) return false;
-		return ds.performGlobalAction(GLOBAL_ACTION_HOME);
-	}
-	
-	static boolean dispatchRecent() {
-		var ds = instance;
-		if (ds == null) return false;
-		return ds.performGlobalAction(GLOBAL_ACTION_RECENTS);
-	}
+    public static boolean dispatchGodModeSwipe(boolean up) {
+        var ds = instance;
+        if (ds == null || VERSION.SDK_INT < VERSION_CODES.N) return false;
 
-	static boolean dispatchTap(float x, float y) {
-		var ds = instance;
-		if ((VERSION.SDK_INT < VERSION_CODES.N) || (ds == null)) return false;
-		if ((x < 0f) || (y < 0f)) return true;
-		ds.path.reset();
-		ds.path.moveTo(x, y);
-		var gb = new GestureDescription.Builder().addStroke(new StrokeDescription(ds.path, 0L, 1L));
-		return ds.dispatchGesture(gb.build(), null, null);
-	}
+        try { MirrorDisplay.notifyInjectedTouch(); } catch(Exception e){}
 
-	static boolean dispatchScale(float x, float y, float diff) {
-		var ds = instance;
-		if ((VERSION.SDK_INT < VERSION_CODES.O) || (ds == null)) return false;
-		if ((x < 0f) || (y < 0f)) return true;
-		var path = ds.path;
-		var dur = 100L;
-		if (diff > 0) {
-			path.reset();
-			path.moveTo(x, y);
-			path.lineTo(x - diff, y);
-			ds.addStroke(new StrokeDescription(path, 0L, dur, false));
-			path.reset();
-			path.moveTo(x + 10, y);
-			path.lineTo(x + diff + 10, y);
-			ds.addStroke(new StrokeDescription(path, 0L, dur, false));
-		} else {
-			path.reset();
-			path.moveTo(x + diff, y);
-			path.lineTo(x, y);
-			ds.addStroke(new StrokeDescription(path, 0L, dur, false));
-			path.reset();
-			path.moveTo(x - diff + 10, y);
-			path.lineTo(x + 10, y);
-			ds.addStroke(new StrokeDescription(path, 0L, dur, false));
-		}
-		return ds.dispatch();
-	}
+        android.util.DisplayMetrics metrics = ds.getResources().getDisplayMetrics();
+        float actionX = metrics.widthPixels * 0.50f;
+        float centerY = metrics.heightPixels * 0.50f;
+        float span = metrics.heightPixels * 0.20f;
 
-	static boolean dispatchMotionEvent(MotionEvent e) {
-		var ds = instance;
-		if ((VERSION.SDK_INT < VERSION_CODES.O) || (ds == null)) return false;
+        float yStart = up ? (centerY - span / 2f) : (centerY + span / 2f);
+        float yEnd = up ? (centerY + span / 2f) : (centerY - span / 2f);
+        long duration = up ? 90L : 70L;
 
-		var pointers = ds.pointers;
-		var cnt = e.getPointerCount();
-		var action = e.getActionMasked();
-		boolean completePrev;
+        Path swipePath = new Path();
+        swipePath.moveTo(actionX, yStart);
+        swipePath.lineTo(actionX, yEnd);
 
-		if ((cnt > 1) && (action == ACTION_MOVE)) {
-			long timeDiff = e.getEventTime() - ds.pointers[0].time;
-			if (timeDiff < 30L) {
-				if (timeDiff < 0) ds.pointers[0].time = e.getEventTime();
-				completePrev = false;
-			} else {
-				completePrev = true;
-			}
-		} else {
-			completePrev = false;
-		}
+        GestureDescription.Builder gestureBuilder = new GestureDescription.Builder();
+        gestureBuilder.addStroke(new StrokeDescription(swipePath, 0L, duration));
+        
+        return ds.dispatchGesture(gestureBuilder.build(), null, null);
+    }
 
-		if (cnt > pointers.length) {
-			ds.pointers = pointers = Arrays.copyOf(pointers, cnt);
-			for (int i = 0; i < cnt; i++) {
-				if (pointers[i] == null) pointers[i] = new Pointer();
-			}
-		}
+    static boolean dispatchHome() {
+        var ds = instance;
+        if (ds == null) return false;
+        return ds.performGlobalAction(GLOBAL_ACTION_HOME);
+    }
+    
+    static boolean dispatchRecent() {
+        var ds = instance;
+        if (ds == null) return false;
+        return ds.performGlobalAction(GLOBAL_ACTION_RECENTS);
+    }
 
-		var downTime = e.getDownTime();
-		var eventTime = e.getEventTime();
-		int idx;
+    static boolean dispatchTap(float x, float y) {
+        var ds = instance;
+        if ((VERSION.SDK_INT < VERSION_CODES.N) || (ds == null)) return false;
+        if ((x < 0f) || (y < 0f)) return true;
+        ds.path.reset();
+        ds.path.moveTo(x, y);
+        var gb = new GestureDescription.Builder().addStroke(new StrokeDescription(ds.path, 0L, 1L));
+        return ds.dispatchGesture(gb.build(), null, null);
+    }
 
-		if ((action == ACTION_POINTER_DOWN) || (action == ACTION_POINTER_UP)) {
-			action = (action == ACTION_POINTER_DOWN) ? ACTION_DOWN : ACTION_UP;
-			idx = e.getActionIndex();
-			cnt = idx + 1;
-		} else {
-			idx = 0;
-		}
-		
-		for (; idx < cnt; idx++) {
-			var x = e.getX(idx);
-			var y = e.getY(idx);
-			if ((x < 0f) || (y < 0f)) continue;
-			var p = pointers[idx];
-			if (!ds.buildGesture(p, downTime, eventTime, action, x, y, completePrev)) return false;
-		}
+    static boolean dispatchScale(float x, float y, float diff) {
+        var ds = instance;
+        if ((VERSION.SDK_INT < VERSION_CODES.O) || (ds == null)) return false;
+        if ((x < 0f) || (y < 0f)) return true;
+        var path = ds.path;
+        var dur = 100L;
+        if (diff > 0) {
+            path.reset();
+            path.moveTo(x, y);
+            path.lineTo(x - diff, y);
+            ds.addStroke(new StrokeDescription(path, 0L, dur, false));
+            path.reset();
+            path.moveTo(x + 10, y);
+            path.lineTo(x + diff + 10, y);
+            ds.addStroke(new StrokeDescription(path, 0L, dur, false));
+        } else {
+            path.reset();
+            path.moveTo(x + diff, y);
+            path.lineTo(x, y);
+            ds.addStroke(new StrokeDescription(path, 0L, dur, false));
+            path.reset();
+            path.moveTo(x - diff + 10, y);
+            path.lineTo(x + 10, y);
+            ds.addStroke(new StrokeDescription(path, 0L, dur, false));
+        }
+        return ds.dispatch();
+    }
 
-		return (ds.gb == null) || ds.dispatch();
-	}
+    static boolean dispatchMotionEvent(MotionEvent e) {
+        var ds = instance;
+        if ((VERSION.SDK_INT < VERSION_CODES.O) || (ds == null)) return false;
 
-	static boolean dispatchMotionEvent(long downTime, long eventTime, int action, float x, float y) {
-		var ds = instance;
-		if ((VERSION.SDK_INT < VERSION_CODES.O) || (ds == null)) return false;
-		if ((x < 0f) || (y < 0f)) return true;
-		var p = instance.pointers[0];
-		
-		return ds.buildGesture(p, downTime, eventTime, action, x, y, false) && ds.dispatch();
-	}
+        var pointers = ds.pointers;
+        var cnt = e.getPointerCount();
+        var action = e.getActionMasked();
+        boolean completePrev;
 
-	@RequiresApi(api = VERSION_CODES.O)
-	private boolean buildGesture(Pointer p, long downTime, long eventTime, int action, float x,
-															 float y, boolean completePrev) {
-		switch (action) {
-			case ACTION_DOWN -> {
-				p.x = x;
-				p.y = y;
-				p.time = eventTime;
-				path.reset();
-				path.moveTo(x, y);
-				var dur = Math.max(1L, Math.min(eventTime - downTime, getMaxGestureDuration()));
-				p.sd = new StrokeDescription(path, 0L, dur, true);
-				addStroke(p.sd);
-			}
-			case ACTION_UP -> {
-				if (p.sd == null) return true;
-				path.reset();
-				path.moveTo(x, y); 
-				var dur = Math.max(1L, Math.min(eventTime - p.time, getMaxGestureDuration()));
-				var sd = p.sd.continueStroke(path, 0L, dur, false);
-				p.sd = null;
-				addStroke(sd);
-			}
-			case ACTION_MOVE -> {
-				path.reset();
-				path.moveTo(p.x, p.y);
-				path.lineTo(x, y);
-				var dur = Math.max(1L, Math.min(eventTime - p.time, getMaxGestureDuration()));
-				p.x = x;
-				p.y = y;
-				p.time = eventTime;
-				StrokeDescription sd;
-				if (p.sd == null) {
-					p.sd = sd = new StrokeDescription(path, 0L, dur, true);
-				} else if (completePrev) {
-					sd = p.sd.continueStroke(path, 0L, dur, false);
-					p.sd = null;
-				} else {
-					p.sd = sd = p.sd.continueStroke(path, 0L, dur, true);
-				}
-				addStroke(sd);
-			}
-			default -> {
-				return false;
-			}
-		}
-		return true;
-	}
+        if ((cnt > 1) && (action == ACTION_MOVE)) {
+            long timeDiff = e.getEventTime() - ds.pointers[0].time;
+            if (timeDiff < 30L) {
+                if (timeDiff < 0) ds.pointers[0].time = e.getEventTime();
+                completePrev = false;
+            } else {
+                completePrev = true;
+            }
+        } else {
+            completePrev = false;
+        }
 
-	@RequiresApi(api = VERSION_CODES.N)
-	private void addStroke(StrokeDescription sd) {
-		if (gb == null) gb = new GestureDescription.Builder();
-		gb.addStroke(sd);
-	}
+        if (cnt > pointers.length) {
+            ds.pointers = pointers = Arrays.copyOf(pointers, cnt);
+            for (int i = 0; i < cnt; i++) {
+                if (pointers[i] == null) pointers[i] = new Pointer();
+            }
+        }
 
-	@RequiresApi(api = VERSION_CODES.N)
-	private boolean dispatch() {
-		if (gb == null) return false;
-		var g = gb.build();
-		gb = null;
-		return dispatchGesture(g, null, null);
-	}
+        var downTime = e.getDownTime();
+        var eventTime = e.getEventTime();
+        int idx;
 
-	@Override
-	public void onCreate() {
-		super.onCreate();
-		instance = this;
-		if (VERSION.SDK_INT >= VERSION_CODES.TIRAMISU) {
-			windowIds.clear();
-			windowIds.addAll(listWindows());
-		}
-		
-		IntentFilter filter = new IntentFilter();
-		filter.addAction("my.app.permata.ACTION_GLOBAL_BACK");
-		filter.addAction("my.app.permata.ACTION_GLOBAL_HOME");
-		filter.addAction("my.app.permata.ACTION_GLOBAL_RECENT"); 
-		if (VERSION.SDK_INT >= VERSION_CODES.TIRAMISU) {
-			registerReceiver(commandReceiver, filter, Context.RECEIVER_NOT_EXPORTED);
-		} else {
-			registerReceiver(commandReceiver, filter);
-		}
-	}
+        if ((action == ACTION_POINTER_DOWN) || (action == ACTION_POINTER_UP)) {
+            action = (action == ACTION_POINTER_DOWN) ? ACTION_DOWN : ACTION_UP;
+            idx = e.getActionIndex();
+            cnt = idx + 1;
+        } else {
+            idx = 0;
+        }
+        
+        for (; idx < cnt; idx++) {
+            var x = e.getX(idx);
+            var y = e.getY(idx);
+            if ((x < 0f) || (y < 0f)) continue;
+            var p = pointers[idx];
+            if (!ds.buildGesture(p, downTime, eventTime, action, x, y, completePrev)) return false;
+        }
 
-	@Override
-	public void onDestroy() {
-		super.onDestroy();
-		instance = null;
-		isConsentGranted = false; 
-		try {
-			unregisterReceiver(commandReceiver);
-		} catch (Exception ignored) {}
-	}
+        return (ds.gb == null) || ds.dispatch();
+    }
 
-	@Override
-	public void onAccessibilityEvent(AccessibilityEvent event) {
-		var type = event.getEventType();
-		if ((VERSION.SDK_INT >= VERSION_CODES.TIRAMISU) && (type == TYPE_WINDOWS_CHANGED)) {
-			if (event.getDisplayId() != DEFAULT_DISPLAY) return;
-			var change = event.getWindowChanges();
-			if (change == WINDOWS_CHANGE_ADDED) windowIds.add(event.getWindowId());
-			else if (change == WINDOWS_CHANGE_REMOVED) windowIds.remove(event.getWindowId());
-			return;
-		}
+    static boolean dispatchMotionEvent(long downTime, long eventTime, int action, float x, float y) {
+        var ds = instance;
+        if ((VERSION.SDK_INT < VERSION_CODES.O) || (ds == null)) return false;
+        if ((x < 0f) || (y < 0f)) return true;
+        var p = instance.pointers[0];
+        return ds.buildGesture(p, downTime, eventTime, action, x, y, false) && ds.dispatch();
+    }
 
-		if (type != TYPE_WINDOW_STATE_CHANGED) return;
-		
-		CharSequence pkg = event.getPackageName();
-		String pkgName = (pkg != null) ? pkg.toString() : null;
-		if (pkgName != null) {
-		    lastActivePackage = pkgName;
-		}
+    @RequiresApi(api = VERSION_CODES.O)
+    private boolean buildGesture(Pointer p, long downTime, long eventTime, int action, float x, float y, boolean completePrev) {
+        switch (action) {
+            case ACTION_DOWN -> {
+                p.x = x;
+                p.y = y;
+                p.time = eventTime;
+                path.reset();
+                path.moveTo(x, y);
+                var dur = Math.max(1L, Math.min(eventTime - downTime, getMaxGestureDuration()));
+                p.sd = new StrokeDescription(path, 0L, dur, true);
+                addStroke(p.sd);
+            }
+            case ACTION_UP -> {
+                if (p.sd == null) return true;
+                path.reset();
+                path.moveTo(x, y); 
+                var dur = Math.max(1L, Math.min(eventTime - p.time, getMaxGestureDuration()));
+                var sd = p.sd.continueStroke(path, 0L, dur, false);
+                p.sd = null;
+                addStroke(sd);
+            }
+            case ACTION_MOVE -> {
+                path.reset();
+                path.moveTo(p.x, p.y);
+                path.lineTo(x, y);
+                var dur = Math.max(1L, Math.min(eventTime - p.time, getMaxGestureDuration()));
+                p.x = x;
+                p.y = y;
+                p.time = eventTime;
+                StrokeDescription sd;
+                if (p.sd == null) {
+                    p.sd = sd = new StrokeDescription(path, 0L, dur, true);
+                } else if (completePrev) {
+                    sd = p.sd.continueStroke(path, 0L, dur, false);
+                    p.sd = null;
+                } else {
+                    p.sd = sd = p.sd.continueStroke(path, 0L, dur, true);
+                }
+                addStroke(sd);
+            }
+            default -> {
+                return false;
+            }
+        }
+        return true;
+    }
 
-		if (isConsentGranted && clickOnButton == null) return;
-		if (pkgName == null) return;
+    @RequiresApi(api = VERSION_CODES.N)
+    private void addStroke(StrokeDescription sd) {
+        if (gb == null) gb = new GestureDescription.Builder();
+        gb.addStroke(sd);
+    }
 
-		var root = getRootInActiveWindow();
-		if (root == null) return;
+    @RequiresApi(api = VERSION_CODES.N)
+    private boolean dispatch() {
+        if (gb == null) return false;
+        var g = gb.build();
+        gb = null;
+        return dispatchGesture(g, null, null);
+    }
 
-		try {
-			if (clickOnButton != null) {
-				var btn = root.findAccessibilityNodeInfosByText(clickOnButton);
-				if (btn.isEmpty()) {
-					btn = root.findAccessibilityNodeInfosByViewId("android:id/button1");
-				}
-				if (!btn.isEmpty()) {
-					performClickNode(btn.get(0));
-					clickOnButton = null;
-					return;
-				}
-			}
-			checkAndClickMediaProjectionConsent(root, pkgName);
-		} finally {
-			root.recycle(); 
-		}
-	}
+    @Override
+    public void onCreate() {
+        super.onCreate();
+        instance = this;
+        if (VERSION.SDK_INT >= VERSION_CODES.TIRAMISU) {
+            windowIds.clear();
+            windowIds.addAll(listWindows());
+        }
+        
+        IntentFilter filter = new IntentFilter();
+        filter.addAction("my.app.permata.ACTION_GLOBAL_BACK");
+        filter.addAction("my.app.permata.ACTION_GLOBAL_HOME");
+        filter.addAction("my.app.permata.ACTION_GLOBAL_RECENT"); 
+        if (VERSION.SDK_INT >= VERSION_CODES.TIRAMISU) {
+            registerReceiver(commandReceiver, filter, Context.RECEIVER_NOT_EXPORTED);
+        } else {
+            registerReceiver(commandReceiver, filter);
+        }
+    }
 
-	private void checkAndClickMediaProjectionConsent(AccessibilityNodeInfo root, String pkgName) {
-		if (isConsentGranted) return; 
-		
-		if ("com.android.systemui".equals(pkgName) || "android".equals(pkgName) || pkgName.contains("systemui")) {
-			String[] targetTexts = new String[]{
-					"Start now", "Start recording", "Allow", "Start",
-					"立即开始", "开始录制", "开始", "允许",
-					"立即開始", "開始錄製", "開始", "允許",
-					"Mulai sekarang", "Izinkan", 
-					"Mula sekarang", "Benarkan", 
-					"เริ่มเลย", "อนุญาต", "เริ่ม", 
-					"Bắt đầu ngay", "Cho phép", "Bắt đầu", 
-					"Magsimula na", "Simulan ngayon", "Payagan", 
-					"अभी शुरू करें", "अनुमति दें", "शुरू करें", 
-					"இப்போதே தொடங்கு", "அனுமதி", 
-					"البدء الآن", "ابدأ الآن", "السماح", "بدء",
-					"今すぐ開始", "許可", "開始", 
-					"지금 시작", "허용", "시작", 
-					"Iniciar ahora", "Iniciar grabación", "Permitir", 
-					"Commencer", "Démarrer", "Autoriser", 
-					"Jetzt starten", "Starten", "Zulassen", 
-					"Avvia ora", "Consenti", "Iniciar agora", "Permitir", 
-					"Начать", "Разрешить", "Начать запись", 
-					"Şimdi başlat", "İzin ver", 
-					"Nu starten", "Toestaan", "Rozpocznij teraz", "Zezwól" 
-			};
+    @Override
+    public void onDestroy() {
+        super.onDestroy();
+        instance = null;
+        isConsentGranted = false; 
+        try {
+            unregisterReceiver(commandReceiver);
+        } catch (Exception ignored) {}
+    }
 
-			for (String text : targetTexts) {
-				var nodes = root.findAccessibilityNodeInfosByText(text);
-				if (nodes != null && !nodes.isEmpty()) {
-					for (var node : nodes) {
-						if (node != null && performClickNode(node)) {
-							isConsentGranted = true;
-							return;
-						}
-					}
-				}
-			}
+    @Override
+    public void onAccessibilityEvent(AccessibilityEvent event) {
+        var type = event.getEventType();
+        if ((VERSION.SDK_INT >= VERSION_CODES.TIRAMISU) && (type == TYPE_WINDOWS_CHANGED)) {
+            if (event.getDisplayId() != DEFAULT_DISPLAY) return;
+            var change = event.getWindowChanges();
+            if (change == WINDOWS_CHANGE_ADDED) windowIds.add(event.getWindowId());
+            else if (change == WINDOWS_CHANGE_REMOVED) windowIds.remove(event.getWindowId());
+            return;
+        }
 
-			var btn1 = root.findAccessibilityNodeInfosByViewId("android:id/button1");
-			if (btn1 != null && !btn1.isEmpty()) {
-				for (var node : btn1) {
-					if (node != null && performClickNode(node)) {
-						isConsentGranted = true;
-						return;
-					}
-				}
-			}
-		}
-	}
+        if (type != TYPE_WINDOW_STATE_CHANGED) return;
 
-	private boolean performClickNode(AccessibilityNodeInfo node) {
-		if (node == null) return false;
-		if (node.isClickable()) {
-			return node.performAction(AccessibilityNodeInfo.ACTION_CLICK);
-		}
-		AccessibilityNodeInfo parent = node.getParent();
-		while (parent != null) {
-			if (parent.isClickable()) {
-				return parent.performAction(AccessibilityNodeInfo.ACTION_CLICK);
-			}
-			parent = parent.getParent();
-		}
-		return false;
-	}
+        CharSequence pkg = event.getPackageName();
+        String pkgName = (pkg != null) ? pkg.toString() : null;
+        if (pkgName != null && !pkgName.equals("com.android.systemui") && !pkgName.equals("android") && !pkgName.contains("inputmethod")) {
+            lastActivePackage = pkgName;
+        }
 
-	@Override
-	public void onInterrupt() {
-		if (VERSION.SDK_INT >= VERSION_CODES.TIRAMISU) {
-			windowIds.clear();
-		}
-	}
+        if (isConsentGranted && clickOnButton == null) return;
+        if (pkgName == null) return;
 
-	private List<Integer> listWindows() {
-		var windows = getWindows();
-		var ids = new ArrayList<Integer>(windows.size());
-		for (var w : getWindows()) {
-			if ((VERSION.SDK_INT >= VERSION_CODES.R) && (w.getDisplayId() != DEFAULT_DISPLAY)) continue;
-			var type = w.getType();
-			if ((type == TYPE_APPLICATION) || (type == TYPE_INPUT_METHOD)) ids.add(w.getId());
-		}
-		return ids;
-	}
+        var root = getRootInActiveWindow();
+        if (root == null) return;
 
-	private static final class Pointer {
-		float x;
-		float y;
-		long time;
-		StrokeDescription sd;
-	}
+        try {
+            if (clickOnButton != null) {
+                var btn = root.findAccessibilityNodeInfosByText(clickOnButton);
+                if (btn.isEmpty()) {
+                    btn = root.findAccessibilityNodeInfosByViewId("android:id/button1");
+                }
+                if (!btn.isEmpty()) {
+                    performClickNode(btn.get(0));
+                    clickOnButton = null;
+                    return;
+                }
+            }
+            checkAndClickMediaProjectionConsent(root, pkgName);
+        } finally {
+            root.recycle(); 
+        }
+    }
+
+    private void checkAndClickMediaProjectionConsent(AccessibilityNodeInfo root, String pkgName) {
+        if (isConsentGranted) return; 
+        
+        if ("com.android.systemui".equals(pkgName) || "android".equals(pkgName) || pkgName.contains("systemui")) {
+            String[] targetTexts = new String[]{
+                    "Start now", "Start recording", "Allow", "Start",
+                    "立即开始", "开始录制", "开始", "允许",
+                    "立即開始", "開始錄製", "開始", "允許",
+                    "Mulai sekarang", "Izinkan", 
+                    "Mula sekarang", "Benarkan", 
+                    "เริ่มเลย", "อนุญาต", "เริ่ม", 
+                    "Bắt đầu ngay", "Cho phép", "Bắt đầu", 
+                    "Magsimula na", "Simulan ngayon", "Payagan", 
+                    "अभी शुरू करें", "अनुमति दें", "शुरू करें", 
+                    "இப்போதே தொடங்கு", "அனுமதி", 
+                    "البدء الآن", "ابدأ الآن", "السماح", "بدء",
+                    "今すぐ開始", "許可", "開始", 
+                    "지금 시작", "허용", "시작", 
+                    "Iniciar ahora", "Iniciar grabación", "Permitir", 
+                    "Commencer", "Démarrer", "Autoriser", 
+                    "Jetzt starten", "Starten", "Zulassen", 
+                    "Avvia ora", "Consenti", "Iniciar agora", "Permitir", 
+                    "Начать", "Разрешить", "Начать запись", 
+                    "Şimdi başlat", "İzin ver", 
+                    "Nu starten", "Toestaan", "Rozpocznij teraz", "Zezwól" 
+            };
+
+            for (String text : targetTexts) {
+                var nodes = root.findAccessibilityNodeInfosByText(text);
+                if (nodes != null && !nodes.isEmpty()) {
+                    for (var node : nodes) {
+                        if (node != null && performClickNode(node)) {
+                            isConsentGranted = true;
+                            return;
+                        }
+                    }
+                }
+            }
+
+            var btn1 = root.findAccessibilityNodeInfosByViewId("android:id/button1");
+            if (btn1 != null && !btn1.isEmpty()) {
+                for (var node : btn1) {
+                    if (node != null && performClickNode(node)) {
+                        isConsentGranted = true;
+                        return;
+                    }
+                }
+            }
+        }
+    }
+
+    private boolean performClickNode(AccessibilityNodeInfo node) {
+        if (node == null) return false;
+        if (node.isClickable()) {
+            return node.performAction(AccessibilityNodeInfo.ACTION_CLICK);
+        }
+        AccessibilityNodeInfo parent = node.getParent();
+        while (parent != null) {
+            if (parent.isClickable()) {
+                return parent.performAction(AccessibilityNodeInfo.ACTION_CLICK);
+            }
+            parent = parent.getParent();
+        }
+        return false;
+    }
+
+    @Override
+    public void onInterrupt() {
+        if (VERSION.SDK_INT >= VERSION_CODES.TIRAMISU) {
+            windowIds.clear();
+        }
+    }
+
+    private List<Integer> listWindows() {
+        var windows = getWindows();
+        var ids = new ArrayList<Integer>(windows.size());
+        for (var w : getWindows()) {
+            if ((VERSION.SDK_INT >= VERSION_CODES.R) && (w.getDisplayId() != DEFAULT_DISPLAY)) continue;
+            var type = w.getType();
+            if ((type == TYPE_APPLICATION) || (type == TYPE_INPUT_METHOD)) ids.add(w.getId());
+        }
+        return ids;
+    }
+
+    private static final class Pointer {
+        float x;
+        float y;
+        long time;
+        StrokeDescription sd;
+    }
 }
