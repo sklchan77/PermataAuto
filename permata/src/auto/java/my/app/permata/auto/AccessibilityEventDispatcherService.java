@@ -57,22 +57,6 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
 	private final Path path = new Path();
 	private GestureDescription.Builder gb;
 	private Pointer[] pointers = new Pointer[]{new Pointer()};
-	
-	private long lastMoveTime = 0;
-
-	private final Handler safetyHandler = new Handler(Looper.getMainLooper());
-	
-	private final Runnable safetyReleaseRunnable = () -> {
-		try {
-			if (pointers != null && pointers.length > 0 && pointers[0] != null) {
-				if (pointers[0].sd != null) {
-					long now = android.os.SystemClock.uptimeMillis();
-					buildGesture(pointers[0], now, now, MotionEvent.ACTION_UP, pointers[0].x, pointers[0].y, false);
-					dispatch();
-				}
-			}
-		} catch (Exception e) {}
-	};
 
 	private final BroadcastReceiver commandReceiver = new BroadcastReceiver() {
 		@Override
@@ -236,7 +220,7 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
 		ds.path.moveTo(x, y);
 		var gb = new GestureDescription.Builder().addStroke(new StrokeDescription(ds.path, 0L, 50L));
 		Log.i("[OUTPUT_TELEMETRY]", "Accessibility API dispatching Tap. X: " + x + ", Y: " + y);
-		return ds.dispatchSingleGesture(gb.build());
+		return ds.dispatchGesture(gb.build(), null, null);
 	}
 
 	static boolean dispatchScale(float x, float y, float diff) {
@@ -271,16 +255,10 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
 	static boolean dispatchMotionEvent(MotionEvent e) {
 		var ds = instance;
 		if ((VERSION.SDK_INT < VERSION_CODES.O) || (ds == null)) return false;
-		
-		var action = e.getActionMasked();
-
-		ds.safetyHandler.removeCallbacks(ds.safetyReleaseRunnable);
-		if (action != MotionEvent.ACTION_UP && action != MotionEvent.ACTION_CANCEL) {
-			ds.safetyHandler.postDelayed(ds.safetyReleaseRunnable, 500); 
-		}
 
 		var pointers = ds.pointers;
 		var cnt = e.getPointerCount();
+		var action = e.getActionMasked();
 		boolean completePrev;
 
 		if ((cnt > 1) && (action == ACTION_MOVE)) {
@@ -330,12 +308,6 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
 	static boolean dispatchMotionEvent(long downTime, long eventTime, int action, float x, float y) {
 		var ds = instance;
 		if ((VERSION.SDK_INT < VERSION_CODES.O) || (ds == null)) return false;
-		
-		ds.safetyHandler.removeCallbacks(ds.safetyReleaseRunnable);
-		if (action != MotionEvent.ACTION_UP && action != MotionEvent.ACTION_CANCEL) {
-			ds.safetyHandler.postDelayed(ds.safetyReleaseRunnable, 500); 
-		}
-		
 		if ((x < 0f) || (y < 0f)) return true;
 		var p = instance.pointers[0];
 		
@@ -354,15 +326,15 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
 				p.time = eventTime;
 				path.reset();
 				path.moveTo(x, y);
-				p.sd = new StrokeDescription(path, 0L, 45L, true);
+				var dur = Math.max(1L, Math.min(eventTime - downTime, getMaxGestureDuration()));
+				p.sd = new StrokeDescription(path, 0L, dur, true);
 				addStroke(p.sd);
 			}
 			case ACTION_UP -> {
 				if (p.sd == null) return true;
 				path.reset();
-				path.moveTo(p.x, p.y);
-				path.lineTo(x, y); 
-				var dur = Math.max(10L, Math.min(eventTime - p.time, getMaxGestureDuration()));
+				path.moveTo(x, y); 
+				var dur = Math.max(1L, Math.min(eventTime - p.time, getMaxGestureDuration()));
 				var sd = p.sd.continueStroke(path, 0L, dur, false);
 				p.sd = null;
 				addStroke(sd);
@@ -371,7 +343,7 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
 				path.reset();
 				path.moveTo(p.x, p.y);
 				path.lineTo(x, y);
-				var dur = Math.max(45L, Math.min(eventTime - p.time, getMaxGestureDuration()));
+				var dur = Math.max(1L, Math.min(eventTime - p.time, getMaxGestureDuration()));
 				p.x = x;
 				p.y = y;
 				p.time = eventTime;
@@ -404,12 +376,6 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
 		if (gb == null) return false;
 		var g = gb.build();
 		gb = null;
-		
-		return dispatchGesture(g, null, null);
-	}
-	
-	@RequiresApi(api = VERSION_CODES.N)
-	private boolean dispatchSingleGesture(GestureDescription g) {
 		return dispatchGesture(g, null, null);
 	}
 
