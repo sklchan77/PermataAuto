@@ -42,8 +42,11 @@ public class MirrorServiceFS extends CarAppService {
 
 	@Override
 	public void onDestroy() {
-		md.release();
-		md = null;
+		if (md != null) {
+			md.release();
+			md = null;
+		}
+		sc = null; 
 		super.onDestroy();
 	}
 
@@ -99,17 +102,30 @@ public class MirrorServiceFS extends CarAppService {
 		}
 
 		@Override
-		public void onSurfaceAvailable(@NonNull SurfaceContainer sc) {
-			if (sc.getSurface() == null) return;
-			MirrorServiceFS.sc = sc;
-			md.setSurface(sc);
-			scrollStartX = sc.getWidth() / 2f;
-			scrollStartY = sc.getHeight() / 2f;
+		public void onSurfaceAvailable(@NonNull SurfaceContainer localSc) {
+			if (localSc.getSurface() == null) return;
+			MirrorServiceFS.sc = localSc;
+			
+			if (md == null || md.isDestroyed()) {
+				if (md != null) md.release();
+				md = MirrorDisplay.get();
+			}
+			
+			if (md != null) md.setSurface(localSc);
+			
+			scrollStartX = localSc.getWidth() / 2f;
+			scrollStartY = localSc.getHeight() / 2f;
 		}
 
 		@Override
-		public void onSurfaceDestroyed(@NonNull SurfaceContainer sc) {
-			md.releaseSurface(MirrorServiceFS.sc);
+		public void onSurfaceDestroyed(@NonNull SurfaceContainer localSc) {
+			if (scrollUp != null) {
+				scrollUp.cancel();
+				scrollUp = null;
+			}
+			if (md != null) {
+				md.releaseSurface(localSc);
+			}
 			MirrorServiceFS.sc = null;
 		}
 
@@ -119,36 +135,54 @@ public class MirrorServiceFS extends CarAppService {
 				scrollUp.cancel();
 				scrollUp = null;
 			}
-			md().tap(x, y);
+			if (md() != null) md().tap(x, y);
 		}
 
 		@Override
 		public void onScroll(float distanceX, float distanceY) {
-			var md = md();
+			var mDisp = md();
+			if (mDisp == null || MirrorServiceFS.sc == null) return;
+			
 			var time = uptimeMillis();
 			scrollMoveTime = time;
+			
 			if (scrollUp == null) {
+				scrollStartX = MirrorServiceFS.sc.getWidth() / 2f;
+				scrollStartY = MirrorServiceFS.sc.getHeight() / 2f;
+				
 				scrollX = scrollStartX;
 				scrollY = scrollStartY;
-				if (!md.motionEvent(time, time, ACTION_DOWN, scrollX, scrollY)) return;
+				
+				if (!mDisp.motionEvent(time, time, ACTION_DOWN, scrollX, scrollY)) {
+					return;
+				}
 				scrollDownTime = time;
 				scheduleScrollUp(500);
 			}
+			
 			scrollX -= distanceX;
 			scrollY -= distanceY;
-			md.motionEvent(scrollDownTime, time, ACTION_MOVE, scrollX, scrollY);
+			mDisp.motionEvent(scrollDownTime, time, ACTION_MOVE, scrollX, scrollY);
+			
+			if (scrollUp != null) {
+				scrollUp.cancel();
+				scheduleScrollUp(500);
+			}
 		}
 
 		private void scheduleScrollUp(long delay) {
 			scrollUp = handler.schedule(() -> {
 				if (scrollUp == null) return;
+				var mDisp = md();
+				if (mDisp == null) return;
+
 				var time = uptimeMillis();
 				var end = scrollMoveTime + delay;
 				if (end > time) {
 					scheduleScrollUp(end - time);
 				} else {
 					scrollUp = null;
-					md().motionEvent(scrollDownTime, time, ACTION_UP, scrollX, scrollY);
+					mDisp.motionEvent(scrollDownTime, time, ACTION_UP, scrollX, scrollY);
 				}
 			}, delay);
 		}
@@ -157,7 +191,7 @@ public class MirrorServiceFS extends CarAppService {
 		public void onScale(float focusX, float focusY, float scaleFactor) {
 			scrollStartX = focusX;
 			scrollStartY = focusY;
-			md().scale(focusX, focusY, scaleFactor > 1f);
+			if (md() != null) md().scale(focusX, focusY, scaleFactor > 1f);
 		}
 
 		@NonNull
@@ -166,16 +200,34 @@ public class MirrorServiceFS extends CarAppService {
 			var homeButton = new Action.Builder().setIcon(
 							new CarIcon.Builder(createWithResource(getCarContext(), R.drawable.home)).build())
 					.setOnClickListener(MirrorActivity::onHomeButtonClick).build();
+					
+			var recentButton = new Action.Builder().setIcon(
+							new CarIcon.Builder(createWithResource(getCarContext(), R.drawable.recent)).setTint(androidx.car.app.model.CarColor.DEFAULT).build())
+					.setOnClickListener(MirrorActivity::onRecentButtonClick).build();
+					
 			var backButton = new Action.Builder().setIcon(
 							new CarIcon.Builder(createWithResource(getCarContext(), R.drawable.back)).build())
 					.setOnClickListener(MirrorActivity::onBackButtonClick).build();
-			return new NavigationTemplate.Builder().setActionStrip(
-							new ActionStrip.Builder().addAction(homeButton).addAction(backButton).build())
-					.setMapActionStrip(new ActionStrip.Builder().addAction(Action.PAN).build()).build();
+					
+			var exitButton = new Action.Builder().setIcon(
+							new CarIcon.Builder(createWithResource(getCarContext(), R.drawable.shutdown)).setTint(androidx.car.app.model.CarColor.DEFAULT).build())
+					.setOnClickListener(MirrorActivity::onExitButtonClick).build();
+			
+			return new NavigationTemplate.Builder()
+					.setPanModeListener(isPanningMode -> {})
+					.setMapActionStrip(new ActionStrip.Builder().addAction(Action.PAN).build())
+					.setActionStrip(new ActionStrip.Builder()
+							.addAction(homeButton)
+							.addAction(recentButton) 
+							.addAction(backButton)
+							.addAction(exitButton)
+							.build())
+					.build();
 		}
 
 		private MirrorDisplay md() {
-			if (sc != null) md.setSurface(sc);
+			if (md == null || md.isDestroyed()) md = MirrorDisplay.get();
+			if (md != null && sc != null) md.setSurface(sc);
 			return md;
 		}
 	}
