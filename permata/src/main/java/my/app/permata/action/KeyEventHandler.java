@@ -329,32 +329,11 @@ public class KeyEventHandler {
                 }
                 lastGlobalActionTime = currentUptime;
                 boolean isNext = (code == KeyEvent.KEYCODE_MEDIA_NEXT);
-                String activePkg = AccessibilityEventDispatcherService.getLastActivePackage();
-                boolean isMirroring = PermataApplication.get().isMirroringMode();
 
-                // 1. PHYSICAL SCAN: Bypasses Android's confused multi-session tracking and scans the actual screen
-                WebView activeWebView = null;
-                if (finalTargetActivity != null) {
-                    activeWebView = scanFragmentsForWebView(finalTargetActivity.getActiveFragment());
-                    if (activeWebView == null || !activeWebView.isShown()) {
-                        activeWebView = findTopVisibleWebView(finalTargetActivity);
-                    }
-                }
-                boolean isWebPhysicallyVisible = (activeWebView != null && activeWebView.isShown());
+                Log.i("[ROUTING_TELEMETRY]", "Executing True Catch-All: Firing to Mirror, Web, God-Mode, and Media simultaneously.");
 
-                // 2. COOLWALK RESOLVER: Uses your literal last touch over OS variables
-                if (manualTouchFocus == TARGET_WEB && !isWebPhysicallyVisible) manualTouchFocus = TARGET_AUTO;
-                if (manualTouchFocus == TARGET_MIRROR && !isMirroring) manualTouchFocus = TARGET_AUTO;
-
-                boolean routeToWeb = (manualTouchFocus == TARGET_WEB) || (isWebPhysicallyVisible && manualTouchFocus == TARGET_AUTO);
-                boolean routeToMirror = (manualTouchFocus == TARGET_MIRROR) || (isMirroring && !routeToWeb);
-
-                Log.i("[ROUTING_TELEMETRY]", "Smart Routing -> WebVisible: " + isWebPhysicallyVisible + 
-                      " | Mirroring: " + isMirroring + " | FocusLock: " + manualTouchFocus);
-
-                if (routeToMirror || (isMirroring && activePkg != null && !activePkg.startsWith("my.app.permata"))) {
-                    Log.i("[ROUTING_TELEMETRY]", "Routing Priority 1 (Mirroring): Injecting steering swipe to Virtual Display for package " + activePkg);
-                    
+                // 1. FIRE TO MIRRORING VIRTUAL DISPLAY
+                try {
                     my.app.permata.auto.MirrorDisplay md = my.app.permata.auto.MirrorDisplay.get();
                     if (md != null) {
                         int width = 1000;
@@ -369,7 +348,6 @@ public class KeyEventHandler {
 
                         float actionX = width * 0.50f;
                         float centerY = height * 0.50f;
-                        // UPDATED: 20% span to match the native hardware swipe benchmark
                         float span = height * 0.20f;
                         
                         float yStart = (!isNext) ? (centerY - span / 2f) : (centerY + span / 2f);
@@ -380,56 +358,52 @@ public class KeyEventHandler {
                         md.motionEvent(now, now + 50, MotionEvent.ACTION_MOVE, actionX, centerY);
                         md.motionEvent(now, now + 100, MotionEvent.ACTION_UP, actionX, yEnd);
                     }
-                    return true;
-                }
+                } catch (Exception ignored) {}
 
-                if (routeToWeb) {
-                    Log.i("[ROUTING_TELEMETRY]", "Routing Priority 2 (Web Browser): Trigerring JS / Hardware Swipe inside PermataWebView.");
-                    if (finalTargetActivity != null) {
-                        final WebView resolvedWebView = activeWebView;
-                        finalTargetActivity.post(() -> {
-                            try {
-                                if (resolvedWebView != null && resolvedWebView.isShown()) {
-                                    String currentUrl = resolvedWebView.getUrl();
-                                    String host = "unknown";
-                                    boolean isMediaHost = false;
-                                    boolean isDouyin = false;
-                                    boolean isTikTok = false;
-                                    
-                                    if (currentUrl != null) {
-                                        try {
-                                            host = Uri.parse(currentUrl).getHost();
-                                            if (host != null) {
-                                                if (host.startsWith("www.")) host = host.substring(4);
-                                                String h = host.toLowerCase();
-                                                isTikTok = h.contains("tiktok");
-                                                isDouyin = h.contains("douyin");
-                                                isMediaHost = isTikTok || isDouyin || h.contains("instagram") || h.contains("youtube") || h.contains("facebook") || h.contains("bilibili");
-                                            }
-                                        } catch (Exception ignored) {}
-                                    }
-                                    View touchTargetView = isTikTok ? resolvedWebView : findTopmostTouchTarget(finalTargetActivity, resolvedWebView);
-                                    smartScrollWebView(resolvedWebView, touchTargetView, !isNext, "[Host: " + host + "] ", isMediaHost, isDouyin, isTikTok);
+                // 2. FIRE TO WEB BROWSER
+                if (finalTargetActivity != null) {
+                    finalTargetActivity.post(() -> {
+                        try {
+                            WebView resolvedWebView = scanFragmentsForWebView(finalTargetActivity.getActiveFragment());
+                            if (resolvedWebView == null || !resolvedWebView.isShown()) {
+                                resolvedWebView = findTopVisibleWebView(finalTargetActivity);
+                            }
+                            if (resolvedWebView != null && resolvedWebView.isShown()) {
+                                String currentUrl = resolvedWebView.getUrl();
+                                String host = "unknown";
+                                boolean isMediaHost = false;
+                                boolean isDouyin = false;
+                                boolean isTikTok = false;
+                                
+                                if (currentUrl != null) {
+                                    try {
+                                        host = Uri.parse(currentUrl).getHost();
+                                        if (host != null) {
+                                            if (host.startsWith("www.")) host = host.substring(4);
+                                            String h = host.toLowerCase();
+                                            isTikTok = h.contains("tiktok");
+                                            isDouyin = h.contains("douyin");
+                                            isMediaHost = isTikTok || isDouyin || h.contains("instagram") || h.contains("youtube") || h.contains("facebook") || h.contains("bilibili");
+                                        }
+                                    } catch (Exception ignored) {}
                                 }
-                            } catch (Exception ignored) {}
-                        });
-                    }
-                    return true;
+                                View touchTargetView = isTikTok ? resolvedWebView : findTopmostTouchTarget(finalTargetActivity, resolvedWebView);
+                                smartScrollWebView(resolvedWebView, touchTargetView, !isNext, "[Host: " + host + "] ", isMediaHost, isDouyin, isTikTok);
+                            }
+                        } catch (Exception ignored) {}
+                    });
                 }
 
-                if (activePkg != null && activePkg.startsWith("my.app.permata")) {
-                    Log.i("[ROUTING_TELEMETRY]", "Routing Priority 3 (Local Media/IPTV): Yielding to PermataMediaService.");
-                    return defaultHandler.apply(code, event);
-                }
-
-                if (activePkg != null && isStubbornScroller(activePkg)) {
-                    Log.i("[ROUTING_TELEMETRY]", "Routing Priority 4 (Native Stubborn): Firing God-Mode Swipe to phone glass.");
+                // 3. FIRE TO PHYSICAL PHONE (GOD MODE FOR STUBBORN NATIVE APPS)
+                String activePkg = AccessibilityEventDispatcherService.getLastActivePackage();
+                if (isScrollerPackage(activePkg)) {
                     executeNativeAppSwipe(!isNext, activePkg);
-                    return true; 
                 }
 
-                Log.i("[ROUTING_TELEMETRY]", "Routing Priority 5 (Yield): Yielding to OS for native app BT scrolling.");
-                return defaultHandler.apply(code, event);
+                // 4. FIRE TO MEDIA/IPTV
+                defaultHandler.apply(code, event);
+
+                return true; 
             }
         }
 
