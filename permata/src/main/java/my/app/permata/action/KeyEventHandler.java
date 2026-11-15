@@ -305,8 +305,12 @@ public class KeyEventHandler {
         }
 
         // SURVIVAL FETCH: Dynamically fetch active UI to survive a "Recents Apps" UI Kill
-        boolean isUiDead = (targetActivity == null || targetActivity.getAppActivity() == null);
-        if (!isUiDead && (targetActivity.getAppActivity() instanceof Activity)) {
+        boolean isUiDead = false;
+        if (targetActivity == null) {
+            isUiDead = true;
+        } else if (targetActivity.getAppActivity() == null) {
+            isUiDead = true;
+        } else if (targetActivity.getAppActivity() instanceof Activity) {
             isUiDead = ((Activity) targetActivity.getAppActivity()).isDestroyed();
         }
 
