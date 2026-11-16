@@ -11,12 +11,6 @@ import static android.content.pm.ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED;
 import static android.os.Build.VERSION.SDK_INT;
 import static android.os.PowerManager.ACQUIRE_CAUSES_WAKEUP;
 import static android.os.SystemClock.uptimeMillis;
-import static android.provider.Settings.System.ACCELEROMETER_ROTATION;
-import static android.provider.Settings.System.SCREEN_BRIGHTNESS;
-import static android.provider.Settings.System.SCREEN_BRIGHTNESS_MODE;
-import static android.provider.Settings.System.USER_ROTATION;
-import static android.view.Surface.ROTATION_0;
-import static android.view.Surface.ROTATION_90;
 import static android.view.ViewGroup.LayoutParams.MATCH_PARENT;
 import static android.view.WindowManager.LayoutParams.FLAG_ALT_FOCUSABLE_IM;
 import static android.view.WindowManager.LayoutParams.FLAG_DISMISS_KEYGUARD;
@@ -48,7 +42,6 @@ import android.os.Handler;
 import android.os.Looper;
 import android.os.PowerManager;
 import android.os.PowerManager.WakeLock;
-import android.provider.Settings;
 import android.text.StaticLayout;
 import android.text.TextPaint;
 import android.text.TextUtils;
@@ -97,12 +90,7 @@ public class MirrorDisplay {
 	private static final Object lifecycleLock = new Object(); 
 	private static final Object settingsLock = new Object();
 	
-	private static volatile boolean isRotationLocked = false;
 	private static volatile boolean isDimmed = false;
-	private static volatile int accel = -1;
-	private static volatile int originalUserRotation = -1; 
-	private static volatile int brightnessMode = -1; 
-	private static volatile int brightness = -1;
 	
 	private volatile long lastInjectedTouchTime = 0; 
 	private final Object touchLock = new Object(); 
@@ -369,7 +357,7 @@ public class MirrorDisplay {
 		return true;
 	}
 
-	private void updateOverlayOrientation(boolean forceCarPriority) {
+	private void updateOverlayAttributes(boolean forceCarPriority) {
 		try {
 			var wm = (WindowManager) PermataApplication.get().getSystemService(WINDOW_SERVICE);
 			boolean land = PermataApplication.get().isMirroringLandscape();
@@ -389,6 +377,8 @@ public class MirrorDisplay {
 				var overlayLp = (WindowManager.LayoutParams) overlay.getLayoutParams();
 				if (overlayLp != null) {
 					overlayLp.screenOrientation = targetOrientation;
+					// [CRASH-PROOF] Dim screen via Window LayoutParams instead of Settings.System
+					overlayLp.screenBrightness = isDimmed ? 0.0f : WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE;
 					wm.updateViewLayout(overlay, overlayLp);
 				}
 			}
@@ -411,129 +401,38 @@ public class MirrorDisplay {
 		if (a != null) {
 			a.setRequestedOrientation(land ? SCREEN_ORIENTATION_LANDSCAPE : SCREEN_ORIENTATION_PORTRAIT);
 		}
-
-		try {
-			bgExecutor.execute(() -> {
-				synchronized (settingsLock) {
-					if (isRotationLocked) return;
-					try {
-						var cr = ctx.getContentResolver();
-						if (accel == -1) {
-							var v = Settings.System.getInt(cr, ACCELEROMETER_ROTATION, -1);
-							if (v != -1) accel = v;
-						}
-						
-						if (originalUserRotation == -1) {
-							var ur = Settings.System.getInt(cr, USER_ROTATION, -1);
-							if (ur != -1) originalUserRotation = ur;
-						}
-						
-						Settings.System.putInt(cr, ACCELEROMETER_ROTATION, 0);
-						Settings.System.putInt(cr, USER_ROTATION, land ? ROTATION_90 : ROTATION_0);
-						isRotationLocked = true;
-					} catch (Exception err) {
-						Log.e(err);
-					}
-				}
-			});
-		} catch (Exception ex) {}
 	}
 
 	private static void restoreAccelRotation(Context ctx, boolean synchronous) {
 		var a = EventDispatcher.get().getActivity();
 		if (a != null) a.setRequestedOrientation(SCREEN_ORIENTATION_UNSPECIFIED);
-
-		Runnable task = () -> {
-			synchronized (settingsLock) {
-				if (!isRotationLocked) return;
-				try {
-					var cr = ctx.getContentResolver();
-					if (accel != -1) {
-						Settings.System.putInt(cr, ACCELEROMETER_ROTATION, accel);
-						accel = -1;
-					}
-					
-					if (originalUserRotation != -1) {
-						Settings.System.putInt(cr, USER_ROTATION, originalUserRotation);
-						originalUserRotation = -1;
-					}
-					isRotationLocked = false;
-				} catch (Exception err) {}
-			}
-		};
-
-		if (synchronous) {
-			task.run();
-		} else {
-			try {
-				bgExecutor.execute(task);
-			} catch (Exception ex) {}
-		}
 	}
 
 	private void dimScreen(Context ctx) {
 		if (isDestroyed) return;
-		try {
-			bgExecutor.execute(() -> {
-				if (sc == null || isDestroyed) return; 
-				
-				synchronized (settingsLock) {
-					if (isDimmed) return;
-					try {
-						var cr = ctx.getContentResolver();
-						
-						if (brightnessMode == -1) {
-							var mode = Settings.System.getInt(cr, SCREEN_BRIGHTNESS_MODE, -1);
-							if (mode != -1) brightnessMode = mode;
-						}
-						Settings.System.putInt(cr, SCREEN_BRIGHTNESS_MODE, 0); 
-						
-						if (brightness == -1) {
-							var br = Settings.System.getInt(cr, SCREEN_BRIGHTNESS, -1);
-							brightness = (br > 0) ? br : 200;
-						}
-						
-						Settings.System.putInt(cr, SCREEN_BRIGHTNESS, 1);
-						isDimmed = true;
-						
-						mainHandler.post(() -> {
-							updateOverlayOrientation(true);
-							disableAccelRotation(PermataApplication.get());
-						});
-					} catch (Exception err) {}
-				}
+		synchronized (settingsLock) {
+			if (isDimmed) return;
+			isDimmed = true;
+			mainHandler.post(() -> {
+				updateOverlayAttributes(true);
+				disableAccelRotation(PermataApplication.get());
 			});
-		} catch (Exception ex) {}
+		}
 	}
 
 	private void restoreBrightness(Context ctx, boolean synchronous) {
 		Runnable restoreTask = () -> {
 			synchronized (settingsLock) {
 				if (!isDimmed) return;
-				try {
-					var cr = ctx.getContentResolver();
-					if (brightness > 0) {
-						Settings.System.putInt(cr, SCREEN_BRIGHTNESS, brightness);
-					}
-					if (brightnessMode != -1) {
-						Settings.System.putInt(cr, SCREEN_BRIGHTNESS_MODE, brightnessMode);
-						brightnessMode = -1;
-					}
-					isDimmed = false;
-					
-					mainHandler.post(() -> {
-						updateOverlayOrientation(false);
-					});
-				} catch (Exception err) {}
+				isDimmed = false;
+				updateOverlayAttributes(false);
 			}
 		};
 
 		if (synchronous) {
 			restoreTask.run();
 		} else {
-			try {
-				bgExecutor.execute(restoreTask);
-			} catch (Exception ex) {}
+			mainHandler.post(restoreTask);
 		}
 	}
 
@@ -544,7 +443,7 @@ public class MirrorDisplay {
 
 		if (app.isMirroringMode()) {
 			app.setMirroringMode(mode);
-			updateOverlayOrientation(true);
+			updateOverlayAttributes(true);
 			return;
 		}
 
