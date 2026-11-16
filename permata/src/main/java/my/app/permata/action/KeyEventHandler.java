@@ -341,7 +341,7 @@ public class KeyEventHandler {
                 // Enforce Main Thread for UI payloads
                 mainThreadHandler.post(() -> {
                     
-                    // 1. FIRE TO MIRRORING VIRTUAL DISPLAY
+                    // 1. FIRE TO MIRRORING VIRTUAL DISPLAY (With real-time physics delay)
                     try {
                         my.app.permata.auto.MirrorDisplay md = my.app.permata.auto.MirrorDisplay.get();
                         if (md != null) {
@@ -362,10 +362,34 @@ public class KeyEventHandler {
                             float yStart = (!isNext) ? (centerY - span / 2f) : (centerY + span / 2f);
                             float yEnd = (!isNext) ? (centerY + span / 2f) : (centerY - span / 2f);
 
-                            long now = android.os.SystemClock.uptimeMillis();
-                            md.motionEvent(now, now, MotionEvent.ACTION_DOWN, actionX, yStart);
-                            md.motionEvent(now, now + 50, MotionEvent.ACTION_MOVE, actionX, centerY);
-                            md.motionEvent(now, now + 100, MotionEvent.ACTION_UP, actionX, yEnd);
+                            final long downTime = android.os.SystemClock.uptimeMillis();
+                            
+                            // Instant DOWN stroke
+                            md.motionEvent(downTime, downTime, MotionEvent.ACTION_DOWN, actionX, yStart);
+                            
+                            // Real-time 50ms delayed MOVE stroke
+                            mainThreadHandler.postDelayed(() -> {
+                                try {
+                                    my.app.permata.auto.MirrorDisplay currentMd = my.app.permata.auto.MirrorDisplay.get();
+                                    if (currentMd != null) {
+                                        currentMd.motionEvent(downTime, android.os.SystemClock.uptimeMillis(), MotionEvent.ACTION_MOVE, actionX, centerY);
+                                    }
+                                } catch (Exception e) {
+                                    Log.e("KeyEventHandler", "[ROUTING_ERROR] Mirror MOVE failed.", e);
+                                }
+                            }, 50);
+                            
+                            // Real-time 100ms delayed UP stroke
+                            mainThreadHandler.postDelayed(() -> {
+                                try {
+                                    my.app.permata.auto.MirrorDisplay currentMd = my.app.permata.auto.MirrorDisplay.get();
+                                    if (currentMd != null) {
+                                        currentMd.motionEvent(downTime, android.os.SystemClock.uptimeMillis(), MotionEvent.ACTION_UP, actionX, yEnd);
+                                    }
+                                } catch (Exception e) {
+                                    Log.e("KeyEventHandler", "[ROUTING_ERROR] Mirror UP failed.", e);
+                                }
+                            }, 100);
                         }
                     } catch (Exception e) {
                         Log.e("KeyEventHandler", "[ROUTING_ERROR] Mirror payload failed.", e);
