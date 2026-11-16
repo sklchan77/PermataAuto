@@ -451,7 +451,18 @@ public class KeyEventHandler {
                 // 4. FIRE TO MEDIA/IPTV
                 try {
                     if (defaultHandler != null) {
+                        // Deliver the physical DOWN stroke
                         defaultHandler.apply(code, event);
+                        
+                        // Explicitly synthesize and fire the UP stroke for Native Players
+                        KeyEvent upEvent = new KeyEvent(
+                                event.getDownTime(), 
+                                android.os.SystemClock.uptimeMillis() + 10, 
+                                KeyEvent.ACTION_UP, 
+                                code, 
+                                0
+                        );
+                        defaultHandler.apply(code, upEvent);
                     }
                 } catch (Exception e) {
                     Log.e("KeyEventHandler", "[ROUTING_ERROR] Media payload failed.", e);
