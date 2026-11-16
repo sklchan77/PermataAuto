@@ -341,7 +341,7 @@ public class KeyEventHandler {
                 // Enforce Main Thread for UI payloads
                 mainThreadHandler.post(() -> {
                     
-                    // 1. FIRE TO MIRRORING VIRTUAL DISPLAY (With real-time physics delay)
+                    // 1. FIRE TO MIRRORING VIRTUAL DISPLAY (With High-Velocity Fling Physics)
                     try {
                         my.app.permata.auto.MirrorDisplay md = my.app.permata.auto.MirrorDisplay.get();
                         if (md != null) {
@@ -355,41 +355,49 @@ public class KeyEventHandler {
                                 }
                             } catch (Exception ignored) {}
 
+                            // Keep the 20% safe span to prevent accidental UI touches
                             float actionX = width * 0.50f;
                             float centerY = height * 0.50f;
-                            float span = height * 0.20f;
+                            float span = height * 0.20f; 
                             
                             float yStart = (!isNext) ? (centerY - span / 2f) : (centerY + span / 2f);
                             float yEnd = (!isNext) ? (centerY + span / 2f) : (centerY - span / 2f);
 
-                            final long downTime = android.os.SystemClock.uptimeMillis();
+                            final long startTime = android.os.SystemClock.uptimeMillis();
                             
-                            // Instant DOWN stroke
-                            md.motionEvent(downTime, downTime, MotionEvent.ACTION_DOWN, actionX, yStart);
+                            // 1. Instant DOWN stroke
+                            md.motionEvent(startTime, startTime, MotionEvent.ACTION_DOWN, actionX, yStart);
                             
-                            // Real-time 50ms delayed MOVE stroke
+                            // 2. High-Velocity Multi-Step MOVE (Simulates a fast 70ms flick)
+                            final int stepCount = 5; 
+                            final long flingDuration = 70; 
+                            
+                            for (int i = 1; i <= stepCount; i++) {
+                                final float linearT = (float) i / stepCount;
+                                final float currentY = yStart + (yEnd - yStart) * linearT;
+                                final long moveTime = startTime + (long) (flingDuration * linearT);
+                                
+                                mainThreadHandler.postDelayed(() -> {
+                                    try {
+                                        my.app.permata.auto.MirrorDisplay currentMd = my.app.permata.auto.MirrorDisplay.get();
+                                        if (currentMd != null) {
+                                            currentMd.motionEvent(startTime, android.os.SystemClock.uptimeMillis(), MotionEvent.ACTION_MOVE, actionX, currentY);
+                                        }
+                                    } catch (Exception ignored) {}
+                                }, (long) (flingDuration * linearT));
+                            }
+                            
+                            // 3. UP stroke immediately after the last move to complete the fling
                             mainThreadHandler.postDelayed(() -> {
                                 try {
                                     my.app.permata.auto.MirrorDisplay currentMd = my.app.permata.auto.MirrorDisplay.get();
                                     if (currentMd != null) {
-                                        currentMd.motionEvent(downTime, android.os.SystemClock.uptimeMillis(), MotionEvent.ACTION_MOVE, actionX, centerY);
-                                    }
-                                } catch (Exception e) {
-                                    Log.e("KeyEventHandler", "[ROUTING_ERROR] Mirror MOVE failed.", e);
-                                }
-                            }, 50);
-                            
-                            // Real-time 100ms delayed UP stroke
-                            mainThreadHandler.postDelayed(() -> {
-                                try {
-                                    my.app.permata.auto.MirrorDisplay currentMd = my.app.permata.auto.MirrorDisplay.get();
-                                    if (currentMd != null) {
-                                        currentMd.motionEvent(downTime, android.os.SystemClock.uptimeMillis(), MotionEvent.ACTION_UP, actionX, yEnd);
+                                        currentMd.motionEvent(startTime, android.os.SystemClock.uptimeMillis(), MotionEvent.ACTION_UP, actionX, yEnd);
                                     }
                                 } catch (Exception e) {
                                     Log.e("KeyEventHandler", "[ROUTING_ERROR] Mirror UP failed.", e);
                                 }
-                            }, 100);
+                            }, flingDuration + 5);
                         }
                     } catch (Exception e) {
                         Log.e("KeyEventHandler", "[ROUTING_ERROR] Mirror payload failed.", e);
