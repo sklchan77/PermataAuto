@@ -448,13 +448,15 @@ public class KeyEventHandler {
                     Log.e("KeyEventHandler", "[ROUTING_ERROR] God-Mode payload failed.", e);
                 }
 
-                // 4. FIRE TO MEDIA/IPTV
+                // 4. FIRE TO MEDIA/IPTV (Native Permata Action Mapping)
                 try {
-                    if (defaultHandler != null) {
-                        // Deliver the physical DOWN stroke
+                    Key k = Key.get(code);
+                    if (k != null && k.getClickAction() != null && k.getClickAction() != Action.NONE) {
+                        // Deliver directly to the internal Permata media/IPTV router
+                        performAction(k.getClickAction(), cb, finalTargetActivity, currentUptime);
+                    } else if (defaultHandler != null) {
+                        // Fallback for external native players that need raw synthesized UP strokes
                         defaultHandler.apply(code, event);
-                        
-                        // Explicitly synthesize and fire the UP stroke for Native Players
                         KeyEvent upEvent = new KeyEvent(
                                 event.getDownTime(), 
                                 android.os.SystemClock.uptimeMillis() + 10, 
