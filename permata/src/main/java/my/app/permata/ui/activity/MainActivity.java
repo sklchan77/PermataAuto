@@ -121,10 +121,12 @@ public class MainActivity extends SplitCompatActivityBase
 
 		// === THE GOLDEN GATE: GUARD CHECK ===
 		boolean isAutoConnected = false;
+		boolean isMirroring = false;
 		boolean isPlaying = false;
 
 		try {
 			isAutoConnected = PermataApplication.get().isConnectedToAuto();
+			isMirroring = PermataApplication.get().isMirroringMode();
 			MainActivityDelegate delegate = MainActivityDelegate.get(this);
 			if (delegate != null && delegate.getMediaSessionCallback() != null) {
 				isPlaying = delegate.getMediaSessionCallback().isPlaying();
@@ -133,14 +135,14 @@ public class MainActivity extends SplitCompatActivityBase
 			Log.w(e, "Exception while checking Golden Gate status.");
 		}
 
-		if (isAutoConnected || isPlaying) {
-			Log.i("Golden Gate: Android Auto active or Media playing. Preserving background service bridge.");
+		if (isAutoConnected || isMirroring || isPlaying) {
+			Log.i("Golden Gate: Android Auto, Mirroring, or Media active. Preserving background service bridge.");
 			// Intentionally leave the static `service` connection alive so car projection and background audio aren't interrupted.
 		} else {
 			Log.i("Golden Gate: App is truly idle. Executing full Service teardown.");
 			
 			// =========================================================================================
-			// [NEW CODE] THE ZOMBIE KILL SWITCH
+			// THE ZOMBIE KILL SWITCH
 			// Explicitly command the Android OS to destroy the foreground service and its MediaSession
 			// when the car abruptly disconnects. This prevents the YouTube notification from getting stuck.
 			// =========================================================================================
