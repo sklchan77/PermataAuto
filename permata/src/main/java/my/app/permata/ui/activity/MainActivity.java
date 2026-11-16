@@ -123,6 +123,7 @@ public class MainActivity extends SplitCompatActivityBase
 		boolean isAutoConnected = false;
 		boolean isMirroring = false;
 		boolean isPlaying = false;
+		boolean isBluetoothActive = false;
 
 		try {
 			isAutoConnected = PermataApplication.get().isConnectedToAuto();
@@ -131,12 +132,16 @@ public class MainActivity extends SplitCompatActivityBase
 			if (delegate != null && delegate.getMediaSessionCallback() != null) {
 				isPlaying = delegate.getMediaSessionCallback().isPlaying();
 			}
+			AudioManager am = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
+			if (am != null) {
+				isBluetoothActive = am.isBluetoothA2dpOn();
+			}
 		} catch (Exception e) {
 			Log.w(e, "Exception while checking Golden Gate status.");
 		}
 
-		if (isAutoConnected || isMirroring || isPlaying) {
-			Log.i("Golden Gate: Android Auto, Mirroring, or Media active. Preserving background service bridge.");
+		if (isAutoConnected || isMirroring || isPlaying || isBluetoothActive) {
+			Log.i("Golden Gate: Active Car/BT/Media Session detected. Preserving background service bridge.");
 			// Intentionally leave the static `service` connection alive so car projection and background audio aren't interrupted.
 		} else {
 			Log.i("Golden Gate: App is truly idle. Executing full Service teardown.");
