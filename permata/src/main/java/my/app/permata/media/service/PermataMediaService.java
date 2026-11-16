@@ -131,6 +131,13 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 	private AudioManager.OnAudioFocusChangeListener focusChangeListener;
 	private AudioFocusRequest audioFocusRequestOreo;
 
+	// [NEW] 30-Second Delay Infrastructure
+	private final Handler lifecycleHandler = new Handler(Looper.getMainLooper());
+	private final Runnable shutdownRunnable = () -> {
+		Log.i("[TELEMETRY] 30-second grace period expired. Executing Graceful Teardown.");
+		executeNuclearTeardown();
+	};
+
 	public MediaLib getLib() {
 		return lib;
 	}
@@ -168,6 +175,20 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 		}
 	}
 
+	// [NEW] Bluetooth & Car Presence Detector
+	private boolean isCarOrBluetoothActive() {
+		if (PermataApplication.get().isMirroringMode() || PermataApplication.get().isConnectedToAuto()) {
+			return true;
+		}
+		try {
+			AudioManager am = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
+			if (am != null && am.isBluetoothA2dpOn()) {
+				return true;
+			}
+		} catch (Exception ignored) {}
+		return false;
+	}
+
 	private void executeNuclearTeardown() {
 		isTeardownActive = true;
 		stopSilentAudioAnchor();
@@ -182,6 +203,7 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 
 	@Override
 	public void onDestroy() {
+		lifecycleHandler.removeCallbacks(shutdownRunnable);
 		executeNuclearTeardown();
 
 		if (intentReceiver != null) {
@@ -215,13 +237,15 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 	public void onTaskRemoved(Intent rootIntent) {
 		super.onTaskRemoved(rootIntent);
 		
-		// SAFETY GATE: Never tear down the media session if Android Auto or Mirroring is active
-		if (PermataApplication.get().isMirroringMode() || PermataApplication.get().isConnectedToAuto()) {
-			Log.i("[TELEMETRY] App swiped away during Android Auto/Mirroring. Preserving audio session.");
+		// [NEW] BT-Aware Immortality & Graceful Delay
+		if (isCarOrBluetoothActive()) {
+			Log.i("[TELEMETRY] App swiped away during Active Session (Auto/Mirror/BT). Preserving audio session.");
 			return;
 		}
 		
-		executeNuclearTeardown();
+		Log.i("[TELEMETRY] App swiped away. No active car/BT session. Initiating 30-second graceful shutdown...");
+		lifecycleHandler.removeCallbacks(shutdownRunnable);
+		lifecycleHandler.postDelayed(shutdownRunnable, 30_000);
 	}
 
 	@Override
@@ -230,10 +254,17 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 			String action = intent.getAction();
 			
 			if (ACTION_FORCE_SHUTDOWN.equals(action)) {
+				// Prevent accidental suicide if a BT session is still active
+				if (isCarOrBluetoothActive()) {
+					Log.i("[TELEMETRY] Ignoring FORCE_SHUTDOWN because Car/BT session is still active.");
+					return START_NOT_STICKY;
+				}
 				MirrorDisplay.close();
 				executeNuclearTeardown();
 				return START_NOT_STICKY;
 			} else if (ACTION_HIJACK_FOCUS.equals(action)) {
+				// Cancel shutdown if focus is requested again
+				lifecycleHandler.removeCallbacks(shutdownRunnable);
 				hijackCarAudioAndSteering();
 			} else if (ACTION_RECLAIM_SESSION.equals(action)) {
 				if (session != null) {
@@ -341,10 +372,8 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 			return;
 		}
 
-		// SAFETY GATE: If connected to the car screen, force the silent track to stay alive
-		// This guarantees the Honda Jazz steering wheel connection is never dropped.
-		if (PermataApplication.get().isConnectedToAuto() || PermataApplication.get().isMirroringMode()) {
-			Log.i("[AUDIO_TELEMETRY] Web Media PLAYING. Android Auto active: Forcing Silent Anchor to stay alive.");
+		if (isCarOrBluetoothActive()) {
+			Log.i("[AUDIO_TELEMETRY] Web Media PLAYING. BT/Car active: Forcing Silent Anchor to stay alive.");
 		} else {
 			Log.i("[AUDIO_TELEMETRY] Web Media PLAYING detected. Yielding Audio Focus to WebView.");
 			stopSilentAudioAnchor();
