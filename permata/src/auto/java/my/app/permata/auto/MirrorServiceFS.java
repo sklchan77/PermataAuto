@@ -96,6 +96,10 @@ public class MirrorServiceFS extends CarAppService {
 		private long scrollMoveTime;
 		private Cancellable scrollUp;
 
+		// [NEW] Tap-to-Target Memory for dragging balloons
+		private float lastFocusX = -1f;
+		private float lastFocusY = -1f;
+
 		MirrorScreen(@NonNull CarContext ctx) {
 			super(ctx);
 			ctx.getCarService(AppManager.class).setSurfaceCallback(this);
@@ -131,6 +135,10 @@ public class MirrorServiceFS extends CarAppService {
 
 		@Override
 		public void onClick(float x, float y) {
+			// Update the Tap-to-Target memory crosshair
+			lastFocusX = x;
+			lastFocusY = y;
+			
 			if (scrollUp != null) {
 				scrollUp.cancel();
 				scrollUp = null;
@@ -147,8 +155,9 @@ public class MirrorServiceFS extends CarAppService {
 			scrollMoveTime = time;
 			
 			if (scrollUp == null) {
-				scrollStartX = MirrorServiceFS.sc.getWidth() / 2f;
-				scrollStartY = MirrorServiceFS.sc.getHeight() / 2f;
+				// [NEW] Use Tap-to-Target coordinates if available, otherwise default to dead center.
+				scrollStartX = (lastFocusX >= 0) ? lastFocusX : (MirrorServiceFS.sc.getWidth() / 2f);
+				scrollStartY = (lastFocusY >= 0) ? lastFocusY : (MirrorServiceFS.sc.getHeight() / 2f);
 				
 				scrollX = scrollStartX;
 				scrollY = scrollStartY;
@@ -189,6 +198,9 @@ public class MirrorServiceFS extends CarAppService {
 
 		@Override
 		public void onScale(float focusX, float focusY, float scaleFactor) {
+			// Memory update on dual-finger pinch
+			lastFocusX = focusX;
+			lastFocusY = focusY;
 			scrollStartX = focusX;
 			scrollStartY = focusY;
 			if (md() != null) md().scale(focusX, focusY, scaleFactor > 1f);
