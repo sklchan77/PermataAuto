@@ -51,7 +51,12 @@ public class KeyEventHandler {
     public static volatile int manualTouchFocus = TARGET_AUTO;
 
     private static volatile Worker worker;
-    private static volatile long lastGlobalActionTime = 0L;
+    
+    // Thread-safe lock-free debouncer to prevent input flooding & ANRs
+    private static final java.util.concurrent.atomic.AtomicLong lastGlobalActionTime = new java.util.concurrent.atomic.AtomicLong(0L);
+    
+    // Reusable Main Thread Handler to prevent UI thread crashes
+    private static final android.os.Handler mainThreadHandler = new android.os.Handler(android.os.Looper.getMainLooper());
     
     private static final AtomicBoolean isHardwareSwiping = new AtomicBoolean(false);
     
@@ -287,10 +292,10 @@ public class KeyEventHandler {
             }
             if (PermataApplication.get().isMirroringMode()) {
                 long currentUptime = android.os.SystemClock.uptimeMillis();
-                if (currentUptime - lastGlobalActionTime < 500) {
+                if (currentUptime - lastGlobalActionTime.get() < 500) {
                     return true; 
                 }
-                lastGlobalActionTime = currentUptime;
+                lastGlobalActionTime.set(currentUptime);
                 AccessibilityEventDispatcherService.dispatchUniversalBack();
                 return true; 
             }
@@ -324,46 +329,51 @@ public class KeyEventHandler {
             if (code == KeyEvent.KEYCODE_MEDIA_NEXT || code == KeyEvent.KEYCODE_MEDIA_PREVIOUS) {
                 
                 long currentUptime = android.os.SystemClock.uptimeMillis();
-                if (currentUptime - lastGlobalActionTime < 250) {
+                long lastTime = lastGlobalActionTime.get();
+                if (currentUptime - lastTime < 250) {
                     return true;
                 }
-                lastGlobalActionTime = currentUptime;
+                lastGlobalActionTime.set(currentUptime);
                 boolean isNext = (code == KeyEvent.KEYCODE_MEDIA_NEXT);
 
                 Log.i("[ROUTING_TELEMETRY]", "Executing True Catch-All: Firing to Mirror, Web, God-Mode, and Media simultaneously.");
 
-                // 1. FIRE TO MIRRORING VIRTUAL DISPLAY
-                try {
-                    my.app.permata.auto.MirrorDisplay md = my.app.permata.auto.MirrorDisplay.get();
-                    if (md != null) {
-                        int width = 1000;
-                        int height = 1000;
-                        try {
-                            if (finalTargetActivity != null && finalTargetActivity.getResources() != null) {
-                                android.util.DisplayMetrics metrics = finalTargetActivity.getResources().getDisplayMetrics();
-                                width = metrics.widthPixels;
-                                height = metrics.heightPixels;
-                            }
-                        } catch (Exception ignored) {}
+                // Enforce Main Thread for UI payloads
+                mainThreadHandler.post(() -> {
+                    
+                    // 1. FIRE TO MIRRORING VIRTUAL DISPLAY
+                    try {
+                        my.app.permata.auto.MirrorDisplay md = my.app.permata.auto.MirrorDisplay.get();
+                        if (md != null) {
+                            int width = 1000;
+                            int height = 1000;
+                            try {
+                                if (finalTargetActivity != null && finalTargetActivity.getResources() != null) {
+                                    android.util.DisplayMetrics metrics = finalTargetActivity.getResources().getDisplayMetrics();
+                                    width = metrics.widthPixels;
+                                    height = metrics.heightPixels;
+                                }
+                            } catch (Exception ignored) {}
 
-                        float actionX = width * 0.50f;
-                        float centerY = height * 0.50f;
-                        float span = height * 0.20f;
-                        
-                        float yStart = (!isNext) ? (centerY - span / 2f) : (centerY + span / 2f);
-                        float yEnd = (!isNext) ? (centerY + span / 2f) : (centerY - span / 2f);
+                            float actionX = width * 0.50f;
+                            float centerY = height * 0.50f;
+                            float span = height * 0.20f;
+                            
+                            float yStart = (!isNext) ? (centerY - span / 2f) : (centerY + span / 2f);
+                            float yEnd = (!isNext) ? (centerY + span / 2f) : (centerY - span / 2f);
 
-                        long now = android.os.SystemClock.uptimeMillis();
-                        md.motionEvent(now, now, MotionEvent.ACTION_DOWN, actionX, yStart);
-                        md.motionEvent(now, now + 50, MotionEvent.ACTION_MOVE, actionX, centerY);
-                        md.motionEvent(now, now + 100, MotionEvent.ACTION_UP, actionX, yEnd);
+                            long now = android.os.SystemClock.uptimeMillis();
+                            md.motionEvent(now, now, MotionEvent.ACTION_DOWN, actionX, yStart);
+                            md.motionEvent(now, now + 50, MotionEvent.ACTION_MOVE, actionX, centerY);
+                            md.motionEvent(now, now + 100, MotionEvent.ACTION_UP, actionX, yEnd);
+                        }
+                    } catch (Exception e) {
+                        Log.e("KeyEventHandler", "[ROUTING_ERROR] Mirror payload failed.", e);
                     }
-                } catch (Exception ignored) {}
 
-                // 2. FIRE TO WEB BROWSER
-                if (finalTargetActivity != null) {
-                    finalTargetActivity.post(() -> {
-                        try {
+                    // 2. FIRE TO WEB BROWSER
+                    try {
+                        if (finalTargetActivity != null) {
                             WebView resolvedWebView = scanFragmentsForWebView(finalTargetActivity.getActiveFragment());
                             if (resolvedWebView == null || !resolvedWebView.isShown()) {
                                 resolvedWebView = findTopVisibleWebView(finalTargetActivity);
@@ -390,18 +400,30 @@ public class KeyEventHandler {
                                 View touchTargetView = isTikTok ? resolvedWebView : findTopmostTouchTarget(finalTargetActivity, resolvedWebView);
                                 smartScrollWebView(resolvedWebView, touchTargetView, !isNext, "[Host: " + host + "] ", isMediaHost, isDouyin, isTikTok);
                             }
-                        } catch (Exception ignored) {}
-                    });
-                }
+                        }
+                    } catch (Exception e) {
+                        Log.e("KeyEventHandler", "[ROUTING_ERROR] Web payload failed.", e);
+                    }
+                });
 
                 // 3. FIRE TO PHYSICAL PHONE (GOD MODE FOR STUBBORN NATIVE APPS)
-                String activePkg = AccessibilityEventDispatcherService.getLastActivePackage();
-                if (isScrollerPackage(activePkg)) {
-                    executeNativeAppSwipe(!isNext, activePkg);
+                try {
+                    String activePkg = AccessibilityEventDispatcherService.getLastActivePackage();
+                    if (isScrollerPackage(activePkg)) {
+                        executeNativeAppSwipe(!isNext, activePkg);
+                    }
+                } catch (Exception e) {
+                    Log.e("KeyEventHandler", "[ROUTING_ERROR] God-Mode payload failed.", e);
                 }
 
                 // 4. FIRE TO MEDIA/IPTV
-                defaultHandler.apply(code, event);
+                try {
+                    if (defaultHandler != null) {
+                        defaultHandler.apply(code, event);
+                    }
+                } catch (Exception e) {
+                    Log.e("KeyEventHandler", "[ROUTING_ERROR] Media payload failed.", e);
+                }
 
                 return true; 
             }
@@ -542,7 +564,7 @@ public class KeyEventHandler {
         try {
             boolean success = AccessibilityEventDispatcherService.dispatchGodModeSwipe(up);
         } finally {
-            new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(() -> {
+            mainThreadHandler.postDelayed(() -> {
                 isHardwareSwiping.set(false);
             }, 150);
         }
@@ -554,8 +576,6 @@ public class KeyEventHandler {
         if (!isHardwareSwiping.compareAndSet(false, true)) {
             return;
         }
-
-        final android.os.Handler guaranteedHandler = new android.os.Handler(android.os.Looper.getMainLooper());
         
         final float actionX = touchTarget.getWidth() * 0.50f; 
         float centerY = touchTarget.getHeight() * 0.50f;
@@ -568,10 +588,15 @@ public class KeyEventHandler {
         try {
             final long startTime = android.os.SystemClock.uptimeMillis();
             
-            MotionEvent eventDown = MotionEvent.obtain(startTime, startTime, MotionEvent.ACTION_DOWN, actionX, yStart, 0);
-            eventDown.setSource(InputDevice.SOURCE_TOUCHSCREEN); 
-            touchTarget.dispatchTouchEvent(eventDown);
-            eventDown.recycle();
+            MotionEvent eventDown = null;
+            try {
+                eventDown = MotionEvent.obtain(startTime, startTime, MotionEvent.ACTION_DOWN, actionX, yStart, 0);
+                eventDown.setSource(InputDevice.SOURCE_TOUCHSCREEN); 
+                touchTarget.dispatchTouchEvent(eventDown);
+            } finally {
+                // Zombie Proof Cleanup
+                if (eventDown != null) eventDown.recycle();
+            }
 
             final int stepCount = 8; 
             final long swipeDuration = up ? 90 : 70; 
@@ -581,26 +606,31 @@ public class KeyEventHandler {
                 final float currentY = yStart + (yEnd - yStart) * linearT;
                 final long moveTime = startTime + (long) (swipeDuration * linearT);
                 
-                guaranteedHandler.postDelayed(() -> {
-                    if (touchTarget.isAttachedToWindow() && touchTarget.getVisibility() == View.VISIBLE) {
-                        MotionEvent eventMove = MotionEvent.obtain(startTime, moveTime, MotionEvent.ACTION_MOVE, actionX, currentY, 0);
-                        eventMove.setSource(InputDevice.SOURCE_TOUCHSCREEN); 
-                        touchTarget.dispatchTouchEvent(eventMove);
-                        eventMove.recycle();
+                mainThreadHandler.postDelayed(() -> {
+                    MotionEvent eventMove = null;
+                    try {
+                        if (touchTarget.isAttachedToWindow() && touchTarget.getVisibility() == View.VISIBLE) {
+                            eventMove = MotionEvent.obtain(startTime, moveTime, MotionEvent.ACTION_MOVE, actionX, currentY, 0);
+                            eventMove.setSource(InputDevice.SOURCE_TOUCHSCREEN); 
+                            touchTarget.dispatchTouchEvent(eventMove);
+                        }
+                    } finally {
+                        if (eventMove != null) eventMove.recycle();
                     }
                 }, (long) (swipeDuration * linearT));
             }
 
-            guaranteedHandler.postDelayed(() -> {
+            mainThreadHandler.postDelayed(() -> {
+                MotionEvent eventUp = null;
                 try {
-                    if (touchTarget.isAttachedToWindow() && touchTarget.getVisibility() == View.VISIBLE) {
-                        long endTime = startTime + swipeDuration + 10;
-                        MotionEvent eventUp = MotionEvent.obtain(startTime, endTime, MotionEvent.ACTION_UP, actionX, yEnd, 0);
-                        eventUp.setSource(InputDevice.SOURCE_TOUCHSCREEN); 
-                        touchTarget.dispatchTouchEvent(eventUp);
-                        eventUp.recycle();
-                    }
+                    long endTime = startTime + swipeDuration + 10;
+                    // ACTION_CANCEL fail-safe: If the view detached mid-swipe, force cancel to prevent deadlock
+                    int action = (touchTarget.isAttachedToWindow() && touchTarget.getVisibility() == View.VISIBLE) ? MotionEvent.ACTION_UP : MotionEvent.ACTION_CANCEL;
+                    eventUp = MotionEvent.obtain(startTime, endTime, action, actionX, yEnd, 0);
+                    eventUp.setSource(InputDevice.SOURCE_TOUCHSCREEN); 
+                    touchTarget.dispatchTouchEvent(eventUp);
                 } finally {
+                    if (eventUp != null) eventUp.recycle();
                     isHardwareSwiping.set(false);
                 }
             }, swipeDuration + 10);
