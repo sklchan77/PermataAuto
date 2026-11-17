@@ -52,7 +52,7 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
     private static volatile String lastActivePackage = null;
     public static volatile boolean isInjectingBack = false;
     
-    // [WATCHDOG] Memory Debounce state
+    // [WATCHDOG] Memory Debounce state (Merged from File B)
     private static long lastActiveBtTime = 0;
     
     private final Set<Integer> windowIds =
@@ -110,6 +110,8 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
             if (md != null) {
                 long now = android.os.SystemClock.uptimeMillis();
                 
+                // SURGICAL FIX: Inject the 1x1 focus-clearing tap directly into the Virtual Display. 
+                // This protects your landscape orientation but makes it physically impossible to wake the phone.
                 try {
                     md.motionEvent(now, now, android.view.MotionEvent.ACTION_DOWN, 1f, 1f);
                     md.motionEvent(now, now + 10, android.view.MotionEvent.ACTION_UP, 1f, 1f);
@@ -140,6 +142,7 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
             }
         }
         
+        // If not in mirroring mode, or if Virtual Display fails, fall back to global Accessibility tap
         dispatchTap(1f, 1f);
         
         isInjectingBack = true;
@@ -392,7 +395,7 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
         if (pkgName != null && !pkgName.equals("com.android.systemui") && !pkgName.equals("android") && !pkgName.contains("inputmethod")) {
             lastActivePackage = pkgName;
 
-            // === [WATCHDOG GOD-MODE: NATIVE APP HIJACKING] ===
+            // === [WATCHDOG GOD-MODE: NATIVE APP HIJACKING] (Merged from File B) ===
             if (isStubbornNativeApp(pkgName) && isCarSessionActive()) {
                 Log.w("[WATCHDOG_TELEMETRY] Stubborn App Detected: " + pkgName + ". Firing Aggressive Reclaim!");
                 Intent reclaimIntent = new Intent(this, my.app.permata.media.service.PermataMediaService.class);
@@ -401,7 +404,7 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
                     startService(reclaimIntent);
                 } catch (Exception ignored) {}
             }
-            // ==================================================
+            // =======================================================================
         }
 
         if (isConsentGranted && clickOnButton == null) return;
@@ -428,7 +431,7 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
         }
     }
 
-    // === [WATCHDOG HELPER PROTOCOLS] ===
+    // === [WATCHDOG HELPER PROTOCOLS] (Merged from File B) ===
     private static final Set<String> STUBBORN_APPS = new HashSet<>(Arrays.asList(
             "com.zhiliaoapp.musically", // TikTok Global
             "com.ss.android.ugc.trill", // TikTok Asia
@@ -462,7 +465,7 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
 
         return false;
     }
-    // ===================================
+    // ========================================================
 
     private void checkAndClickMediaProjectionConsent(AccessibilityNodeInfo root, String pkgName) {
         if (isConsentGranted) return; 
