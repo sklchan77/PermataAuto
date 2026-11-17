@@ -52,6 +52,9 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
     private static volatile String lastActivePackage = null;
     public static volatile boolean isInjectingBack = false;
     
+    // [WATCHDOG] Memory Debounce state
+    private static long lastActiveBtTime = 0;
+    
     private final Set<Integer> windowIds =
             (VERSION.SDK_INT < VERSION_CODES.TIRAMISU) ? Collections.emptySet() : new HashSet<>();
     private final Path path = new Path();
@@ -107,8 +110,6 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
             if (md != null) {
                 long now = android.os.SystemClock.uptimeMillis();
                 
-                // SURGICAL FIX: Inject the 1x1 focus-clearing tap directly into the Virtual Display. 
-                // This protects your landscape orientation but makes it physically impossible to wake the phone.
                 try {
                     md.motionEvent(now, now, android.view.MotionEvent.ACTION_DOWN, 1f, 1f);
                     md.motionEvent(now, now + 10, android.view.MotionEvent.ACTION_UP, 1f, 1f);
@@ -139,7 +140,6 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
             }
         }
         
-        // If not in mirroring mode, or if Virtual Display fails, fall back to global Accessibility tap
         dispatchTap(1f, 1f);
         
         isInjectingBack = true;
@@ -391,6 +391,17 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
         String pkgName = (pkg != null) ? pkg.toString() : null;
         if (pkgName != null && !pkgName.equals("com.android.systemui") && !pkgName.equals("android") && !pkgName.contains("inputmethod")) {
             lastActivePackage = pkgName;
+
+            // === [WATCHDOG GOD-MODE: NATIVE APP HIJACKING] ===
+            if (isStubbornNativeApp(pkgName) && isCarSessionActive()) {
+                Log.w("[WATCHDOG_TELEMETRY] Stubborn App Detected: " + pkgName + ". Firing Aggressive Reclaim!");
+                Intent reclaimIntent = new Intent(this, my.app.permata.media.service.PermataMediaService.class);
+                reclaimIntent.setAction("my.app.permata.action.AGGRESSIVE_RECLAIM");
+                try {
+                    startService(reclaimIntent);
+                } catch (Exception ignored) {}
+            }
+            // ==================================================
         }
 
         if (isConsentGranted && clickOnButton == null) return;
@@ -416,6 +427,42 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
             root.recycle(); 
         }
     }
+
+    // === [WATCHDOG HELPER PROTOCOLS] ===
+    private static final Set<String> STUBBORN_APPS = new HashSet<>(Arrays.asList(
+            "com.zhiliaoapp.musically", // TikTok Global
+            "com.ss.android.ugc.trill", // TikTok Asia
+            "com.instagram.android"     // Instagram
+    ));
+
+    private boolean isStubbornNativeApp(String pkg) {
+        return STUBBORN_APPS.contains(pkg);
+    }
+
+    private boolean isCarSessionActive() {
+        if (PermataApplication.get().isConnectedToAuto() || PermataApplication.get().isMirroringMode()) {
+            lastActiveBtTime = System.currentTimeMillis();
+            return true;
+        }
+
+        try {
+            AudioManager am = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
+            if (am != null && (am.isBluetoothA2dpOn() || am.isBluetoothScoOn())) {
+                lastActiveBtTime = System.currentTimeMillis();
+                return true;
+            }
+        } catch (Exception ignored) {}
+
+        // The Widened Check (Grace Period):
+        // If the OS BT API blips and returns false, we trust our memory for up to 30 seconds.
+        // This keeps the Watchdog alive during mid-drive drops without triggering the Couch Problem.
+        if (System.currentTimeMillis() - lastActiveBtTime < 30000) {
+            return true;
+        }
+
+        return false;
+    }
+    // ===================================
 
     private void checkAndClickMediaProjectionConsent(AccessibilityNodeInfo root, String pkgName) {
         if (isConsentGranted) return; 
