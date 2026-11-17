@@ -131,13 +131,18 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 	private AudioManager.OnAudioFocusChangeListener focusChangeListener;
 	private AudioFocusRequest audioFocusRequestOreo;
 
-	// === [ABSOLUTE ZERO INFRASTRUCTURE] ===
+	// === [ABSOLUTE ZERO TIMERS] ===
 	private final Handler lifecycleHandler = new Handler(Looper.getMainLooper());
 	private volatile boolean hasEstablishedSession = false;
 	private BroadcastReceiver disconnectReceiver;
-	
-	private final Runnable absoluteZeroRunnable = () -> {
-		Log.w("[ABSOLUTE_ZERO] 10-second timeout reached. Commencing total memory wipe and process suicide.");
+
+	private final Runnable manualSwipeRunnable = () -> {
+		Log.w("[ABSOLUTE_ZERO] 6-second manual swipe timeout reached. Commencing total wipe.");
+		executeNuclearTeardown();
+	};
+
+	private final Runnable hardwareDropRunnable = () -> {
+		Log.w("[ABSOLUTE_ZERO] 10-second hardware disconnect timeout reached. Commencing total wipe.");
 		executeNuclearTeardown();
 	};
 	// ======================================
@@ -185,7 +190,7 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 				String action = intent.getAction();
 				if (action != null) {
 					Log.i("[CONNECTION_MONITOR] OS Broadcast received: " + action);
-					evaluateConnectionState(false);
+					evaluateConnectionState();
 				}
 			}
 		};
@@ -219,18 +224,19 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 		return active;
 	}
 
-	// [ABSOLUTE ZERO] Triggers the 10-second death timer if the connection drops
-	private void evaluateConnectionState(boolean isTaskRemoved) {
+	// [ABSOLUTE ZERO] Triggers the 10-second death timer if the hardware connection drops
+	private void evaluateConnectionState() {
 		if (isCarOrBluetoothActive()) {
-			Log.i("[CONNECTION_MONITOR] Car/BT is ACTIVE. Cancelling Absolute Zero teardown.");
-			lifecycleHandler.removeCallbacks(absoluteZeroRunnable);
+			Log.i("[CONNECTION_MONITOR] Car/BT is ACTIVE. Cancelling Absolute Zero teardowns.");
+			lifecycleHandler.removeCallbacks(manualSwipeRunnable);
+			lifecycleHandler.removeCallbacks(hardwareDropRunnable);
 		} else {
-			// Only trigger spontaneous Absolute Zero if it actually established a connection first, 
-			// OR if the user explicitly swiped the app away.
-			if (isTaskRemoved || hasEstablishedSession) {
-				Log.w("[CONNECTION_MONITOR] Session LOST or Task Removed. Initiating 10-second Absolute Zero countdown...");
-				lifecycleHandler.removeCallbacks(absoluteZeroRunnable);
-				lifecycleHandler.postDelayed(absoluteZeroRunnable, 10_000);
+			// Only trigger the 10-second hardware drop if a session was actually established first
+			if (hasEstablishedSession) {
+				Log.w("[CONNECTION_MONITOR] Hardware Session LOST. Initiating 10-second Absolute Zero countdown...");
+				lifecycleHandler.removeCallbacks(manualSwipeRunnable);
+				lifecycleHandler.removeCallbacks(hardwareDropRunnable);
+				lifecycleHandler.postDelayed(hardwareDropRunnable, 10_000);
 			}
 		}
 	}
@@ -285,7 +291,8 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 
 	@Override
 	public void onDestroy() {
-		lifecycleHandler.removeCallbacks(absoluteZeroRunnable);
+		lifecycleHandler.removeCallbacks(manualSwipeRunnable);
+		lifecycleHandler.removeCallbacks(hardwareDropRunnable);
 		
 		if (disconnectReceiver != null) {
 			try { unregisterReceiver(disconnectReceiver); } catch (Exception ignored) {}
@@ -319,8 +326,17 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 	@Override
 	public void onTaskRemoved(Intent rootIntent) {
 		super.onTaskRemoved(rootIntent);
-		Log.i("[TELEMETRY] App swiped away from Recents.");
-		evaluateConnectionState(true);
+		
+		// If swiped away but still connected to car/BT, survive!
+		if (isCarOrBluetoothActive()) {
+			Log.i("[TELEMETRY] App swiped away during Active Session. Preserving audio session.");
+			return;
+		}
+		
+		Log.w("[TELEMETRY] App swiped away. No active session. Initiating 6-second Absolute Zero countdown...");
+		lifecycleHandler.removeCallbacks(manualSwipeRunnable);
+		lifecycleHandler.removeCallbacks(hardwareDropRunnable);
+		lifecycleHandler.postDelayed(manualSwipeRunnable, 6_000);
 	}
 
 	@Override
@@ -338,7 +354,8 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 				return START_NOT_STICKY;
 			} else if (ACTION_HIJACK_FOCUS.equals(action)) {
 				// Cancel Absolute Zero shutdown if focus is requested again
-				lifecycleHandler.removeCallbacks(absoluteZeroRunnable);
+				lifecycleHandler.removeCallbacks(manualSwipeRunnable);
+				lifecycleHandler.removeCallbacks(hardwareDropRunnable);
 				hijackCarAudioAndSteering();
 			} else if (ACTION_RECLAIM_SESSION.equals(action)) {
 				if (session != null) {
