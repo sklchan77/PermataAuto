@@ -131,12 +131,16 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 	private AudioManager.OnAudioFocusChangeListener focusChangeListener;
 	private AudioFocusRequest audioFocusRequestOreo;
 
-	// [NEW] 6-Second Delay Infrastructure
+	// === [ABSOLUTE ZERO INFRASTRUCTURE] ===
 	private final Handler lifecycleHandler = new Handler(Looper.getMainLooper());
-	private final Runnable shutdownRunnable = () -> {
-		Log.i("[TELEMETRY] 6-second grace period expired. Executing Graceful Teardown.");
+	private volatile boolean hasEstablishedSession = false;
+	private BroadcastReceiver disconnectReceiver;
+	
+	private final Runnable absoluteZeroRunnable = () -> {
+		Log.w("[ABSOLUTE_ZERO] 10-second timeout reached. Commencing total memory wipe and process suicide.");
 		executeNuclearTeardown();
 	};
+	// ======================================
 
 	public MediaLib getLib() {
 		return lib;
@@ -173,37 +177,121 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 			if (a instanceof PermataMediaServiceAddon)
 				((PermataMediaServiceAddon) a).onServiceCreate(callback);
 		}
-	}
 
-	// [NEW] Bluetooth & Car Presence Detector
-	private boolean isCarOrBluetoothActive() {
-		if (PermataApplication.get().isMirroringMode() || PermataApplication.get().isConnectedToAuto()) {
-			return true;
-		}
-		try {
-			AudioManager am = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
-			if (am != null && am.isBluetoothA2dpOn()) {
-				return true;
+		// [ABSOLUTE ZERO] Register Global Disconnect Monitor
+		disconnectReceiver = new BroadcastReceiver() {
+			@Override
+			public void onReceive(Context context, Intent intent) {
+				String action = intent.getAction();
+				if (action != null) {
+					Log.i("[CONNECTION_MONITOR] OS Broadcast received: " + action);
+					evaluateConnectionState(false);
+				}
 			}
-		} catch (Exception ignored) {}
-		return false;
+		};
+		IntentFilter disconnectFilter = new IntentFilter();
+		disconnectFilter.addAction(AudioManager.ACTION_AUDIO_BECOMING_NOISY);
+		disconnectFilter.addAction(android.bluetooth.BluetoothDevice.ACTION_ACL_DISCONNECTED);
+		disconnectFilter.addAction("androidx.car.app.connection.action.CAR_CONNECTION_UPDATED");
+		
+		if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+			registerReceiver(disconnectReceiver, disconnectFilter, Context.RECEIVER_NOT_EXPORTED);
+		} else {
+			registerReceiver(disconnectReceiver, disconnectFilter);
+		}
 	}
 
+	// [ABSOLUTE ZERO] Evaluates if the phone has an active link to the car
+	private boolean isCarOrBluetoothActive() {
+		boolean active = false;
+		if (PermataApplication.get().isMirroringMode() || PermataApplication.get().isConnectedToAuto()) {
+			active = true;
+		} else {
+			try {
+				AudioManager am = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
+				if (am != null && am.isBluetoothA2dpOn()) {
+					active = true;
+				}
+			} catch (Exception ignored) {}
+		}
+		
+		if (active) hasEstablishedSession = true;
+		return active;
+	}
+
+	// [ABSOLUTE ZERO] Triggers the 10-second death timer if the connection drops
+	private void evaluateConnectionState(boolean isTaskRemoved) {
+		if (isCarOrBluetoothActive()) {
+			Log.i("[CONNECTION_MONITOR] Car/BT is ACTIVE. Cancelling Absolute Zero teardown.");
+			lifecycleHandler.removeCallbacks(absoluteZeroRunnable);
+		} else {
+			// Only trigger spontaneous Absolute Zero if it actually established a connection first, 
+			// OR if the user explicitly swiped the app away.
+			if (isTaskRemoved || hasEstablishedSession) {
+				Log.w("[CONNECTION_MONITOR] Session LOST or Task Removed. Initiating 10-second Absolute Zero countdown...");
+				lifecycleHandler.removeCallbacks(absoluteZeroRunnable);
+				lifecycleHandler.postDelayed(absoluteZeroRunnable, 10_000);
+			}
+		}
+	}
+
+	// [ABSOLUTE ZERO] The Maximum Destructive Cleanup Protocol
 	private void executeNuclearTeardown() {
+		if (isTeardownActive) return;
 		isTeardownActive = true;
+		Log.w("[ABSOLUTE_ZERO] Executing Maximum Destructive Teardown.");
+
+		// 1. Force restore physical phone attributes (Brightness, Orientation, Overlays)
+		try {
+			MirrorDisplay.close();
+		} catch (Exception ignored) {}
+
+		// 2. Release Audio hardware hooks
 		stopSilentAudioAnchor();
 		releaseAudioFocus();
 
+		// 3. Destroy Media Session bindings
 		if (session != null) {
-			session.setPlaybackState(new PlaybackStateCompat.Builder().setState(PlaybackStateCompat.STATE_NONE, 0, 0.0f).build());
-			session.setActive(false);
+			try {
+				session.setPlaybackState(new PlaybackStateCompat.Builder().setState(PlaybackStateCompat.STATE_NONE, 0, 0.0f).build());
+				session.setActive(false);
+				session.release();
+			} catch (Exception ignored) {}
+			session = null;
 		}
+
+		// 4. Kill auxiliary child services
+		try {
+			stopService(new Intent(this, my.app.permata.auto.ProjectionService.class));
+			stopService(new Intent(this, my.app.permata.auto.XposedEventDispatcherService.class));
+		} catch (Exception ignored) {}
+
+		// 5. Purge UI and Notifications
+		try {
+			NotificationManagerCompat.from(this).cancel(NOTIF_ID);
+		} catch (Exception ignored) {}
+
+		// 6. Stop Self
 		stopSelf();
+
+		// 7. The Zombie Killer: Hard process suicide
+		// Delay by 1000ms to guarantee OS has time to process the WindowManager removeView() calls from MirrorDisplay.close()
+		new Handler(Looper.getMainLooper()).postDelayed(() -> {
+			Log.w("[ABSOLUTE_ZERO] Terminating process for absolute zero memory release.");
+			android.os.Process.killProcess(android.os.Process.myPid());
+			System.exit(0);
+		}, 1000);
 	}
 
 	@Override
 	public void onDestroy() {
-		lifecycleHandler.removeCallbacks(shutdownRunnable);
+		lifecycleHandler.removeCallbacks(absoluteZeroRunnable);
+		
+		if (disconnectReceiver != null) {
+			try { unregisterReceiver(disconnectReceiver); } catch (Exception ignored) {}
+			disconnectReceiver = null;
+		}
+		
 		executeNuclearTeardown();
 
 		if (intentReceiver != null) {
@@ -223,29 +311,16 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 			callback.close();
 			callback = null;
 		}
-		if (session != null) {
-			session.release();
-			session = null;
-		}
 		lib = null;
 		focusChangeListener = null;
-		NotificationManagerCompat.from(this).cancel(NOTIF_ID);
 		super.onDestroy();
 	}
 
 	@Override
 	public void onTaskRemoved(Intent rootIntent) {
 		super.onTaskRemoved(rootIntent);
-		
-		// [NEW] BT-Aware Immortality & Graceful Delay
-		if (isCarOrBluetoothActive()) {
-			Log.i("[TELEMETRY] App swiped away during Active Session (Auto/Mirror/BT). Preserving audio session.");
-			return;
-		}
-		
-		Log.i("[TELEMETRY] App swiped away. No active car/BT session. Initiating 6-second graceful shutdown...");
-		lifecycleHandler.removeCallbacks(shutdownRunnable);
-		lifecycleHandler.postDelayed(shutdownRunnable, 6_000);
+		Log.i("[TELEMETRY] App swiped away from Recents.");
+		evaluateConnectionState(true);
 	}
 
 	@Override
@@ -259,12 +334,11 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 					Log.i("[TELEMETRY] Ignoring FORCE_SHUTDOWN because Car/BT session is still active.");
 					return START_NOT_STICKY;
 				}
-				MirrorDisplay.close();
 				executeNuclearTeardown();
 				return START_NOT_STICKY;
 			} else if (ACTION_HIJACK_FOCUS.equals(action)) {
-				// Cancel shutdown if focus is requested again
-				lifecycleHandler.removeCallbacks(shutdownRunnable);
+				// Cancel Absolute Zero shutdown if focus is requested again
+				lifecycleHandler.removeCallbacks(absoluteZeroRunnable);
 				hijackCarAudioAndSteering();
 			} else if (ACTION_RECLAIM_SESSION.equals(action)) {
 				if (session != null) {
