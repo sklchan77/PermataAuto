@@ -245,7 +245,7 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 	private void executeNuclearTeardown() {
 		if (isTeardownActive) return;
 		isTeardownActive = true;
-		Log.w("[ABSOLUTE_ZERO] Executing Maximum Destructive Teardown.");
+		Log.w("[ABSOLUTE_ZERO] Executing Graceful Destructive Teardown.");
 
 		// 1. Force restore physical phone attributes (Brightness, Orientation, Overlays)
 		try {
@@ -277,16 +277,8 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 			NotificationManagerCompat.from(this).cancel(NOTIF_ID);
 		} catch (Exception ignored) {}
 
-		// 6. Stop Self
+		// 6. Stop Self (Let the OS gracefully cache the process to keep Accessibility alive)
 		stopSelf();
-
-		// 7. The Zombie Killer: Hard process suicide
-		// Delay by 1000ms to guarantee OS has time to process the WindowManager removeView() calls from MirrorDisplay.close()
-		new Handler(Looper.getMainLooper()).postDelayed(() -> {
-			Log.w("[ABSOLUTE_ZERO] Terminating process for absolute zero memory release.");
-			android.os.Process.killProcess(android.os.Process.myPid());
-			System.exit(0);
-		}, 1000);
 	}
 
 	@Override
