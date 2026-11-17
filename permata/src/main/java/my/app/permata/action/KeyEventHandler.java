@@ -60,6 +60,8 @@ public class KeyEventHandler {
     
     private static final AtomicBoolean isHardwareSwiping = new AtomicBoolean(false);
     
+    // MERGED: Updated arrays from KeyEventHandler-B
+    // GROUP 1: The Bullies. These apps ignore BT keys and steal the media session.
     private static final Set<String> STUBBORN_SCROLLERS = new HashSet<>(Arrays.asList(
             "com.zhiliaoapp.musically", // TikTok Global
             "com.ss.android.ugc.trill", // TikTok Asia
@@ -67,6 +69,7 @@ public class KeyEventHandler {
             "com.snapchat.android"      // Snapchat
     ));
 
+    // GROUP 2: The Good Citizens. These apps natively support BT Next/Prev keys.
     private static final Set<String> NATIVE_BT_SCROLLERS = new HashSet<>(Arrays.asList(
             "com.ss.android.ugc.aweme",     // Douyin (CN)
             "com.facebook.katana",          // Facebook
@@ -346,7 +349,7 @@ public class KeyEventHandler {
                         executeNativeAppSwipe(!isNext, activePkg);
                         return true; 
                     } else if (isNativeBtScroller(activePkg)) {
-                        // SURGICAL FIX: Ad-Trap Fallback
+                        // MERGED: Ad-Trap Fallback from KeyEventHandler-B
                         // If Permata receives a key while a native scroller is active, it proves they dropped their session (Ad Trap).
                         Log.w("KeyEventHandler", "[BT_LOOPHOLE] Ad-Trap Detected! Native Scroller '" + activePkg + "' abandoned the steering wheel. Triggering Fallback Swipe.");
                         executeNativeAppSwipe(!isNext, activePkg);
@@ -537,7 +540,9 @@ public class KeyEventHandler {
             
             Object result = getWebViewMethod.invoke(activeFragment);
             if (result instanceof WebView) return (WebView) result;
-        } catch (Exception e) {}
+        } catch (Exception e) {
+            Log.e(e, "[REACTION] Discovery: Failed to scan for WebView.");
+        }
         return null;
     }
 
@@ -579,8 +584,23 @@ public class KeyEventHandler {
         View topCandidate = scanHighestVisibleChild(decorView, minValidArea, minValidHeight);
         
         if (topCandidate != null && topCandidate.isShown()) {
+            long viewArea = (long) topCandidate.getWidth() * topCandidate.getHeight();
+            float areaPercentage = ((float) viewArea / totalScreenArea) * 100f;
+            
+            String layerName = topCandidate.getClass().getName();
+            if (layerName.startsWith("android.widget.") || layerName.startsWith("android.view.")) {
+                layerName = topCandidate.getClass().getSimpleName();
+            }
+            
+            Log.i("[SURGERY] Target Locked -> Layer: [" + layerName + "]" + 
+                    " | Size: " + topCandidate.getWidth() + "x" + topCandidate.getHeight() +
+                    " | Area: " + String.format("%.1f", areaPercentage) + "%" +
+                    " | Alpha: " + topCandidate.getAlpha());
+            
             return topCandidate;
         }
+        
+        Log.i("[SURGERY] Target Locked -> Layer: [Fallback Base WebView] | No overlay passed the filters.");
         return baseWebView;
     }
 
@@ -621,10 +641,15 @@ public class KeyEventHandler {
 
     private static void executeNativeAppSwipe(boolean up, String pkgName) {
         if (!isHardwareSwiping.compareAndSet(false, true)) {
+            Log.w("[NATIVE_SWIPE] Sequence already in progress. Dropping overlapping dispatch.");
             return;
         }
         try {
+            Log.i("[NATIVE_SWIPE] Dispatching Accessibility Gesture for " + pkgName);
             boolean success = AccessibilityEventDispatcherService.dispatchGodModeSwipe(up);
+            if (!success) {
+                Log.w("[NATIVE_SWIPE] Accessibility Gesture failed or service unavailable.");
+            }
         } finally {
             mainThreadHandler.postDelayed(() -> {
                 isHardwareSwiping.set(false);
@@ -636,6 +661,7 @@ public class KeyEventHandler {
         if (touchTarget == null || !touchTarget.isAttachedToWindow()) return;
         
         if (!isHardwareSwiping.compareAndSet(false, true)) {
+            Log.w(hostTag + " Swipe sequence already in progress. Dropping overlapping dispatch.");
             return;
         }
         
@@ -689,6 +715,7 @@ public class KeyEventHandler {
                     eventUp = MotionEvent.obtain(startTime, endTime, action, actionX, yEnd, 0);
                     eventUp.setSource(InputDevice.SOURCE_TOUCHSCREEN); 
                     touchTarget.dispatchTouchEvent(eventUp);
+                    Log.i("[REACTION] " + hostTag + contextLog + " Concluded.");
                 } finally {
                     if (eventUp != null) eventUp.recycle();
                     isHardwareSwiping.set(false);
@@ -696,6 +723,7 @@ public class KeyEventHandler {
             }, swipeDuration + 10);
 
         } catch (Exception e) {
+            Log.e(e, "[REACTION] " + hostTag + contextLog + " failed with Exception.");
             isHardwareSwiping.set(false); 
         }
     }
@@ -708,6 +736,7 @@ public class KeyEventHandler {
         if (lastClickTime == null) lastClickTime = 0L;
         
         if (now - lastClickTime < 250) {
+            Log.w("[CHECK] " + hostTag + "Scroll [Anti-Spam]: Event dropped (Throttle window < 250ms).");
             return;
         }
         scrollTimestamps.put(wv, now); 
@@ -756,15 +785,23 @@ public class KeyEventHandler {
                         "  } catch(e) { return 'TELEMETRY_ERROR: ' + e.message; }" +
                         "})();";
 
-                wv.evaluateJavascript(expDouyinFsJs, value -> {});
+                wv.evaluateJavascript(expDouyinFsJs, value -> {
+                    if (value != null && !value.equals("null")) {
+                        Log.i(hostTag + "[EXP_FS] " + value.replace("\"", ""));
+                    }
+                });
             }
 
             wv.postDelayed(() -> {
                 if (!wv.isAttachedToWindow()) return;
-                wv.evaluateJavascript(JS_UNIVERSAL_PAYLOAD, value -> {});
+                wv.evaluateJavascript(JS_UNIVERSAL_PAYLOAD, value -> {
+                    if (value != null && !value.equals("null")) Log.i(hostTag + "[REACTION] " + value.replace("\"", ""));
+                });
             }, 220); 
 
-            if (!isMediaHost) {
+            if (isMediaHost) {
+                Log.i(hostTag + "[ACTION] Media Host Detected: Bypassing JS Scroll entirely. Relying purely on God-Mode Hardware Swipe.");
+            } else {
                 String generalJsScript = "(function() {" +
                         "  try {" +
                         "    var amount = " + (!up) + " ? window.innerHeight * 0.85 : -window.innerHeight * 0.85;" +
@@ -772,7 +809,9 @@ public class KeyEventHandler {
                         "    return 'Scroll: General Webpage Smooth Scroll Executed.';" +
                         "  } catch (err) { return 'Scroll Error: ' + err.message; }" +
                         "})();";
-                wv.evaluateJavascript(generalJsScript, value -> {});
+                wv.evaluateJavascript(generalJsScript, value -> {
+                    if (value != null && !value.equals("null")) Log.i(hostTag + "[REACTION] " + value.replace("\"", ""));
+                });
                 
                 int backupKey = up ? KeyEvent.KEYCODE_PAGE_UP : KeyEvent.KEYCODE_PAGE_DOWN;
                 wv.dispatchKeyEvent(new KeyEvent(KeyEvent.ACTION_DOWN, backupKey));
