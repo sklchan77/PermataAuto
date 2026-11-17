@@ -336,74 +336,94 @@ public class KeyEventHandler {
                 lastGlobalActionTime.set(currentUptime);
                 boolean isNext = (code == KeyEvent.KEYCODE_MEDIA_NEXT);
 
-                Log.i("[ROUTING_TELEMETRY]", "Executing True Catch-All: Firing to Mirror, Web, God-Mode, and Media simultaneously.");
+                // === 1. LAYER 2 BT LOOPHOLE ===
+                boolean isMirroring = PermataApplication.get().isMirroringMode();
+                String activePkg = AccessibilityEventDispatcherService.getLastActivePackage();
+
+                if (!isMirroring && activePkg != null && !activePkg.startsWith("my.app.permata")) {
+                    if (isStubbornScroller(activePkg)) {
+                        Log.i("KeyEventHandler", "[BT_LOOPHOLE] Intercepted! Active package '" + activePkg + "' is a STUBBORN Scroller. Triggering Accessibility Swipe.");
+                        executeNativeAppSwipe(!isNext, activePkg);
+                        return true; 
+                    } else {
+                        Log.i("KeyEventHandler", "[DETECTION] Native Passthrough: App '" + activePkg + "' is active. Yielding session to OS for native BT.");
+                        if (defaultHandler != null) {
+                            defaultHandler.apply(code, event);
+                            // Synthesize the release stroke so native players actually execute the command
+                            KeyEvent upEvent = new KeyEvent(event.getDownTime(), currentUptime + 10, KeyEvent.ACTION_UP, code, 0);
+                            defaultHandler.apply(code, upEvent);
+                        }
+                        return true;
+                    }
+                }
+
+                Log.i("KeyEventHandler", "[ROUTING_TELEMETRY] Executing True Catch-All: Firing to Mirror, Web, God-Mode, and Media simultaneously.");
 
                 // Enforce Main Thread for UI payloads
                 mainThreadHandler.post(() -> {
                     
-                    // 1. FIRE TO MIRRORING VIRTUAL DISPLAY (With High-Velocity Fling Physics)
+                    // 2. FIRE TO MIRRORING VIRTUAL DISPLAY (With High-Velocity Fling Physics)
                     try {
-                        my.app.permata.auto.MirrorDisplay md = my.app.permata.auto.MirrorDisplay.get();
-                        if (md != null) {
-                            int width = 1000;
-                            int height = 1000;
-                            try {
-                                if (finalTargetActivity != null && finalTargetActivity.getResources() != null) {
-                                    android.util.DisplayMetrics metrics = finalTargetActivity.getResources().getDisplayMetrics();
-                                    width = metrics.widthPixels;
-                                    height = metrics.heightPixels;
-                                }
-                            } catch (Exception ignored) {}
+                        if (isMirroring) {
+                            my.app.permata.auto.MirrorDisplay md = my.app.permata.auto.MirrorDisplay.get();
+                            if (md != null) {
+                                int width = 1000;
+                                int height = 1000;
+                                try {
+                                    if (finalTargetActivity != null && finalTargetActivity.getResources() != null) {
+                                        android.util.DisplayMetrics metrics = finalTargetActivity.getResources().getDisplayMetrics();
+                                        width = metrics.widthPixels;
+                                        height = metrics.heightPixels;
+                                    }
+                                } catch (Exception ignored) {}
 
-                            // Keep the 20% safe span to prevent accidental UI touches
-                            float actionX = width * 0.50f;
-                            float centerY = height * 0.50f;
-                            float span = height * 0.20f; 
-                            
-                            float yStart = (!isNext) ? (centerY - span / 2f) : (centerY + span / 2f);
-                            float yEnd = (!isNext) ? (centerY + span / 2f) : (centerY - span / 2f);
-
-                            final long startTime = android.os.SystemClock.uptimeMillis();
-                            
-                            // 1. Instant DOWN stroke
-                            md.motionEvent(startTime, startTime, MotionEvent.ACTION_DOWN, actionX, yStart);
-                            
-                            // 2. High-Velocity Multi-Step MOVE (Simulates a fast 70ms flick)
-                            final int stepCount = 5; 
-                            final long flingDuration = 70; 
-                            
-                            for (int i = 1; i <= stepCount; i++) {
-                                final float linearT = (float) i / stepCount;
-                                final float currentY = yStart + (yEnd - yStart) * linearT;
-                                final long moveTime = startTime + (long) (flingDuration * linearT);
+                                // Keep the 20% safe span to prevent accidental UI touches
+                                float actionX = width * 0.50f;
+                                float centerY = height * 0.50f;
+                                float span = height * 0.20f; 
                                 
+                                float yStart = (!isNext) ? (centerY - span / 2f) : (centerY + span / 2f);
+                                float yEnd = (!isNext) ? (centerY + span / 2f) : (centerY - span / 2f);
+
+                                final long startTime = android.os.SystemClock.uptimeMillis();
+                                
+                                // 1. Instant DOWN stroke
+                                md.motionEvent(startTime, startTime, MotionEvent.ACTION_DOWN, actionX, yStart);
+                                
+                                // 2. High-Velocity Multi-Step MOVE (Simulates a fast 70ms flick)
+                                final int stepCount = 5; 
+                                final long flingDuration = 70; 
+                                
+                                for (int i = 1; i <= stepCount; i++) {
+                                    final float linearT = (float) i / stepCount;
+                                    final float currentY = yStart + (yEnd - yStart) * linearT;
+                                    
+                                    mainThreadHandler.postDelayed(() -> {
+                                        try {
+                                            my.app.permata.auto.MirrorDisplay currentMd = my.app.permata.auto.MirrorDisplay.get();
+                                            if (currentMd != null) {
+                                                currentMd.motionEvent(startTime, android.os.SystemClock.uptimeMillis(), MotionEvent.ACTION_MOVE, actionX, currentY);
+                                            }
+                                        } catch (Exception ignored) {}
+                                    }, (long) (flingDuration * linearT));
+                                }
+                                
+                                // 3. UP stroke immediately after the last move to complete the fling
                                 mainThreadHandler.postDelayed(() -> {
                                     try {
                                         my.app.permata.auto.MirrorDisplay currentMd = my.app.permata.auto.MirrorDisplay.get();
                                         if (currentMd != null) {
-                                            currentMd.motionEvent(startTime, android.os.SystemClock.uptimeMillis(), MotionEvent.ACTION_MOVE, actionX, currentY);
+                                            currentMd.motionEvent(startTime, android.os.SystemClock.uptimeMillis(), MotionEvent.ACTION_UP, actionX, yEnd);
                                         }
-                                    } catch (Exception ignored) {}
-                                }, (long) (flingDuration * linearT));
+                                    } catch (Exception e) {}
+                                }, flingDuration + 5);
                             }
-                            
-                            // 3. UP stroke immediately after the last move to complete the fling
-                            mainThreadHandler.postDelayed(() -> {
-                                try {
-                                    my.app.permata.auto.MirrorDisplay currentMd = my.app.permata.auto.MirrorDisplay.get();
-                                    if (currentMd != null) {
-                                        currentMd.motionEvent(startTime, android.os.SystemClock.uptimeMillis(), MotionEvent.ACTION_UP, actionX, yEnd);
-                                    }
-                                } catch (Exception e) {
-                                    Log.e("KeyEventHandler", "[ROUTING_ERROR] Mirror UP failed.", e);
-                                }
-                            }, flingDuration + 5);
                         }
                     } catch (Exception e) {
                         Log.e("KeyEventHandler", "[ROUTING_ERROR] Mirror payload failed.", e);
                     }
 
-                    // 2. FIRE TO WEB BROWSER
+                    // 3. FIRE TO WEB BROWSER
                     try {
                         if (finalTargetActivity != null) {
                             WebView resolvedWebView = scanFragmentsForWebView(finalTargetActivity.getActiveFragment());
@@ -438,32 +458,23 @@ public class KeyEventHandler {
                     }
                 });
 
-                // 3. FIRE TO PHYSICAL PHONE (GOD MODE FOR STUBBORN NATIVE APPS)
+                // 4. FIRE TO PHYSICAL PHONE (GOD MODE FOR STUBBORN NATIVE APPS)
                 try {
-                    String activePkg = AccessibilityEventDispatcherService.getLastActivePackage();
-                    if (isScrollerPackage(activePkg)) {
+                    if (activePkg != null && isScrollerPackage(activePkg)) {
                         executeNativeAppSwipe(!isNext, activePkg);
                     }
                 } catch (Exception e) {
                     Log.e("KeyEventHandler", "[ROUTING_ERROR] God-Mode payload failed.", e);
                 }
 
-                // 4. FIRE TO MEDIA/IPTV (Native Permata Action Mapping)
+                // 5. FIRE TO MEDIA/IPTV (Native Permata Action Mapping)
                 try {
                     Key k = Key.get(code);
                     if (k != null && k.getClickAction() != null && k.getClickAction() != Action.NONE) {
-                        // Deliver directly to the internal Permata media/IPTV router
                         performAction(k.getClickAction(), cb, finalTargetActivity, currentUptime);
                     } else if (defaultHandler != null) {
-                        // Fallback for external native players that need raw synthesized UP strokes
                         defaultHandler.apply(code, event);
-                        KeyEvent upEvent = new KeyEvent(
-                                event.getDownTime(), 
-                                android.os.SystemClock.uptimeMillis() + 10, 
-                                KeyEvent.ACTION_UP, 
-                                code, 
-                                0
-                        );
+                        KeyEvent upEvent = new KeyEvent(event.getDownTime(), android.os.SystemClock.uptimeMillis() + 10, KeyEvent.ACTION_UP, code, 0);
                         defaultHandler.apply(code, upEvent);
                     }
                 } catch (Exception e) {
@@ -639,7 +650,6 @@ public class KeyEventHandler {
                 eventDown.setSource(InputDevice.SOURCE_TOUCHSCREEN); 
                 touchTarget.dispatchTouchEvent(eventDown);
             } finally {
-                // Zombie Proof Cleanup
                 if (eventDown != null) eventDown.recycle();
             }
 
@@ -669,7 +679,6 @@ public class KeyEventHandler {
                 MotionEvent eventUp = null;
                 try {
                     long endTime = startTime + swipeDuration + 10;
-                    // ACTION_CANCEL fail-safe: If the view detached mid-swipe, force cancel to prevent deadlock
                     int action = (touchTarget.isAttachedToWindow() && touchTarget.getVisibility() == View.VISIBLE) ? MotionEvent.ACTION_UP : MotionEvent.ACTION_CANCEL;
                     eventUp = MotionEvent.obtain(startTime, endTime, action, actionX, yEnd, 0);
                     eventUp.setSource(InputDevice.SOURCE_TOUCHSCREEN); 
