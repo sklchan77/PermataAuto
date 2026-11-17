@@ -42,6 +42,12 @@ import my.app.utils.ui.fragment.ActivityFragment;
 
 public class KeyEventHandler {
 
+    // === CROSS-MODULE TOUCH FOCUS SYMBOLS (Required by PermataWebView) ===
+    public static final int TARGET_NONE = 0;
+    public static final int TARGET_WEB = 1;
+    public static volatile int manualTouchFocus = TARGET_NONE;
+    // =====================================================================
+
     private static final int DBL_CLICK_INTERVAL = 500;
     private static final int LONG_CLICK_INTERVAL = 1000;
 
