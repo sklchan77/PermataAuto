@@ -42,21 +42,24 @@ import my.app.utils.ui.fragment.ActivityFragment;
 
 public class KeyEventHandler {
 
-    // === CROSS-MODULE TOUCH FOCUS SYMBOLS (Required by PermataWebView) ===
-    public static final int TARGET_NONE = 0;
-    public static final int TARGET_WEB = 1;
-    public static volatile int manualTouchFocus = TARGET_NONE;
-    // =====================================================================
-
     private static final int DBL_CLICK_INTERVAL = 500;
     private static final int LONG_CLICK_INTERVAL = 1000;
 
+    public static final int TARGET_AUTO = 0;
+    public static final int TARGET_MIRROR = 1;
+    public static final int TARGET_WEB = 2;
+    public static volatile int manualTouchFocus = TARGET_AUTO;
+
     private static volatile Worker worker;
-    private static volatile long lastGlobalActionTime = 0L;
+    
+    // Thread-safe lock-free debouncer to prevent input flooding & ANRs
+    private static final java.util.concurrent.atomic.AtomicLong lastGlobalActionTime = new java.util.concurrent.atomic.AtomicLong(0L);
+    
+    // Reusable Main Thread Handler to prevent UI thread crashes
+    private static final android.os.Handler mainThreadHandler = new android.os.Handler(android.os.Looper.getMainLooper());
     
     private static final AtomicBoolean isHardwareSwiping = new AtomicBoolean(false);
     
-    // GROUP 1: The Bullies. These apps ignore BT keys and steal the media session.
     private static final Set<String> STUBBORN_SCROLLERS = new HashSet<>(Arrays.asList(
             "com.zhiliaoapp.musically", // TikTok Global
             "com.ss.android.ugc.trill", // TikTok Asia
@@ -64,7 +67,6 @@ public class KeyEventHandler {
             "com.snapchat.android"      // Snapchat
     ));
 
-    // GROUP 2: The Good Citizens. These apps natively support BT Next/Prev keys.
     private static final Set<String> NATIVE_BT_SCROLLERS = new HashSet<>(Arrays.asList(
             "com.ss.android.ugc.aweme",     // Douyin (CN)
             "com.facebook.katana",          // Facebook
@@ -83,7 +85,6 @@ public class KeyEventHandler {
         return pkgName != null && NATIVE_BT_SCROLLERS.contains(pkgName);
     }
     
-    // Fallback for general scroller checks if needed
     public static boolean isScrollerPackage(String pkgName) {
         return isStubbornScroller(pkgName) || isNativeBtScroller(pkgName);
     }
@@ -272,8 +273,6 @@ public class KeyEventHandler {
                                                 @Nullable MainActivityDelegate activity, KeyEvent event,
                                                 IntObjectFunction<KeyEvent, Boolean> defaultHandler) {
         
-        Log.i("[ENTRY] [Code Start] KeyEventHandler.handleKeyEvent triggered. KeyCode: " + event.getKeyCode() + ", Action: " + event.getAction());
-
         if (event.isCanceled()) {
             worker = null;
             return defaultHandler.apply(event.getKeyCode(), event);
@@ -289,18 +288,14 @@ public class KeyEventHandler {
 
         if (code == KeyEvent.KEYCODE_BACK) {
             if (AccessibilityEventDispatcherService.isInjectingBack) {
-                Log.i("[BACK_TELEMETRY] Loop-Breaker Active: Permitting OS Back command to reach target app.");
                 return defaultHandler.apply(code, event);
             }
-            
             if (PermataApplication.get().isMirroringMode()) {
                 long currentUptime = android.os.SystemClock.uptimeMillis();
-                if (currentUptime - lastGlobalActionTime < 500) {
+                if (currentUptime - lastGlobalActionTime.get() < 500) {
                     return true; 
                 }
-                lastGlobalActionTime = currentUptime;
-                
-                Log.i("[BACK] Physical Phone Back intercepted. Executing Universal Back.");
+                lastGlobalActionTime.set(currentUptime);
                 AccessibilityEventDispatcherService.dispatchUniversalBack();
                 return true; 
             }
@@ -314,143 +309,184 @@ public class KeyEventHandler {
             }
         }
 
+        boolean isUiDead = (targetActivity == null || targetActivity.getAppActivity() == null || 
+                           (targetActivity.getAppActivity() instanceof Activity && ((Activity) targetActivity.getAppActivity()).isDestroyed()));
+
+        if (isUiDead) {
+            if (my.app.permata.auto.MainCarActivity.activeInstance != null) {
+                MainActivityDelegate carDelegate = my.app.permata.auto.MainCarActivity.activeInstance.getActivityDelegate().peek();
+                if (carDelegate != null) targetActivity = carDelegate;
+            }
+            if (targetActivity == null && my.app.permata.ui.activity.MainActivity.getActiveInstance() != null) {
+                MainActivityDelegate phoneDelegate = my.app.permata.ui.activity.MainActivity.getActiveInstance().getActivityDelegate().peek();
+                if (phoneDelegate != null) targetActivity = phoneDelegate;
+            }
+        }
+
         final MainActivityDelegate finalTargetActivity = targetActivity;
 
         if (event.getAction() == ACTION_DOWN) {
             if (code == KeyEvent.KEYCODE_MEDIA_NEXT || code == KeyEvent.KEYCODE_MEDIA_PREVIOUS) {
                 
                 long currentUptime = android.os.SystemClock.uptimeMillis();
-                if (currentUptime - lastGlobalActionTime < 250) {
-                    Log.w("[CHECK] Input dropped: Button spam detected (< 250ms)");
+                long lastTime = lastGlobalActionTime.get();
+                if (currentUptime - lastTime < 250) {
                     return true;
                 }
-
+                lastGlobalActionTime.set(currentUptime);
                 boolean isNext = (code == KeyEvent.KEYCODE_MEDIA_NEXT);
 
-                if (PermataApplication.get().isMirroringMode()) {
-                    lastGlobalActionTime = currentUptime;
-                    Log.i("[DETECTION] Mirroring active. Routing steering wheel swipe directly to phone glass.");
-                    executeNativeAppSwipe(!isNext, "MirroredScreen");
-                    return true;
-                }
-                
-                // --- CORE TELEMETRY BEACON ---
+                // === 1. LAYER 2 BT LOOPHOLE ===
+                boolean isMirroring = PermataApplication.get().isMirroringMode();
                 String activePkg = AccessibilityEventDispatcherService.getLastActivePackage();
-                ActivityFragment activeFragment = (finalTargetActivity != null) ? finalTargetActivity.getActiveFragment() : null;
-                String fragName = (activeFragment != null) ? activeFragment.getClass().getSimpleName() : "null";
-                
-                boolean isWebBrowser = activeFragment != null && 
-                        activeFragment.getClass().getName().endsWith("WebBrowserFragment") && 
-                        !activeFragment.getClass().getName().endsWith("YoutubeFragment");
 
-                Log.i("[ROUTING_TELEMETRY] Key: " + (isNext ? "NEXT" : "PREV") + 
-                      " | ActiveOSPkg: [" + activePkg + "]" + 
-                      " | PermataFrag: [" + fragName + "]" + 
-                      " | isWebBrowser: " + isWebBrowser);
-                // ------------------------------
-
-                // 2. LAYER 2 BT LOOPHOLE
-                if (activePkg != null && !activePkg.startsWith("my.app.permata")) {
+                if (!isMirroring && activePkg != null && !activePkg.startsWith("my.app.permata")) {
                     if (isStubbornScroller(activePkg)) {
-                        Log.i("[BT_LOOPHOLE] Intercepted! Active package '" + activePkg + "' is a STUBBORN Scroller. Triggering Accessibility Swipe.");
+                        Log.i("KeyEventHandler", "[BT_LOOPHOLE] Intercepted! Active package '" + activePkg + "' is a STUBBORN Scroller. Triggering Accessibility Swipe.");
                         executeNativeAppSwipe(!isNext, activePkg);
                         return true; 
                     } else if (isNativeBtScroller(activePkg)) {
-                        // SURGICAL FIX: The Ad-Trap Fallback
+                        // SURGICAL FIX: Ad-Trap Fallback
                         // If Permata receives a key while a native scroller is active, it proves they dropped their session (Ad Trap).
-                        Log.w("[BT_LOOPHOLE] Ad-Trap Detected! Native Scroller '" + activePkg + "' abandoned the steering wheel. Triggering Fallback Swipe.");
+                        Log.w("KeyEventHandler", "[BT_LOOPHOLE] Ad-Trap Detected! Native Scroller '" + activePkg + "' abandoned the steering wheel. Triggering Fallback Swipe.");
                         executeNativeAppSwipe(!isNext, activePkg);
                         return true;
+                    } else {
+                        Log.i("KeyEventHandler", "[DETECTION] Native Passthrough: App '" + activePkg + "' is active. Yielding session to OS for native BT.");
+                        if (defaultHandler != null) {
+                            defaultHandler.apply(code, event);
+                            // Synthesize the release stroke so native players actually execute the command
+                            KeyEvent upEvent = new KeyEvent(event.getDownTime(), currentUptime + 10, KeyEvent.ACTION_UP, code, 0);
+                            defaultHandler.apply(code, upEvent);
+                        }
+                        return true;
                     }
-                    Log.i("[DETECTION] Native Passthrough: App '" + activePkg + "' is unknown. Yielding to OS.");
-                    return defaultHandler.apply(code, event);
                 }
 
-                // 3. WEB BROWSER LOGIC
-                if (!isWebBrowser) {
-                    Log.i("[DETECTION] Native Passthrough: Permata active but not in Web Browser.");
-                    return defaultHandler.apply(code, event);
-                }
+                Log.i("KeyEventHandler", "[ROUTING_TELEMETRY] Executing True Catch-All: Firing to Mirror, Web, God-Mode, and Media simultaneously.");
 
-                lastGlobalActionTime = currentUptime;
+                // Enforce Main Thread for UI payloads
+                mainThreadHandler.post(() -> {
+                    
+                    // 2. FIRE TO MIRRORING VIRTUAL DISPLAY (With High-Velocity Fling Physics)
+                    try {
+                        if (isMirroring) {
+                            my.app.permata.auto.MirrorDisplay md = my.app.permata.auto.MirrorDisplay.get();
+                            if (md != null) {
+                                int width = 1000;
+                                int height = 1000;
+                                try {
+                                    if (finalTargetActivity != null && finalTargetActivity.getResources() != null) {
+                                        android.util.DisplayMetrics metrics = finalTargetActivity.getResources().getDisplayMetrics();
+                                        width = metrics.widthPixels;
+                                        height = metrics.heightPixels;
+                                    }
+                                } catch (Exception ignored) {}
 
-                if (finalTargetActivity != null) {
-                    finalTargetActivity.post(() -> {
-                        if (finalTargetActivity.getWindow() != null) {
-                            Context ctx = finalTargetActivity.getWindow().getContext();
-                            while (ctx instanceof ContextWrapper) {
-                                if (ctx instanceof Activity) break;
-                                ctx = ((ContextWrapper) ctx).getBaseContext();
-                            }
-                            if (ctx instanceof Activity) {
-                                Activity act = (Activity) ctx;
-                                if (act.isFinishing() || act.isDestroyed()) return;
-                            }
-                        }
+                                // Keep the 20% safe span to prevent accidental UI touches
+                                float actionX = width * 0.50f;
+                                float centerY = height * 0.50f;
+                                float span = height * 0.20f; 
+                                
+                                float yStart = (!isNext) ? (centerY - span / 2f) : (centerY + span / 2f);
+                                float yEnd = (!isNext) ? (centerY + span / 2f) : (centerY - span / 2f);
 
-                        WebView resolvedWebView = scanFragmentsForWebView(activeFragment);
-                        boolean isExplicitWebFragment = (resolvedWebView != null);
-
-                        if (resolvedWebView == null || !resolvedWebView.isShown()) {
-                            resolvedWebView = findTopVisibleWebView(finalTargetActivity);
-                        }
-
-                        if (resolvedWebView != null && resolvedWebView.isShown()) {
-                            boolean hasTouchFocus = resolvedWebView.hasFocus();
-                            boolean isFullScreenSize = false;
-                            
-                            if (finalTargetActivity.getWindow() != null && finalTargetActivity.getWindow().getDecorView() != null) {
-                                int screenHeight = finalTargetActivity.getWindow().getDecorView().getHeight();
-                                if (screenHeight > 0) {
-                                    isFullScreenSize = resolvedWebView.getHeight() > (screenHeight * 0.5);
+                                final long startTime = android.os.SystemClock.uptimeMillis();
+                                
+                                // 1. Instant DOWN stroke
+                                md.motionEvent(startTime, startTime, MotionEvent.ACTION_DOWN, actionX, yStart);
+                                
+                                // 2. High-Velocity Multi-Step MOVE (Simulates a fast 70ms flick)
+                                final int stepCount = 5; 
+                                final long flingDuration = 70; 
+                                
+                                for (int i = 1; i <= stepCount; i++) {
+                                    final float linearT = (float) i / stepCount;
+                                    final float currentY = yStart + (yEnd - yStart) * linearT;
+                                    
+                                    mainThreadHandler.postDelayed(() -> {
+                                        try {
+                                            my.app.permata.auto.MirrorDisplay currentMd = my.app.permata.auto.MirrorDisplay.get();
+                                            if (currentMd != null) {
+                                                currentMd.motionEvent(startTime, android.os.SystemClock.uptimeMillis(), MotionEvent.ACTION_MOVE, actionX, currentY);
+                                            }
+                                        } catch (Exception ignored) {}
+                                    }, (long) (flingDuration * linearT));
                                 }
+                                
+                                // 3. UP stroke immediately after the last move to complete the fling
+                                mainThreadHandler.postDelayed(() -> {
+                                    try {
+                                        my.app.permata.auto.MirrorDisplay currentMd = my.app.permata.auto.MirrorDisplay.get();
+                                        if (currentMd != null) {
+                                            currentMd.motionEvent(startTime, android.os.SystemClock.uptimeMillis(), MotionEvent.ACTION_UP, actionX, yEnd);
+                                        }
+                                    } catch (Exception e) {}
+                                }, flingDuration + 5);
                             }
+                        }
+                    } catch (Exception e) {
+                        Log.e("KeyEventHandler", "[ROUTING_ERROR] Mirror payload failed.", e);
+                    }
 
-                            if (isExplicitWebFragment || hasTouchFocus || isFullScreenSize) {
+                    // 3. FIRE TO WEB BROWSER
+                    try {
+                        if (finalTargetActivity != null) {
+                            WebView resolvedWebView = scanFragmentsForWebView(finalTargetActivity.getActiveFragment());
+                            if (resolvedWebView == null || !resolvedWebView.isShown()) {
+                                resolvedWebView = findTopVisibleWebView(finalTargetActivity);
+                            }
+                            if (resolvedWebView != null && resolvedWebView.isShown()) {
                                 String currentUrl = resolvedWebView.getUrl();
                                 String host = "unknown";
                                 boolean isMediaHost = false;
-                                boolean isInstagram = false;
-                                boolean isSnapFeedHost = false;
-                                boolean isTikTok = false;
                                 boolean isDouyin = false;
+                                boolean isTikTok = false;
                                 
                                 if (currentUrl != null) {
                                     try {
                                         host = Uri.parse(currentUrl).getHost();
                                         if (host != null) {
                                             if (host.startsWith("www.")) host = host.substring(4);
-                                            
                                             String h = host.toLowerCase();
-                                            isInstagram = h.contains("instagram");
                                             isTikTok = h.contains("tiktok");
                                             isDouyin = h.contains("douyin");
-                                            
-                                            isSnapFeedHost = h.contains("youtube") || h.contains("youtu") || h.contains("facebook") ||
-                                                    h.contains("kuaishou") || h.contains("xiaohongshu") ||
-                                                    h.contains("likee") || h.contains("kwai") || h.contains("snackvideo") ||
-                                                    h.contains("mojapp") || h.contains("sharechat");
-                                                    
-                                            isMediaHost = isInstagram || isSnapFeedHost || h.contains("bilibili") || 
-                                                    h.contains("reddit") || h.contains("twitter") || h.contains("x.com") || 
-                                                    h.contains("pinterest") || h.contains("twitch") || h.contains("weibo") || 
-                                                    h.contains("snapchat") || h.contains("vk") || isDouyin || isTikTok;
+                                            isMediaHost = isTikTok || isDouyin || h.contains("instagram") || h.contains("youtube") || h.contains("facebook") || h.contains("bilibili");
                                         }
                                     } catch (Exception ignored) {}
                                 }
-                                final String hostTag = "[Host: " + host + "] ";
-                                Log.i("[DETECTION] " + hostTag + "Resolved. isMediaHost: " + isMediaHost + " | isSnapFeedHost: " + isSnapFeedHost + " | isTikTok: " + isTikTok + " | isDouyin: " + isDouyin);
-
                                 View touchTargetView = isTikTok ? resolvedWebView : findTopmostTouchTarget(finalTargetActivity, resolvedWebView);
-                                
-                                smartScrollWebView(resolvedWebView, touchTargetView, !isNext, hostTag, isMediaHost, isDouyin, isTikTok);
-                            } else {
-                                Log.i("[DETECTION] WebBrowser is hidden or out of focus. Allowing default media propagation.");
+                                smartScrollWebView(resolvedWebView, touchTargetView, !isNext, "[Host: " + host + "] ", isMediaHost, isDouyin, isTikTok);
                             }
                         }
-                    });
+                    } catch (Exception e) {
+                        Log.e("KeyEventHandler", "[ROUTING_ERROR] Web payload failed.", e);
+                    }
+                });
+
+                // 4. FIRE TO PHYSICAL PHONE (GOD MODE FOR STUBBORN NATIVE APPS)
+                try {
+                    if (activePkg != null && isScrollerPackage(activePkg)) {
+                        executeNativeAppSwipe(!isNext, activePkg);
+                    }
+                } catch (Exception e) {
+                    Log.e("KeyEventHandler", "[ROUTING_ERROR] God-Mode payload failed.", e);
                 }
-                
+
+                // 5. FIRE TO MEDIA/IPTV (Native Permata Action Mapping)
+                try {
+                    Key k = Key.get(code);
+                    if (k != null && k.getClickAction() != null && k.getClickAction() != Action.NONE) {
+                        performAction(k.getClickAction(), cb, finalTargetActivity, currentUptime);
+                    } else if (defaultHandler != null) {
+                        defaultHandler.apply(code, event);
+                        KeyEvent upEvent = new KeyEvent(event.getDownTime(), android.os.SystemClock.uptimeMillis() + 10, KeyEvent.ACTION_UP, code, 0);
+                        defaultHandler.apply(code, upEvent);
+                    }
+                } catch (Exception e) {
+                    Log.e("KeyEventHandler", "[ROUTING_ERROR] Media payload failed.", e);
+                }
+
                 return true; 
             }
         }
@@ -501,9 +537,7 @@ public class KeyEventHandler {
             
             Object result = getWebViewMethod.invoke(activeFragment);
             if (result instanceof WebView) return (WebView) result;
-        } catch (Exception e) {
-            Log.e(e, "[REACTION] Discovery: Failed to scan for WebView.");
-        }
+        } catch (Exception e) {}
         return null;
     }
 
@@ -545,23 +579,8 @@ public class KeyEventHandler {
         View topCandidate = scanHighestVisibleChild(decorView, minValidArea, minValidHeight);
         
         if (topCandidate != null && topCandidate.isShown()) {
-            long viewArea = (long) topCandidate.getWidth() * topCandidate.getHeight();
-            float areaPercentage = ((float) viewArea / totalScreenArea) * 100f;
-            
-            String layerName = topCandidate.getClass().getName();
-            if (layerName.startsWith("android.widget.") || layerName.startsWith("android.view.")) {
-                layerName = topCandidate.getClass().getSimpleName();
-            }
-            
-            Log.i("[SURGERY] Target Locked -> Layer: [" + layerName + "]" + 
-                    " | Size: " + topCandidate.getWidth() + "x" + topCandidate.getHeight() +
-                    " | Area: " + String.format("%.1f", areaPercentage) + "%" +
-                    " | Alpha: " + topCandidate.getAlpha());
-            
             return topCandidate;
         }
-        
-        Log.i("[SURGERY] Target Locked -> Layer: [Fallback Base WebView] | No overlay passed the filters.");
         return baseWebView;
     }
 
@@ -602,17 +621,12 @@ public class KeyEventHandler {
 
     private static void executeNativeAppSwipe(boolean up, String pkgName) {
         if (!isHardwareSwiping.compareAndSet(false, true)) {
-            Log.w("[NATIVE_SWIPE] Sequence already in progress. Dropping overlapping dispatch.");
             return;
         }
         try {
-            Log.i("[NATIVE_SWIPE] Dispatching Accessibility Gesture for " + pkgName);
             boolean success = AccessibilityEventDispatcherService.dispatchGodModeSwipe(up);
-            if (!success) {
-                Log.w("[NATIVE_SWIPE] Accessibility Gesture failed or service unavailable.");
-            }
         } finally {
-            new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(() -> {
+            mainThreadHandler.postDelayed(() -> {
                 isHardwareSwiping.set(false);
             }, 150);
         }
@@ -622,11 +636,8 @@ public class KeyEventHandler {
         if (touchTarget == null || !touchTarget.isAttachedToWindow()) return;
         
         if (!isHardwareSwiping.compareAndSet(false, true)) {
-            Log.w(hostTag + " Swipe sequence already in progress. Dropping overlapping dispatch.");
             return;
         }
-
-        final android.os.Handler guaranteedHandler = new android.os.Handler(android.os.Looper.getMainLooper());
         
         final float actionX = touchTarget.getWidth() * 0.50f; 
         float centerY = touchTarget.getHeight() * 0.50f;
@@ -639,10 +650,14 @@ public class KeyEventHandler {
         try {
             final long startTime = android.os.SystemClock.uptimeMillis();
             
-            MotionEvent eventDown = MotionEvent.obtain(startTime, startTime, MotionEvent.ACTION_DOWN, actionX, yStart, 0);
-            eventDown.setSource(InputDevice.SOURCE_TOUCHSCREEN); 
-            touchTarget.dispatchTouchEvent(eventDown);
-            eventDown.recycle();
+            MotionEvent eventDown = null;
+            try {
+                eventDown = MotionEvent.obtain(startTime, startTime, MotionEvent.ACTION_DOWN, actionX, yStart, 0);
+                eventDown.setSource(InputDevice.SOURCE_TOUCHSCREEN); 
+                touchTarget.dispatchTouchEvent(eventDown);
+            } finally {
+                if (eventDown != null) eventDown.recycle();
+            }
 
             final int stepCount = 8; 
             final long swipeDuration = up ? 90 : 70; 
@@ -652,33 +667,35 @@ public class KeyEventHandler {
                 final float currentY = yStart + (yEnd - yStart) * linearT;
                 final long moveTime = startTime + (long) (swipeDuration * linearT);
                 
-                guaranteedHandler.postDelayed(() -> {
-                    if (touchTarget.isAttachedToWindow() && touchTarget.getVisibility() == View.VISIBLE) {
-                        MotionEvent eventMove = MotionEvent.obtain(startTime, moveTime, MotionEvent.ACTION_MOVE, actionX, currentY, 0);
-                        eventMove.setSource(InputDevice.SOURCE_TOUCHSCREEN); 
-                        touchTarget.dispatchTouchEvent(eventMove);
-                        eventMove.recycle();
+                mainThreadHandler.postDelayed(() -> {
+                    MotionEvent eventMove = null;
+                    try {
+                        if (touchTarget.isAttachedToWindow() && touchTarget.getVisibility() == View.VISIBLE) {
+                            eventMove = MotionEvent.obtain(startTime, moveTime, MotionEvent.ACTION_MOVE, actionX, currentY, 0);
+                            eventMove.setSource(InputDevice.SOURCE_TOUCHSCREEN); 
+                            touchTarget.dispatchTouchEvent(eventMove);
+                        }
+                    } finally {
+                        if (eventMove != null) eventMove.recycle();
                     }
                 }, (long) (swipeDuration * linearT));
             }
 
-            guaranteedHandler.postDelayed(() -> {
+            mainThreadHandler.postDelayed(() -> {
+                MotionEvent eventUp = null;
                 try {
-                    if (touchTarget.isAttachedToWindow() && touchTarget.getVisibility() == View.VISIBLE) {
-                        long endTime = startTime + swipeDuration + 10;
-                        MotionEvent eventUp = MotionEvent.obtain(startTime, endTime, MotionEvent.ACTION_UP, actionX, yEnd, 0);
-                        eventUp.setSource(InputDevice.SOURCE_TOUCHSCREEN); 
-                        touchTarget.dispatchTouchEvent(eventUp);
-                        eventUp.recycle();
-                        Log.i("[REACTION] " + hostTag + contextLog + " Concluded.");
-                    }
+                    long endTime = startTime + swipeDuration + 10;
+                    int action = (touchTarget.isAttachedToWindow() && touchTarget.getVisibility() == View.VISIBLE) ? MotionEvent.ACTION_UP : MotionEvent.ACTION_CANCEL;
+                    eventUp = MotionEvent.obtain(startTime, endTime, action, actionX, yEnd, 0);
+                    eventUp.setSource(InputDevice.SOURCE_TOUCHSCREEN); 
+                    touchTarget.dispatchTouchEvent(eventUp);
                 } finally {
+                    if (eventUp != null) eventUp.recycle();
                     isHardwareSwiping.set(false);
                 }
             }, swipeDuration + 10);
 
         } catch (Exception e) {
-            Log.e(e, "[REACTION] " + hostTag + contextLog + " failed with Exception.");
             isHardwareSwiping.set(false); 
         }
     }
@@ -691,7 +708,6 @@ public class KeyEventHandler {
         if (lastClickTime == null) lastClickTime = 0L;
         
         if (now - lastClickTime < 250) {
-            Log.w("[CHECK] " + hostTag + "Scroll [Anti-Spam]: Event dropped (Throttle window < 250ms).");
             return;
         }
         scrollTimestamps.put(wv, now); 
@@ -740,23 +756,15 @@ public class KeyEventHandler {
                         "  } catch(e) { return 'TELEMETRY_ERROR: ' + e.message; }" +
                         "})();";
 
-                wv.evaluateJavascript(expDouyinFsJs, value -> {
-                    if (value != null && !value.equals("null")) {
-                        Log.i(hostTag + "[EXP_FS] " + value.replace("\"", ""));
-                    }
-                });
+                wv.evaluateJavascript(expDouyinFsJs, value -> {});
             }
 
             wv.postDelayed(() -> {
                 if (!wv.isAttachedToWindow()) return;
-                wv.evaluateJavascript(JS_UNIVERSAL_PAYLOAD, value -> {
-                    if (value != null && !value.equals("null")) Log.i(hostTag + "[REACTION] " + value.replace("\"", ""));
-                });
+                wv.evaluateJavascript(JS_UNIVERSAL_PAYLOAD, value -> {});
             }, 220); 
 
-            if (isMediaHost) {
-                Log.i(hostTag + "[ACTION] Media Host Detected: Bypassing JS Scroll entirely. Relying purely on God-Mode Hardware Swipe.");
-            } else {
+            if (!isMediaHost) {
                 String generalJsScript = "(function() {" +
                         "  try {" +
                         "    var amount = " + (!up) + " ? window.innerHeight * 0.85 : -window.innerHeight * 0.85;" +
@@ -764,9 +772,7 @@ public class KeyEventHandler {
                         "    return 'Scroll: General Webpage Smooth Scroll Executed.';" +
                         "  } catch (err) { return 'Scroll Error: ' + err.message; }" +
                         "})();";
-                wv.evaluateJavascript(generalJsScript, value -> {
-                    if (value != null && !value.equals("null")) Log.i(hostTag + "[REACTION] " + value.replace("\"", ""));
-                });
+                wv.evaluateJavascript(generalJsScript, value -> {});
                 
                 int backupKey = up ? KeyEvent.KEYCODE_PAGE_UP : KeyEvent.KEYCODE_PAGE_DOWN;
                 wv.dispatchKeyEvent(new KeyEvent(KeyEvent.ACTION_DOWN, backupKey));
