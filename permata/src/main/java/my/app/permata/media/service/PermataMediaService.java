@@ -131,10 +131,10 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 	private AudioManager.OnAudioFocusChangeListener focusChangeListener;
 	private AudioFocusRequest audioFocusRequestOreo;
 
-	// [NEW] 30-Second Delay Infrastructure
+	// [NEW] 6-Second Delay Infrastructure
 	private final Handler lifecycleHandler = new Handler(Looper.getMainLooper());
 	private final Runnable shutdownRunnable = () -> {
-		Log.i("[TELEMETRY] 30-second grace period expired. Executing Graceful Teardown.");
+		Log.i("[TELEMETRY] 6-second grace period expired. Executing Graceful Teardown.");
 		executeNuclearTeardown();
 	};
 
@@ -243,9 +243,9 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 			return;
 		}
 		
-		Log.i("[TELEMETRY] App swiped away. No active car/BT session. Initiating 30-second graceful shutdown...");
+		Log.i("[TELEMETRY] App swiped away. No active car/BT session. Initiating 6-second graceful shutdown...");
 		lifecycleHandler.removeCallbacks(shutdownRunnable);
-		lifecycleHandler.postDelayed(shutdownRunnable, 30_000);
+		lifecycleHandler.postDelayed(shutdownRunnable, 6_000);
 	}
 
 	@Override
