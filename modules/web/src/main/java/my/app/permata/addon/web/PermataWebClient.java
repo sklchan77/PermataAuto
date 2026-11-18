@@ -142,6 +142,12 @@ public class PermataWebClient extends WebViewClientCompat {
         }
     }
 
+	@Override
+	public void doUpdateVisitedHistory(WebView view, String url, boolean isReload) {
+		super.doUpdateVisitedHistory(view, url, isReload);
+		((PermataWebView) view).urlChanged(url);
+	}
+
     @Override
     public boolean shouldOverrideUrlLoading(@NonNull WebView view,
                                             @NonNull WebResourceRequest request) {
