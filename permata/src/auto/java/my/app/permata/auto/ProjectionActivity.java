@@ -90,6 +90,15 @@ public class ProjectionActivity extends ActivityBase {
 			finish();
 			return;
 		}
+
+        // [FIFO SURGERY] Suppress Phantom Wakeups
+        // If the car is active, and this activity was woken up in the background (e.g., by an unmute intent), close it instantly.
+        if (PermataApplication.get().isConnectedToAuto() && !PermataApplication.get().isAppInForeground()) {
+            Log.w("[LIFECYCLE_TELEMETRY] Suppressing Phantom Mirror Wakeup while Android Auto is active.");
+            finishAndRemoveTask();
+            return;
+        }
+
 		starting = true;
 		Log.i("[LIFECYCLE_TELEMETRY] ProjectionActivity onStart triggered. Beginning permission sequence.");
 		checkOverlayPermission().thenIgnoreResult(this::checkWriteSettingsPermission)
