@@ -37,6 +37,23 @@ public class PermataApplication extends NetSplitCompatApp {
 	private int mirroringMode;
 	private ServiceConnection eventService;
 
+    // === [GLOBAL MEDIA CROWN] ===
+    public static final int CROWN_IPTV = 0;
+    public static final int CROWN_WEB = 1;
+    public static final int CROWN_NATIVE = 2;
+    private static volatile int activeMediaCrown = CROWN_IPTV;
+
+    public static void setMediaCrown(int crownOwner) {
+        activeMediaCrown = crownOwner;
+        Log.i("[ROUTING_TELEMETRY]", "Media Crown transferred to: " + 
+            (crownOwner == CROWN_IPTV ? "IPTV" : crownOwner == CROWN_WEB ? "WEB" : "NATIVE"));
+    }
+
+    public static int getMediaCrown() {
+        return activeMediaCrown;
+    }
+    // ============================
+
 	public static PermataApplication get() {
 		return App.get();
 	}
