@@ -392,7 +392,9 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
 
         CharSequence pkg = event.getPackageName();
         String pkgName = (pkg != null) ? pkg.toString() : null;
-        if (pkgName != null && !pkgName.equals("com.android.systemui") && !pkgName.equals("android") && !pkgName.contains("inputmethod")) {
+        
+        // UNIVERSAL OVERLAY FILTER: Ignore AODs, Launchers, and System UIs
+        if (!isIgnoredOverlay(pkgName)) {
             lastActivePackage = pkgName;
 
             // === [WATCHDOG GOD-MODE: NATIVE APP HIJACKING] (Merged from File B) ===
@@ -430,6 +432,23 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
             root.recycle(); 
         }
     }
+
+    // === [UNIVERSAL OVERLAY & LAUNCHER FILTER] ===
+    private static final String[] IGNORE_PKG_KEYWORDS = {
+            "systemui", "inputmethod", "launcher", "alwaysondisplay", "aod",
+            "sidegesture", "edgepanel", "edge", "overlay", "screenfilter",
+            "bluelight", "nexuslauncher", "trebuchet", "miui.home", "gboard", "swiftkey"
+    };
+
+    private static boolean isIgnoredOverlay(String pkgName) {
+        if (pkgName == null || pkgName.equals("android")) return true;
+        String lower = pkgName.toLowerCase();
+        for (String keyword : IGNORE_PKG_KEYWORDS) {
+            if (lower.contains(keyword)) return true;
+        }
+        return false;
+    }
+    // ===============================================
 
     // === [WATCHDOG HELPER PROTOCOLS] (Merged from File B) ===
     private static final Set<String> STUBBORN_APPS = new HashSet<>(Arrays.asList(
