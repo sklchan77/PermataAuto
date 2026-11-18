@@ -433,11 +433,27 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
         }
     }
 
-    // === [UNIVERSAL OVERLAY & LAUNCHER FILTER] ===
+// === [UNIVERSAL OVERLAY & LAUNCHER FILTER] ===
     private static final String[] IGNORE_PKG_KEYWORDS = {
-            "systemui", "inputmethod", "launcher", "alwaysondisplay", "aod",
-            "sidegesture", "edgepanel", "edge", "overlay", "screenfilter",
-            "bluelight", "nexuslauncher", "trebuchet", "miui.home", "gboard", "swiftkey"
+            // Core System & UI
+            "systemui", "inputmethod", "launcher", "gboard", "swiftkey",
+            
+            // Biometrics, Lock & Keyguard (The Intermittent Blocker Fix)
+            "biometrics", "keyguard", "lockscreen", "faceid", "fingerprint",
+            
+            // Overlays, Dimmers & Always On Displays
+            "alwaysondisplay", "aod", "overlay", "screenfilter", "bluelight", 
+            "twilight", "lux", "smartface", "hidenotch",
+            
+            // Edge Panels & Gesture Navigation
+            "edgepanel", "edge", "sidegesture", "gestural", "threebutton",
+            
+            // Heads-Up Notifications & Popups (The Message Interruption Fix)
+            "whatsapp", "telegram", "messenger", "discord", "wechat", "line",
+            "viber", "sms", "mms", "messaging", "dialer", "incallui",
+            
+            // OEM Specific Sledgehammers 
+            "miui", "xiaomi", "coloros", "oplus", "nexuslauncher", "trebuchet"
     };
 
     private static boolean isIgnoredOverlay(String pkgName) {
