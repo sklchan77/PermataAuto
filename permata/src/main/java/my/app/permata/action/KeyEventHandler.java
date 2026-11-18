@@ -346,19 +346,19 @@ public class KeyEventHandler {
                 if (!isMirroring && activePkg != null && !activePkg.startsWith("my.app.permata")) {
                     if (isStubbornScroller(activePkg)) {
                         Log.i("KeyEventHandler", "[BT_LOOPHOLE] Intercepted! Active package '" + activePkg + "' is a STUBBORN Scroller. Triggering Accessibility Swipe.");
+                        PermataApplication.setMediaCrown(PermataApplication.CROWN_NATIVE);
                         executeNativeAppSwipe(!isNext, activePkg);
                         return true; 
                     } else if (isNativeBtScroller(activePkg)) {
-                        // MERGED: Ad-Trap Fallback from KeyEventHandler-B
-                        // If Permata receives a key while a native scroller is active, it proves they dropped their session (Ad Trap).
                         Log.w("KeyEventHandler", "[BT_LOOPHOLE] Ad-Trap Detected! Native Scroller '" + activePkg + "' abandoned the steering wheel. Triggering Fallback Swipe.");
+                        PermataApplication.setMediaCrown(PermataApplication.CROWN_NATIVE);
                         executeNativeAppSwipe(!isNext, activePkg);
                         return true;
                     } else {
                         Log.i("KeyEventHandler", "[DETECTION] Native Passthrough: App '" + activePkg + "' is active. Yielding session to OS for native BT.");
+                        PermataApplication.setMediaCrown(PermataApplication.CROWN_NATIVE);
                         if (defaultHandler != null) {
                             defaultHandler.apply(code, event);
-                            // Synthesize the release stroke so native players actually execute the command
                             KeyEvent upEvent = new KeyEvent(event.getDownTime(), currentUptime + 10, KeyEvent.ACTION_UP, code, 0);
                             defaultHandler.apply(code, upEvent);
                         }
@@ -366,117 +366,68 @@ public class KeyEventHandler {
                     }
                 }
 
-                Log.i("KeyEventHandler", "[ROUTING_TELEMETRY] Executing True Catch-All: Firing to Mirror, Web, God-Mode, and Media simultaneously.");
+                // === [STRICT FIFO ROUTING: THE SNIPER RIFLE] ===
+                int currentCrown = PermataApplication.getMediaCrown();
+                Log.i("KeyEventHandler", "[ROUTING_TELEMETRY] Executing FIFO Route. Target: " + 
+                        (currentCrown == PermataApplication.CROWN_WEB ? "WEB" : 
+                         currentCrown == PermataApplication.CROWN_NATIVE ? "NATIVE" : "IPTV"));
 
-                // Enforce Main Thread for UI payloads
-                mainThreadHandler.post(() -> {
-                    
-                    // 2. FIRE TO MIRRORING VIRTUAL DISPLAY (With High-Velocity Fling Physics)
-                    try {
-                        if (isMirroring) {
-                            my.app.permata.auto.MirrorDisplay md = my.app.permata.auto.MirrorDisplay.get();
-                            if (md != null) {
-                                int width = 1000;
-                                int height = 1000;
-                                try {
-                                    if (finalTargetActivity != null && finalTargetActivity.getResources() != null) {
-                                        android.util.DisplayMetrics metrics = finalTargetActivity.getResources().getDisplayMetrics();
-                                        width = metrics.widthPixels;
-                                        height = metrics.heightPixels;
-                                    }
-                                } catch (Exception ignored) {}
-
-                                // Keep the 20% safe span to prevent accidental UI touches
-                                float actionX = width * 0.50f;
-                                float centerY = height * 0.50f;
-                                float span = height * 0.20f; 
-                                
-                                float yStart = (!isNext) ? (centerY - span / 2f) : (centerY + span / 2f);
-                                float yEnd = (!isNext) ? (centerY + span / 2f) : (centerY - span / 2f);
-
-                                final long startTime = android.os.SystemClock.uptimeMillis();
-                                
-                                // 1. Instant DOWN stroke
-                                md.motionEvent(startTime, startTime, MotionEvent.ACTION_DOWN, actionX, yStart);
-                                
-                                // 2. High-Velocity Multi-Step MOVE (Simulates a fast 70ms flick)
-                                final int stepCount = 5; 
-                                final long flingDuration = 70; 
-                                
-                                for (int i = 1; i <= stepCount; i++) {
-                                    final float linearT = (float) i / stepCount;
-                                    final float currentY = yStart + (yEnd - yStart) * linearT;
+                if (currentCrown == PermataApplication.CROWN_WEB) {
+                    // FIRE ONLY TO WEB BROWSER
+                    mainThreadHandler.post(() -> {
+                        try {
+                            if (finalTargetActivity != null) {
+                                WebView resolvedWebView = scanFragmentsForWebView(finalTargetActivity.getActiveFragment());
+                                if (resolvedWebView == null || !resolvedWebView.isShown()) {
+                                    resolvedWebView = findTopVisibleWebView(finalTargetActivity);
+                                }
+                                if (resolvedWebView != null && resolvedWebView.isShown()) {
+                                    String currentUrl = resolvedWebView.getUrl();
+                                    String host = "unknown";
+                                    boolean isMediaHost = false;
+                                    boolean isDouyin = false;
+                                    boolean isTikTok = false;
                                     
-                                    mainThreadHandler.postDelayed(() -> {
+                                    if (currentUrl != null) {
                                         try {
-                                            my.app.permata.auto.MirrorDisplay currentMd = my.app.permata.auto.MirrorDisplay.get();
-                                            if (currentMd != null) {
-                                                currentMd.motionEvent(startTime, android.os.SystemClock.uptimeMillis(), MotionEvent.ACTION_MOVE, actionX, currentY);
+                                            host = Uri.parse(currentUrl).getHost();
+                                            if (host != null) {
+                                                if (host.startsWith("www.")) host = host.substring(4);
+                                                String h = host.toLowerCase();
+                                                isTikTok = h.contains("tiktok");
+                                                isDouyin = h.contains("douyin");
+                                                isMediaHost = isTikTok || isDouyin || h.contains("instagram") || h.contains("youtube") || h.contains("facebook") || h.contains("bilibili");
                                             }
                                         } catch (Exception ignored) {}
-                                    }, (long) (flingDuration * linearT));
+                                    }
+                                    View touchTargetView = isTikTok ? resolvedWebView : findTopmostTouchTarget(finalTargetActivity, resolvedWebView);
+                                    smartScrollWebView(resolvedWebView, touchTargetView, !isNext, "[Host: " + host + "] ", isMediaHost, isDouyin, isTikTok);
                                 }
-                                
-                                // 3. UP stroke immediately after the last move to complete the fling
-                                mainThreadHandler.postDelayed(() -> {
-                                    try {
-                                        my.app.permata.auto.MirrorDisplay currentMd = my.app.permata.auto.MirrorDisplay.get();
-                                        if (currentMd != null) {
-                                            currentMd.motionEvent(startTime, android.os.SystemClock.uptimeMillis(), MotionEvent.ACTION_UP, actionX, yEnd);
-                                        }
-                                    } catch (Exception e) {}
-                                }, flingDuration + 5);
                             }
+                        } catch (Exception e) {
+                            Log.e("KeyEventHandler", "[ROUTING_ERROR] Web payload failed.", e);
                         }
-                    } catch (Exception e) {
-                        Log.e("KeyEventHandler", "[ROUTING_ERROR] Mirror payload failed.", e);
-                    }
-
-                    // 3. FIRE TO WEB BROWSER
-                    try {
-                        if (finalTargetActivity != null) {
-                            WebView resolvedWebView = scanFragmentsForWebView(finalTargetActivity.getActiveFragment());
-                            if (resolvedWebView == null || !resolvedWebView.isShown()) {
-                                resolvedWebView = findTopVisibleWebView(finalTargetActivity);
-                            }
-                            if (resolvedWebView != null && resolvedWebView.isShown()) {
-                                String currentUrl = resolvedWebView.getUrl();
-                                String host = "unknown";
-                                boolean isMediaHost = false;
-                                boolean isDouyin = false;
-                                boolean isTikTok = false;
-                                
-                                if (currentUrl != null) {
-                                    try {
-                                        host = Uri.parse(currentUrl).getHost();
-                                        if (host != null) {
-                                            if (host.startsWith("www.")) host = host.substring(4);
-                                            String h = host.toLowerCase();
-                                            isTikTok = h.contains("tiktok");
-                                            isDouyin = h.contains("douyin");
-                                            isMediaHost = isTikTok || isDouyin || h.contains("instagram") || h.contains("youtube") || h.contains("facebook") || h.contains("bilibili");
-                                        }
-                                    } catch (Exception ignored) {}
-                                }
-                                View touchTargetView = isTikTok ? resolvedWebView : findTopmostTouchTarget(finalTargetActivity, resolvedWebView);
-                                smartScrollWebView(resolvedWebView, touchTargetView, !isNext, "[Host: " + host + "] ", isMediaHost, isDouyin, isTikTok);
-                            }
-                        }
-                    } catch (Exception e) {
-                        Log.e("KeyEventHandler", "[ROUTING_ERROR] Web payload failed.", e);
-                    }
-                });
-
-                // 4. FIRE TO PHYSICAL PHONE (GOD MODE FOR STUBBORN NATIVE APPS)
-                try {
-                    if (activePkg != null && isScrollerPackage(activePkg)) {
-                        executeNativeAppSwipe(!isNext, activePkg);
-                    }
-                } catch (Exception e) {
-                    Log.e("KeyEventHandler", "[ROUTING_ERROR] God-Mode payload failed.", e);
+                    });
+                    
+                    if (isMirroring) executeMirrorSwipe(!isNext, finalTargetActivity);
+                    return true; // STOP EXECUTION. Do not pass to IPTV.
                 }
 
-                // 5. FIRE TO MEDIA/IPTV (Native Permata Action Mapping)
+                if (currentCrown == PermataApplication.CROWN_NATIVE) {
+                    // FIRE ONLY TO PHYSICAL PHONE (GOD MODE)
+                    try {
+                        if (activePkg != null && isScrollerPackage(activePkg)) {
+                            executeNativeAppSwipe(!isNext, activePkg);
+                        }
+                    } catch (Exception e) {
+                        Log.e("KeyEventHandler", "[ROUTING_ERROR] God-Mode payload failed.", e);
+                    }
+                    
+                    if (isMirroring) executeMirrorSwipe(!isNext, finalTargetActivity);
+                    return true; // STOP EXECUTION. Do not pass to IPTV.
+                }
+
+                // IF WE REACH HERE, CROWN_IPTV IS ACTIVE. FIRE TO NATIVE MEDIA.
                 try {
                     Key k = Key.get(code);
                     if (k != null && k.getClickAction() != null && k.getClickAction() != Action.NONE) {
@@ -526,6 +477,66 @@ public class KeyEventHandler {
 
         worker = new Worker(cb, finalTargetActivity, k, clickAction, dblClickAction, longClickAction);
         return true;
+    }
+
+    private static void executeMirrorSwipe(boolean up, MainActivityDelegate finalTargetActivity) {
+        try {
+            my.app.permata.auto.MirrorDisplay md = my.app.permata.auto.MirrorDisplay.get();
+            if (md != null) {
+                int width = 1000;
+                int height = 1000;
+                try {
+                    if (finalTargetActivity != null && finalTargetActivity.getResources() != null) {
+                        android.util.DisplayMetrics metrics = finalTargetActivity.getResources().getDisplayMetrics();
+                        width = metrics.widthPixels;
+                        height = metrics.heightPixels;
+                    }
+                } catch (Exception ignored) {}
+
+                // Keep the 20% safe span to prevent accidental UI touches
+                float actionX = width * 0.50f;
+                float centerY = height * 0.50f;
+                float span = height * 0.20f; 
+                
+                float yStart = up ? (centerY - span / 2f) : (centerY + span / 2f);
+                float yEnd = up ? (centerY + span / 2f) : (centerY - span / 2f);
+
+                final long startTime = android.os.SystemClock.uptimeMillis();
+                
+                // 1. Instant DOWN stroke
+                md.motionEvent(startTime, startTime, MotionEvent.ACTION_DOWN, actionX, yStart);
+                
+                // 2. High-Velocity Multi-Step MOVE (Simulates a fast 70ms flick)
+                final int stepCount = 5; 
+                final long flingDuration = 70; 
+                
+                for (int i = 1; i <= stepCount; i++) {
+                    final float linearT = (float) i / stepCount;
+                    final float currentY = yStart + (yEnd - yStart) * linearT;
+                    
+                    mainThreadHandler.postDelayed(() -> {
+                        try {
+                            my.app.permata.auto.MirrorDisplay currentMd = my.app.permata.auto.MirrorDisplay.get();
+                            if (currentMd != null) {
+                                currentMd.motionEvent(startTime, android.os.SystemClock.uptimeMillis(), MotionEvent.ACTION_MOVE, actionX, currentY);
+                            }
+                        } catch (Exception ignored) {}
+                    }, (long) (flingDuration * linearT));
+                }
+                
+                // 3. UP stroke immediately after the last move to complete the fling
+                mainThreadHandler.postDelayed(() -> {
+                    try {
+                        my.app.permata.auto.MirrorDisplay currentMd = my.app.permata.auto.MirrorDisplay.get();
+                        if (currentMd != null) {
+                            currentMd.motionEvent(startTime, android.os.SystemClock.uptimeMillis(), MotionEvent.ACTION_UP, actionX, yEnd);
+                        }
+                    } catch (Exception e) {}
+                }, flingDuration + 5);
+            }
+        } catch (Exception e) {
+            Log.e("KeyEventHandler", "[ROUTING_ERROR] Mirror payload failed.", e);
+        }
     }
 
     private static WebView scanFragmentsForWebView(ActivityFragment activeFragment) {
