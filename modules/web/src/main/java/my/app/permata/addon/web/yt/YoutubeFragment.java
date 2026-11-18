@@ -13,7 +13,6 @@ import java.util.Arrays;
 import java.util.HashSet;
 import java.util.Set;
 
-import my.app.permata.BuildConfig;
 import my.app.permata.addon.AddonManager;
 import my.app.permata.addon.web.PermataChromeClient;
 import my.app.permata.addon.web.PermataWebView;
@@ -27,6 +26,7 @@ import my.app.permata.media.service.MediaSessionCallback;
 import my.app.permata.ui.activity.MainActivityDelegate;
 import my.app.permata.ui.view.VideoView;
 import my.app.utils.function.LongSupplier;
+import my.app.utils.log.Log;
 import my.app.utils.pref.PreferenceStore;
 import my.app.utils.pref.PreferenceStore.Pref;
 import my.app.utils.pref.SharedPreferenceStore;
@@ -59,17 +59,11 @@ public class YoutubeFragment extends WebBrowserFragment implements PermataServic
 		YoutubeAddon addon = AddonManager.get().getAddon(YoutubeAddon.class);
 		if (addon == null) return;
 
-		String url;
-		boolean pause;
-
-		if (state != null) {
-			url = state.getString("url", DEFAULT_URL);
-			pause = state.getBoolean("pause", false);
-		} else {
-			url = DEFAULT_URL;
-			pause = false;
-		}
-
+		String url = (state != null) ? state.getString("url", DEFAULT_URL) : DEFAULT_URL;
+		boolean pause = (state != null) && state.getBoolean("pause", false);
+		PreferenceStore ps = addon.getPreferenceStore();
+		long pos = ps.getLongPref(RESUME_POS);
+		ps.removePref(RESUME_POS);
 		MainActivityDelegate.getActivityDelegate(view.getContext()).onSuccess(a -> {
 			YoutubeWebView webView = a.findViewById(R.id.ytWebView);
 			VideoView videoView = a.findViewById(R.id.ytVideoView);
@@ -77,18 +71,15 @@ public class YoutubeFragment extends WebBrowserFragment implements PermataServic
 			YoutubeChromeClient chromeClient = new YoutubeChromeClient(webView, videoView);
 			webView.init(addon, webClient, chromeClient);
 			registerListeners(a);
+			YoutubeWebView.Video v = (state != null) ? new YoutubeWebView.Video(url, pos, !pause) :
+					a.isCarActivity() ? YoutubeWebView.takeOverVideo(a.getMediaSessionCallback(), webView) : null;
+			if ((v == null) && (state == null)) {
+				// Fresh start, e.g. the process was killed after Android Auto disconnected
+				v = addon.getLastVideo();
+				if (v != null) Log.i("Resuming the last video: ", v.url());
+			}
+			YoutubeWebView.Video video = v;
 			webView.loadUrl(DEFAULT_URL);
-			if (!DEFAULT_URL.equals(url)) a.post(() -> webView.loadUrl(url));
-			a.postDelayed(() -> {
-				PreferenceStore ps = addon.getPreferenceStore();
-				long pos = ps.getLongPref(RESUME_POS);
-				ps.removePref(RESUME_POS);
-				MediaSessionCallback cb = a.getMediaSessionCallback();
-				if (cb.getEngine() instanceof YoutubeMediaEngine) {
-					if (pos > 0L) cb.onSeekTo(pos);
-					if (pause) cb.onPause();
-				}
-			}, 3000L);
 		});
 	}
 
@@ -133,7 +124,7 @@ public class YoutubeFragment extends WebBrowserFragment implements PermataServic
 
 	@Override
 	public void onPause() {
-		if (!BuildConfig.AUTO) {
+		if ((getAddon() instanceof YoutubeAddon addon) && addon.pauseOnLeave()) {
 			MainActivityDelegate.getActivityDelegate(getContext()).onSuccess(a -> {
 				PermataServiceUiBinder b = a.getMediaServiceBinder();
 				if (YoutubeMediaEngine.isYoutubeItem(b.getCurrentItem()) && b.isPlaying()) {
@@ -150,7 +141,7 @@ public class YoutubeFragment extends WebBrowserFragment implements PermataServic
 	@Override
 	public void onResume() {
 		super.onResume();
-		if (BuildConfig.AUTO || !playOnResume) return;
+		if (!playOnResume) return;
 		playOnResume = false;
 		MainActivityDelegate.getActivityDelegate(getContext()).onSuccess(a -> {
 			PermataServiceUiBinder b = a.getMediaServiceBinder();
@@ -177,7 +168,8 @@ public class YoutubeFragment extends WebBrowserFragment implements PermataServic
 			PermataChromeClient chrome = v.getWebChromeClient();
 			if (chrome == null) return;
 
-			if (!DEFAULT_URLS.contains(getUrl())) chrome.enterFullScreen();
+			// Only while on screen: off screen, full screen would hide the page and pause the video
+			if (isResumed() && !DEFAULT_URLS.contains(getUrl())) chrome.enterFullScreen();
 		} else if (YoutubeMediaEngine.isYoutubeItem(oldItem)) {
 			PermataWebView v = getWebView();
 			if (v == null) return;
