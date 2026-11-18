@@ -74,6 +74,10 @@ public class UniversalMediaBridge {
 
         Log.i("[JavaBridge]", TAG + ": Universal HTML5 Media PLAY detected.");
         mainHandler.removeCallbacks(focusReleaseRunnable);
+        
+        // [FIFO SURGERY] Web Browser takes the Crown
+        my.app.permata.PermataApplication.setMediaCrown(my.app.permata.PermataApplication.CROWN_WEB);
+        
         mainHandler.post(this::stealAudioFocus);
     }
 
