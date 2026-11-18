@@ -15,12 +15,18 @@ public class YoutubeJsInterface extends PermataJsInterface {
 	public static final int JS_VIDEO_PAUSED = JS_LAST + 3;
 	public static final int JS_VIDEO_ENDED = JS_LAST + 4;
 	public static final int JS_VIDEO_QUALITIES = JS_LAST + 5;
+	public static final int JS_FULL_SCREEN = JS_LAST + 6;
+	public static final int JS_VIDEO_PROGRESS = JS_LAST + 7;
 	private final YoutubeMediaEngine engine;
 	private Promise<String> result;
 
 	public YoutubeJsInterface(PermataWebView webView, YoutubeMediaEngine engine) {
 		super(webView);
 		this.engine = engine;
+	}
+
+	void pageRemoved() {
+		engine.pageRemoved();
 	}
 
 	Promise<String> getResultPromise() {
@@ -43,15 +49,36 @@ public class YoutubeJsInterface extends PermataJsInterface {
 				break;
 			case JS_VIDEO_ENDED:
 				Log.d("Video ended");
+				getYoutubeWebView().getAddon().clearLastVideo(data);
 				engine.ended();
+				break;
+			case JS_VIDEO_PROGRESS:
+				saveProgress(data);
 				break;
 			case JS_VIDEO_QUALITIES:
 				Log.d("Video qualities: ", data);
 				setResult(data);
 				break;
+			case JS_FULL_SCREEN:
+				((YoutubeWebView) getWebView()).videoFullScreen = "VIDEO".equals(data);
+				break;
 			default:
 				super.handleEvent(event, data);
 		}
+	}
+
+	private YoutubeWebView getYoutubeWebView() {
+		return (YoutubeWebView) getWebView();
+	}
+
+	// data: "<position in seconds>|<video url>"
+	private void saveProgress(String data) {
+		YoutubeUrls.Progress p = YoutubeUrls.parseProgress(data);
+		if (p == null) {
+			Log.e("Invalid video progress: ", data);
+			return;
+		}
+		getYoutubeWebView().getAddon().saveLastVideo(p.url(), p.sec());
 	}
 
 	private void setResult(String data) {
