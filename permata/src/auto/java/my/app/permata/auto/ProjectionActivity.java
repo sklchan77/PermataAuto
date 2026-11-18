@@ -93,10 +93,31 @@ public class ProjectionActivity extends ActivityBase {
 
         // [FIFO SURGERY] Suppress Phantom Wakeups
         // If the car is active, and this activity was woken up in the background (e.g., by an unmute intent), close it instantly.
-        if (PermataApplication.get().isConnectedToAuto() && !PermataApplication.get().isAppInForeground()) {
-            Log.w("[LIFECYCLE_TELEMETRY] Suppressing Phantom Mirror Wakeup while Android Auto is active.");
-            finishAndRemoveTask();
-            return;
+        // FIX: ActivityManager task visibility check.
+        if (PermataApplication.get().isConnectedToAuto()) {
+            boolean isVisible = false;
+            try {
+                android.app.ActivityManager am = (android.app.ActivityManager) getSystemService(android.content.Context.ACTIVITY_SERVICE);
+                if (am != null) {
+                    java.util.List<android.app.ActivityManager.RunningAppProcessInfo> processes = am.getRunningAppProcesses();
+                    if (processes != null) {
+                        for (android.app.ActivityManager.RunningAppProcessInfo processInfo : processes) {
+                            if (processInfo.processName.equals(getPackageName())) {
+                                if (processInfo.importance == android.app.ActivityManager.RunningAppProcessInfo.IMPORTANCE_FOREGROUND) {
+                                    isVisible = true;
+                                }
+                                break;
+                            }
+                        }
+                    }
+                }
+            } catch (Exception ignored) {}
+            
+            if (!isVisible) {
+                Log.w("[LIFECYCLE_TELEMETRY] Suppressing Phantom Mirror Wakeup while Android Auto is active.");
+                finishAndRemoveTask();
+                return;
+            }
         }
 
 		starting = true;
