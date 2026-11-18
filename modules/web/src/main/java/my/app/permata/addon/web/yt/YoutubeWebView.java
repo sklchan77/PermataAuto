@@ -2,12 +2,12 @@ package my.app.permata.addon.web.yt;
 
 import static my.app.permata.addon.web.yt.YoutubeJsInterface.JS_ERR;
 import static my.app.permata.addon.web.yt.YoutubeJsInterface.JS_EVENT;
-import static me.aap.permata.addon.web.yt.YoutubeJsInterface.JS_FULL_SCREEN;
+import static my.app.permata.addon.web.yt.YoutubeJsInterface.JS_FULL_SCREEN;
 import static my.app.permata.addon.web.yt.YoutubeJsInterface.JS_VIDEO_ENDED;
 import static my.app.permata.addon.web.yt.YoutubeJsInterface.JS_VIDEO_FOUND;
 import static my.app.permata.addon.web.yt.YoutubeJsInterface.JS_VIDEO_PAUSED;
 import static my.app.permata.addon.web.yt.YoutubeJsInterface.JS_VIDEO_PLAYING;
-import static me.app.permata.addon.web.yt.YoutubeJsInterface.JS_VIDEO_PROGRESS;
+import static my.app.permata.addon.web.yt.YoutubeJsInterface.JS_VIDEO_PROGRESS;
 import static my.app.permata.addon.web.yt.YoutubeJsInterface.JS_VIDEO_QUALITIES;
 
 import android.content.Context;
