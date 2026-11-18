@@ -261,7 +261,15 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 			try {
 				session.setPlaybackState(new PlaybackStateCompat.Builder().setState(PlaybackStateCompat.STATE_NONE, 0, 0.0f).build());
 				session.setActive(false);
-				session.release();
+				
+				// [SURGICAL FIX]: Ghost Session Bypass
+				// If the car is still physically connected, DO NOT release the session. 
+				// This prevents the OS from routing steering wheel clicks into a black hole.
+				if (!isCarOrBluetoothActive()) {
+					session.release();
+				} else {
+					Log.w("[ABSOLUTE_ZERO] Ghost Session Bypass: Car is still connected. Intentionally leaking MediaSession to protect OS routing.");
+				}
 			} catch (Exception ignored) {}
 			session = null;
 		}
