@@ -338,12 +338,13 @@ public class KeyEventHandler {
                 lastGlobalActionTime.set(currentUptime);
                 boolean isNext = (code == KeyEvent.KEYCODE_MEDIA_NEXT);
 
-                // === [SMART CROWN CORRECTION & NATIVE DETECTION] ===
+                boolean isMirroring = PermataApplication.get().isMirroringMode();
                 String activePkg = AccessibilityEventDispatcherService.getLastActivePackage();
                 boolean isPermata = activePkg != null && activePkg.startsWith("my.app.permata");
+
                 int currentCrown = PermataApplication.getMediaCrown();
                 
-                // [SURGERY] Reclaim the Crown for IPTV when returning to Permata
+                // === [SMART CROWN CORRECTION] ===
                 if (isPermata) {
                     if (currentCrown == PermataApplication.CROWN_NATIVE) {
                         Log.i("KeyEventHandler", "[CROWN_CORRECTION] Returned to Permata. Reclaiming Crown for IPTV.");
@@ -351,7 +352,6 @@ public class KeyEventHandler {
                         currentCrown = PermataApplication.CROWN_IPTV;
                     }
                 } 
-                // [SURGERY] Allow Scroller apps (like TikTok) to steal the Crown, EVEN while mirroring!
                 else if (activePkg != null && isScrollerPackage(activePkg)) {
                     if (currentCrown != PermataApplication.CROWN_NATIVE) {
                         Log.i("KeyEventHandler", "[CROWN_CORRECTION] Verified Scroller active. Native takes the Crown.");
@@ -359,8 +359,6 @@ public class KeyEventHandler {
                         currentCrown = PermataApplication.CROWN_NATIVE;
                     }
                 }
-                
-                boolean isMirroring = PermataApplication.get().isMirroringMode();
 
                 // === [STRICT FIFO ROUTING: THE SNIPER RIFLE] ===
                 Log.i("KeyEventHandler", "[ROUTING_TELEMETRY] Executing FIFO Route. Target: " + 
@@ -370,12 +368,14 @@ public class KeyEventHandler {
                 if (currentCrown == PermataApplication.CROWN_WEB) {
                     mainThreadHandler.post(() -> {
                         try {
+                            boolean webHandled = false;
                             if (finalTargetActivity != null) {
                                 WebView resolvedWebView = scanFragmentsForWebView(finalTargetActivity.getActiveFragment());
                                 if (resolvedWebView == null || !resolvedWebView.isShown()) {
                                     resolvedWebView = findTopVisibleWebView(finalTargetActivity);
                                 }
                                 if (resolvedWebView != null && resolvedWebView.isShown()) {
+                                    webHandled = true;
                                     String currentUrl = resolvedWebView.getUrl();
                                     String host = "unknown";
                                     boolean isMediaHost = false;
@@ -396,6 +396,21 @@ public class KeyEventHandler {
                                     }
                                     View touchTargetView = isTikTok ? resolvedWebView : findTopmostTouchTarget(finalTargetActivity, resolvedWebView);
                                     smartScrollWebView(resolvedWebView, touchTargetView, !isNext, "[Host: " + host + "] ", isMediaHost, isDouyin, isTikTok);
+                                }
+                            }
+                            
+                            // [SURGERY] Ghost Web Crown Fix: Reclaim for IPTV if browser was closed
+                            if (!webHandled) {
+                                Log.i("KeyEventHandler", "[CROWN_CORRECTION] Ghost Web Crown Detected! Reclaiming for IPTV.");
+                                PermataApplication.setMediaCrown(PermataApplication.CROWN_IPTV);
+                                
+                                Key k = Key.get(code);
+                                if (k != null && k.getClickAction() != null && k.getClickAction() != Action.NONE) {
+                                    performAction(k.getClickAction(), cb, finalTargetActivity, currentUptime);
+                                } else if (defaultHandler != null) {
+                                    defaultHandler.apply(code, event);
+                                    KeyEvent upEvent = new KeyEvent(event.getDownTime(), currentUptime + 10, KeyEvent.ACTION_UP, code, 0);
+                                    defaultHandler.apply(code, upEvent);
                                 }
                             }
                         } catch (Exception e) {
