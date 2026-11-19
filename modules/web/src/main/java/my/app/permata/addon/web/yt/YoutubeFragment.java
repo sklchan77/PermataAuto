@@ -135,6 +135,19 @@ public class YoutubeFragment extends WebBrowserFragment implements PermataServic
 				}
 			});
 		}
+
+		// [SURGERY] HTML5 Assassin: Forcibly pause all active media tags in the background 
+		// before Android freezes the Chromium engine. This releases Audio Focus for other apps.
+		PermataWebView v = getWebView();
+		if (v != null) {
+			v.evaluateJavascript(
+				"(function() { " +
+				"  document.querySelectorAll('video, audio').forEach(function(media) { " +
+				"    if (!media.paused) media.pause(); " +
+				"  }); " +
+				"})();", null);
+		}
+
 		super.onPause();
 	}
 
