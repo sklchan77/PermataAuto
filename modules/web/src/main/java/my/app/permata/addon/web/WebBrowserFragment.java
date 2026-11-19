@@ -120,16 +120,28 @@ public class WebBrowserFragment extends MainActivityFragment
 	@Override
 	public void onPause() {
 		super.onPause();
-		if (!BuildConfig.AUTO) return;
+		
 		PermataWebView v = getWebView();
-		if (v == null) return;
-		PermataChromeClient chrome = v.getWebChromeClient();
-		if (chrome != null) {
-			if (chrome.isFullScreen()) {
-				chrome.exitFullScreen();
-				fullScreenOnResume = true;
-			} else {
-				fullScreenOnResume = false;
+		if (v != null) {
+			// [SURGERY] HTML5 Assassin: Forcibly pause all active media tags in the background 
+			// before Android freezes the Chromium engine. This releases Audio Focus so YouTube can speak.
+			v.evaluateJavascript(
+				"(function() { " +
+				"  document.querySelectorAll('video, audio').forEach(function(media) { " +
+				"    if (!media.paused) media.pause(); " +
+				"  }); " +
+				"})();", null);
+
+			if (BuildConfig.AUTO) {
+				PermataChromeClient chrome = v.getWebChromeClient();
+				if (chrome != null) {
+					if (chrome.isFullScreen()) {
+						chrome.exitFullScreen();
+						fullScreenOnResume = true;
+					} else {
+						fullScreenOnResume = false;
+					}
+				}
 			}
 		}
 	}
