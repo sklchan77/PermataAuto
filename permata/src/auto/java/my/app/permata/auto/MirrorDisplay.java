@@ -235,11 +235,6 @@ public class MirrorDisplay {
 		}
 	}
 
-	// [FIX] Helper to safely determine if we are injecting into full-screen (Accessibility)
-	private boolean isUsingAbsoluteMatrix() {
-		return AccessibilityEventDispatcherService.getWindowCount() > 1;
-	}
-
 	public void tap(float x, float y) {
 		lastInjectedTouchTime = uptimeMillis();
 		var m = metrics();
@@ -248,11 +243,7 @@ public class MirrorDisplay {
 		touchExecutor.execute(() -> {
 			var d = dispatcher();
 			if (d != null) {
-                if (isUsingAbsoluteMatrix()) {
-                    d.tap((x * m.scale) + m.absoluteOffsetX, (y * m.scale) + m.absoluteOffsetY);
-                } else {
-				    d.tap((x - m.x) * m.scale, (y - m.y) * m.scale);
-                }
+				d.tap((x - m.x) * m.scale, (y - m.y) * m.scale);
 			}
 		});
 	}
@@ -265,11 +256,7 @@ public class MirrorDisplay {
 		touchExecutor.execute(() -> {
 			var d = dispatcher();
 			if (d != null) {
-                if (isUsingAbsoluteMatrix()) {
-                    d.scale((x * m.scale) + m.absoluteOffsetX, (y * m.scale) + m.absoluteOffsetY, zoomIn ? scaleDiff : -scaleDiff);
-                } else {
-				    d.scale((x - m.x) * m.scale, (y - m.y) * m.scale, zoomIn ? scaleDiff : -scaleDiff);
-                }
+				d.scale((x - m.x) * m.scale, (y - m.y) * m.scale, zoomIn ? scaleDiff : -scaleDiff);
 			}
 		});
 	}
@@ -294,22 +281,13 @@ public class MirrorDisplay {
 				var m = metrics();
 				if (m == null) return false;
 
-                boolean useAbsoluteMatrix = isUsingAbsoluteMatrix();
-
 				for (int i = 0; i < cnt; i++) {
 					e.getPointerProperties(i, reusableProps[i]);
 					e.getPointerCoords(i, reusableCoords[i]);
 					reusableProps[i].id = 10 + i; 
 					reusableProps[i].toolType = MotionEvent.TOOL_TYPE_FINGER;
-					
-                    if (useAbsoluteMatrix) {
-                        reusableCoords[i].x = (e.getX(i) * m.scale) + m.absoluteOffsetX;
-                        reusableCoords[i].y = (e.getY(i) * m.scale) + m.absoluteOffsetY;
-                    } else {
-					    reusableCoords[i].x = (reusableCoords[i].x - m.x) * m.scale;
-					    reusableCoords[i].y = (reusableCoords[i].y - m.y) * m.scale;
-                    }
-                    
+					reusableCoords[i].x = (reusableCoords[i].x - m.x) * m.scale;
+					reusableCoords[i].y = (reusableCoords[i].y - m.y) * m.scale;
 					if (reusableCoords[i].pressure <= 0.01f) reusableCoords[i].pressure = 1.0f;
 					if (reusableCoords[i].size <= 0.01f) reusableCoords[i].size = 1.0f;
 				}
@@ -353,15 +331,8 @@ public class MirrorDisplay {
 				reusableProps[0].toolType = MotionEvent.TOOL_TYPE_FINGER;
 				
 				reusableCoords[0].clear();
-                
-                if (isUsingAbsoluteMatrix()) {
-                    reusableCoords[0].x = (x * m.scale) + m.absoluteOffsetX;
-                    reusableCoords[0].y = (y * m.scale) + m.absoluteOffsetY;
-                } else {
-				    reusableCoords[0].x = (x - m.x) * m.scale;
-				    reusableCoords[0].y = (y - m.y) * m.scale;
-                }
-                
+				reusableCoords[0].x = (x - m.x) * m.scale;
+				reusableCoords[0].y = (y - m.y) * m.scale;
 				reusableCoords[0].pressure = 1.0f;
 				reusableCoords[0].size = 1.0f;
 				
@@ -790,9 +761,6 @@ public class MirrorDisplay {
 		final float sh; 
 		final float dw; 
 		final float dh; 
-        
-        final float absoluteOffsetX;
-        final float absoluteOffsetY;
 
 		Metrics(float dw, float dh, float sw, float sh) {
 			this.sw = sw;
@@ -805,15 +773,11 @@ public class MirrorDisplay {
 			if (scaleH <= sh) {
 				x = 0f;
 				y = (sh - scaleH) / 2f;
-                absoluteOffsetX = 0f;
-                absoluteOffsetY = (dh - (sh * scale)) / 2f; 
 				assert y >= 0f;
 			} else {
 				scale = dh / sh;
 				y = 0f;
 				x = (sw - (dw / scale)) / 2;
-                absoluteOffsetX = (dw - (sw * scale)) / 2f; 
-                absoluteOffsetY = 0f;
 				assert x >= 0f;
 			}
 			this.scale = scale;
