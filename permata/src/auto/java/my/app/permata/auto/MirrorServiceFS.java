@@ -7,12 +7,12 @@ import static android.view.MotionEvent.ACTION_UP;
 import static androidx.core.graphics.drawable.IconCompat.createWithResource;
 
 import android.content.Intent;
-import android.view.MotionEvent;
 
 import androidx.annotation.NonNull;
 import androidx.car.app.AppManager;
 import androidx.car.app.CarAppService;
 import androidx.car.app.CarContext;
+import androidx.car.app.CarToast;
 import androidx.car.app.Screen;
 import androidx.car.app.Session;
 import androidx.car.app.SessionInfo;
@@ -43,30 +43,9 @@ public class MirrorServiceFS extends CarAppService {
 
 	@Override
 	public void onDestroy() {
-		if (md != null) {
-			md.release();
-			md = null;
-		}
-		sc = null; 
+		md.release();
+		md = null;
 		super.onDestroy();
-	}
-
-	@Override
-	public void onTaskRemoved(Intent rootIntent) {
-		super.onTaskRemoved(rootIntent);
-
-		if (PermataApplication.get().isMirroringMode()) {
-			MirrorDisplay.close();
-		} else if (PermataApplication.get().isConnectedToAuto()) {
-			return;
-		}
-		
-		if (md != null) {
-			md.release();
-			md = null;
-		}
-		sc = null;
-		stopSelf();
 	}
 
 	@NonNull
@@ -77,6 +56,11 @@ public class MirrorServiceFS extends CarAppService {
 			@Override
 			public Screen onCreateScreen(@NonNull Intent intent) {
 				return new MirrorScreen(getCarContext());
+			}
+
+			@Override
+			public void onNewIntent(@NonNull Intent intent) {
+				super.onNewIntent(intent);
 			}
 		};
 	}
@@ -97,129 +81,95 @@ public class MirrorServiceFS extends CarAppService {
 		private long scrollMoveTime;
 		private Cancellable scrollUp;
 
-		// [NEW] Tap-to-Target Memory for dragging balloons
-		private float lastFocusX = -1f;
-		private float lastFocusY = -1f;
+		// [NEW] The Workaround Toggle
+		private boolean isGrabMode = false;
 
 		MirrorScreen(@NonNull CarContext ctx) {
 			super(ctx);
 			ctx.getCarService(AppManager.class).setSurfaceCallback(this);
+			Log.i("MirrorScreen created. API level: ", ctx.getCarAppApiLevel());
 		}
 
 		@Override
-		public void onSurfaceAvailable(@NonNull SurfaceContainer localSc) {
-			if (localSc.getSurface() == null) return;
-			MirrorServiceFS.sc = localSc;
-			
-			if (md == null || md.isDestroyed()) {
-				if (md != null) md.release();
-				md = MirrorDisplay.get();
-			}
-			
-			if (md != null) md.setSurface(localSc);
-			
-			scrollStartX = localSc.getWidth() / 2f;
-			scrollStartY = localSc.getHeight() / 2f;
+		public void onSurfaceAvailable(@NonNull SurfaceContainer sc) {
+			if (sc.getSurface() == null) return;
+			MirrorServiceFS.sc = sc;
+			md.setSurface(sc);
+			scrollStartX = sc.getWidth() / 2f;
+			scrollStartY = sc.getHeight() / 2f;
 		}
 
 		@Override
-		public void onSurfaceDestroyed(@NonNull SurfaceContainer localSc) {
-			if (scrollUp != null) {
-				scrollUp.cancel();
-				scrollUp = null;
-			}
-			if (md != null) {
-				md.releaseSurface(localSc);
-			}
+		public void onSurfaceDestroyed(@NonNull SurfaceContainer sc) {
+			md.releaseSurface(MirrorServiceFS.sc);
 			MirrorServiceFS.sc = null;
 		}
 
 		@Override
 		public void onClick(float x, float y) {
-			Log.i("[AA_GESTURE_TELEMETRY] onClick Fired (ACTION_UP Release) at X: " + x + " Y: " + y);
-			
-			// Update the Tap-to-Target memory crosshair
-			lastFocusX = x;
-			lastFocusY = y;
-			
+			// [NEW] If Grab Mode is active, swallow the click to prevent opening the bubble, 
+			// and save the coordinates for the upcoming drag.
+			if (isGrabMode) {
+				scrollStartX = x;
+				scrollStartY = y;
+				CarToast.makeText(getCarContext(), "Target Locked. Drag anywhere.", CarToast.LENGTH_SHORT).show();
+				return;
+			}
+
 			if (scrollUp != null) {
 				scrollUp.cancel();
 				scrollUp = null;
 			}
-			if (md() != null) md().tap(x, y);
+			md().tap(x, y);
 		}
 
 		@Override
 		public void onScroll(float distanceX, float distanceY) {
-			var mDisp = md();
-			if (mDisp == null || MirrorServiceFS.sc == null) return;
-			
+			var md = md();
 			var time = uptimeMillis();
 			scrollMoveTime = time;
 			
 			if (scrollUp == null) {
-				// [NEW] Use Tap-to-Target coordinates if available, otherwise default to dead center.
-				scrollStartX = (lastFocusX >= 0) ? lastFocusX : (MirrorServiceFS.sc.getWidth() / 2f);
-				scrollStartY = (lastFocusY >= 0) ? lastFocusY : (MirrorServiceFS.sc.getHeight() / 2f);
+				// [NEW] If not in grab mode, default to the center of the screen
+				if (!isGrabMode) {
+					scrollStartX = sc.getWidth() / 2f;
+					scrollStartY = sc.getHeight() / 2f;
+				}
 				
-				Log.i("[AA_GESTURE_TELEMETRY] onScroll Start. OS withheld coordinates. Using Memory Target -> X: " + scrollStartX + " Y: " + scrollStartY);
-
 				scrollX = scrollStartX;
 				scrollY = scrollStartY;
 				
-				if (!mDisp.motionEvent(time, time, ACTION_DOWN, scrollX, scrollY)) {
-					return;
-				}
+				if (!md.motionEvent(time, time, ACTION_DOWN, scrollX, scrollY)) return;
 				scrollDownTime = time;
 				scheduleScrollUp(500);
 			}
 			
 			scrollX -= distanceX;
 			scrollY -= distanceY;
-			mDisp.motionEvent(scrollDownTime, time, ACTION_MOVE, scrollX, scrollY);
-			
-			if (scrollUp != null) {
-				scrollUp.cancel();
-				scheduleScrollUp(500);
-			}
+			md.motionEvent(scrollDownTime, time, ACTION_MOVE, scrollX, scrollY);
 		}
 
 		private void scheduleScrollUp(long delay) {
 			scrollUp = handler.schedule(() -> {
 				if (scrollUp == null) return;
-				var mDisp = md();
-				if (mDisp == null) return;
-
 				var time = uptimeMillis();
 				var end = scrollMoveTime + delay;
 				if (end > time) {
 					scheduleScrollUp(end - time);
 				} else {
 					scrollUp = null;
-					Log.i("[AA_GESTURE_TELEMETRY] onScroll End. Injecting ACTION_UP at X: " + scrollX + " Y: " + scrollY);
-					mDisp.motionEvent(scrollDownTime, time, ACTION_UP, scrollX, scrollY);
+					md().motionEvent(scrollDownTime, time, ACTION_UP, scrollX, scrollY);
+					// [NEW] Reset Grab Mode after the drag is completely finished
+					isGrabMode = false;
 				}
 			}, delay);
 		}
 
 		@Override
 		public void onScale(float focusX, float focusY, float scaleFactor) {
-			Log.i("[AA_GESTURE_TELEMETRY] onScale Pinch Detected! Injecting exact coordinates to memory -> X: " + focusX + " Y: " + focusY);
-			// Memory update on dual-finger pinch
-			lastFocusX = focusX;
-			lastFocusY = focusY;
 			scrollStartX = focusX;
 			scrollStartY = focusY;
-			if (md() != null) md().scale(focusX, focusY, scaleFactor > 1f);
-		}
-
-		// [SURGERY] Restored modern API raw touch capture
-		@Override
-		public void onTouchEvent(@NonNull MotionEvent event) {
-			var mDisp = md();
-			if (mDisp != null) {
-				mDisp.motionEvent(event);
-			}
+			md().scale(focusX, focusY, scaleFactor > 1f);
 		}
 
 		@NonNull
@@ -240,10 +190,24 @@ public class MirrorServiceFS extends CarAppService {
 			var exitButton = new Action.Builder().setIcon(
 							new CarIcon.Builder(createWithResource(getCarContext(), R.drawable.shutdown)).setTint(androidx.car.app.model.CarColor.DEFAULT).build())
 					.setOnClickListener(MirrorActivity::onExitButtonClick).build();
+
+			// [NEW] The Grab Tool Button
+			var grabButton = new Action.Builder().setIcon(
+							new CarIcon.Builder(createWithResource(getCarContext(), R.drawable.cursor))
+							.setTint(androidx.car.app.model.CarColor.DEFAULT).build())
+					.setOnClickListener(() -> {
+						isGrabMode = true;
+						CarToast.makeText(getCarContext(), "Grab Mode ON: Tap bubble to lock.", CarToast.LENGTH_SHORT).show();
+					}).build();
 			
 			return new NavigationTemplate.Builder()
 					.setPanModeListener(isPanningMode -> {})
-					.setMapActionStrip(new ActionStrip.Builder().addAction(Action.PAN).build())
+					// 1. Interactive Floating Tools (Renders on the right edge)
+					.setMapActionStrip(new ActionStrip.Builder()
+							.addAction(grabButton)
+							.addAction(Action.PAN)
+							.build())
+					// 2. Primary Navigation Bar (Original 4 buttons remain untouched)
 					.setActionStrip(new ActionStrip.Builder()
 							.addAction(homeButton)
 							.addAction(recentButton) 
@@ -254,8 +218,7 @@ public class MirrorServiceFS extends CarAppService {
 		}
 
 		private MirrorDisplay md() {
-			if (md == null || md.isDestroyed()) md = MirrorDisplay.get();
-			if (md != null && sc != null) md.setSurface(sc);
+			if (sc != null) md.setSurface(sc);
 			return md;
 		}
 	}
