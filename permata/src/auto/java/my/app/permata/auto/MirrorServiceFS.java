@@ -135,6 +135,8 @@ public class MirrorServiceFS extends CarAppService {
 
 		@Override
 		public void onClick(float x, float y) {
+			Log.i("[AA_GESTURE_TELEMETRY] onClick Fired (ACTION_UP Release) at X: " + x + " Y: " + y);
+			
 			// Update the Tap-to-Target memory crosshair
 			lastFocusX = x;
 			lastFocusY = y;
@@ -159,6 +161,8 @@ public class MirrorServiceFS extends CarAppService {
 				scrollStartX = (lastFocusX >= 0) ? lastFocusX : (MirrorServiceFS.sc.getWidth() / 2f);
 				scrollStartY = (lastFocusY >= 0) ? lastFocusY : (MirrorServiceFS.sc.getHeight() / 2f);
 				
+				Log.i("[AA_GESTURE_TELEMETRY] onScroll Start. OS withheld coordinates. Using Memory Target -> X: " + scrollStartX + " Y: " + scrollStartY);
+
 				scrollX = scrollStartX;
 				scrollY = scrollStartY;
 				
@@ -191,6 +195,7 @@ public class MirrorServiceFS extends CarAppService {
 					scheduleScrollUp(end - time);
 				} else {
 					scrollUp = null;
+					Log.i("[AA_GESTURE_TELEMETRY] onScroll End. Injecting ACTION_UP at X: " + scrollX + " Y: " + scrollY);
 					mDisp.motionEvent(scrollDownTime, time, ACTION_UP, scrollX, scrollY);
 				}
 			}, delay);
@@ -198,6 +203,7 @@ public class MirrorServiceFS extends CarAppService {
 
 		@Override
 		public void onScale(float focusX, float focusY, float scaleFactor) {
+			Log.i("[AA_GESTURE_TELEMETRY] onScale Pinch Detected! Injecting exact coordinates to memory -> X: " + focusX + " Y: " + focusY);
 			// Memory update on dual-finger pinch
 			lastFocusX = focusX;
 			lastFocusY = focusY;
