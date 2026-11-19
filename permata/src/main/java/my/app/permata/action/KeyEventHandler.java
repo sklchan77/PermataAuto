@@ -539,11 +539,17 @@ public class KeyEventHandler {
         }
     }
 
-    private static WebView scanFragmentsForWebView(ActivityFragment activeFragment) {
+private static WebView scanFragmentsForWebView(ActivityFragment activeFragment) {
+        if (activeFragment == null) return null;
         try {
             Class<?> fragClass = activeFragment.getClass();
+            // 1. Instantly skip known non-web fragments to avoid reflection overhead
+            String className = fragClass.getSimpleName();
+            if (className.equals("FavoritesFragment") || className.equals("FoldersFragment") || className.equals("SettingsFragment")) {
+                return null;
+            }
+
             Method getWebViewMethod = webViewMethodCache.get(fragClass);
-            
             if (getWebViewMethod == null) {
                 getWebViewMethod = fragClass.getMethod("getWebView");
                 webViewMethodCache.put(fragClass, getWebViewMethod);
@@ -551,6 +557,8 @@ public class KeyEventHandler {
             
             Object result = getWebViewMethod.invoke(activeFragment);
             if (result instanceof WebView) return (WebView) result;
+        } catch (NoSuchMethodException ignored) {
+            // Silently ignore if the fragment simply doesn't have a webview
         } catch (Exception e) {
             Log.e(e, "[REACTION] Discovery: Failed to scan for WebView.");
         }
