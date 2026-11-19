@@ -60,7 +60,6 @@ public class KeyEventHandler {
     
     private static final AtomicBoolean isHardwareSwiping = new AtomicBoolean(false);
     
-    // MERGED: Updated arrays from KeyEventHandler-B
     // GROUP 1: The Bullies. These apps ignore BT keys and steal the media session.
     private static final Set<String> STUBBORN_SCROLLERS = new HashSet<>(Arrays.asList(
             "com.zhiliaoapp.musically", // TikTok Global
@@ -339,41 +338,35 @@ public class KeyEventHandler {
                 lastGlobalActionTime.set(currentUptime);
                 boolean isNext = (code == KeyEvent.KEYCODE_MEDIA_NEXT);
 
-                // === 1. LAYER 2 BT LOOPHOLE ===
                 boolean isMirroring = PermataApplication.get().isMirroringMode();
                 String activePkg = AccessibilityEventDispatcherService.getLastActivePackage();
+                boolean isPermata = activePkg != null && activePkg.startsWith("my.app.permata");
 
-                if (!isMirroring && activePkg != null && !activePkg.startsWith("my.app.permata")) {
-                    if (isStubbornScroller(activePkg)) {
-                        Log.i("KeyEventHandler", "[BT_LOOPHOLE] Intercepted! Active package '" + activePkg + "' is a STUBBORN Scroller. Triggering Accessibility Swipe.");
+                int currentCrown = PermataApplication.getMediaCrown();
+                
+                // === [SMART CROWN CORRECTION] ===
+                // This is what prevents the Crown Lockout bug. It dynamically reclaims the crown 
+                // when returning to IPTV, and ensures non-Scroller apps don't steal the native crown.
+                if (isPermata) {
+                    if (currentCrown == PermataApplication.CROWN_NATIVE) {
+                        Log.i("KeyEventHandler", "[CROWN_CORRECTION] Returned to Permata. Reclaiming Crown for IPTV.");
+                        PermataApplication.setMediaCrown(PermataApplication.CROWN_IPTV);
+                        currentCrown = PermataApplication.CROWN_IPTV;
+                    }
+                } else if (activePkg != null && isScrollerPackage(activePkg)) {
+                    if (currentCrown != PermataApplication.CROWN_NATIVE) {
+                        Log.i("KeyEventHandler", "[CROWN_CORRECTION] Verified Scroller active. Native takes the Crown.");
                         PermataApplication.setMediaCrown(PermataApplication.CROWN_NATIVE);
-                        executeNativeAppSwipe(!isNext, activePkg);
-                        return true; 
-                    } else if (isNativeBtScroller(activePkg)) {
-                        Log.w("KeyEventHandler", "[BT_LOOPHOLE] Ad-Trap Detected! Native Scroller '" + activePkg + "' abandoned the steering wheel. Triggering Fallback Swipe.");
-                        PermataApplication.setMediaCrown(PermataApplication.CROWN_NATIVE);
-                        executeNativeAppSwipe(!isNext, activePkg);
-                        return true;
-                    } else {
-                        Log.i("KeyEventHandler", "[DETECTION] Native Passthrough: App '" + activePkg + "' is active. Yielding session to OS for native BT.");
-                        PermataApplication.setMediaCrown(PermataApplication.CROWN_NATIVE);
-                        if (defaultHandler != null) {
-                            defaultHandler.apply(code, event);
-                            KeyEvent upEvent = new KeyEvent(event.getDownTime(), currentUptime + 10, KeyEvent.ACTION_UP, code, 0);
-                            defaultHandler.apply(code, upEvent);
-                        }
-                        return true;
+                        currentCrown = PermataApplication.CROWN_NATIVE;
                     }
                 }
 
                 // === [STRICT FIFO ROUTING: THE SNIPER RIFLE] ===
-                int currentCrown = PermataApplication.getMediaCrown();
                 Log.i("KeyEventHandler", "[ROUTING_TELEMETRY] Executing FIFO Route. Target: " + 
                         (currentCrown == PermataApplication.CROWN_WEB ? "WEB" : 
                          currentCrown == PermataApplication.CROWN_NATIVE ? "NATIVE" : "IPTV"));
 
                 if (currentCrown == PermataApplication.CROWN_WEB) {
-                    // FIRE ONLY TO WEB BROWSER
                     mainThreadHandler.post(() -> {
                         try {
                             if (finalTargetActivity != null) {
@@ -410,27 +403,41 @@ public class KeyEventHandler {
                     });
                     
                     if (isMirroring) executeMirrorSwipe(!isNext, finalTargetActivity);
-                    return true; // STOP EXECUTION. Do not pass to IPTV.
+                    return true; // STOP EXECUTION
                 }
 
                 if (currentCrown == PermataApplication.CROWN_NATIVE) {
-                    // FIRE ONLY TO PHYSICAL PHONE (GOD MODE)
-                    try {
-                        if (activePkg != null && isScrollerPackage(activePkg)) {
-                            executeNativeAppSwipe(!isNext, activePkg);
+                    boolean handledByAccessibility = false;
+                    
+                    if (activePkg != null && isScrollerPackage(activePkg)) {
+                        Log.i("KeyEventHandler", "[NATIVE_ROUTE] Intercepted Scroller: " + activePkg);
+                        executeNativeAppSwipe(!isNext, activePkg);
+                        handledByAccessibility = true;
+                    } else if (activePkg == null && !isPermata) {
+                        // Safe fallback for edge case where OS drops the package name
+                        Log.i("KeyEventHandler", "[NATIVE_ROUTE] Null package bypass. Forcing Fallback Swipe.");
+                        executeNativeAppSwipe(!isNext, "unknown_native");
+                        handledByAccessibility = true;
+                    }
+
+                    if (!handledByAccessibility) {
+                        Log.i("KeyEventHandler", "[NATIVE_ROUTE] Native Passthrough to OS.");
+                        if (defaultHandler != null) {
+                            defaultHandler.apply(code, event);
+                            KeyEvent upEvent = new KeyEvent(event.getDownTime(), currentUptime + 10, KeyEvent.ACTION_UP, code, 0);
+                            defaultHandler.apply(code, upEvent);
                         }
-                    } catch (Exception e) {
-                        Log.e("KeyEventHandler", "[ROUTING_ERROR] God-Mode payload failed.", e);
                     }
                     
                     if (isMirroring) executeMirrorSwipe(!isNext, finalTargetActivity);
-                    return true; // STOP EXECUTION. Do not pass to IPTV.
+                    return true; // STOP EXECUTION
                 }
 
                 // IF WE REACH HERE, CROWN_IPTV IS ACTIVE. FIRE TO NATIVE MEDIA.
                 try {
                     Key k = Key.get(code);
                     if (k != null && k.getClickAction() != null && k.getClickAction() != Action.NONE) {
+                        Log.i("KeyEventHandler", "[IPTV_ROUTE] Firing mapped Permata Action.");
                         performAction(k.getClickAction(), cb, finalTargetActivity, currentUptime);
                     } else if (defaultHandler != null) {
                         defaultHandler.apply(code, event);
@@ -482,7 +489,7 @@ public class KeyEventHandler {
     private static void executeMirrorSwipe(boolean up, MainActivityDelegate finalTargetActivity) {
         try {
             my.app.permata.auto.MirrorDisplay md = my.app.permata.auto.MirrorDisplay.get();
-            if (md != null) {
+            if (md != null && !md.isDestroyed()) {
                 int width = 1000;
                 int height = 1000;
                 try {
@@ -493,7 +500,6 @@ public class KeyEventHandler {
                     }
                 } catch (Exception ignored) {}
 
-                // Keep the 20% safe span to prevent accidental UI touches
                 float actionX = width * 0.50f;
                 float centerY = height * 0.50f;
                 float span = height * 0.20f; 
@@ -503,10 +509,8 @@ public class KeyEventHandler {
 
                 final long startTime = android.os.SystemClock.uptimeMillis();
                 
-                // 1. Instant DOWN stroke
                 md.motionEvent(startTime, startTime, MotionEvent.ACTION_DOWN, actionX, yStart);
                 
-                // 2. High-Velocity Multi-Step MOVE (Simulates a fast 70ms flick)
                 final int stepCount = 5; 
                 final long flingDuration = 70; 
                 
@@ -517,18 +521,17 @@ public class KeyEventHandler {
                     mainThreadHandler.postDelayed(() -> {
                         try {
                             my.app.permata.auto.MirrorDisplay currentMd = my.app.permata.auto.MirrorDisplay.get();
-                            if (currentMd != null) {
+                            if (currentMd != null && !currentMd.isDestroyed()) {
                                 currentMd.motionEvent(startTime, android.os.SystemClock.uptimeMillis(), MotionEvent.ACTION_MOVE, actionX, currentY);
                             }
                         } catch (Exception ignored) {}
                     }, (long) (flingDuration * linearT));
                 }
                 
-                // 3. UP stroke immediately after the last move to complete the fling
                 mainThreadHandler.postDelayed(() -> {
                     try {
                         my.app.permata.auto.MirrorDisplay currentMd = my.app.permata.auto.MirrorDisplay.get();
-                        if (currentMd != null) {
+                        if (currentMd != null && !currentMd.isDestroyed()) {
                             currentMd.motionEvent(startTime, android.os.SystemClock.uptimeMillis(), MotionEvent.ACTION_UP, actionX, yEnd);
                         }
                     } catch (Exception e) {}
@@ -540,10 +543,16 @@ public class KeyEventHandler {
     }
 
     private static WebView scanFragmentsForWebView(ActivityFragment activeFragment) {
+        if (activeFragment == null) return null;
         try {
             Class<?> fragClass = activeFragment.getClass();
-            Method getWebViewMethod = webViewMethodCache.get(fragClass);
+            String className = fragClass.getSimpleName();
             
+            if (className.equals("FavoritesFragment") || className.equals("FoldersFragment") || className.equals("SettingsFragment")) {
+                return null;
+            }
+
+            Method getWebViewMethod = webViewMethodCache.get(fragClass);
             if (getWebViewMethod == null) {
                 getWebViewMethod = fragClass.getMethod("getWebView");
                 webViewMethodCache.put(fragClass, getWebViewMethod);
@@ -551,6 +560,7 @@ public class KeyEventHandler {
             
             Object result = getWebViewMethod.invoke(activeFragment);
             if (result instanceof WebView) return (WebView) result;
+        } catch (NoSuchMethodException ignored) {
         } catch (Exception e) {
             Log.e(e, "[REACTION] Discovery: Failed to scan for WebView.");
         }
