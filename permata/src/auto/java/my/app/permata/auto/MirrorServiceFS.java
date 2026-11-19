@@ -7,6 +7,7 @@ import static android.view.MotionEvent.ACTION_UP;
 import static androidx.core.graphics.drawable.IconCompat.createWithResource;
 
 import android.content.Intent;
+import android.view.MotionEvent;
 
 import androidx.annotation.NonNull;
 import androidx.car.app.AppManager;
@@ -210,6 +211,15 @@ public class MirrorServiceFS extends CarAppService {
 			scrollStartX = focusX;
 			scrollStartY = focusY;
 			if (md() != null) md().scale(focusX, focusY, scaleFactor > 1f);
+		}
+
+		// [SURGERY] Restored modern API raw touch capture
+		@Override
+		public void onTouchEvent(@NonNull MotionEvent event) {
+			var mDisp = md();
+			if (mDisp != null) {
+				mDisp.motionEvent(event);
+			}
 		}
 
 		@NonNull
