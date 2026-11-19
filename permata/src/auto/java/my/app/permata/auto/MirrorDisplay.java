@@ -235,6 +235,11 @@ public class MirrorDisplay {
 		}
 	}
 
+	// [FIX] Helper to safely determine if we are injecting into full-screen (Accessibility)
+	private boolean isUsingAbsoluteMatrix() {
+		return AccessibilityEventDispatcherService.getWindowCount() > 1;
+	}
+
 	public void tap(float x, float y) {
 		lastInjectedTouchTime = uptimeMillis();
 		var m = metrics();
@@ -243,8 +248,7 @@ public class MirrorDisplay {
 		touchExecutor.execute(() -> {
 			var d = dispatcher();
 			if (d != null) {
-                // [SURGERY] Check if using full-screen accessibility, use absolute matrix
-                if (d instanceof my.app.permata.auto.EventDispatcher.AccessibilityDispatcher) {
+                if (isUsingAbsoluteMatrix()) {
                     d.tap((x * m.scale) + m.absoluteOffsetX, (y * m.scale) + m.absoluteOffsetY);
                 } else {
 				    d.tap((x - m.x) * m.scale, (y - m.y) * m.scale);
@@ -261,8 +265,7 @@ public class MirrorDisplay {
 		touchExecutor.execute(() -> {
 			var d = dispatcher();
 			if (d != null) {
-                // [SURGERY] Check if using full-screen accessibility, use absolute matrix
-                if (d instanceof my.app.permata.auto.EventDispatcher.AccessibilityDispatcher) {
+                if (isUsingAbsoluteMatrix()) {
                     d.scale((x * m.scale) + m.absoluteOffsetX, (y * m.scale) + m.absoluteOffsetY, zoomIn ? scaleDiff : -scaleDiff);
                 } else {
 				    d.scale((x - m.x) * m.scale, (y - m.y) * m.scale, zoomIn ? scaleDiff : -scaleDiff);
@@ -291,7 +294,7 @@ public class MirrorDisplay {
 				var m = metrics();
 				if (m == null) return false;
 
-                boolean useAbsoluteMatrix = (dispatcher() instanceof my.app.permata.auto.EventDispatcher.AccessibilityDispatcher);
+                boolean useAbsoluteMatrix = isUsingAbsoluteMatrix();
 
 				for (int i = 0; i < cnt; i++) {
 					e.getPointerProperties(i, reusableProps[i]);
@@ -299,7 +302,6 @@ public class MirrorDisplay {
 					reusableProps[i].id = 10 + i; 
 					reusableProps[i].toolType = MotionEvent.TOOL_TYPE_FINGER;
 					
-                    // [SURGERY] Use Absolute Matrix for Full-Screen Windows (WhatsApp Balloons)
                     if (useAbsoluteMatrix) {
                         reusableCoords[i].x = (e.getX(i) * m.scale) + m.absoluteOffsetX;
                         reusableCoords[i].y = (e.getY(i) * m.scale) + m.absoluteOffsetY;
@@ -352,8 +354,7 @@ public class MirrorDisplay {
 				
 				reusableCoords[0].clear();
                 
-                // [SURGERY] Use Absolute Matrix for Full-Screen Windows
-                if (dispatcher() instanceof my.app.permata.auto.EventDispatcher.AccessibilityDispatcher) {
+                if (isUsingAbsoluteMatrix()) {
                     reusableCoords[0].x = (x * m.scale) + m.absoluteOffsetX;
                     reusableCoords[0].y = (y * m.scale) + m.absoluteOffsetY;
                 } else {
@@ -781,7 +782,6 @@ public class MirrorDisplay {
 		}
 	}
 
-    // [SURGERY] Rebuilt Metrics with Absolute Matrix offsets
 	private static final class Metrics {
 		final float x;
 		final float y;
