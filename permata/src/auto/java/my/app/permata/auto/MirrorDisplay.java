@@ -91,6 +91,7 @@ public class MirrorDisplay {
 	private static final Object settingsLock = new Object();
 	
 	private static volatile boolean isDimmed = false;
+	private static int originalAccelState = -1; // [SURGERY] Track original accelerometer state
 	
 	private volatile long lastInjectedTouchTime = 0; 
 	private final Object touchLock = new Object(); 
@@ -235,11 +236,6 @@ public class MirrorDisplay {
 		}
 	}
 
-	// [FIX] Helper to safely determine if we are injecting into full-screen (Accessibility)
-	private boolean isUsingAbsoluteMatrix() {
-		return AccessibilityEventDispatcherService.getWindowCount() > 1;
-	}
-
 	public void tap(float x, float y) {
 		lastInjectedTouchTime = uptimeMillis();
 		var m = metrics();
@@ -248,11 +244,8 @@ public class MirrorDisplay {
 		touchExecutor.execute(() -> {
 			var d = dispatcher();
 			if (d != null) {
-                if (isUsingAbsoluteMatrix()) {
-                    d.tap((x * m.scale) + m.absoluteOffsetX, (y * m.scale) + m.absoluteOffsetY);
-                } else {
-				    d.tap((x - m.x) * m.scale, (y - m.y) * m.scale);
-                }
+                // [SURGERY] Restored pure coordinate mapping
+				d.tap((x - m.x) * m.scale, (y - m.y) * m.scale);
 			}
 		});
 	}
@@ -265,11 +258,7 @@ public class MirrorDisplay {
 		touchExecutor.execute(() -> {
 			var d = dispatcher();
 			if (d != null) {
-                if (isUsingAbsoluteMatrix()) {
-                    d.scale((x * m.scale) + m.absoluteOffsetX, (y * m.scale) + m.absoluteOffsetY, zoomIn ? scaleDiff : -scaleDiff);
-                } else {
-				    d.scale((x - m.x) * m.scale, (y - m.y) * m.scale, zoomIn ? scaleDiff : -scaleDiff);
-                }
+				d.scale((x - m.x) * m.scale, (y - m.y) * m.scale, zoomIn ? scaleDiff : -scaleDiff);
 			}
 		});
 	}
@@ -294,21 +283,15 @@ public class MirrorDisplay {
 				var m = metrics();
 				if (m == null) return false;
 
-                boolean useAbsoluteMatrix = isUsingAbsoluteMatrix();
-
 				for (int i = 0; i < cnt; i++) {
 					e.getPointerProperties(i, reusableProps[i]);
 					e.getPointerCoords(i, reusableCoords[i]);
 					reusableProps[i].id = 10 + i; 
 					reusableProps[i].toolType = MotionEvent.TOOL_TYPE_FINGER;
 					
-                    if (useAbsoluteMatrix) {
-                        reusableCoords[i].x = (e.getX(i) * m.scale) + m.absoluteOffsetX;
-                        reusableCoords[i].y = (e.getY(i) * m.scale) + m.absoluteOffsetY;
-                    } else {
-					    reusableCoords[i].x = (reusableCoords[i].x - m.x) * m.scale;
-					    reusableCoords[i].y = (reusableCoords[i].y - m.y) * m.scale;
-                    }
+                    // [SURGERY] Restored pure relative translation for all dispatchers
+					reusableCoords[i].x = (reusableCoords[i].x - m.x) * m.scale;
+					reusableCoords[i].y = (reusableCoords[i].y - m.y) * m.scale;
                     
 					if (reusableCoords[i].pressure <= 0.01f) reusableCoords[i].pressure = 1.0f;
 					if (reusableCoords[i].size <= 0.01f) reusableCoords[i].size = 1.0f;
@@ -354,13 +337,9 @@ public class MirrorDisplay {
 				
 				reusableCoords[0].clear();
                 
-                if (isUsingAbsoluteMatrix()) {
-                    reusableCoords[0].x = (x * m.scale) + m.absoluteOffsetX;
-                    reusableCoords[0].y = (y * m.scale) + m.absoluteOffsetY;
-                } else {
-				    reusableCoords[0].x = (x - m.x) * m.scale;
-				    reusableCoords[0].y = (y - m.y) * m.scale;
-                }
+                // [SURGERY] Restored pure relative translation
+				reusableCoords[0].x = (x - m.x) * m.scale;
+				reusableCoords[0].y = (y - m.y) * m.scale;
                 
 				reusableCoords[0].pressure = 1.0f;
 				reusableCoords[0].size = 1.0f;
@@ -430,11 +409,34 @@ public class MirrorDisplay {
 		if (a != null) {
 			a.setRequestedOrientation(land ? SCREEN_ORIENTATION_LANDSCAPE : SCREEN_ORIENTATION_PORTRAIT);
 		}
+
+        // [SURGERY] Hard-lock the system accelerometer to prevent car jerking rotation
+        try {
+            android.content.ContentResolver cr = ctx.getContentResolver();
+            if (originalAccelState == -1) {
+                int v = android.provider.Settings.System.getInt(cr, android.provider.Settings.System.ACCELEROMETER_ROTATION, -1);
+                if (v != -1) originalAccelState = v;
+            }
+            android.provider.Settings.System.putInt(cr, android.provider.Settings.System.ACCELEROMETER_ROTATION, 0);
+            android.provider.Settings.System.putInt(cr, android.provider.Settings.System.USER_ROTATION, 
+                    land ? android.view.Surface.ROTATION_90 : android.view.Surface.ROTATION_0);
+        } catch (Exception err) {
+            Log.e(err, "[ROTATION_LOCK] Failed to write system settings.");
+        }
 	}
 
 	private static void restoreAccelRotation(Context ctx, boolean synchronous) {
 		var a = EventDispatcher.get().getActivity();
 		if (a != null) a.setRequestedOrientation(SCREEN_ORIENTATION_UNSPECIFIED);
+
+        // [SURGERY] Restore original accelerometer state when screen wakes up
+        if (originalAccelState != -1) {
+            try {
+                android.provider.Settings.System.putInt(ctx.getContentResolver(), 
+                        android.provider.Settings.System.ACCELEROMETER_ROTATION, originalAccelState);
+            } catch (Exception err) {}
+            originalAccelState = -1;
+        }
 	}
 
 	private void dimScreen(Context ctx) {
@@ -790,9 +792,6 @@ public class MirrorDisplay {
 		final float sh; 
 		final float dw; 
 		final float dh; 
-        
-        final float absoluteOffsetX;
-        final float absoluteOffsetY;
 
 		Metrics(float dw, float dh, float sw, float sh) {
 			this.sw = sw;
@@ -805,15 +804,11 @@ public class MirrorDisplay {
 			if (scaleH <= sh) {
 				x = 0f;
 				y = (sh - scaleH) / 2f;
-                absoluteOffsetX = 0f;
-                absoluteOffsetY = (dh - (sh * scale)) / 2f; 
 				assert y >= 0f;
 			} else {
 				scale = dh / sh;
 				y = 0f;
 				x = (sw - (dw / scale)) / 2;
-                absoluteOffsetX = (dw - (sw * scale)) / 2f; 
-                absoluteOffsetY = 0f;
 				assert x >= 0f;
 			}
 			this.scale = scale;
