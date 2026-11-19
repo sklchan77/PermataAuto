@@ -338,28 +338,29 @@ public class KeyEventHandler {
                 lastGlobalActionTime.set(currentUptime);
                 boolean isNext = (code == KeyEvent.KEYCODE_MEDIA_NEXT);
 
-                boolean isMirroring = PermataApplication.get().isMirroringMode();
+                // === [SMART CROWN CORRECTION & NATIVE DETECTION] ===
                 String activePkg = AccessibilityEventDispatcherService.getLastActivePackage();
                 boolean isPermata = activePkg != null && activePkg.startsWith("my.app.permata");
-
                 int currentCrown = PermataApplication.getMediaCrown();
                 
-                // === [SMART CROWN CORRECTION] ===
-                // This is what prevents the Crown Lockout bug. It dynamically reclaims the crown 
-                // when returning to IPTV, and ensures non-Scroller apps don't steal the native crown.
+                // [SURGERY] Reclaim the Crown for IPTV when returning to Permata
                 if (isPermata) {
                     if (currentCrown == PermataApplication.CROWN_NATIVE) {
                         Log.i("KeyEventHandler", "[CROWN_CORRECTION] Returned to Permata. Reclaiming Crown for IPTV.");
                         PermataApplication.setMediaCrown(PermataApplication.CROWN_IPTV);
                         currentCrown = PermataApplication.CROWN_IPTV;
                     }
-                } else if (activePkg != null && isScrollerPackage(activePkg)) {
+                } 
+                // [SURGERY] Allow Scroller apps (like TikTok) to steal the Crown, EVEN while mirroring!
+                else if (activePkg != null && isScrollerPackage(activePkg)) {
                     if (currentCrown != PermataApplication.CROWN_NATIVE) {
                         Log.i("KeyEventHandler", "[CROWN_CORRECTION] Verified Scroller active. Native takes the Crown.");
                         PermataApplication.setMediaCrown(PermataApplication.CROWN_NATIVE);
                         currentCrown = PermataApplication.CROWN_NATIVE;
                     }
                 }
+                
+                boolean isMirroring = PermataApplication.get().isMirroringMode();
 
                 // === [STRICT FIFO ROUTING: THE SNIPER RIFLE] ===
                 Log.i("KeyEventHandler", "[ROUTING_TELEMETRY] Executing FIFO Route. Target: " + 
@@ -403,7 +404,7 @@ public class KeyEventHandler {
                     });
                     
                     if (isMirroring) executeMirrorSwipe(!isNext, finalTargetActivity);
-                    return true; // STOP EXECUTION
+                    return true; 
                 }
 
                 if (currentCrown == PermataApplication.CROWN_NATIVE) {
@@ -414,7 +415,6 @@ public class KeyEventHandler {
                         executeNativeAppSwipe(!isNext, activePkg);
                         handledByAccessibility = true;
                     } else if (activePkg == null && !isPermata) {
-                        // Safe fallback for edge case where OS drops the package name
                         Log.i("KeyEventHandler", "[NATIVE_ROUTE] Null package bypass. Forcing Fallback Swipe.");
                         executeNativeAppSwipe(!isNext, "unknown_native");
                         handledByAccessibility = true;
@@ -430,7 +430,7 @@ public class KeyEventHandler {
                     }
                     
                     if (isMirroring) executeMirrorSwipe(!isNext, finalTargetActivity);
-                    return true; // STOP EXECUTION
+                    return true; 
                 }
 
                 // IF WE REACH HERE, CROWN_IPTV IS ACTIVE. FIRE TO NATIVE MEDIA.
