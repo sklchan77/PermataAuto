@@ -448,9 +448,13 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
             // Edge Panels & Gesture Navigation
             "edgepanel", "edge", "sidegesture", "gestural", "threebutton",
             
-            // Heads-Up Notifications & Popups (The Message Interruption Fix)
+            // IM, Social & Phone Popups (The Message Interruption Fix)
             "whatsapp", "telegram", "messenger", "discord", "wechat", "line",
             "viber", "sms", "mms", "messaging", "dialer", "incallui",
+            
+            // Productivity, Email & Calendar Popups (The Scheduling Interruption Fix)
+            "gmail", "email", "outlook", "mail", "calendar", "reminder", 
+            "tasks", "todo", "keep", "alarm", "clock", "notes",
             
             // OEM Specific Sledgehammers 
             "miui", "xiaomi", "coloros", "oplus", "nexuslauncher", "trebuchet"
