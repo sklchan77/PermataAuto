@@ -230,6 +230,10 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 			Log.i("[CONNECTION_MONITOR] Car/BT is ACTIVE. Cancelling Absolute Zero teardowns.");
 			lifecycleHandler.removeCallbacks(manualSwipeRunnable);
 			lifecycleHandler.removeCallbacks(hardwareDropRunnable);
+			
+			// [BULLETPROOF FIX] Automatically re-ignite the steering anchor for ANY new 
+			// connection (Mirroring, AA, Bluetooth) if it was previously dead.
+			hijackCarAudioAndSteering();
 		} else {
 			// Only trigger the 10-second hardware drop if a session was actually established first
 			if (hasEstablishedSession) {
@@ -358,10 +362,8 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 				lifecycleHandler.removeCallbacks(hardwareDropRunnable);
 				hijackCarAudioAndSteering();
 			} else if (ACTION_RECLAIM_SESSION.equals(action)) {
-				if (session != null) {
-					session.setActive(true);
-					updatePlaybackState(STATE_PLAYING);
-				}
+				// [BULLETPROOF FIX] Ensure steering anchor survives general OS session reclaims
+				hijackCarAudioAndSteering();
 			} else if (ACTION_AGGRESSIVE_RECLAIM.equals(action)) {
 				if (session != null) {
 					session.setMetadata(new MediaMetadataCompat.Builder()
@@ -464,7 +466,10 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 		}
 
 		if (isCarOrBluetoothActive()) {
-			Log.i("[AUDIO_TELEMETRY] Web Media PLAYING. BT/Car active: Forcing Silent Anchor to stay alive.");
+			Log.i("[AUDIO_TELEMETRY] Web Media PLAYING. BT/Car active: Forcing Silent Anchor to stay alive/re-ignite.");
+			// [BUGFIX] If Absolute Zero killed the anchor, we MUST restart it here, 
+			// otherwise the steering wheel hardware connection will stay dead.
+			hijackCarAudioAndSteering(); 
 		} else {
 			Log.i("[AUDIO_TELEMETRY] Web Media PLAYING detected. Yielding Audio Focus to WebView.");
 			stopSilentAudioAnchor();
