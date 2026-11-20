@@ -35,7 +35,6 @@ import android.graphics.Point;
 import android.graphics.Typeface;
 import android.hardware.display.DisplayManager;
 import android.hardware.display.VirtualDisplay;
-import android.media.AudioManager;
 import android.media.projection.MediaProjection;
 import android.os.Build.VERSION_CODES;
 import android.os.Handler;
@@ -57,15 +56,13 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.annotation.StringRes;
 import androidx.car.app.SurfaceContainer;
-import androidx.media.AudioAttributesCompat;
-import androidx.media.AudioFocusRequestCompat;
-import androidx.media.AudioManagerCompat;
 
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 import my.app.permata.PermataApplication;
 import my.app.permata.R;
+import my.app.permata.media.service.PermataMediaService;
 import my.app.permata.ui.activity.MainActivity;
 import my.app.permata.ui.activity.MainActivityDelegate;
 import my.app.utils.async.Completed;
@@ -81,7 +78,6 @@ public class MirrorDisplay {
 	private static MirrorDisplay instance;
 	private final Display defaultDisplay;
 	private final float scaleDiff;
-	private final AudioFocusRequestCompat audioFocusReq;
 	private WakeLock wakeLock;
 	
 	private static final ExecutorService bgExecutor = Executors.newSingleThreadExecutor();
@@ -124,12 +120,6 @@ public class MirrorDisplay {
 		var size = new Point();
 		defaultDisplay.getRealSize(size);
 		scaleDiff = Math.max(UiUtils.toPx(ctx, 20), Math.min(size.x, size.y) / 20f);
-		
-		audioFocusReq =
-				new AudioFocusRequestCompat.Builder(AudioManagerCompat.AUDIOFOCUS_GAIN).setAudioAttributes(
-								new AudioAttributesCompat.Builder().setUsage(AudioAttributesCompat.USAGE_MEDIA)
-										.setContentType(AudioAttributesCompat.CONTENT_TYPE_MUSIC).build())
-						.setWillPauseWhenDucked(false).setOnAudioFocusChangeListener(focusChange -> {}).build();
 		
 		reusableProps = new MotionEvent.PointerProperties[10];
 		reusableCoords = new MotionEvent.PointerCoords[10];
@@ -531,8 +521,8 @@ public class MirrorDisplay {
 		} catch (IllegalStateException ise) {
 		} catch (Exception err) {}
 
-		var amgr = (AudioManager) app.getSystemService(Context.AUDIO_SERVICE);
-		if (amgr != null) AudioManagerCompat.requestAudioFocus(amgr, audioFocusReq);
+		// [SURGERY] Delegate Audio Focus and Steering Wheel Anchoring entirely to PermataMediaService
+		PermataMediaService.requestFocusAndAnchor(app);
 		
 		setMirroringMode(app, mode);
 	}
@@ -583,9 +573,6 @@ public class MirrorDisplay {
 		try {
 			app.stopService(new Intent(app, XposedEventDispatcherService.class));
 		} catch (Exception err) {}
-
-		var amgr = (AudioManager) app.getSystemService(Context.AUDIO_SERVICE);
-		if (amgr != null) AudioManagerCompat.abandonAudioFocusRequest(amgr, audioFocusReq);
 		
 		sc = null;
 		currentMetrics = null;
