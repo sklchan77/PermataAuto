@@ -100,6 +100,13 @@ public class UniversalMediaBridge {
             Intent intent = new Intent(context, PermataMediaService.class);
             intent.setAction(PermataMediaService.ACTION_WEB_MEDIA_PLAYING);
             context.startService(intent);
+            
+            // [SURGICAL FIX] Force Permata to reclaim the MediaSession from Chromium's WebView.
+            // This bypasses the "null package" block in the main service, guaranteeing 
+            // the steering wheel buttons route to Permata while Douyin/YouTube is playing.
+            Intent reclaimIntent = new Intent(context, PermataMediaService.class);
+            reclaimIntent.setAction(PermataMediaService.ACTION_RECLAIM_SESSION);
+            context.startService(reclaimIntent);
         } catch (Exception e) {
             Log.e(e, "[JavaBridge]", TAG + ": Failed to delegate PLAY state.");
         }
@@ -115,6 +122,13 @@ public class UniversalMediaBridge {
             Intent intent = new Intent(context, PermataMediaService.class);
             intent.setAction(PermataMediaService.ACTION_WEB_MEDIA_PAUSED);
             context.startService(intent);
+            
+            // [SURGICAL FIX] Force the silent anchor to re-ignite to keep AVRCP alive.
+            // This bypasses the "null package" block in the main service, guaranteeing 
+            // the Bluetooth steering wheel link doesn't die when Web Media pauses.
+            Intent hijackIntent = new Intent(context, PermataMediaService.class);
+            hijackIntent.setAction(PermataMediaService.ACTION_HIJACK_FOCUS);
+            context.startService(hijackIntent);
         } catch (Exception e) {
             Log.e(e, "[JavaBridge]", TAG + ": Failed to delegate PAUSE state.");
         }
