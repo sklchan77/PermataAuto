@@ -93,36 +93,29 @@ public class MirrorActivity extends CarActivity implements SurfaceHolder.Callbac
 		
 		if (md == null || md.isDestroyed()) md = MirrorDisplay.get();
 		if (sc != null && md != null) md.setSurface(sc);
+
+		// [SURGERY] Auto-start the 10-second idle sequence when returning from Lock Screen
+		my.app.utils.log.Log.i("[LIFECYCLE_TELEMETRY]", "MirrorActivity resumed (lock screen cleared). Auto-starting 10-second idle sequence.");
+		View contentView = findViewById(android.R.id.content);
+		if (contentView instanceof ViewGroup) {
+			ViewGroup vg = (ViewGroup) contentView;
+			if (vg.getChildCount() > 0 && vg.getChildAt(0) instanceof ViewGroup) {
+				ViewGroup innerVg = (ViewGroup) vg.getChildAt(0);
+				for (int i = 0; i < innerVg.getChildCount(); i++) {
+					View child = innerVg.getChildAt(i);
+					if (child instanceof ToolBar) {
+						((ToolBar) child).show();
+						break;
+					}
+				}
+			}
+		}
 	}
 
 	@Override
 	public void onPause() {
 		super.onPause();
 		if (MirrorServiceFS.sc != null && md != null && !md.isDestroyed()) md.setSurface(MirrorServiceFS.sc);
-	}
-
-	@Override
-	public void onWindowFocusChanged(boolean hasFocus) {
-		super.onWindowFocusChanged(hasFocus);
-		if (hasFocus) {
-			my.app.utils.log.Log.i("[LIFECYCLE_TELEMETRY]", "MirrorActivity regained focus from lock screen. Auto-starting 10-second idle sequence.");
-			
-			// Find the internal ToolBar view and force it to show (which starts the hide timer)
-			View contentView = findViewById(android.R.id.content);
-			if (contentView instanceof ViewGroup) {
-				ViewGroup vg = (ViewGroup) contentView;
-				if (vg.getChildCount() > 0 && vg.getChildAt(0) instanceof ViewGroup) {
-					ViewGroup innerVg = (ViewGroup) vg.getChildAt(0);
-					for (int i = 0; i < innerVg.getChildCount(); i++) {
-						View child = innerVg.getChildAt(i);
-						if (child instanceof ToolBar) {
-							((ToolBar) child).show();
-							break;
-						}
-					}
-				}
-			}
-		}
 	}
 
 	@Override
