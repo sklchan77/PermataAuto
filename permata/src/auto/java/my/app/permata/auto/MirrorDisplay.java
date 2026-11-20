@@ -226,7 +226,7 @@ public class MirrorDisplay {
 
 	private void resetIdleTimer() {
 		mainHandler.removeCallbacks(idleDimRunnable);
-		mainHandler.postDelayed(idleDimRunnable, 6000);
+		mainHandler.postDelayed(idleDimRunnable, 10000);
 	}
 
 	public static void notifyInjectedTouch() {
