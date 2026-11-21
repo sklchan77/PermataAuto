@@ -382,4 +382,3 @@ public class MainActivity extends SplitCompatActivityBase
 		}
 	}
 }
-```[cite: 12]
