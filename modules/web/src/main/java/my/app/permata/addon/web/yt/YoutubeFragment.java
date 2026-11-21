@@ -39,6 +39,7 @@ import my.app.utils.ui.view.ToolBarView;
 @SuppressWarnings("unused")
 public class YoutubeFragment extends WebBrowserFragment implements PermataServiceUiBinder.Listener {
 	private static final String DEFAULT_URL = "https://m.youtube.com";
+	private static final String PROFILE_URL = "https://m.youtube.com/feed/you";
 	private static final Set<String> DEFAULT_URLS = new HashSet<>(Arrays.asList(DEFAULT_URL, DEFAULT_URL + '/'));
 	private static final Pref<LongSupplier> RESUME_POS = Pref.l("YT_RESUME_POS", 0L);
 	private boolean playOnResume;
@@ -197,6 +198,29 @@ public class YoutubeFragment extends WebBrowserFragment implements PermataServic
 				}
 			});
 		}
+	}
+
+	private boolean isProfileUrl(@Nullable String url) {
+		return url != null && url.startsWith(PROFILE_URL);
+	}
+
+	@Override
+	public boolean isRootPage() {
+		PermataWebView v = getWebView();
+		if ((v == null) || (v.getWebChromeClient() == null)) return true;
+		if (v.getWebChromeClient().isFullScreen() || v.canGoBack()) return false;
+		return isProfileUrl(v.getUrl());
+	}
+
+	@Override
+	public boolean onBackPressed() {
+		if (super.onBackPressed()) return true;
+		PermataWebView v = getWebView();
+		if (v != null && !isProfileUrl(v.getUrl())) {
+			v.loadUrl(PROFILE_URL);
+			return true;
+		}
+		return false;
 	}
 
 	public void loadUrl(String url) {
