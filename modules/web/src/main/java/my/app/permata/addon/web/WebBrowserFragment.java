@@ -24,6 +24,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.Map;
 
 import my.app.permata.BuildConfig;
+import my.app.permata.PermataApplication;
 import my.app.permata.addon.AddonManager;
 import my.app.permata.addon.web.yt.YoutubeFragment;
 import my.app.permata.ui.activity.MainActivityDelegate;
@@ -159,6 +160,44 @@ public class WebBrowserFragment extends MainActivityFragment
 		}));
 	}
 
+	@Override
+	public void onHiddenChanged(boolean hidden) {
+		super.onHiddenChanged(hidden);
+		if (this instanceof YoutubeFragment) return;
+
+		PermataWebView v = getWebView();
+		if (hidden) {
+			if (v != null) {
+				v.evaluateJavascript(
+					"(function() { " +
+					"  document.querySelectorAll('video, audio').forEach(function(media) { " +
+					"    if (!media.paused) media.pause(); " +
+					"  }); " +
+					"})();", null);
+
+				if (BuildConfig.AUTO) {
+					PermataChromeClient chrome = v.getWebChromeClient();
+					if (chrome != null) {
+						if (chrome.isFullScreen()) {
+							chrome.exitFullScreen();
+							fullScreenOnResume = true;
+						} else {
+							fullScreenOnResume = false;
+						}
+					}
+				}
+			}
+			if (PermataApplication.getMediaCrown() == PermataApplication.CROWN_WEB) {
+				PermataApplication.setMediaCrown(PermataApplication.CROWN_IPTV);
+			}
+		} else if (BuildConfig.AUTO && fullScreenOnResume && v != null) {
+			MainActivityDelegate.getActivityDelegate(getContext()).onSuccess(a -> a.post(() -> {
+				PermataChromeClient chrome = v.getWebChromeClient();
+				if (chrome != null) chrome.enterFullScreen();
+			}));
+		}
+	}
+
 	protected void registerListeners(MainActivityDelegate a) {
 		a.addBroadcastListener(this, MainActivityListener.ACTIVITY_DESTROY);
 	}
@@ -247,7 +286,7 @@ public class WebBrowserFragment extends MainActivityFragment
 	}
 
 	@Nullable
-	protected PermataWebView getWebView() {
+	public PermataWebView getWebView() {
 		View v = getView();
 		return (v != null) ? v.findViewById(R.id.browserWebView) : null;
 	}
