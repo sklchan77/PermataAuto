@@ -78,8 +78,8 @@ public class YoutubeFragment extends WebBrowserFragment implements PermataServic
 				v = addon.getLastVideo();
 				if (v != null) Log.i("Resuming the last video: ", v.url());
 			}
-			YoutubeWebView.Video video = v;
-			webView.loadUrl(DEFAULT_URL);
+			if (v != null) webView.reopen(v);
+			else webView.loadUrl(DEFAULT_URL);
 		});
 	}
 
@@ -164,6 +164,41 @@ public class YoutubeFragment extends WebBrowserFragment implements PermataServic
 		});
 	}
 
+	@Override
+	public void onHiddenChanged(boolean hidden) {
+		super.onHiddenChanged(hidden);
+		if (hidden) {
+			if ((getAddon() instanceof YoutubeAddon addon) && addon.pauseOnLeave()) {
+				MainActivityDelegate.getActivityDelegate(getContext()).onSuccess(a -> {
+					PermataServiceUiBinder b = a.getMediaServiceBinder();
+					if (YoutubeMediaEngine.isYoutubeItem(b.getCurrentItem()) && b.isPlaying()) {
+						b.getMediaSessionCallback().onPause();
+						playOnResume = true;
+					} else {
+						playOnResume = false;
+					}
+				});
+				PermataWebView v = getWebView();
+				if (v != null) {
+					v.evaluateJavascript(
+						"(function() { " +
+						"  document.querySelectorAll('video, audio').forEach(function(media) { " +
+						"    if (!media.paused) media.pause(); " +
+						"  }); " +
+						"})();", null);
+				}
+			}
+		} else if (playOnResume) {
+			playOnResume = false;
+			MainActivityDelegate.getActivityDelegate(getContext()).onSuccess(a -> {
+				PermataServiceUiBinder b = a.getMediaServiceBinder();
+				if (YoutubeMediaEngine.isYoutubeItem(b.getCurrentItem())) {
+					b.getMediaSessionCallback().onPlay();
+				}
+			});
+		}
+	}
+
 	public void loadUrl(String url) {
 		PermataWebView v = getWebView();
 		if (v != null) v.loadUrl(url);
@@ -210,7 +245,7 @@ public class YoutubeFragment extends WebBrowserFragment implements PermataServic
 	}
 
 	@Nullable
-	protected YoutubeWebView getWebView() {
+	public YoutubeWebView getWebView() {
 		View v = getView();
 		return (v != null) ? v.findViewById(R.id.ytWebView) : null;
 	}
