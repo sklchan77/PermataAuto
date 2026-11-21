@@ -130,7 +130,14 @@ public class MainActivity extends SplitCompatActivityBase
 			isMirroring = PermataApplication.get().isMirroringMode();
 			MainActivityDelegate delegate = MainActivityDelegate.get(this);
 			if (delegate != null && delegate.getMediaSessionCallback() != null) {
-				isPlaying = delegate.getMediaSessionCallback().isPlaying();
+				var cb = delegate.getMediaSessionCallback();
+				var cur = cb.getCurrentItem();
+				if (cur != null && cur.isVideo() && !isAutoConnected && !isMirroring) {
+					Log.i("Golden Gate: Stopping phone-only video engine on exit to prevent stale video state.");
+					cb.onStop();
+				} else {
+					isPlaying = cb.isPlaying();
+				}
 			}
 			AudioManager am = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
 			if (am != null) {
@@ -375,3 +382,4 @@ public class MainActivity extends SplitCompatActivityBase
 		}
 	}
 }
+```[cite: 12]
