@@ -81,7 +81,7 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 	public static final String ACTION_FORCE_SHUTDOWN = "my.app.permata.action.FORCE_SHUTDOWN";
 	public static final String ACTION_WEB_MEDIA_PLAYING = "my.app.permata.action.WEB_MEDIA_PLAYING";
 	public static final String ACTION_WEB_MEDIA_PAUSED = "my.app.permata.action.WEB_MEDIA_PAUSED";
-	public static final String ACTION_RECLAIM_SESSION = "my.app.permata.action.RECLAIM_SESSION"; 
+	public static final String ACTION_RECLAIM_SESSION = "my.app.permata.action.RECLAIM_SESSION";
 	public static final String ACTION_AGGRESSIVE_RECLAIM = "my.app.permata.action.AGGRESSIVE_RECLAIM";
 
 	public static final String INTENT_ATTR_NOTIF_COLOR = "my.app.permata.notif.color";
@@ -198,7 +198,7 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 		disconnectFilter.addAction(AudioManager.ACTION_AUDIO_BECOMING_NOISY);
 		disconnectFilter.addAction(android.bluetooth.BluetoothDevice.ACTION_ACL_DISCONNECTED);
 		disconnectFilter.addAction("androidx.car.app.connection.action.CAR_CONNECTION_UPDATED");
-		
+
 		if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
 			registerReceiver(disconnectReceiver, disconnectFilter, Context.RECEIVER_NOT_EXPORTED);
 		} else {
@@ -219,7 +219,7 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 				}
 			} catch (Exception ignored) {}
 		}
-		
+
 		if (active) hasEstablishedSession = true;
 		return active;
 	}
@@ -261,9 +261,9 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 			try {
 				session.setPlaybackState(new PlaybackStateCompat.Builder().setState(PlaybackStateCompat.STATE_NONE, 0, 0.0f).build());
 				session.setActive(false);
-				
+
 				// [SURGICAL FIX]: Ghost Session Bypass
-				// If the car is still physically connected, DO NOT release the session. 
+				// If the car is still physically connected, DO NOT release the session.
 				// This prevents the OS from routing steering wheel clicks into a black hole.
 				if (!isCarOrBluetoothActive()) {
 					session.release();
@@ -292,12 +292,12 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 	public void onDestroy() {
 		lifecycleHandler.removeCallbacks(manualSwipeRunnable);
 		lifecycleHandler.removeCallbacks(hardwareDropRunnable);
-		
+
 		if (disconnectReceiver != null) {
 			try { unregisterReceiver(disconnectReceiver); } catch (Exception ignored) {}
 			disconnectReceiver = null;
 		}
-		
+
 		executeNuclearTeardown();
 		session = null;
 
@@ -326,13 +326,13 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 	@Override
 	public void onTaskRemoved(Intent rootIntent) {
 		super.onTaskRemoved(rootIntent);
-		
+
 		// If swiped away but still connected to car/BT, survive!
 		if (isCarOrBluetoothActive()) {
 			Log.i("[TELEMETRY] App swiped away during Active Session. Preserving audio session.");
 			return;
 		}
-		
+
 		Log.w("[TELEMETRY] App swiped away. No active session. Initiating 6-second Absolute Zero countdown...");
 		lifecycleHandler.removeCallbacks(manualSwipeRunnable);
 		lifecycleHandler.removeCallbacks(hardwareDropRunnable);
@@ -343,7 +343,7 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 	public int onStartCommand(Intent intent, int flags, int startId) {
 		if (intent != null) {
 			String action = intent.getAction();
-			
+
 			if (ACTION_HIJACK_FOCUS.equals(action)) {
 				// Cancel Absolute Zero shutdown and revive session if focus is requested again
 				isTeardownActive = false;
@@ -407,16 +407,16 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 				try {
 					AudioManager audioManager = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
 					if (audioManager != null) {
-						
+
 						AudioManager.OnAudioFocusChangeListener pulseListener = focusChange -> {};
 						AudioFocusRequest duckRequest = null;
-						
+
 						if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
 							AudioAttributes playbackAttributes = new AudioAttributes.Builder()
 									.setUsage(AudioAttributes.USAGE_MEDIA)
 									.setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
 									.build();
-							
+
 							duckRequest = new AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK)
 									.setAudioAttributes(playbackAttributes)
 									.setAcceptsDelayedFocusGain(false)
@@ -432,7 +432,7 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 
 						startSilentAudioAnchorInternal();
 						Log.i("[AUDIO_TELEMETRY] Aggressive Reclaim: Silent AudioTrack re-ignited to capture AVRCP.");
-						
+
 						final AudioFocusRequest finalDuckReq = duckRequest;
 						new Handler(Looper.getMainLooper()).postDelayed(() -> {
 							try {
@@ -457,13 +457,17 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 
 	private void onWebMediaPlaying() {
 		if (isTeardownActive) return;
-		
+
 		String activePkg = my.app.permata.auto.AccessibilityEventDispatcherService.getLastActivePackage();
 		boolean isPermataOrAA = activePkg != null && (activePkg.startsWith("my.app.permata") || activePkg.equals("com.google.android.projection.gearhead"));
-		
+
 		if (!isPermataOrAA) {
 			Log.i("[AUDIO_TELEMETRY] Blocked WebMedia PLAY command: Native App [" + activePkg + "] is in foreground.");
 			return;
+		}
+
+		if (PermataApplication.get().isMirroringMode() && PermataApplication.get().isConnectedToAuto()) {
+			MirrorDisplay.shutdownForCarMedia();
 		}
 
 		if (isCarOrBluetoothActive()) {
@@ -473,7 +477,7 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 			stopSilentAudioAnchor();
 			releaseAudioFocus();
 		}
-		
+
 		if (session != null) {
 			session.setActive(true);
 			updatePlaybackState(STATE_PLAYING);
@@ -482,18 +486,18 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 
 	private void onWebMediaPaused() {
 		if (isTeardownActive) return;
-		
+
 		String activePkg = my.app.permata.auto.AccessibilityEventDispatcherService.getLastActivePackage();
 		boolean isPermataOrAA = activePkg != null && (activePkg.startsWith("my.app.permata") || activePkg.equals("com.google.android.projection.gearhead"));
-		
+
 		if (!isPermataOrAA) {
 			Log.i("[AUDIO_TELEMETRY] Blocked WebMedia PAUSE command: Native App [" + activePkg + "] is in foreground.");
 			return;
 		}
-		
+
 		Log.i("[AUDIO_TELEMETRY] Web Media PAUSED detected. Re-engaging Silent AudioTrack Anchor.");
 		if (session != null) {
-			updatePlaybackState(STATE_PLAYING); 
+			updatePlaybackState(STATE_PLAYING);
 		}
 		hijackCarAudioAndSteering();
 	}
@@ -532,7 +536,7 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 								}
 							};
 						}
-						
+
 						Log.i("[AUDIO_TELEMETRY] Requesting AUDIOFOCUS_GAIN for Silent Anchor.");
 						if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
 							if (audioFocusRequestOreo == null) {
@@ -560,7 +564,7 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 
 					AudioTrack currentTrack = silentAudioTrackRef.get();
 					if (currentTrack != null && currentTrack.getPlayState() == AudioTrack.PLAYSTATE_PLAYING) {
-						return; 
+						return;
 					}
 
 					startSilentAudioAnchorInternal();
