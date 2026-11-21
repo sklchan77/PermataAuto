@@ -248,6 +248,7 @@ public class MediaItemListViewAdapter extends MovableRecyclerViewAdapter<MediaIt
 	public void onClick(View v) {
 		MediaItemView mi = (MediaItemView) v;
 		Item i = mi.getItem();
+		Log.i("[UI_TELEMETRY] MediaItem clicked: " + (i != null ? i.getClass().getSimpleName() + " (" + i.getName() + ")" : "null"));
 
 		if (i instanceof BrowsableItem) {
 			setParent((BrowsableItem) i);
