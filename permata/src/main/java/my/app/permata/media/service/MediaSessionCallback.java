@@ -1438,6 +1438,9 @@ public class MediaSessionCallback extends MediaSessionCompat.Callback
 	private void start(MediaEngine engine, float speed) {
 		Log.i("Start playing ", engine.getSource().getLocation(), " with ",
 				engine.getClass().getSimpleName());
+		if (BuildConfig.AUTO && PermataApplication.get().isMirroringMode() && PermataApplication.get().isConnectedToAuto()) {
+			my.app.permata.auto.MirrorDisplay.shutdownForCarMedia();
+		}
 		engine.setSpeed(speed);
 		engine.start();
 	}
