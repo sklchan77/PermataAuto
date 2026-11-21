@@ -473,7 +473,6 @@ public class MirrorDisplay {
 			return;
 		}
 
-		dimScreen(app);
 		disableAccelRotation(app);
 		resetIdleTimer();
 
@@ -538,9 +537,14 @@ public class MirrorDisplay {
 					overlayLp.gravity = Gravity.TOP | Gravity.START;
 					overlayLp.screenOrientation = land ? SCREEN_ORIENTATION_LANDSCAPE : SCREEN_ORIENTATION_PORTRAIT;
 					overlayLp.alpha = 0.05f;
-					
+					overlayLp.screenBrightness = 0.0f;
+
+					synchronized (settingsLock) {
+						isDimmed = true;
+					}
 					overlay = new Overlay(app);
 					wm.addView(overlay, overlayLp);
+					disableAccelRotation(app);
 				}
 			} catch (Exception err) {
 				Log.e(err, "Failed to inject overlay hierarchy");
