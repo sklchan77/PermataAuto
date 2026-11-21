@@ -48,7 +48,7 @@ public class YoutubeChromeClient extends PermataChromeClient {
 
 	@Override
 	public void onShowCustomView(View view, CustomViewCallback callback) {
-		getWebView().setVisibility(GONE);
+		getWebView().setVisibility(View.INVISIBLE);
 		super.onShowCustomView(view, callback);
 	}
 
