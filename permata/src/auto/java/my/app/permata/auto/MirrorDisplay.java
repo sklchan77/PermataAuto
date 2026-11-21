@@ -24,8 +24,10 @@ import static android.view.WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY;
 import static my.app.utils.function.ResultConsumer.Cancel.isCancellation;
 
 import android.annotation.SuppressLint;
+import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
+import android.content.IntentFilter;
 import android.content.pm.ActivityInfo;
 import android.content.res.Configuration;
 import android.graphics.Color;
@@ -112,6 +114,8 @@ public class MirrorDisplay {
 	private final Runnable idleDimRunnable = () -> {
 		dimScreen(PermataApplication.get());
 	};
+
+	private BroadcastReceiver unlockReceiver;
 
 	private MirrorDisplay() {
 		var ctx = PermataApplication.get();
@@ -457,6 +461,7 @@ public class MirrorDisplay {
 		}
 	}
 
+	@SuppressLint("UnspecifiedRegisterReceiverFlag")
 	private void started() {
 		if (sc == null || isDestroyed) return;
 		var app = PermataApplication.get();
@@ -471,6 +476,32 @@ public class MirrorDisplay {
 		dimScreen(app);
 		disableAccelRotation(app);
 		resetIdleTimer();
+
+		if (unlockReceiver == null) {
+			unlockReceiver = new BroadcastReceiver() {
+				@Override
+				public void onReceive(Context context, Intent intent) {
+					if (Intent.ACTION_USER_PRESENT.equals(intent.getAction()) && !isDestroyed) {
+						Log.i("[LIFECYCLE_TELEMETRY] Phone unlocked (ACTION_USER_PRESENT). Engaging immediate dim & orientation lock.");
+						mainHandler.removeCallbacks(idleDimRunnable);
+						mainHandler.postDelayed(() -> {
+							if (isDestroyed || sc == null) return;
+							synchronized (settingsLock) {
+								isDimmed = true;
+							}
+							updateOverlayAttributes(true);
+							disableAccelRotation(PermataApplication.get());
+						}, 300);
+					}
+				}
+			};
+			IntentFilter unlockFilter = new IntentFilter(Intent.ACTION_USER_PRESENT);
+			if (SDK_INT >= VERSION_CODES.TIRAMISU) {
+				app.registerReceiver(unlockReceiver, unlockFilter, Context.RECEIVER_NOT_EXPORTED);
+			} else {
+				app.registerReceiver(unlockReceiver, unlockFilter);
+			}
+		}
 
 		var pmg = (PowerManager) app.getSystemService(POWER_SERVICE);
 		if (pmg != null) {
@@ -535,6 +566,12 @@ public class MirrorDisplay {
 		var app = PermataApplication.get();
 		
 		mainHandler.removeCallbacks(idleDimRunnable);
+		if (unlockReceiver != null) {
+			try {
+				app.unregisterReceiver(unlockReceiver);
+			} catch (Exception ignored) {}
+			unlockReceiver = null;
+		}
 		app.sendBroadcast(new Intent(ACTION_KILL_WEBVIEW));
 		
 		restoreBrightness(app, true);
@@ -728,15 +765,27 @@ public class MirrorDisplay {
 
 	private void setMirroringMode(PermataApplication app, int mode) {
 		app.setMirroringMode(mode);
-		var intent = new Intent(app, MainActivity.class);
-		intent.setAction(MainActivityDelegate.INTENT_ACTION_FINISH);
-		intent.setFlags(FLAG_ACTIVITY_NEW_TASK | FLAG_ACTIVITY_CLEAR_TOP);
-		app.startActivity(intent);
 
-		intent = new Intent(app, LauncherActivity.class);
-		intent.setFlags(FLAG_ACTIVITY_NEW_TASK | FLAG_ACTIVITY_CLEAR_TASK);
-		if (mode == 0) intent.setAction(MainActivityDelegate.INTENT_ACTION_FINISH);
-		app.startActivity(intent);
+		// [SURGERY] Finish active phone MainActivity directly without spawning a phantom instance
+		mainHandler.post(() -> {
+			MainActivity activeMain = MainActivity.getActiveInstance();
+			if (activeMain != null && !activeMain.isFinishing()) {
+				activeMain.finish();
+			}
+		});
+
+		if (mode != 0 && MainCarActivity.activeInstance == null) {
+			var intent = new Intent(app, LauncherActivity.class);
+			intent.setFlags(FLAG_ACTIVITY_NEW_TASK | FLAG_ACTIVITY_CLEAR_TASK);
+			app.startActivity(intent);
+		} else if (mode == 0) {
+			mainHandler.post(() -> {
+				LauncherActivity activeLauncher = LauncherActivity.getActiveInstance();
+				if (activeLauncher != null && !activeLauncher.isFinishing()) {
+					activeLauncher.finish();
+				}
+			});
+		}
 	}
 
 	private static final class Session extends MediaProjection.Callback {
