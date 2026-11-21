@@ -207,8 +207,7 @@ public class BodyLayout extends SplitLayout
 			setMode(Mode.FRAME);
 		} else {
 			if (!eng.isVideoModeRequired()) setMode(Mode.FRAME);
-			else if (isFrameMode()) setMode(Mode.VIDEO);
-			else getVideoView().showVideo(false);
+			else setMode(Mode.VIDEO);
 		}
 
 		if ((eng != null) && (newItem != null) && !newItem.isVideo() && (getMode() == Mode.FRAME)) {
