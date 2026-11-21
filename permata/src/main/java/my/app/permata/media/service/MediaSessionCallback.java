@@ -1735,22 +1735,8 @@ public class MediaSessionCallback extends MediaSessionCompat.Callback
 			if (playbackTimer == this) onStop();
 		}
 	}
-	
+
 	private void wakeCarUiAndRun(Runnable action) {
-		boolean needsWake = PermataApplication.get().isConnectedToAuto() && (videoView == null || videoView.isEmpty());
-		if (needsWake) {
-			try {
-				Context ctx = PermataApplication.get();
-				Intent intent = new Intent();
-				intent.setClassName(ctx, "my.app.permata.auto.LauncherActivity");
-				intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
-				ctx.startActivity(intent);
-			} catch (Exception e) {
-				Log.e(e, "Failed to wake Car UI for background play request.");
-			}
-			handler.postDelayed(action, 1500);
-		} else {
-			action.run();
-		}
+		action.run();
 	}
 }
