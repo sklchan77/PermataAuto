@@ -152,6 +152,21 @@ public class MirrorDisplay {
 		}
 	}
 
+	public static void shutdownForCarMedia() {
+		var app = PermataApplication.get();
+		if (app == null || !app.isMirroringMode()) return;
+		Log.i("[LIFECYCLE_TELEMETRY] Car Permata Auto media started. Auto-shutting down Mirroring session.");
+		close();
+		try {
+			Intent goHome = new Intent(Intent.ACTION_MAIN);
+			goHome.addCategory(Intent.CATEGORY_HOME);
+			goHome.setFlags(FLAG_ACTIVITY_NEW_TASK | FLAG_ACTIVITY_CLEAR_TASK);
+			app.startActivity(goHome);
+		} catch (Exception err) {
+			Log.e(err, "Failed to send phone to Home screen after mirroring auto-shutdown.");
+		}
+	}
+
 	public boolean isDestroyed() {
 		synchronized (lifecycleLock) {
 			return isDestroyed;
