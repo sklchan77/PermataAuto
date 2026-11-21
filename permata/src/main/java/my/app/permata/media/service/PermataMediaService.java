@@ -126,7 +126,7 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 	private final AtomicReference<AudioTrack> silentAudioTrackRef = new AtomicReference<>(null);
 
 	private final Object audioLock = new Object();
-	private boolean isTeardownActive = false;
+	private volatile boolean isTeardownActive = false;
 
 	private AudioManager.OnAudioFocusChangeListener focusChangeListener;
 	private AudioFocusRequest audioFocusRequestOreo;
@@ -256,7 +256,7 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 		stopSilentAudioAnchor();
 		releaseAudioFocus();
 
-		// 3. Destroy Media Session bindings
+		// 3. Deactivate Media Session bindings (defer nulling to onDestroy to prevent bound NPEs)
 		if (session != null) {
 			try {
 				session.setPlaybackState(new PlaybackStateCompat.Builder().setState(PlaybackStateCompat.STATE_NONE, 0, 0.0f).build());
@@ -271,7 +271,6 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 					Log.w("[ABSOLUTE_ZERO] Ghost Session Bypass: Car is still connected. Intentionally leaking MediaSession to protect OS routing.");
 				}
 			} catch (Exception ignored) {}
-			session = null;
 		}
 
 		// 4. Kill auxiliary child services
@@ -300,6 +299,7 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 		}
 		
 		executeNuclearTeardown();
+		session = null;
 
 		if (intentReceiver != null) {
 			try { unregisterReceiver(intentReceiver); } catch (Exception ignored) {}
@@ -341,41 +341,44 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 
 	@Override
 	public int onStartCommand(Intent intent, int flags, int startId) {
-		if (intent != null && !isTeardownActive) {
+		if (intent != null) {
 			String action = intent.getAction();
 			
-			if (ACTION_FORCE_SHUTDOWN.equals(action)) {
-				// Prevent accidental suicide if a BT session is still active
-				if (isCarOrBluetoothActive()) {
-					Log.i("[TELEMETRY] Ignoring FORCE_SHUTDOWN because Car/BT session is still active.");
-					return START_NOT_STICKY;
-				}
-				executeNuclearTeardown();
-				return START_NOT_STICKY;
-			} else if (ACTION_HIJACK_FOCUS.equals(action)) {
-				// Cancel Absolute Zero shutdown if focus is requested again
+			if (ACTION_HIJACK_FOCUS.equals(action)) {
+				// Cancel Absolute Zero shutdown and revive session if focus is requested again
+				isTeardownActive = false;
 				lifecycleHandler.removeCallbacks(manualSwipeRunnable);
 				lifecycleHandler.removeCallbacks(hardwareDropRunnable);
 				hijackCarAudioAndSteering();
-			} else if (ACTION_RECLAIM_SESSION.equals(action)) {
-				if (session != null) {
-					session.setActive(true);
-					updatePlaybackState(STATE_PLAYING);
+			} else if (!isTeardownActive) {
+				if (ACTION_FORCE_SHUTDOWN.equals(action)) {
+					// Prevent accidental suicide if a BT session is still active
+					if (isCarOrBluetoothActive()) {
+						Log.i("[TELEMETRY] Ignoring FORCE_SHUTDOWN because Car/BT session is still active.");
+						return START_NOT_STICKY;
+					}
+					executeNuclearTeardown();
+					return START_NOT_STICKY;
+				} else if (ACTION_RECLAIM_SESSION.equals(action)) {
+					if (session != null) {
+						session.setActive(true);
+						updatePlaybackState(STATE_PLAYING);
+					}
+				} else if (ACTION_AGGRESSIVE_RECLAIM.equals(action)) {
+					if (session != null) {
+						session.setMetadata(new MediaMetadataCompat.Builder()
+								.putString(MediaMetadataCompat.METADATA_KEY_TITLE, "IHU Web Mode Active")
+								.putString(MediaMetadataCompat.METADATA_KEY_ARTIST, "Permata")
+								.build());
+						session.setActive(true);
+						updatePlaybackState(STATE_PLAYING);
+					}
+					forceAggressiveReclaim();
+				} else if (ACTION_WEB_MEDIA_PLAYING.equals(action)) {
+					onWebMediaPlaying();
+				} else if (ACTION_WEB_MEDIA_PAUSED.equals(action)) {
+					onWebMediaPaused();
 				}
-			} else if (ACTION_AGGRESSIVE_RECLAIM.equals(action)) {
-				if (session != null) {
-					session.setMetadata(new MediaMetadataCompat.Builder()
-							.putString(MediaMetadataCompat.METADATA_KEY_TITLE, "IHU Web Mode Active")
-							.putString(MediaMetadataCompat.METADATA_KEY_ARTIST, "Permata")
-							.build());
-					session.setActive(true);
-					updatePlaybackState(STATE_PLAYING);
-				}
-				forceAggressiveReclaim();
-			} else if (ACTION_WEB_MEDIA_PLAYING.equals(action)) {
-				onWebMediaPlaying();
-			} else if (ACTION_WEB_MEDIA_PAUSED.equals(action)) {
-				onWebMediaPaused();
 			}
 		}
 		if (session != null) {
