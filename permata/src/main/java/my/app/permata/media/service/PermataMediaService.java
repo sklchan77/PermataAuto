@@ -50,6 +50,7 @@ import androidx.core.app.ActivityCompat;
 import androidx.core.app.NotificationCompat;
 import androidx.core.app.NotificationCompat.Action;
 import androidx.core.app.NotificationManagerCompat;
+import androidx.core.content.ContextCompat;
 import androidx.media.MediaBrowserServiceCompat;
 import androidx.media.app.NotificationCompat.MediaStyle;
 import androidx.media.session.MediaButtonReceiver;
@@ -131,6 +132,7 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 
 	private final Object audioLock = new Object();
 	private volatile boolean isTeardownActive = false;
+	private volatile boolean isForYouBrowseSession = false;
 
 	private AudioManager.OnAudioFocusChangeListener focusChangeListener;
 	private AudioFocusRequest audioFocusRequestOreo;
@@ -165,6 +167,7 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 		if (app != null && app.isMirroringMode()) return "[MIRROR]";
 		if (app != null && app.isConnectedToAuto()) return "[CAR]";
 		if (isBluetoothA2dpActive()) return "[BT]";
+		if (isForYouBrowseSession) return "[FOR_YOU]";
 		return "[SVC]";
 	}
 
@@ -323,6 +326,7 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 	@Override
 	public void onDestroy() {
 		Log.i(sessionTag() + "[LIFECYCLE] PermataMediaService.onDestroy | " + connectionSnapshot());
+		isForYouBrowseSession = false;
 		lifecycleHandler.removeCallbacks(manualSwipeRunnable);
 		lifecycleHandler.removeCallbacks(hardwareDropRunnable);
 
@@ -708,12 +712,19 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 
 	@Override
 	public IBinder onBind(Intent intent) {
-		Log.i(sessionTag() + "[LIFECYCLE] PermataMediaService.onBind | action=" + (intent != null ? intent.getAction() : "null"));
-		if (BuildConfig.D || !intent.hasExtra(INTENT_ATTR_NOTIF_COLOR)) {
+		String action = intent != null ? intent.getAction() : null;
+		if (SERVICE_INTERFACE.equals(action)) {
+			isForYouBrowseSession = true;
+			Log.i("[FOR_YOU][LIFECYCLE] PermataMediaService.onBind | action=" + action);
+		} else {
+			if (ACTION_MEDIA_SERVICE.equals(action)) isForYouBrowseSession = false;
+			Log.i(sessionTag() + "[LIFECYCLE] PermataMediaService.onBind | action=" + action);
+		}
+		if (BuildConfig.D || (intent != null && !intent.hasExtra(INTENT_ATTR_NOTIF_COLOR))) {
 			var poi = PermataApplication.get().getAddonManager().getAddon("poi");
 			if (poi != null) poi.start();
 		}
-		if (ACTION_MEDIA_SERVICE.equals(intent.getAction())) {
+		if (ACTION_MEDIA_SERVICE.equals(action)) {
 			notifColor = intent.getIntExtra(INTENT_ATTR_NOTIF_COLOR, notifColor);
 			return new ServiceBinder();
 		}
@@ -722,8 +733,10 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 
 	@Override
 	public boolean onUnbind(Intent intent) {
-		Log.i(sessionTag() + "[LIFECYCLE] PermataMediaService.onUnbind | action=" + (intent != null ? intent.getAction() : "null"));
-		if (BuildConfig.D || !intent.hasExtra(INTENT_ATTR_NOTIF_COLOR)) {
+		String action = intent != null ? intent.getAction() : null;
+		String tag = SERVICE_INTERFACE.equals(action) ? "[FOR_YOU]" : sessionTag();
+		Log.i(tag + "[LIFECYCLE] PermataMediaService.onUnbind | action=" + action);
+		if (BuildConfig.D || (intent != null && !intent.hasExtra(INTENT_ATTR_NOTIF_COLOR))) {
 			var poi = PermataApplication.get().getAddonManager().getAddon("poi");
 			if (poi != null) poi.stop();
 		}
@@ -732,6 +745,8 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 
 	@Override
 	public BrowserRoot onGetRoot(@NonNull String clientPackageName, int clientUid, Bundle rootHints) {
+		isForYouBrowseSession = true;
+		Log.i("[FOR_YOU][BROWSE] onGetRoot | client=" + clientPackageName);
 		Bundle extras = new Bundle();
 		extras.putBoolean(EXTRA_MEDIA_SEARCH_SUPPORTED, true);
 		extras.putBoolean(CONTENT_STYLE_SUPPORTED, true);
@@ -769,15 +784,38 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 	@SuppressLint("SwitchIntDef")
 	void updateNotification(int st, PlayableItem currentItem) {
 		switch (st) {
-			case STATE_NONE, STATE_STOPPED, STATE_ERROR -> stopForeground(true);
+			case STATE_NONE, STATE_STOPPED, STATE_ERROR -> {
+				if (isForYouBrowseSession) {
+					Log.i("[FOR_YOU][PLAYBACK] State Changed | state=" + st + ", action=STOP_FOREGROUND");
+				}
+				stopForeground(true);
+			}
 			case STATE_PAUSED -> {
+				if (isForYouBrowseSession) {
+					Log.i("[FOR_YOU][PLAYBACK] State Changed | state=PAUSED, title="
+							+ (currentItem != null ? currentItem.getName() : "unknown"));
+				}
 				if (ActivityCompat.checkSelfPermission(this, POST_NOTIFICATIONS) != PERMISSION_GRANTED) {
 					return;
 				}
 				NotificationManagerCompat.from(this).notify(NOTIF_ID, createNotification(st, currentItem));
 				stopForeground(false);
 			}
-			case STATE_PLAYING -> startForeground(NOTIF_ID, createNotification(st, currentItem));
+			case STATE_PLAYING -> {
+				boolean promoted = false;
+				try {
+					ContextCompat.startForegroundService(this, new Intent(this, PermataMediaService.class));
+					promoted = true;
+				} catch (Exception e) {
+					Log.e(e, "[FOR_YOU][PLAYBACK] Failed to promote service via startForegroundService");
+				}
+				startForeground(NOTIF_ID, createNotification(st, currentItem));
+				if (isForYouBrowseSession) {
+					Log.i("[FOR_YOU][PLAYBACK] Item Playing | title="
+							+ (currentItem != null ? currentItem.getName() : "unknown")
+							+ ", servicePromoted=" + promoted + ", " + connectionSnapshot());
+				}
+			}
 			default -> {
 			}
 		}
