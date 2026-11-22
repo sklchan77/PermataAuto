@@ -137,15 +137,40 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 	private BroadcastReceiver disconnectReceiver;
 
 	private final Runnable manualSwipeRunnable = () -> {
-		Log.w("[ABSOLUTE_ZERO] 6-second manual swipe timeout reached. Commencing total wipe.");
+		Log.w(sessionTag() + "[DECISION] Absolute Zero 6s Manual Swipe Timeout | action=NUCLEAR_TEARDOWN");
 		executeNuclearTeardown();
 	};
 
 	private final Runnable hardwareDropRunnable = () -> {
-		Log.w("[ABSOLUTE_ZERO] 10-second hardware disconnect timeout reached. Commencing total wipe.");
+		Log.w(sessionTag() + "[DECISION] Absolute Zero 10s Hardware Drop Timeout | action=NUCLEAR_TEARDOWN");
 		executeNuclearTeardown();
 	};
 	// ======================================
+
+	private boolean isBluetoothA2dpActive() {
+		try {
+			AudioManager am = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
+			return am != null && am.isBluetoothA2dpOn();
+		} catch (Exception ignored) {
+			return false;
+		}
+	}
+
+	private String sessionTag() {
+		var app = PermataApplication.get();
+		if (app != null && app.isMirroringMode()) return "[MIRROR]";
+		if (app != null && app.isConnectedToAuto()) return "[CAR]";
+		if (isBluetoothA2dpActive()) return "[BT]";
+		return "[SVC]";
+	}
+
+	private String connectionSnapshot() {
+		var app = PermataApplication.get();
+		boolean auto = app != null && app.isConnectedToAuto();
+		boolean mirror = app != null && app.isMirroringMode();
+		boolean bt = isBluetoothA2dpActive();
+		return "auto=" + auto + ", mirror=" + mirror + ", bt=" + bt;
+	}
 
 	public MediaLib getLib() {
 		return lib;
@@ -155,6 +180,7 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 	@Override
 	public void onCreate() {
 		super.onCreate();
+		Log.i(sessionTag() + "[LIFECYCLE] PermataMediaService.onCreate | " + connectionSnapshot());
 		Context ctx = this;
 		audioHardwareExecutor = Executors.newSingleThreadExecutor();
 
@@ -183,19 +209,23 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 				((PermataMediaServiceAddon) a).onServiceCreate(callback);
 		}
 
-		// [ABSOLUTE ZERO] Register Global Disconnect Monitor
+		// [ABSOLUTE ZERO] Register Global Disconnect & BT Monitor
 		disconnectReceiver = new BroadcastReceiver() {
 			@Override
 			public void onReceive(Context context, Intent intent) {
 				String action = intent.getAction();
 				if (action != null) {
-					Log.i("[CONNECTION_MONITOR] OS Broadcast received: " + action);
+					boolean isBtEvent = android.bluetooth.BluetoothDevice.ACTION_ACL_CONNECTED.equals(action)
+							|| android.bluetooth.BluetoothDevice.ACTION_ACL_DISCONNECTED.equals(action);
+					String tag = isBtEvent ? "[BT]" : sessionTag();
+					Log.i(tag + "[LIFECYCLE] OS Connection Broadcast | action=" + action + ", " + connectionSnapshot());
 					evaluateConnectionState();
 				}
 			}
 		};
 		IntentFilter disconnectFilter = new IntentFilter();
 		disconnectFilter.addAction(AudioManager.ACTION_AUDIO_BECOMING_NOISY);
+		disconnectFilter.addAction(android.bluetooth.BluetoothDevice.ACTION_ACL_CONNECTED);
 		disconnectFilter.addAction(android.bluetooth.BluetoothDevice.ACTION_ACL_DISCONNECTED);
 		disconnectFilter.addAction("androidx.car.app.connection.action.CAR_CONNECTION_UPDATED");
 
@@ -211,13 +241,8 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 		boolean active = false;
 		if (PermataApplication.get().isMirroringMode() || PermataApplication.get().isConnectedToAuto()) {
 			active = true;
-		} else {
-			try {
-				AudioManager am = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
-				if (am != null && am.isBluetoothA2dpOn()) {
-					active = true;
-				}
-			} catch (Exception ignored) {}
+		} else if (isBluetoothA2dpActive()) {
+			active = true;
 		}
 
 		if (active) hasEstablishedSession = true;
@@ -227,13 +252,15 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 	// [ABSOLUTE ZERO] Triggers the 10-second death timer if the hardware connection drops
 	private void evaluateConnectionState() {
 		if (isCarOrBluetoothActive()) {
-			Log.i("[CONNECTION_MONITOR] Car/BT is ACTIVE. Cancelling Absolute Zero teardowns.");
+			Log.i(sessionTag() + "[DECISION] Connection Active | " + connectionSnapshot()
+					+ " -> action=CANCEL_TEARDOWN_TIMERS");
 			lifecycleHandler.removeCallbacks(manualSwipeRunnable);
 			lifecycleHandler.removeCallbacks(hardwareDropRunnable);
 		} else {
 			// Only trigger the 10-second hardware drop if a session was actually established first
 			if (hasEstablishedSession) {
-				Log.w("[CONNECTION_MONITOR] Hardware Session LOST. Initiating 10-second Absolute Zero countdown...");
+				Log.w("[BT][DECISION] Hardware/BT Session Lost | " + connectionSnapshot()
+						+ " -> action=START_10S_ABSOLUTE_ZERO_COUNTDOWN");
 				lifecycleHandler.removeCallbacks(manualSwipeRunnable);
 				lifecycleHandler.removeCallbacks(hardwareDropRunnable);
 				lifecycleHandler.postDelayed(hardwareDropRunnable, 10_000);
@@ -245,7 +272,7 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 	private void executeNuclearTeardown() {
 		if (isTeardownActive) return;
 		isTeardownActive = true;
-		Log.w("[ABSOLUTE_ZERO] Executing Graceful Destructive Teardown.");
+		Log.w(sessionTag() + "[LIFECYCLE] Nuclear Teardown Executing | " + connectionSnapshot());
 
 		// 1. Force restore physical phone attributes (Brightness, Orientation, Overlays)
 		try {
@@ -268,7 +295,8 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 				if (!isCarOrBluetoothActive()) {
 					session.release();
 				} else {
-					Log.w("[ABSOLUTE_ZERO] Ghost Session Bypass: Car is still connected. Intentionally leaking MediaSession to protect OS routing.");
+					Log.w(sessionTag() + "[DECISION] Ghost Session Bypass | " + connectionSnapshot()
+							+ " -> action=KEEP_MEDIASESSION_ALIVE");
 				}
 			} catch (Exception ignored) {}
 		}
@@ -290,6 +318,7 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 
 	@Override
 	public void onDestroy() {
+		Log.i(sessionTag() + "[LIFECYCLE] PermataMediaService.onDestroy | " + connectionSnapshot());
 		lifecycleHandler.removeCallbacks(manualSwipeRunnable);
 		lifecycleHandler.removeCallbacks(hardwareDropRunnable);
 
@@ -329,11 +358,13 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 
 		// If swiped away but still connected to car/BT, survive!
 		if (isCarOrBluetoothActive()) {
-			Log.i("[TELEMETRY] App swiped away during Active Session. Preserving audio session.");
+			Log.i(sessionTag() + "[DECISION] onTaskRemoved | " + connectionSnapshot()
+					+ " -> action=PRESERVE_AUDIO_SESSION");
 			return;
 		}
 
-		Log.w("[TELEMETRY] App swiped away. No active session. Initiating 6-second Absolute Zero countdown...");
+		Log.w("[SVC][DECISION] onTaskRemoved | " + connectionSnapshot()
+				+ " -> action=START_6S_ABSOLUTE_ZERO_COUNTDOWN");
 		lifecycleHandler.removeCallbacks(manualSwipeRunnable);
 		lifecycleHandler.removeCallbacks(hardwareDropRunnable);
 		lifecycleHandler.postDelayed(manualSwipeRunnable, 6_000);
@@ -345,6 +376,7 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 			String action = intent.getAction();
 
 			if (ACTION_HIJACK_FOCUS.equals(action)) {
+				Log.i(sessionTag() + "[LIFECYCLE] onStartCommand | action=HIJACK_FOCUS, " + connectionSnapshot());
 				// Cancel Absolute Zero shutdown and revive session if focus is requested again
 				isTeardownActive = false;
 				lifecycleHandler.removeCallbacks(manualSwipeRunnable);
@@ -354,17 +386,22 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 				if (ACTION_FORCE_SHUTDOWN.equals(action)) {
 					// Prevent accidental suicide if a BT session is still active
 					if (isCarOrBluetoothActive()) {
-						Log.i("[TELEMETRY] Ignoring FORCE_SHUTDOWN because Car/BT session is still active.");
+						Log.i(sessionTag() + "[DECISION] FORCE_SHUTDOWN Blocked | " + connectionSnapshot()
+								+ " -> action=PRESERVE_CAR_BT_SESSION");
 						return START_NOT_STICKY;
 					}
+					Log.i("[SVC][DECISION] FORCE_SHUTDOWN Accepted | " + connectionSnapshot()
+							+ " -> action=NUCLEAR_TEARDOWN");
 					executeNuclearTeardown();
 					return START_NOT_STICKY;
 				} else if (ACTION_RECLAIM_SESSION.equals(action)) {
+					Log.i(sessionTag() + "[AUDIO] onStartCommand | action=RECLAIM_SESSION");
 					if (session != null) {
 						session.setActive(true);
 						updatePlaybackState(STATE_PLAYING);
 					}
 				} else if (ACTION_AGGRESSIVE_RECLAIM.equals(action)) {
+					Log.i(sessionTag() + "[AUDIO] onStartCommand | action=AGGRESSIVE_RECLAIM");
 					if (session != null) {
 						session.setMetadata(new MediaMetadataCompat.Builder()
 								.putString(MediaMetadataCompat.METADATA_KEY_TITLE, "IHU Web Mode Active")
@@ -428,10 +465,9 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 							//noinspection deprecation
 							audioManager.requestAudioFocus(pulseListener, AudioManager.STREAM_MUSIC, AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK);
 						}
-						Log.i("[AUDIO_TELEMETRY] Aggressive Reclaim: Transient Duck focus requested.");
+						Log.i(sessionTag() + "[AUDIO] Aggressive Reclaim | action=TRANSIENT_DUCK_AND_SILENT_ANCHOR");
 
 						startSilentAudioAnchorInternal();
-						Log.i("[AUDIO_TELEMETRY] Aggressive Reclaim: Silent AudioTrack re-ignited to capture AVRCP.");
 
 						final AudioFocusRequest finalDuckReq = duckRequest;
 						new Handler(Looper.getMainLooper()).postDelayed(() -> {
@@ -442,7 +478,7 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 									//noinspection deprecation
 									audioManager.abandonAudioFocus(pulseListener);
 								}
-								Log.i("[AUDIO_TELEMETRY] Aggressive Reclaim: Focus released. Native App volume restored to 100%.");
+								Log.i(sessionTag() + "[AUDIO] Aggressive Reclaim Complete | action=FOCUS_RELEASED");
 							} catch (Exception ignored) {}
 						}, 1500);
 					}
@@ -462,7 +498,7 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 		boolean isPermataOrAA = activePkg != null && (activePkg.startsWith("my.app.permata") || activePkg.equals("com.google.android.projection.gearhead"));
 
 		if (!isPermataOrAA) {
-			Log.i("[AUDIO_TELEMETRY] Blocked WebMedia PLAY command: Native App [" + activePkg + "] is in foreground.");
+			Log.i(sessionTag() + "[DECISION] WebMedia PLAY Blocked | activePkg=" + activePkg);
 			return;
 		}
 
@@ -471,9 +507,11 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 		}
 
 		if (isCarOrBluetoothActive()) {
-			Log.i("[AUDIO_TELEMETRY] Web Media PLAYING. BT/Car active: Forcing Silent Anchor to stay alive.");
+			Log.i(sessionTag() + "[AUDIO] WebMedia PLAYING | " + connectionSnapshot()
+					+ " -> action=KEEP_SILENT_ANCHOR_ALIVE");
 		} else {
-			Log.i("[AUDIO_TELEMETRY] Web Media PLAYING detected. Yielding Audio Focus to WebView.");
+			Log.i("[PHONE][AUDIO] WebMedia PLAYING | " + connectionSnapshot()
+					+ " -> action=YIELD_AUDIO_FOCUS_TO_WEBVIEW");
 			stopSilentAudioAnchor();
 			releaseAudioFocus();
 		}
@@ -491,11 +529,11 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 		boolean isPermataOrAA = activePkg != null && (activePkg.startsWith("my.app.permata") || activePkg.equals("com.google.android.projection.gearhead"));
 
 		if (!isPermataOrAA) {
-			Log.i("[AUDIO_TELEMETRY] Blocked WebMedia PAUSE command: Native App [" + activePkg + "] is in foreground.");
+			Log.i(sessionTag() + "[DECISION] WebMedia PAUSE Blocked | activePkg=" + activePkg);
 			return;
 		}
 
-		Log.i("[AUDIO_TELEMETRY] Web Media PAUSED detected. Re-engaging Silent AudioTrack Anchor.");
+		Log.i(sessionTag() + "[AUDIO] WebMedia PAUSED | action=REENGAGE_SILENT_ANCHOR");
 		if (session != null) {
 			updatePlaybackState(STATE_PLAYING);
 		}
@@ -524,11 +562,11 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 						if (focusChangeListener == null) {
 							focusChangeListener = focusChange -> {
 								if (focusChange == AudioManager.AUDIOFOCUS_LOSS) {
-									Log.w("[AUDIO_TELEMETRY] Audio Focus Lost (Chromium or Call took over).");
+									Log.w(sessionTag() + "[AUDIO] Focus Changed | state=LOSS");
 								} else if (focusChange == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK) {
-									Log.i("[AUDIO_TELEMETRY] Audio focus ducking permitted.");
+									Log.i(sessionTag() + "[AUDIO] Focus Changed | state=LOSS_TRANSIENT_CAN_DUCK");
 								} else if (focusChange == AudioManager.AUDIOFOCUS_GAIN) {
-									Log.i("[AUDIO_TELEMETRY] Audio focus returned. Enforcing Steering Control anchor.");
+									Log.i(sessionTag() + "[AUDIO] Focus Changed | state=GAIN -> action=REANCHOR_SESSION");
 									if (session != null && !isTeardownActive) {
 										session.setActive(true);
 										updatePlaybackState(STATE_PLAYING);
@@ -537,7 +575,7 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 							};
 						}
 
-						Log.i("[AUDIO_TELEMETRY] Requesting AUDIOFOCUS_GAIN for Silent Anchor.");
+						Log.i(sessionTag() + "[AUDIO] Requesting AUDIOFOCUS_GAIN for Silent Anchor | " + connectionSnapshot());
 						if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
 							if (audioFocusRequestOreo == null) {
 								AudioAttributes playbackAttributes = new AudioAttributes.Builder()
@@ -568,7 +606,7 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 					}
 
 					startSilentAudioAnchorInternal();
-					Log.i("[AUDIO_TELEMETRY] Silent AudioTrack started successfully.");
+					Log.i(sessionTag() + "[AUDIO] Silent AudioTrack Started");
 				} catch (Exception t) {
 					Log.e(t, "PermataMediaService: Audio Hardware thread encountered an exception.");
 				}
@@ -623,7 +661,7 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 						//noinspection deprecation
 						audioManager.abandonAudioFocus(focusChangeListener);
 					}
-					Log.i("[AUDIO_TELEMETRY] OS Audio Focus actively abandoned.");
+					Log.i(sessionTag() + "[AUDIO] OS Audio Focus Abandoned");
 				}
 			} catch (Exception ignored) {}
 		}
@@ -636,7 +674,7 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 				try {
 					track.stop();
 					track.release();
-					Log.i("[AUDIO_TELEMETRY] Silent AudioTrack explicitly stopped.");
+					Log.i(sessionTag() + "[AUDIO] Silent AudioTrack Stopped");
 				} catch (Exception ignored) {}
 			}
 		}
@@ -656,6 +694,7 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 
 	@Override
 	public IBinder onBind(Intent intent) {
+		Log.i(sessionTag() + "[LIFECYCLE] PermataMediaService.onBind | action=" + (intent != null ? intent.getAction() : "null"));
 		if (BuildConfig.D || !intent.hasExtra(INTENT_ATTR_NOTIF_COLOR)) {
 			var poi = PermataApplication.get().getAddonManager().getAddon("poi");
 			if (poi != null) poi.start();
@@ -669,6 +708,7 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 
 	@Override
 	public boolean onUnbind(Intent intent) {
+		Log.i(sessionTag() + "[LIFECYCLE] PermataMediaService.onUnbind | action=" + (intent != null ? intent.getAction() : "null"));
 		if (BuildConfig.D || !intent.hasExtra(INTENT_ATTR_NOTIF_COLOR)) {
 			var poi = PermataApplication.get().getAddonManager().getAddon("poi");
 			if (poi != null) poi.stop();
@@ -708,6 +748,7 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 
 	@Override
 	public void onLowMemory() {
+		Log.w(sessionTag() + "[LIFECYCLE] onLowMemory | action=CLEAR_CACHE");
 		if (lib != null) lib.clearCache();
 	}
 
