@@ -176,6 +176,26 @@ public class MainActivityDelegate extends ActivityDelegate
 		mediaServiceBinder = binder;
 	}
 
+	private String sessionTag() {
+		return isCarActivity() ? "[CAR]" : "[PHONE]";
+	}
+
+	private String resolveFragmentName(int id) {
+		if (id == ID_NULL) return "NONE";
+		if (id == R.id.folders_fragment) return "FOLDERS";
+		if (id == R.id.favorites_fragment) return "FAVORITES";
+		if (id == R.id.playlists_fragment) return "PLAYLISTS";
+		if (id == R.id.settings_fragment) return "SETTINGS";
+		if (id == R.id.audio_effects_fragment) return "AUDIO_EFFECTS";
+		if (id == R.id.subtitles_fragment) return "SUBTITLES";
+		if (id == R.id.youtube_fragment) return "YOUTUBE";
+		try {
+			String entry = getContext().getResources().getResourceEntryName(id);
+			if (entry != null) return entry.toUpperCase(Locale.US);
+		} catch (Exception ignored) {}
+		return "ID_0x" + Integer.toHexString(id);
+	}
+
 	@NonNull
 	public static MainActivityDelegate get(Context ctx) {
 		return (MainActivityDelegate) ActivityDelegate.get(ctx);
@@ -220,9 +240,13 @@ public class MainActivityDelegate extends ActivityDelegate
 		super.onActivityCreate(state);
 		Intent intent = getIntent();
 		if ((intent != null) && INTENT_ACTION_FINISH.equals(intent.getAction())) {
+			Log.i(sessionTag() + "[LIFECYCLE] Delegate.onActivityCreate | action=INTENT_ACTION_FINISH -> finishing");
 			finish();
 			return;
 		}
+
+		Log.i(sessionTag() + "[LIFECYCLE] Delegate.onActivityCreate | state=" + (state == null ? "FRESH" : "RESTORED")
+				+ ", intentAction=" + (intent != null ? intent.getAction() : "null"));
 
 		getPrefs().addBroadcastListener(this);
 		int navId;
@@ -406,6 +430,7 @@ public class MainActivityDelegate extends ActivityDelegate
 
 	@Override
 	public void onActivityDestroy() {
+		Log.i(sessionTag() + "[LIFECYCLE] Delegate.onActivityDestroy");
 		super.onActivityDestroy();
 		handler.close();
 		getMediaServiceBinder().getMediaSessionCallback().removeAssistant(this);
@@ -595,6 +620,7 @@ public class MainActivityDelegate extends ActivityDelegate
 
 	public void setVideoMode(boolean videoMode, @Nullable VideoView v) {
 		if (videoMode == this.videoMode) return;
+		Log.i(sessionTag() + "[DECISION] VideoMode Changed | enabled=" + videoMode);
 		ControlPanelView cp = getControlPanel();
 
 		if (videoMode) {
@@ -703,8 +729,15 @@ public class MainActivityDelegate extends ActivityDelegate
 	@Nullable
 	@Override
 	public ActivityFragment showFragment(int id, Object input) {
+		String from = resolveFragmentName(getActiveFragmentId());
+		String to = resolveFragmentName(id);
+		Log.i(sessionTag() + "[NAV] Page Switch | from=" + from + " -> to=" + to);
+
 		BodyLayout b = getBody();
-		if (b.isVideoMode()) b.setMode(BodyLayout.Mode.BOTH);
+		if (b.isVideoMode()) {
+			Log.i(sessionTag() + "[DECISION] Page Switch from Fullscreen Video | action=SWITCH_BODY_TO_BOTH");
+			b.setMode(BodyLayout.Mode.BOTH);
+		}
 		return super.showFragment(id, input);
 	}
 
