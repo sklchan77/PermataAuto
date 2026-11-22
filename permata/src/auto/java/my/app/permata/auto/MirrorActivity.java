@@ -46,6 +46,7 @@ public class MirrorActivity extends CarActivity implements SurfaceHolder.Callbac
 	@Override
 	public void onCreate(Bundle savedInstanceState) {
 		super.onCreate(savedInstanceState);
+		Log.i("[MIRROR][LIFECYCLE] MirrorActivity.onCreate | type=FULLSCREEN_CAR_ACTIVITY");
 		md = MirrorDisplay.get();
 		MainActivityDelegate.setTheme(this, true);
 		var s = new SurfaceView(this);
@@ -55,7 +56,7 @@ public class MirrorActivity extends CarActivity implements SurfaceHolder.Callbac
 			@Override
 			public boolean onTouchEvent(MotionEvent e) {
 				if (e.getActionMasked() == MotionEvent.ACTION_DOWN) {
-					Log.i("[INPUT_TELEMETRY] Phone Mirror Screen touched (Action DOWN).");
+					Log.i("[MIRROR][INPUT] Mirror Screen Touched | x=" + (int) e.getX() + ", y=" + (int) e.getY());
 				}
 				
 				if (md == null || md.isDestroyed()) md = MirrorDisplay.get();
@@ -79,6 +80,7 @@ public class MirrorActivity extends CarActivity implements SurfaceHolder.Callbac
 
 	@Override
 	public void onDestroy() {
+		Log.i("[MIRROR][LIFECYCLE] MirrorActivity.onDestroy");
 		if (md != null) {
 			md.release();
 			md = null;
@@ -89,6 +91,7 @@ public class MirrorActivity extends CarActivity implements SurfaceHolder.Callbac
 	@Override
 	public void onResume() {
 		super.onResume();
+		Log.i("[MIRROR][LIFECYCLE] MirrorActivity.onResume");
 		PermataMediaService.requestFocusAndAnchor(this);
 		
 		if (md == null || md.isDestroyed()) md = MirrorDisplay.get();
@@ -98,14 +101,17 @@ public class MirrorActivity extends CarActivity implements SurfaceHolder.Callbac
 	@Override
 	public void onPause() {
 		super.onPause();
-		if (MirrorServiceFS.sc != null && md != null && !md.isDestroyed()) md.setSurface(MirrorServiceFS.sc);
+		boolean handoffToFs = (MirrorServiceFS.sc != null && md != null && !md.isDestroyed());
+		Log.i("[MIRROR][LIFECYCLE] MirrorActivity.onPause | handoffToSplitScreen=" + handoffToFs);
+		if (handoffToFs) md.setSurface(MirrorServiceFS.sc);
 	}
 
 	@Override
 	public void surfaceCreated(@NonNull SurfaceHolder h) {
 		var r = h.getSurfaceFrame();
-		sc = new SurfaceContainer(h.getSurface(), r.width(), r.height(),
-				getResources().getDisplayMetrics().densityDpi);
+		int dpi = getResources().getDisplayMetrics().densityDpi;
+		Log.i("[MIRROR][SURFACE] MirrorActivity.surfaceCreated | size=" + r.width() + "x" + r.height() + ", dpi=" + dpi);
+		sc = new SurfaceContainer(h.getSurface(), r.width(), r.height(), dpi);
 				
 		if (md == null || md.isDestroyed()) md = MirrorDisplay.get();
 		if (md != null) {
@@ -115,8 +121,9 @@ public class MirrorActivity extends CarActivity implements SurfaceHolder.Callbac
 
 	@Override
 	public void surfaceChanged(@NonNull SurfaceHolder h, int format, int width, int height) {
-		sc = new SurfaceContainer(h.getSurface(), width, height,
-				getResources().getDisplayMetrics().densityDpi);
+		int dpi = getResources().getDisplayMetrics().densityDpi;
+		Log.i("[MIRROR][SURFACE] MirrorActivity.surfaceChanged | size=" + width + "x" + height + ", dpi=" + dpi);
+		sc = new SurfaceContainer(h.getSurface(), width, height, dpi);
 				
 		if (md == null || md.isDestroyed()) md = MirrorDisplay.get();
 		if (md != null) md.setSurface(sc);
@@ -124,6 +131,7 @@ public class MirrorActivity extends CarActivity implements SurfaceHolder.Callbac
 
 	@Override
 	public void surfaceDestroyed(@NonNull SurfaceHolder holder) {
+		Log.i("[MIRROR][SURFACE] MirrorActivity.surfaceDestroyed");
 		if (sc != null) {
 			if (md != null) {
 				md.releaseSurface(sc);
@@ -133,12 +141,14 @@ public class MirrorActivity extends CarActivity implements SurfaceHolder.Callbac
 
 		new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(() -> {
 			if (!PermataApplication.get().isConnectedToAuto()) {
+				Log.i("[MIRROR][DECISION] 5s Post-Destroy Check | autoConnected=false -> action=CLOSE_MIRROR");
 				MirrorDisplay.close();
 			}
 		}, 5000);
 	}
 
 	static void onHomeButtonClick() {
+		Log.i("[MIRROR][INPUT] Toolbar Button Pressed | button=HOME");
 		var ctx = PermataApplication.get();
 		if (ctx != null) {
 			Intent intent = new Intent(ctx, LauncherActivity.class);
@@ -149,6 +159,7 @@ public class MirrorActivity extends CarActivity implements SurfaceHolder.Callbac
 	}
 	
 	static void onRecentButtonClick() {
+		Log.i("[MIRROR][INPUT] Toolbar Button Pressed | button=RECENT");
 		var d = EventDispatcher.get();
 		if (d != null) {
 			d.directRecent();
@@ -157,6 +168,7 @@ public class MirrorActivity extends CarActivity implements SurfaceHolder.Callbac
 	}
 
 	static void onBackButtonClick() {
+		Log.i("[MIRROR][INPUT] Toolbar Button Pressed | button=BACK");
 		if (!AccessibilityEventDispatcherService.dispatchUniversalBack()) {
 			var d = EventDispatcher.get();
 			if (d != null) d.directBack();
@@ -165,6 +177,7 @@ public class MirrorActivity extends CarActivity implements SurfaceHolder.Callbac
 	}
 
 	static void onExitButtonClick() {
+		Log.i("[MIRROR][INPUT] Toolbar Button Pressed | button=SHUTDOWN");
 		MirrorDisplay.close();
 		
 		var ctx = PermataApplication.get();
@@ -277,6 +290,7 @@ public class MirrorActivity extends CarActivity implements SurfaceHolder.Callbac
 					
 					if (!moving && (Math.abs(deltaX) >= moveTolerance || Math.abs(deltaY) >= moveTolerance)) {
 						moving = true;
+						Log.i("[MIRROR][INPUT] Toolbar Drag Started | startX=" + (int) initialX + ", startY=" + (int) initialY);
 						if (downButton != null) {
 							downButton.clearAnimation();
 							downButton = null;
@@ -298,6 +312,7 @@ public class MirrorActivity extends CarActivity implements SurfaceHolder.Callbac
 				case MotionEvent.ACTION_UP -> {
 					if (moving) {
 						moving = false;
+						Log.i("[MIRROR][INPUT] Toolbar Drag Ended | endX=" + (int) getX() + ", endY=" + (int) getY());
 						return true;
 					}
 					
