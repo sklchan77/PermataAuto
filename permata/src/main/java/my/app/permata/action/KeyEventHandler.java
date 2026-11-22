@@ -106,6 +106,17 @@ public class KeyEventHandler {
 
     private static final String JS_UNIVERSAL_PAYLOAD = "(function(){" +
             "let res = 'Discovery [Layer 2]: JS Registry Miss (No custom formatting applied)'; " +
+            "const observeDom = function(fn, delay) { " +
+            "  let t = null; " +
+            "  const run = function() { t = null; try { fn(); } catch(e){} }; " +
+            "  const schedule = function() { if (!t) t = setTimeout(run, delay); }; " +
+            "  run(); " +
+            "  if (document.body) { " +
+            "    new MutationObserver(schedule).observe(document.body, { childList: true, subtree: true }); " +
+            "  } " +
+            "  window.addEventListener('scroll', schedule, { passive: true }); " +
+            "  return schedule; " +
+            "}; " +
             "const injectGlobalWipe = function() { " +
             "  if(!document.getElementById('permata-god-mode-css')) { " +
             "    const style = document.createElement('style'); " +
@@ -155,13 +166,13 @@ public class KeyEventHandler {
             "      var ttCss = ' [data-e2e=\"video-author-avatar\"], [data-e2e=\"nav-login\"], [data-e2e=\"video-desc\"], [data-e2e=\"video-music\"], [data-e2e=\"sponsored-label\"], [class*=\"DivHeaderContainer\"], [class*=\"DivSideNavContainer\"], [class*=\"DivVideoInfoContainer\"], [class*=\"DivTextInfoContainer\"], [class*=\"DivVideoAuthorInfo\"], [class*=\"DivBottomContainer\"] { display: none !important; opacity: 0 !important; pointer-events: none !important; width: 0 !important; height: 0 !important; } [class*=\"DivMediaCardOverlay\"], [class*=\"DivOverlayBottomContent\"], [class*=\"DivCreatorInfoContainer\"], [class*=\"BasePlayerContainer\"]::after { pointer-events: none !important; } '; " +
             "      if (!window.__ttUISurgery) { " +
             "        window.__ttUISurgery = true; " +
-            "        setInterval(function(){ " +
+            "        observeDom(function(){ " +
             "          var els = document.querySelectorAll('span, div, button'); " +
             "          els.forEach(function(e){ " +
             "            var t = e.innerText ? e.innerText.trim() : ''; " +
             "            if((t === 'Follow' || t === 'Sponsored') && e.getBoundingClientRect().left < window.innerWidth / 2) { e.style.display = 'none'; } " +
             "          }); " +
-            "        }, 500); " +
+            "        }, 300); " +
             "      } " +
             "      return 'TIKTOK: ' + injectGlobalWipe() + ' | ' + injectSpecificWipe(ttCss, 'permata-tt-css'); " +
             "    }}," +
@@ -169,7 +180,7 @@ public class KeyEventHandler {
             "      var igCss = ' header, nav, [role=\"navigation\"] { display: none !important; pointer-events: none !important; opacity: 0 !important; visibility: hidden !important; } body, html { overflow: auto !important; touch-action: pan-y !important; } '; " +
             "      if (!window.__igAudioFix) { " +
             "        window.__igAudioFix = true; " +
-            "        setInterval(function(){ " +
+            "        var igRun = function(){ " +
             "          var wh = window.innerHeight; " +
             "          var vids = document.querySelectorAll('video'); " +
             "          var maxH = 0; var primary = null; " +
@@ -194,14 +205,16 @@ public class KeyEventHandler {
             "              var p = img.closest('a') || img; p.style.display = 'none'; " +
             "            } " +
             "          }); " +
-            "        }, 400); " +
+            "        }; " +
+            "        var igSchedule = observeDom(igRun, 300); " +
+            "        document.addEventListener('play', igSchedule, true); " +
             "      } " +
             "      return 'INSTAGRAM: ' + injectSpecificWipe(igCss, 'permata-ig-css') + ' | Spatial Audio, Auto-Unmute & UI Surgery Armed.'; " +
             "    }}," +
             "    {name:\"facebook\",match:/facebook/,execute:function(){" +
             "      if (!window.__fbUISurgery) { " +
             "        window.__fbUISurgery = true; " +
-            "        setInterval(function(){ " +
+            "        var fbRun = function(){ " +
             "          var wh = window.innerHeight; var ww = window.innerWidth; " +
             "          var vids = document.querySelectorAll('video'); " +
             "          var maxH = 0; var primary = null; " +
@@ -236,7 +249,9 @@ public class KeyEventHandler {
             "              img.style.opacity = '0'; img.style.pointerEvents = 'none'; " +
             "            } " +
             "          }); " +
-            "        }, 500); " +
+            "        }; " +
+            "        var fbSchedule = observeDom(fbRun, 300); " +
+            "        document.addEventListener('play', fbSchedule, true); " +
             "      } " +
             "      return 'FACEBOOK: Surgery precision UI wipe & Auto-Unmute armed.'; " +
             "    }}," +
