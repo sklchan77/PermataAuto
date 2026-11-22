@@ -31,6 +31,7 @@ import my.app.utils.app.App;
 import my.app.utils.async.FutureSupplier;
 import my.app.utils.async.Promise;
 import my.app.utils.function.DoubleSupplier;
+import my.app.utils.log.Log;
 import my.app.utils.pref.PreferenceStore.Pref;
 import my.app.utils.ui.fragment.ActivityFragment;
 
@@ -61,6 +62,10 @@ public class BodyLayout extends SplitLayout
 		});
 	}
 
+	private String sessionTag(@Nullable MainActivityDelegate a) {
+		return (a != null && a.isCarActivity()) ? "[CAR]" : "[PHONE]";
+	}
+
 	@Override
 	protected int getLayout(boolean portrait) {
 		return portrait ? R.layout.body_layout : R.layout.body_layout_land;
@@ -88,11 +93,16 @@ public class BodyLayout extends SplitLayout
 	}
 
 	public void setMode(Mode mode) {
+		Mode oldMode = this.mode;
 		this.mode = mode;
 		Guideline gl = getGuideline();
 		ConstraintLayout.LayoutParams lp = (ConstraintLayout.LayoutParams) gl.getLayoutParams();
 		MainActivityDelegate a = getActivity();
 		VideoView vv = getVideoView();
+
+		if (oldMode != mode) {
+			Log.i(sessionTag(a) + "[DECISION] BodyLayout.setMode | from=" + oldMode + " -> to=" + mode);
+		}
 
 		switch (mode) {
 			case FRAME -> {
@@ -162,13 +172,16 @@ public class BodyLayout extends SplitLayout
 				}
 
 				MediaLib.PlayableItem i = eng.getSource();
+				boolean isVideo = (i != null) && i.isVideo();
+				boolean splitSupported = eng.isSplitModeSupported();
+				boolean ownsSurface = (cb.getVideoView() == getVideoView());
+				Mode target = (isVideo && splitSupported && ownsSurface) ? Mode.BOTH : Mode.FRAME;
 
-				if ((i != null) && i.isVideo() && eng.isSplitModeSupported() &&
-						(cb.getVideoView() == getVideoView())) {
-					setMode(Mode.BOTH);
-				} else {
-					setMode(Mode.FRAME);
-				}
+				Log.i(sessionTag(a) + "[DECISION] BodyLayout.onFragmentChanged | isVideo=" + isVideo
+						+ ", splitSupported=" + splitSupported
+						+ ", ownsSurface=" + ownsSurface
+						+ " -> mode=" + target);
+				setMode(target);
 			}
 		}
 	}
@@ -179,6 +192,7 @@ public class BodyLayout extends SplitLayout
 
 		if (i.isVideo() && !getVideoView().isSurfaceCreated() &&
 				!a.getMediaSessionCallback().hasCustomEngineProvider()) {
+			Log.i(sessionTag(a) + "[SURFACE] BodyLayout.playItem | surfaceCreated=false -> waiting in Mode.VIDEO");
 			setMode(BodyLayout.Mode.VIDEO);
 			getVideoView().onSurfaceCreated(() -> playItem(i));
 			return;
@@ -203,13 +217,24 @@ public class BodyLayout extends SplitLayout
 		else if (!f.isVideoModeSupported()) return;
 		MediaEngine eng = a.getMediaServiceBinder().getCurrentEngine();
 
-		if ((newItem == null) || !newItem.isVideo() || (eng == null) || !eng.isSplitModeSupported() ||
-				(a.getMediaSessionCallback().getVideoView() != getVideoView())) {
-			setMode(Mode.FRAME);
+		boolean isVideo = (newItem != null) && newItem.isVideo();
+		boolean splitSupported = (eng != null) && eng.isSplitModeSupported();
+		boolean ownsSurface = (a.getMediaSessionCallback().getVideoView() == getVideoView());
+		boolean videoModeRequired = (eng != null) && eng.isVideoModeRequired();
+
+		Mode target;
+		if (!isVideo || !splitSupported || !ownsSurface) {
+			target = Mode.FRAME;
 		} else {
-			if (!eng.isVideoModeRequired()) setMode(Mode.FRAME);
-			else setMode(Mode.VIDEO);
+			target = videoModeRequired ? Mode.VIDEO : Mode.FRAME;
 		}
+
+		Log.i(sessionTag(a) + "[DECISION] BodyLayout.onPlayableChanged | isVideo=" + isVideo
+				+ ", splitSupported=" + splitSupported
+				+ ", ownsSurface=" + ownsSurface
+				+ ", videoModeRequired=" + videoModeRequired
+				+ " -> mode=" + target);
+		setMode(target);
 
 		if ((eng != null) && (newItem != null) && !newItem.isVideo() && (getMode() == Mode.FRAME)) {
 			eng.selectSubtitleStream();
