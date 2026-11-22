@@ -23,6 +23,7 @@ import com.google.android.material.floatingactionbutton.FloatingActionButton;
 
 import my.app.utils.R;
 import my.app.utils.function.DoubleSupplier;
+import my.app.utils.log.Log;
 import my.app.utils.pref.PreferenceStore;
 import my.app.utils.pref.PreferenceStore.Pref;
 import my.app.utils.pref.SharedPreferenceStore;
@@ -199,6 +200,7 @@ public class FloatingButton extends FloatingActionButton implements ActivityList
 					var dm = getContext().getResources().getDisplayMetrics();
 					if ((Math.abs(e.getRawX() - downX) >= (dm.widthPixels * 0.05f))
 							|| (Math.abs(e.getRawY() - downY) >= (dm.widthPixels * 0.05f))) {
+						Log.i("[UI][INPUT] FloatingButton Dragged | x=" + (int) getX() + ", y=" + (int) getY());
 						return true;
 					}
 
@@ -315,6 +317,7 @@ public class FloatingButton extends FloatingActionButton implements ActivityList
 				ActivityDelegate a = ActivityDelegate.get(v.getContext());
 				ActivityFragment f = a.getActiveFragment();
 				if (f == null) return;
+				Log.i("[UI][INPUT] FloatingButton Pressed | type=BACK, fragment=" + f.getClass().getSimpleName());
 				a.onBackPressed();
 			}
 
@@ -342,13 +345,23 @@ public class FloatingButton extends FloatingActionButton implements ActivityList
 			@Override
 			default void onClick(View v) {
 				FloatingButton fb = (FloatingButton) v;
-				if (fb.getActivity().isRootPage()) showMenu(fb);
-				else Back.super.onClick(v);
+				if (fb.getActivity().isRootPage()) {
+					ActivityFragment f = fb.getActivity().getActiveFragment();
+					Log.i("[UI][INPUT] FloatingButton Pressed | type=MENU(rootPage), fragment="
+							+ (f != null ? f.getClass().getSimpleName() : "none"));
+					showMenu(fb);
+				} else {
+					Back.super.onClick(v);
+				}
 			}
 
 			@Override
 			default boolean onLongClick(View v) {
-				showMenu((FloatingButton) v);
+				FloatingButton fb = (FloatingButton) v;
+				ActivityFragment f = fb.getActivity().getActiveFragment();
+				Log.i("[UI][INPUT] FloatingButton LongPressed | type=MENU, fragment="
+						+ (f != null ? f.getClass().getSimpleName() : "none"));
+				showMenu(fb);
 				return true;
 			}
 
