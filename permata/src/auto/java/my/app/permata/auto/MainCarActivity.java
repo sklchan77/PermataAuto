@@ -14,7 +14,9 @@ import static my.app.utils.async.Completed.completed;
 import static my.app.utils.async.Completed.failed;
 import static my.app.utils.ui.UiUtils.showAlert;
 
+import android.app.Activity;
 import android.content.Context;
+import android.content.ContextWrapper;
 import android.content.Intent;
 import android.content.res.Configuration;
 import android.graphics.Color;
@@ -49,6 +51,7 @@ import com.google.android.apps.auto.sdk.CarUiController;
 import my.app.permata.R;
 import my.app.permata.action.KeyEventHandler;
 import my.app.permata.media.service.PermataMediaServiceConnection;
+import my.app.permata.ui.activity.MainActivity;
 import my.app.permata.ui.activity.PermataActivity;
 import my.app.permata.ui.activity.MainActivityDelegate;
 import my.app.permata.ui.view.MediaItemListView;
@@ -123,7 +126,14 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 
 	private MainActivityDelegate onCreate(Bundle state, PermataMediaServiceConnection s) {
 		MainActivityDelegate d = new MainActivityDelegate(this, s.createBinder());
-		ActivityDelegate.setContextToDelegate(ctx -> d);
+		ActivityDelegate.setContextToDelegate(ctx -> {
+			Context c = ctx;
+			while (c instanceof ContextWrapper && !(c instanceof Activity)) {
+				c = ((ContextWrapper) c).getBaseContext();
+			}
+			if (c instanceof MainActivity) return null;
+			return d;
+		});
 		delegate = completed(d);
 		d.onActivityCreate(state);
 		return d;
