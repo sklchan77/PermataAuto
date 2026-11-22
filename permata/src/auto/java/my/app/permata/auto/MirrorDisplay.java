@@ -112,6 +112,7 @@ public class MirrorDisplay {
 	private final Handler mainHandler = new Handler(Looper.getMainLooper());
 	
 	private final Runnable idleDimRunnable = () -> {
+		Log.i("[MIRROR][DECISION] Idle Timer Expired (10s) | action=RE_DIM_AND_LOCK_ORIENTATION");
 		dimScreen(PermataApplication.get());
 	};
 
@@ -146,6 +147,7 @@ public class MirrorDisplay {
 	public static void close() {
 		synchronized (lifecycleLock) {
 			if (instance == null) return;
+			Log.i("[MIRROR][LIFECYCLE] MirrorDisplay.close() called");
 			var scRef = instance.sc;
 			instance.cleanUpLocked();
 			if (scRef != null) drawMsg(scRef, R.string.app_name);
@@ -155,7 +157,7 @@ public class MirrorDisplay {
 	public static void shutdownForCarMedia() {
 		var app = PermataApplication.get();
 		if (app == null || !app.isMirroringMode()) return;
-		Log.i("[LIFECYCLE_TELEMETRY] Car Permata Auto media started. Auto-shutting down Mirroring session.");
+		Log.i("[MIRROR][LIFECYCLE] Auto-Shutdown Triggered | reason=CAR_MEDIA_STARTED");
 		close();
 		try {
 			Intent goHome = new Intent(Intent.ACTION_MAIN);
@@ -178,6 +180,7 @@ public class MirrorDisplay {
 			if (isDestroyed) return;
 			if (--refCounter <= 0) {
 				refCounter = 0;
+				Log.i("[MIRROR][LIFECYCLE] MirrorDisplay refCounter reached 0 | action=CLEANUP");
 				cleanUpLocked();
 			}
 		}
@@ -191,6 +194,10 @@ public class MirrorDisplay {
 			
 			this.sc = sc;
 			currentMetrics = null; 
+			String orient = sc.getWidth() > sc.getHeight() ? "LANDSCAPE" : "PORTRAIT";
+			Log.i("[MIRROR][SURFACE] setSurface | size=" + sc.getWidth() + "x" + sc.getHeight()
+					+ ", dpi=" + sc.getDpi() + ", orientation=" + orient
+					+ ", sessionActive=" + session.isDoneNotFailed());
 			
 			dimScreen(PermataApplication.get());
 			disableAccelRotation(PermataApplication.get());
@@ -218,6 +225,7 @@ public class MirrorDisplay {
 			if (isDestroyed) return;
 			var oldSc = this.sc;
 			if (oldSc != sc) return;
+			Log.i("[MIRROR][SURFACE] releaseSurface | size=" + sc.getWidth() + "x" + sc.getHeight());
 			this.sc = null;
 			
 			restoreBrightness(PermataApplication.get(), true);
@@ -429,6 +437,8 @@ public class MirrorDisplay {
             android.provider.Settings.System.putInt(cr, android.provider.Settings.System.ACCELEROMETER_ROTATION, 0);
             android.provider.Settings.System.putInt(cr, android.provider.Settings.System.USER_ROTATION, 
                     land ? android.view.Surface.ROTATION_90 : android.view.Surface.ROTATION_0);
+            Log.i("[MIRROR][DECISION] Rotation Lock Engaged | orientation=" + (land ? "LANDSCAPE" : "PORTRAIT")
+                    + ", savedAccel=" + originalAccelState);
         } catch (Exception err) {
             Log.e(err, "[ROTATION_LOCK] Failed to write system settings.");
         }
@@ -443,6 +453,7 @@ public class MirrorDisplay {
             try {
                 android.provider.Settings.System.putInt(ctx.getContentResolver(), 
                         android.provider.Settings.System.ACCELEROMETER_ROTATION, originalAccelState);
+                Log.i("[MIRROR][DECISION] Rotation Lock Released | restoredAccel=" + originalAccelState);
             } catch (Exception err) {}
             originalAccelState = -1;
         }
@@ -453,6 +464,7 @@ public class MirrorDisplay {
 		synchronized (settingsLock) {
 			if (isDimmed) return;
 			isDimmed = true;
+			Log.i("[MIRROR][DECISION] Screen Dimmed | brightness=0.0");
 			mainHandler.post(() -> {
 				updateOverlayAttributes(true);
 				disableAccelRotation(PermataApplication.get());
@@ -465,6 +477,7 @@ public class MirrorDisplay {
 			synchronized (settingsLock) {
 				if (!isDimmed) return;
 				isDimmed = false;
+				Log.i("[MIRROR][DECISION] Screen Brightness Restored | sync=" + synchronous);
 				updateOverlayAttributes(false);
 			}
 		};
@@ -481,12 +494,18 @@ public class MirrorDisplay {
 		if (sc == null || isDestroyed) return;
 		var app = PermataApplication.get();
 		var mode = sc.getWidth() > sc.getHeight() ? 1 : 2;
+		String layoutType = (mode == 1) ? "LANDSCAPE" : "PORTRAIT";
 
 		if (app.isMirroringMode()) {
+			Log.i("[MIRROR][LIFECYCLE] Mirroring Resized/Updated | size=" + sc.getWidth() + "x" + sc.getHeight()
+					+ ", orientation=" + layoutType);
 			app.setMirroringMode(mode);
 			updateOverlayAttributes(true);
 			return;
 		}
+
+		Log.i("[MIRROR][LIFECYCLE] Mirroring Session Started | size=" + sc.getWidth() + "x" + sc.getHeight()
+				+ ", dpi=" + sc.getDpi() + ", orientation=" + layoutType);
 
 		disableAccelRotation(app);
 		resetIdleTimer();
@@ -496,7 +515,7 @@ public class MirrorDisplay {
 				@Override
 				public void onReceive(Context context, Intent intent) {
 					if (Intent.ACTION_USER_PRESENT.equals(intent.getAction()) && !isDestroyed) {
-						Log.i("[LIFECYCLE_TELEMETRY] Phone unlocked (ACTION_USER_PRESENT). Engaging immediate dim & orientation lock.");
+						Log.i("[MIRROR][DECISION] Phone Unlocked (ACTION_USER_PRESENT) | action=IMMEDIATE_DIM_AND_LOCK");
 						mainHandler.removeCallbacks(idleDimRunnable);
 						mainHandler.postDelayed(() -> {
 							if (isDestroyed || sc == null) return;
@@ -580,6 +599,7 @@ public class MirrorDisplay {
 	private void cleanUpLocked() {
 		if (isDestroyed) return;
 		isDestroyed = true;
+		Log.i("[MIRROR][LIFECYCLE] Mirroring Session Closing | action=FULL_CLEANUP");
 		
 		noSession();
 		var app = PermataApplication.get();
@@ -695,6 +715,7 @@ public class MirrorDisplay {
 				
 				if (err != null) {
 					if (isCancellation(err)) {
+						Log.i("[MIRROR][LIFECYCLE] Screen Capture Rejected by User | action=CLEANUP");
 						drawMsg(R.string.screen_capture_rejected);
 						cleanUpLocked();
 						return;
@@ -789,11 +810,13 @@ public class MirrorDisplay {
 		mainHandler.post(() -> {
 			MainActivity activeMain = MainActivity.getActiveInstance();
 			if (activeMain != null && !activeMain.isFinishing()) {
+				Log.i("[MIRROR][DECISION] Finishing Active Phone MainActivity | mode=" + mode);
 				activeMain.finish();
 			}
 		});
 
 		if (mode != 0 && MainCarActivity.activeInstance == null) {
+			Log.i("[MIRROR][DECISION] Launching Phone LauncherActivity | mode=" + mode);
 			var intent = new Intent(app, LauncherActivity.class);
 			intent.setFlags(FLAG_ACTIVITY_NEW_TASK | FLAG_ACTIVITY_CLEAR_TASK);
 			app.startActivity(intent);
@@ -801,6 +824,7 @@ public class MirrorDisplay {
 			mainHandler.post(() -> {
 				LauncherActivity activeLauncher = LauncherActivity.getActiveInstance();
 				if (activeLauncher != null && !activeLauncher.isFinishing()) {
+					Log.i("[MIRROR][DECISION] Finishing Phone LauncherActivity | mode=0");
 					activeLauncher.finish();
 				}
 			});
@@ -824,6 +848,7 @@ public class MirrorDisplay {
 
 		@Override
 		public void onStop() {
+			Log.i("[MIRROR][LIFECYCLE] MediaProjection.Callback.onStop() | action=CLEANUP");
 			close();
 			synchronized (lifecycleLock) {
 				MirrorDisplay md = MirrorDisplay.instance;
@@ -881,9 +906,12 @@ public class MirrorDisplay {
 		public boolean onTouchEvent(MotionEvent event) {
 			int action = event.getActionMasked();
 			if (action == MotionEvent.ACTION_OUTSIDE) {
-				if (Math.abs(uptimeMillis() - lastInjectedTouchTime) > 500) {
+				long deltaMs = Math.abs(uptimeMillis() - lastInjectedTouchTime);
+				if (deltaMs > 500) {
 					resetIdleTimer();
 					if (isDimmed) {
+						Log.i("[MIRROR][DECISION] Physical Phone Touch Detected | deltaMs=" + deltaMs
+								+ " -> action=WAKE_AND_RESTORE_ROTATION");
 						restoreBrightness(getContext(), false);
 						restoreAccelRotation(getContext(), false);
 					}
