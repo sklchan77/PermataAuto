@@ -35,6 +35,7 @@ import android.os.Bundle;
 import android.os.Handler;
 import android.os.IBinder;
 import android.os.Looper;
+import android.os.SystemClock;
 import android.support.v4.media.MediaBrowserCompat.MediaItem;
 import android.support.v4.media.MediaDescriptionCompat;
 import android.support.v4.media.MediaMetadataCompat;
@@ -57,6 +58,7 @@ import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 
 import my.app.permata.BuildConfig;
@@ -102,6 +104,7 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 	private static final String EXTRA_MEDIA_SEARCH_SUPPORTED = "android.media.browse.SEARCH_SUPPORTED";
 	private static final int NOTIF_ID = 1;
 	private static final String NOTIF_CHANNEL_ID = "Permata";
+	private static final long AGGRESSIVE_RECLAIM_COOLDOWN_MS = 2500L;
 
 	private DefaultMediaLib lib;
 	private MediaSessionCompat session;
@@ -124,6 +127,7 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 
 	private ExecutorService audioHardwareExecutor;
 	private final AtomicReference<AudioTrack> silentAudioTrackRef = new AtomicReference<>(null);
+	private final AtomicLong lastAggressiveReclaimTime = new AtomicLong(0L);
 
 	private final Object audioLock = new Object();
 	private volatile boolean isTeardownActive = false;
@@ -438,6 +442,16 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 		if (audioHardwareExecutor == null || audioHardwareExecutor.isShutdown()) return;
 		if (isTeardownActive) return;
 
+		long now = SystemClock.uptimeMillis();
+		long prev = lastAggressiveReclaimTime.get();
+		if (now - prev < AGGRESSIVE_RECLAIM_COOLDOWN_MS) {
+			Log.i(sessionTag() + "[AUDIO] Aggressive Reclaim Skipped | reason=COOLDOWN_ACTIVE(" + (now - prev) + "ms)");
+			return;
+		}
+		if (!lastAggressiveReclaimTime.compareAndSet(prev, now)) {
+			return;
+		}
+
 		try {
 			audioHardwareExecutor.execute(() -> {
 				if (isTeardownActive) return;
@@ -606,7 +620,7 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 					}
 
 					startSilentAudioAnchorInternal();
-					Log.i(sessionTag() + "[AUDIO] Silent AudioTrack Started");
+					Log.i(sessionTag() + "[AUDIO] Silent AudioTrack Started (16kHz Mono)");
 				} catch (Exception t) {
 					Log.e(t, "PermataMediaService: Audio Hardware thread encountered an exception.");
 				}
@@ -618,13 +632,13 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 
 	private void startSilentAudioAnchorInternal() {
 		try {
-			int sampleRate = 44100;
-			int bufferSize = sampleRate * 2 * 2;
+			int sampleRate = 16000;
+			int bufferSize = sampleRate * 2; // 16-bit mono = 2 bytes/frame (32 KB)
 
 			AudioTrack newTrack = new AudioTrack(
 					AudioManager.STREAM_MUSIC,
 					sampleRate,
-					AudioFormat.CHANNEL_OUT_STEREO,
+					AudioFormat.CHANNEL_OUT_MONO,
 					AudioFormat.ENCODING_PCM_16BIT,
 					bufferSize,
 					AudioTrack.MODE_STATIC
