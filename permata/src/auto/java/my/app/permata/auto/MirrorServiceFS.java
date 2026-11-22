@@ -38,11 +38,13 @@ public class MirrorServiceFS extends CarAppService {
 	@Override
 	public void onCreate() {
 		super.onCreate();
+		Log.i("[MIRROR_FS][LIFECYCLE] MirrorServiceFS.onCreate | type=SPLIT_SCREEN_CAR_APP_SERVICE");
 		md = MirrorDisplay.get();
 	}
 
 	@Override
 	public void onDestroy() {
+		Log.i("[MIRROR_FS][LIFECYCLE] MirrorServiceFS.onDestroy");
 		if (md != null) {
 			md.release();
 			md = null;
@@ -54,10 +56,15 @@ public class MirrorServiceFS extends CarAppService {
 	@Override
 	public void onTaskRemoved(Intent rootIntent) {
 		super.onTaskRemoved(rootIntent);
+		boolean mirroring = PermataApplication.get().isMirroringMode();
+		boolean autoConnected = PermataApplication.get().isConnectedToAuto();
+		Log.i("[MIRROR_FS][LIFECYCLE] MirrorServiceFS.onTaskRemoved | mirroring=" + mirroring
+				+ ", autoConnected=" + autoConnected);
 
-		if (PermataApplication.get().isMirroringMode()) {
+		if (mirroring) {
 			MirrorDisplay.close();
-		} else if (PermataApplication.get().isConnectedToAuto()) {
+		} else if (autoConnected) {
+			Log.i("[MIRROR_FS][DECISION] Preserving MirrorServiceFS | reason=AUTO_STILL_CONNECTED");
 			return;
 		}
 		
@@ -72,6 +79,7 @@ public class MirrorServiceFS extends CarAppService {
 	@NonNull
 	@Override
 	public Session onCreateSession(@NonNull SessionInfo sessionInfo) {
+		Log.i("[MIRROR_FS][LIFECYCLE] Split-Screen Mirror Session Created | displayType=" + sessionInfo.getDisplayType());
 		return new Session() {
 			@NonNull
 			@Override
@@ -108,6 +116,8 @@ public class MirrorServiceFS extends CarAppService {
 		@Override
 		public void onSurfaceAvailable(@NonNull SurfaceContainer localSc) {
 			if (localSc.getSurface() == null) return;
+			Log.i("[MIRROR_FS][SURFACE] onSurfaceAvailable | size=" + localSc.getWidth() + "x" + localSc.getHeight()
+					+ ", dpi=" + localSc.getDpi());
 			MirrorServiceFS.sc = localSc;
 			
 			if (md == null || md.isDestroyed()) {
@@ -123,6 +133,7 @@ public class MirrorServiceFS extends CarAppService {
 
 		@Override
 		public void onSurfaceDestroyed(@NonNull SurfaceContainer localSc) {
+			Log.i("[MIRROR_FS][SURFACE] onSurfaceDestroyed | size=" + localSc.getWidth() + "x" + localSc.getHeight());
 			if (scrollUp != null) {
 				scrollUp.cancel();
 				scrollUp = null;
@@ -140,10 +151,12 @@ public class MirrorServiceFS extends CarAppService {
 			if (isGrabMode) {
 				scrollStartX = x;
 				scrollStartY = y;
+				Log.i("[MIRROR_FS][INPUT] Grab Target Locked | x=" + (int) x + ", y=" + (int) y);
 				CarToast.makeText(getCarContext(), "Target Locked. Drag anywhere.", CarToast.LENGTH_SHORT).show();
 				return;
 			}
 
+			Log.i("[MIRROR_FS][INPUT] Split-Screen Tap | x=" + (int) x + ", y=" + (int) y);
 			if (scrollUp != null) {
 				scrollUp.cancel();
 				scrollUp = null;
@@ -168,6 +181,8 @@ public class MirrorServiceFS extends CarAppService {
 
 				scrollX = scrollStartX;
 				scrollY = scrollStartY;
+				Log.i("[MIRROR_FS][INPUT] Split-Screen Drag Started | grabMode=" + isGrabMode
+						+ ", startX=" + (int) scrollX + ", startY=" + (int) scrollY);
 				
 				if (!mDisp.motionEvent(time, time, ACTION_DOWN, scrollX, scrollY)) {
 					return;
@@ -199,6 +214,8 @@ public class MirrorServiceFS extends CarAppService {
 				} else {
 					scrollUp = null;
 					mDisp.motionEvent(scrollDownTime, time, ACTION_UP, scrollX, scrollY);
+					Log.i("[MIRROR_FS][INPUT] Split-Screen Drag Ended | grabMode=" + isGrabMode
+							+ ", endX=" + (int) scrollX + ", endY=" + (int) scrollY);
 					// [NEW] Reset Grab Mode after the drag is completely finished
 					isGrabMode = false;
 				}
@@ -207,6 +224,8 @@ public class MirrorServiceFS extends CarAppService {
 
 		@Override
 		public void onScale(float focusX, float focusY, float scaleFactor) {
+			Log.i("[MIRROR_FS][INPUT] Split-Screen Scale | focusX=" + (int) focusX + ", focusY=" + (int) focusY
+					+ ", zoomIn=" + (scaleFactor > 1f));
 			scrollStartX = focusX;
 			scrollStartY = focusY;
 			if (md() != null) md().scale(focusX, focusY, scaleFactor > 1f);
@@ -237,11 +256,13 @@ public class MirrorServiceFS extends CarAppService {
 							.setTint(androidx.car.app.model.CarColor.DEFAULT).build())
 					.setOnClickListener(() -> {
 						isGrabMode = true;
+						Log.i("[MIRROR_FS][INPUT] Toolbar Button Pressed | button=GRAB, grabMode=ON");
 						CarToast.makeText(getCarContext(), "Grab Mode ON: Tap bubble to lock.", CarToast.LENGTH_SHORT).show();
 					}).build();
 			
 			return new NavigationTemplate.Builder()
-					.setPanModeListener(isPanningMode -> {})
+					.setPanModeListener(isPanningMode ->
+							Log.i("[MIRROR_FS][INPUT] Pan Mode Toggled | isPanningMode=" + isPanningMode))
 					// 1. Interactive Floating Tools (Renders on the right edge)
 					.setMapActionStrip(new ActionStrip.Builder()
 							.addAction(grabButton)
