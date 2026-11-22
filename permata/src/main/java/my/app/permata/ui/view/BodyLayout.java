@@ -203,7 +203,8 @@ public class BodyLayout extends SplitLayout
 		else if (!f.isVideoModeSupported()) return;
 		MediaEngine eng = a.getMediaServiceBinder().getCurrentEngine();
 
-		if ((newItem == null) || !newItem.isVideo() || (eng == null) || !eng.isSplitModeSupported()) {
+		if ((newItem == null) || !newItem.isVideo() || (eng == null) || !eng.isSplitModeSupported() ||
+				(a.getMediaSessionCallback().getVideoView() != getVideoView())) {
 			setMode(Mode.FRAME);
 		} else {
 			if (!eng.isVideoModeRequired()) setMode(Mode.FRAME);
