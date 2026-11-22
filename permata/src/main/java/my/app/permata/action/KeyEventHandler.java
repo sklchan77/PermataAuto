@@ -90,6 +90,16 @@ public class KeyEventHandler {
     public static boolean isScrollerPackage(String pkgName) {
         return isStubbornScroller(pkgName) || isNativeBtScroller(pkgName);
     }
+
+    private static String sessionTag(@Nullable MainActivityDelegate a) {
+        if (PermataApplication.get().isMirroringMode()) return "[MIRROR]";
+        return (a != null && a.isCarActivity()) ? "[CAR]" : "[PHONE]";
+    }
+
+    private static String crownName(int crown) {
+        return crown == PermataApplication.CROWN_WEB ? "WEB"
+                : crown == PermataApplication.CROWN_NATIVE ? "NATIVE" : "IPTV";
+    }
     
     private static final Map<Class<?>, Method> webViewMethodCache = new ConcurrentHashMap<>();
     private static final Map<View, Long> scrollTimestamps = Collections.synchronizedMap(new WeakHashMap<>());
@@ -298,6 +308,7 @@ public class KeyEventHandler {
                     return true; 
                 }
                 lastGlobalActionTime.set(currentUptime);
+                Log.i("[MIRROR][INPUT] KeyEvent | key=KEYCODE_BACK, decision=DISPATCH_UNIVERSAL_BACK");
                 AccessibilityEventDispatcherService.dispatchUniversalBack();
                 return true; 
             }
@@ -326,6 +337,7 @@ public class KeyEventHandler {
         }
 
         final MainActivityDelegate finalTargetActivity = targetActivity;
+        final String sTag = sessionTag(finalTargetActivity);
 
         if (event.getAction() == ACTION_DOWN) {
             if (code == KeyEvent.KEYCODE_MEDIA_NEXT || code == KeyEvent.KEYCODE_MEDIA_PREVIOUS) {
@@ -337,33 +349,34 @@ public class KeyEventHandler {
                 }
                 lastGlobalActionTime.set(currentUptime);
                 boolean isNext = (code == KeyEvent.KEYCODE_MEDIA_NEXT);
+                String keyLabel = isNext ? "MEDIA_NEXT" : "MEDIA_PREVIOUS";
 
                 boolean isMirroring = PermataApplication.get().isMirroringMode();
                 String activePkg = AccessibilityEventDispatcherService.getLastActivePackage();
                 boolean isPermata = activePkg != null && activePkg.startsWith("my.app.permata");
 
                 int currentCrown = PermataApplication.getMediaCrown();
+                Log.i(sTag + "[INPUT] Steering/Media Key | key=" + keyLabel + ", crown=" + crownName(currentCrown)
+                        + ", activePkg=" + activePkg + ", mirroring=" + isMirroring);
                 
                 // === [SMART CROWN CORRECTION] ===
                 if (isPermata) {
                     if (currentCrown == PermataApplication.CROWN_NATIVE) {
-                        Log.i("KeyEventHandler", "[CROWN_CORRECTION] Returned to Permata. Reclaiming Crown for IPTV.");
+                        Log.i(sTag + "[DECISION] Crown Correction | from=NATIVE -> to=IPTV, reason=RETURNED_TO_PERMATA");
                         PermataApplication.setMediaCrown(PermataApplication.CROWN_IPTV);
                         currentCrown = PermataApplication.CROWN_IPTV;
                     }
                 } 
                 else if (activePkg != null && isScrollerPackage(activePkg)) {
                     if (currentCrown != PermataApplication.CROWN_NATIVE) {
-                        Log.i("KeyEventHandler", "[CROWN_CORRECTION] Verified Scroller active. Native takes the Crown.");
+                        Log.i(sTag + "[DECISION] Crown Correction | from=" + crownName(currentCrown) + " -> to=NATIVE, reason=SCROLLER_ACTIVE(" + activePkg + ")");
                         PermataApplication.setMediaCrown(PermataApplication.CROWN_NATIVE);
                         currentCrown = PermataApplication.CROWN_NATIVE;
                     }
                 }
 
                 // === [STRICT FIFO ROUTING: THE SNIPER RIFLE] ===
-                Log.i("KeyEventHandler", "[ROUTING_TELEMETRY] Executing FIFO Route. Target: " + 
-                        (currentCrown == PermataApplication.CROWN_WEB ? "WEB" : 
-                         currentCrown == PermataApplication.CROWN_NATIVE ? "NATIVE" : "IPTV"));
+                Log.i(sTag + "[DECISION] Steering Route | key=" + keyLabel + ", target=" + crownName(currentCrown));
 
                 if (currentCrown == PermataApplication.CROWN_WEB) {
                     mainThreadHandler.post(() -> {
@@ -401,7 +414,7 @@ public class KeyEventHandler {
                             
                             // [SURGERY] Ghost Web Crown Fix: Reclaim for IPTV if browser was closed
                             if (!webHandled) {
-                                Log.i("KeyEventHandler", "[CROWN_CORRECTION] Ghost Web Crown Detected! Reclaiming for IPTV.");
+                                Log.i(sTag + "[DECISION] Ghost Web Crown Reclaim | from=WEB -> to=IPTV, reason=NO_VISIBLE_WEBVIEW");
                                 PermataApplication.setMediaCrown(PermataApplication.CROWN_IPTV);
                                 
                                 Key k = Key.get(code);
@@ -426,17 +439,17 @@ public class KeyEventHandler {
                     boolean handledByAccessibility = false;
                     
                     if (activePkg != null && isScrollerPackage(activePkg)) {
-                        Log.i("KeyEventHandler", "[NATIVE_ROUTE] Intercepted Scroller: " + activePkg);
+                        Log.i(sTag + "[DECISION] Native Route | action=SCROLLER_SWIPE, pkg=" + activePkg);
                         executeNativeAppSwipe(!isNext, activePkg);
                         handledByAccessibility = true;
                     } else if (activePkg == null && !isPermata) {
-                        Log.i("KeyEventHandler", "[NATIVE_ROUTE] Null package bypass. Forcing Fallback Swipe.");
+                        Log.i(sTag + "[DECISION] Native Route | action=FALLBACK_SWIPE, pkg=null");
                         executeNativeAppSwipe(!isNext, "unknown_native");
                         handledByAccessibility = true;
                     }
 
                     if (!handledByAccessibility) {
-                        Log.i("KeyEventHandler", "[NATIVE_ROUTE] Native Passthrough to OS.");
+                        Log.i(sTag + "[DECISION] Native Route | action=OS_PASSTHROUGH, pkg=" + activePkg);
                         if (defaultHandler != null) {
                             defaultHandler.apply(code, event);
                             KeyEvent upEvent = new KeyEvent(event.getDownTime(), currentUptime + 10, KeyEvent.ACTION_UP, code, 0);
@@ -452,7 +465,7 @@ public class KeyEventHandler {
                 try {
                     Key k = Key.get(code);
                     if (k != null && k.getClickAction() != null && k.getClickAction() != Action.NONE) {
-                        Log.i("KeyEventHandler", "[IPTV_ROUTE] Firing mapped Permata Action.");
+                        Log.i(sTag + "[DECISION] IPTV Route | action=" + k.getClickAction().name());
                         performAction(k.getClickAction(), cb, finalTargetActivity, currentUptime);
                     } else if (defaultHandler != null) {
                         defaultHandler.apply(code, event);
@@ -867,6 +880,7 @@ public class KeyEventHandler {
     private static void performAction(Action action, MediaSessionCallback cb,
                                         @Nullable MainActivityDelegate activity, long timestamp) {
         worker = null;
+        Log.i(sessionTag(activity) + "[INPUT] Mapped Key Action | action=" + action.name());
         action.getHandler().handle(cb, activity, timestamp);
     }
 
