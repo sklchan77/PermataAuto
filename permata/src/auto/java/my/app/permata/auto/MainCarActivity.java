@@ -91,6 +91,12 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 
 	@Override
 	public void onCreate(Bundle savedInstanceState) {
+		PermataMediaServiceConnection s = service;
+		boolean serviceReused = (s != null) && s.isConnected();
+		Log.i("[CAR][LIFECYCLE] MainCarActivity.onCreate | state="
+				+ (savedInstanceState == null ? "FRESH" : "RESTORED")
+				+ ", serviceReused=" + serviceReused);
+
 		MainActivityDelegate.setTheme(this, true);
 		super.onCreate(savedInstanceState);
 		initCarActivity(this);
@@ -99,16 +105,15 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 			Intent hijackIntent = new Intent(this, my.app.permata.media.service.PermataMediaService.class);
 			hijackIntent.setAction(my.app.permata.media.service.PermataMediaService.ACTION_HIJACK_FOCUS);
 			startService(hijackIntent);
-			Log.i("MainCarActivity: Hijack Intent fired successfully on creation.");
+			Log.i("[CAR][AUDIO] Hijack Focus Intent Fired | trigger=onCreate");
 		} catch (Exception e) {
 			Log.e(e, "MainCarActivity: Failed to fire hijack intent on creation.");
 		}
 
-		PermataMediaServiceConnection s = service;
-
-		if ((s != null) && s.isConnected()) {
+		if (serviceReused) {
 			onCreate(savedInstanceState, s);
 		} else {
+			Log.i("[CAR][LIFECYCLE] Connecting to PermataMediaService");
 			delegate = PermataMediaServiceConnection.connect(this).main()
 					.onFailure(err -> showAlert(getContext(), String.valueOf(err))).map(c -> {
 						service = c;
@@ -134,6 +139,7 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 			if (c instanceof MainActivity) return null;
 			return d;
 		});
+		Log.i("[CAR][DECISION] Scoped ContextToDelegate Hook Installed | phoneActivityBypass=true");
 		delegate = completed(d);
 		d.onActivityCreate(state);
 		return d;
@@ -143,6 +149,7 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 	public void onResume() {
 		super.onResume();
 		activeInstance = this;
+		Log.i("[CAR][LIFECYCLE] MainCarActivity.onResume");
 		getActivityDelegate().onSuccess(MainActivityDelegate::onActivityResume);
 		
 		try {
@@ -155,16 +162,21 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 	@Override
 	public void onPause() {
 		super.onPause();
+		Log.i("[CAR][LIFECYCLE] MainCarActivity.onPause");
 		if (activeInstance == this) activeInstance = null;
 	}
 
 	@Override
 	@SuppressWarnings("unchecked")
 	public void onDestroy() {
+		Log.i("[CAR][LIFECYCLE] MainCarActivity.onDestroy");
 		super.onDestroy();
 		if (activeInstance == this) activeInstance = null;
 		getActivityDelegate().onSuccess(MainActivityDelegate::onActivityDestroy)
-				.thenRun(() -> ActivityDelegate.setContextToDelegate(null));
+				.thenRun(() -> {
+					ActivityDelegate.setContextToDelegate(null);
+					Log.i("[CAR][DECISION] Scoped ContextToDelegate Hook Cleared");
+				});
 		delegate = (FutureSupplier<MainActivityDelegate>) NO_DELEGATE;
 	}
 
@@ -202,6 +214,7 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 	}
 
 	public void finish() {
+		Log.i("[CAR][LIFECYCLE] MainCarActivity.finish");
 		getActivityDelegate().onSuccess(MainActivityDelegate::onActivityFinish);
 	}
 
