@@ -78,9 +78,11 @@ public class MainActivity extends SplitCompatActivityBase
 		PermataMediaServiceConnection s = service;
 
 		if ((s != null) && s.isConnected()) {
+			Log.i("[PHONE][LIFECYCLE] MainActivity.createDelegate | serviceReused=true");
 			return completed(new MainActivityDelegate(a, service.createBinder()));
 		}
 
+		Log.i("[PHONE][LIFECYCLE] MainActivity.createDelegate | serviceReused=false, connecting=PermataMediaService");
 		return PermataMediaServiceConnection.connect(a).map(c -> {
 			assert service == null;
 			service = c;
@@ -95,6 +97,7 @@ public class MainActivity extends SplitCompatActivityBase
 
 	@Override
 	public void finish() {
+		Log.i("[PHONE][LIFECYCLE] MainActivity.finish");
 		// Removed the old blind disconnect. 
 		// Teardown is now intelligently evaluated in onDestroy().
 		super.finish();
@@ -102,12 +105,16 @@ public class MainActivity extends SplitCompatActivityBase
 
 	@Override
 	protected void onCreate(Bundle savedInstanceState) {
+		Log.i("[PHONE][LIFECYCLE] MainActivity.onCreate | state="
+				+ (savedInstanceState == null ? "FRESH" : "RESTORED")
+				+ ", serviceConnected=" + (service != null && service.isConnected()));
 		MainActivityDelegate.setTheme(this,
 				isCarActivity() || PermataApplication.get().isMirroringMode());
 		AddonManager.get().addBroadcastListener(this);
 		getOnBackPressedDispatcher().addCallback(this, new OnBackPressedCallback(true) {
 			@Override
 			public void handleOnBackPressed() {
+				Log.i("[PHONE][INPUT] System Back Pressed");
 				getActivityDelegate().onSuccess(MainActivityDelegate::onBackPressed);
 			}
 		});
@@ -116,7 +123,8 @@ public class MainActivity extends SplitCompatActivityBase
 
 	@Override
 	protected void onDestroy() {
-		Log.i("MainActivity is being destroyed. Running Golden Gate checks...");
+		Log.i("[PHONE][LIFECYCLE] MainActivity.onDestroy | isFinishing=" + isFinishing()
+				+ ", changingConfig=" + isChangingConfigurations());
 		AddonManager.get().removeBroadcastListener(this);
 
 		// === THE GOLDEN GATE: GUARD CHECK ===
@@ -124,6 +132,8 @@ public class MainActivity extends SplitCompatActivityBase
 		boolean isMirroring = false;
 		boolean isPlaying = false;
 		boolean isBluetoothActive = false;
+		boolean isVideo = false;
+		boolean stoppedPhoneVideo = false;
 
 		try {
 			isAutoConnected = PermataApplication.get().isConnectedToAuto();
@@ -132,8 +142,9 @@ public class MainActivity extends SplitCompatActivityBase
 			if (delegate != null && delegate.getMediaSessionCallback() != null) {
 				var cb = delegate.getMediaSessionCallback();
 				var cur = cb.getCurrentItem();
-				if (cur != null && cur.isVideo() && !isAutoConnected && !isMirroring) {
-					Log.i("Golden Gate: Stopping phone-only video engine on exit to prevent stale video state.");
+				isVideo = (cur != null && cur.isVideo());
+				if (isVideo && !isAutoConnected && !isMirroring) {
+					stoppedPhoneVideo = true;
 					cb.onStop();
 				} else {
 					isPlaying = cb.isPlaying();
@@ -147,12 +158,18 @@ public class MainActivity extends SplitCompatActivityBase
 			Log.w(e, "Exception while checking Golden Gate status.");
 		}
 
-		if (isAutoConnected || isMirroring || isPlaying || isBluetoothActive) {
-			Log.i("Golden Gate: Active Car/BT/Media Session detected. Preserving background service bridge.");
+		boolean preserveBridge = (isAutoConnected || isMirroring || isPlaying || isBluetoothActive);
+		Log.i("[PHONE][DECISION] Golden Gate | auto=" + isAutoConnected
+				+ ", mirror=" + isMirroring
+				+ ", playing=" + isPlaying
+				+ ", bt=" + isBluetoothActive
+				+ ", isVideo=" + isVideo
+				+ ", stoppedPhoneVideo=" + stoppedPhoneVideo
+				+ " -> action=" + (preserveBridge ? "PRESERVE_SERVICE_BRIDGE" : "FULL_TEARDOWN"));
+
+		if (preserveBridge) {
 			// Intentionally leave the static `service` connection alive so car projection and background audio aren't interrupted.
 		} else {
-			Log.i("Golden Gate: App is truly idle. Executing full Service teardown.");
-			
 			// =========================================================================================
 			// THE ZOMBIE KILL SWITCH
 			// Explicitly command the Android OS to destroy the foreground service and its MediaSession
@@ -161,7 +178,7 @@ public class MainActivity extends SplitCompatActivityBase
 			try {
 				Intent killServiceIntent = new Intent(this, my.app.permata.media.service.PermataMediaService.class);
 				stopService(killServiceIntent);
-				Log.i("Golden Gate: Zombie Kill Switch engaged. PermataMediaService explicitly stopped.");
+				Log.i("[PHONE][LIFECYCLE] Zombie Kill Switch Engaged | PermataMediaService explicitly stopped");
 			} catch (Exception e) {
 				Log.e(e, "Golden Gate: Failed to execute Zombie Kill Switch.");
 			}
@@ -190,12 +207,14 @@ public class MainActivity extends SplitCompatActivityBase
 	protected void onResume() {
 		super.onResume();
 		activeInstance = this;
+		Log.i("[PHONE][LIFECYCLE] MainActivity.onResume");
 	}
 
 	@Override
 	protected void onPause() {
 		super.onPause();
 		activeInstance = null;
+		Log.i("[PHONE][LIFECYCLE] MainActivity.onPause | isFinishing=" + isFinishing());
 	}
 
 	@Override
