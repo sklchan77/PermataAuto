@@ -28,11 +28,8 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.pm.ActivityInfo;
-import android.graphics.Color;
-import android.graphics.Paint;
 import android.graphics.PixelFormat;
 import android.graphics.Point;
-import android.graphics.Typeface;
 import android.hardware.display.DisplayManager;
 import android.hardware.display.VirtualDisplay;
 import android.media.projection.MediaProjection;
@@ -41,9 +38,6 @@ import android.os.Handler;
 import android.os.Looper;
 import android.os.PowerManager;
 import android.os.PowerManager.WakeLock;
-import android.text.StaticLayout;
-import android.text.TextPaint;
-import android.text.TextUtils;
 import android.view.Display;
 import android.view.Gravity;
 import android.view.InputDevice;
@@ -174,6 +168,13 @@ public class MirrorDisplay {
 		return isCurrentSurfaceFS() ? isFillModeFS : isFillModeActivity;
 	}
 
+	private boolean isTargetLandscape() {
+		if (sc != null) {
+			return sc.getWidth() >= sc.getHeight();
+		}
+		return PermataApplication.get().isMirroringLandscape();
+	}
+
 	public static MirrorDisplay get() {
 		synchronized (lifecycleLock) {
 			if (instance == null) {
@@ -188,9 +189,7 @@ public class MirrorDisplay {
 		synchronized (lifecycleLock) {
 			if (instance == null) return;
 			Log.i("[MIRROR][LIFECYCLE] MirrorDisplay.close() called");
-			var scRef = instance.sc;
 			instance.cleanUpLocked();
-			if (scRef != null) drawMsg(scRef, R.string.app_name);
 		}
 	}
 
@@ -235,7 +234,7 @@ public class MirrorDisplay {
 			this.sc = sc;
 			currentMetrics = null;
 			boolean activeFill = isActiveFillMode();
-			String orient = sc.getWidth() > sc.getHeight() ? "LANDSCAPE" : "PORTRAIT";
+			String orient = sc.getWidth() >= sc.getHeight() ? "LANDSCAPE" : "PORTRAIT";
 			Log.i("[MIRROR][SURFACE] setSurface | size=" + sc.getWidth() + "x" + sc.getHeight()
 					+ ", dpi=" + sc.getDpi() + ", orientation=" + orient
 					+ ", fillMode=" + activeFill
@@ -249,7 +248,6 @@ public class MirrorDisplay {
 					var s = this.session.getOrThrow();
 					if (oldSc != null) {
 						s.renderer.detachOutputSurfaceSync();
-						drawMsg(oldSc, R.string.app_name);
 					}
 					int[] vdSize = computeVirtualDisplaySize();
 					s.vd.resize(vdSize[0], vdSize[1], sc.getDpi());
@@ -264,7 +262,6 @@ public class MirrorDisplay {
 				}
 			} else {
 				createSession();
-				if (oldSc != null) drawMsg(oldSc, R.string.app_name);
 			}
 		}
 	}
@@ -288,7 +285,6 @@ public class MirrorDisplay {
 					}
 				} catch (Exception ignored) {}
 			}
-			drawMsg(oldSc, R.string.app_name);
 		}
 	}
 
@@ -297,7 +293,7 @@ public class MirrorDisplay {
 		defaultDisplay.getRealSize(size);
 		float dw = size.x;
 		float dh = size.y;
-		boolean isLandscape = PermataApplication.get().isMirroringLandscape();
+		boolean isLandscape = isTargetLandscape();
 		if (isLandscape && dw < dh) {
 			float tmp = dw; dw = dh; dh = tmp;
 		} else if (!isLandscape && dw > dh) {
@@ -312,6 +308,7 @@ public class MirrorDisplay {
 		}
 		int w = Math.max(2, ((int) Math.round(dw)) & ~1);
 		int h = Math.max(2, ((int) Math.round(dh)) & ~1);
+		Log.i("[MIRROR][GL] VirtualDisplay Size | vd=" + w + "x" + h + ", landscape=" + isLandscape);
 		return new int[]{w, h};
 	}
 
@@ -456,7 +453,7 @@ public class MirrorDisplay {
 	private void updateOverlayAttributes(boolean forceCarPriority) {
 		try {
 			var wm = (WindowManager) PermataApplication.get().getSystemService(WINDOW_SERVICE);
-			boolean land = PermataApplication.get().isMirroringLandscape();
+			boolean land = isTargetLandscape();
 			int targetOrientation = forceCarPriority
 					? (land ? SCREEN_ORIENTATION_LANDSCAPE : SCREEN_ORIENTATION_PORTRAIT)
 					: ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED;
@@ -486,13 +483,13 @@ public class MirrorDisplay {
 	}
 
 	private static void disableAccelRotation(Context ctx) {
+		boolean land;
 		synchronized (lifecycleLock) {
 			if (instance == null || instance.sc == null || instance.isDestroyed) return;
+			land = instance.isTargetLandscape();
 		}
 
 		var a = EventDispatcher.get().getActivity();
-		boolean land = PermataApplication.get().isMirroringLandscape();
-
 		if (a != null) {
 			a.setRequestedOrientation(land ? SCREEN_ORIENTATION_LANDSCAPE : SCREEN_ORIENTATION_PORTRAIT);
 		}
@@ -561,7 +558,7 @@ public class MirrorDisplay {
 	private void started() {
 		if (sc == null || isDestroyed) return;
 		var app = PermataApplication.get();
-		var mode = sc.getWidth() > sc.getHeight() ? 1 : 2;
+		var mode = sc.getWidth() >= sc.getHeight() ? 1 : 2;
 		String layoutType = (mode == 1) ? "LANDSCAPE" : "PORTRAIT";
 
 		if (app.isMirroringMode()) {
@@ -744,9 +741,6 @@ public class MirrorDisplay {
 				started();
 			}
 		});
-		PermataApplication.get().getHandler().schedule(() -> {
-			if (!session.isDone()) drawMsg(R.string.unlock_phone_and_grant);
-		}, 500);
 	}
 
 	private void createSession(Promise<Session> p) {
@@ -784,7 +778,6 @@ public class MirrorDisplay {
 				if (err != null) {
 					if (isCancellation(err)) {
 						Log.i("[MIRROR][LIFECYCLE] Screen Capture Rejected by User | action=CLEANUP");
-						drawMsg(R.string.screen_capture_rejected);
 						cleanUpLocked();
 						return;
 					}
@@ -810,32 +803,9 @@ public class MirrorDisplay {
 		}, 3000);
 	}
 
+	// [GL SAFE] Do not call surface.lockCanvas() on EGL-owned surfaces; CPU producer permanently blocks EGL reconnects.
 	private void drawMsg(@StringRes int msg) {
-		if (sc != null) drawMsg(sc, msg);
-	}
-
-	private static void drawMsg(SurfaceContainer sc, @StringRes int msg) {
-		try {
-			var surface = sc.getSurface();
-			if (surface == null || !surface.isValid()) return;
-			var c = surface.lockCanvas(null);
-			if (c == null) return;
-			var w = sc.getWidth();
-			var h = sc.getHeight();
-			TextPaint paint = new TextPaint(Paint.ANTI_ALIAS_FLAG);
-			paint.setColor(Color.WHITE);
-			paint.setTypeface(Typeface.DEFAULT);
-			paint.setElegantTextHeight(true);
-			paint.setTextAlign(Paint.Align.CENTER);
-			paint.setTextSize(h / 10f);
-			var text = PermataApplication.get().getString(msg);
-			var sl = StaticLayout.Builder.obtain(text, 0, text.length(), paint, w).setMaxLines(5)
-					.setEllipsize(TextUtils.TruncateAt.END).setIncludePad(true).build();
-			c.drawColor(Color.BLACK);
-			c.translate(w / 2f, h / 2f - sl.getHeight() / 2f);
-			sl.draw(c);
-			surface.unlockCanvasAndPost(c);
-		} catch (Exception err) {}
+		Log.i("[MIRROR][UI_MSG] " + PermataApplication.get().getString(msg));
 	}
 
 	private EventDispatcher dispatcher() {
@@ -854,7 +824,7 @@ public class MirrorDisplay {
 		float sw = sc.getWidth();
 		float sh = sc.getHeight();
 
-		boolean isLandscape = PermataApplication.get().isMirroringLandscape();
+		boolean isLandscape = isTargetLandscape();
 
 		if (isLandscape && dw < dh) {
 			float temp = dw; dw = dh; dh = temp;
