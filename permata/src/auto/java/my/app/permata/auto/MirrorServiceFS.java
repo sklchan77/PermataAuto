@@ -288,13 +288,13 @@ public class MirrorServiceFS extends CarAppService {
 							new CarIcon.Builder(createWithResource(getCarContext(), R.drawable.shutdown)).setTint(CarColor.DEFAULT).build())
 					.setOnClickListener(MirrorActivity::onExitButtonClick).build();
 
-			// [FIT/FILL] Single transformable icon: shows fullscreen (Fill) in Fit mode, fullscreen_exit (Fit) in Fill mode
-			int fitFillIconRes = MirrorDisplay.isFillMode() ? R.drawable.fullscreen_exit : R.drawable.fullscreen;
+			// [FIT/FILL] Standalone FS state: shows fullscreen (Fill) in Fit mode, fullscreen_exit (Fit) in Fill mode
+			int fitFillIconRes = MirrorDisplay.isFillMode(true) ? R.drawable.fullscreen_exit : R.drawable.fullscreen;
 			var fitFillButton = new Action.Builder().setIcon(
 							new CarIcon.Builder(createWithResource(getCarContext(), fitFillIconRes))
 									.setTint(CarColor.DEFAULT).build())
 					.setOnClickListener(() -> {
-						boolean nowFill = MirrorDisplay.toggleFillMode();
+						boolean nowFill = MirrorDisplay.toggleFillMode(true);
 						Log.i("[MIRROR_FS][INPUT] Toolbar Button Pressed | button=FIT_FILL, fillMode=" + nowFill);
 						invalidate();
 					}).build();
