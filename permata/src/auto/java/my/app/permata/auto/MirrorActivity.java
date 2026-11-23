@@ -47,7 +47,7 @@ public class MirrorActivity extends CarActivity implements SurfaceHolder.Callbac
 	@Override
 	public void onCreate(Bundle savedInstanceState) {
 		super.onCreate(savedInstanceState);
-		Log.i("[MIRROR][LIFECYCLE] MirrorActivity.onCreate | type=FULLSCREEN_CAR_ACTIVITY");
+		Log.i("[MIRROR][LIFECYCLE] MirrorActivity.onCreate | type=SPLIT_SCREEN_CAR_ACTIVITY");
 		md = MirrorDisplay.get();
 		MainActivityDelegate.setTheme(this, true);
 		var s = new SurfaceView(this);
@@ -104,7 +104,7 @@ public class MirrorActivity extends CarActivity implements SurfaceHolder.Callbac
 	public void onPause() {
 		super.onPause();
 		boolean handoffToFs = (MirrorServiceFS.sc != null && md != null && !md.isDestroyed());
-		Log.i("[MIRROR][LIFECYCLE] MirrorActivity.onPause | handoffToSplitScreen=" + handoffToFs);
+		Log.i("[MIRROR][LIFECYCLE] MirrorActivity.onPause | handoffToFullScreen=" + handoffToFs);
 		if (handoffToFs) md.setSurface(MirrorServiceFS.sc);
 	}
 
