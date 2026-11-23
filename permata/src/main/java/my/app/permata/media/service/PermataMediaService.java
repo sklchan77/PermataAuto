@@ -512,8 +512,9 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 	private void onWebMediaPlaying() {
 		if (isTeardownActive) return;
 
+		boolean isCarNotMirroring = PermataApplication.get().isConnectedToAuto() && !PermataApplication.get().isMirroringMode();
 		String activePkg = my.app.permata.auto.AccessibilityEventDispatcherService.getLastActivePackage();
-		boolean isPermataOrAA = activePkg != null && (activePkg.startsWith("my.app.permata") || activePkg.equals("com.google.android.projection.gearhead"));
+		boolean isPermataOrAA = isCarNotMirroring || (activePkg != null && (activePkg.startsWith("my.app.permata") || activePkg.equals("com.google.android.projection.gearhead")));
 
 		if (!isPermataOrAA) {
 			Log.i(sessionTag() + "[DECISION] WebMedia PLAY Blocked | activePkg=" + activePkg);
@@ -543,8 +544,9 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 	private void onWebMediaPaused() {
 		if (isTeardownActive) return;
 
+		boolean isCarNotMirroring = PermataApplication.get().isConnectedToAuto() && !PermataApplication.get().isMirroringMode();
 		String activePkg = my.app.permata.auto.AccessibilityEventDispatcherService.getLastActivePackage();
-		boolean isPermataOrAA = activePkg != null && (activePkg.startsWith("my.app.permata") || activePkg.equals("com.google.android.projection.gearhead"));
+		boolean isPermataOrAA = isCarNotMirroring || (activePkg != null && (activePkg.startsWith("my.app.permata") || activePkg.equals("com.google.android.projection.gearhead")));
 
 		if (!isPermataOrAA) {
 			Log.i(sessionTag() + "[DECISION] WebMedia PAUSE Blocked | activePkg=" + activePkg);
