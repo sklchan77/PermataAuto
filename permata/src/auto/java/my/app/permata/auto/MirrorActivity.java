@@ -1,9 +1,9 @@
 package my.app.permata.auto;
 
+import static android.content.Intent.FLAG_ACTIVITY_CLEAR_TASK;
+import static android.content.Intent.FLAG_ACTIVITY_CLEAR_TOP;
 import static android.content.Intent.FLAG_ACTIVITY_NEW_TASK;
 import static android.content.Intent.FLAG_ACTIVITY_SINGLE_TOP;
-import static android.content.Intent.FLAG_ACTIVITY_CLEAR_TOP;
-import static android.content.Intent.FLAG_ACTIVITY_CLEAR_TASK;
 import static android.os.SystemClock.uptimeMillis;
 import static android.view.ViewGroup.LayoutParams.MATCH_PARENT;
 import static android.view.ViewGroup.LayoutParams.WRAP_CONTENT;
@@ -42,6 +42,7 @@ import my.app.utils.log.Log;
 public class MirrorActivity extends CarActivity implements SurfaceHolder.Callback {
 	private MirrorDisplay md;
 	private SurfaceContainer sc;
+	private ToolBar tb;
 
 	@Override
 	public void onCreate(Bundle savedInstanceState) {
@@ -50,7 +51,7 @@ public class MirrorActivity extends CarActivity implements SurfaceHolder.Callbac
 		md = MirrorDisplay.get();
 		MainActivityDelegate.setTheme(this, true);
 		var s = new SurfaceView(this);
-		var tb = new ToolBar(this);
+		tb = new ToolBar(this);
 		var v = new FrameLayout(this) {
 			@SuppressLint("ClickableViewAccessibility")
 			@Override
@@ -58,11 +59,11 @@ public class MirrorActivity extends CarActivity implements SurfaceHolder.Callbac
 				if (e.getActionMasked() == MotionEvent.ACTION_DOWN) {
 					Log.i("[MIRROR][INPUT] Mirror Screen Touched | x=" + (int) e.getX() + ", y=" + (int) e.getY());
 				}
-				
+
 				if (md == null || md.isDestroyed()) md = MirrorDisplay.get();
 				if (sc != null && md != null) md.setSurface(sc);
 				tb.show();
-				
+
 				boolean handled = md != null && md.motionEvent(e);
 				if (e.getActionMasked() == MotionEvent.ACTION_DOWN) {
 					return true;
@@ -93,7 +94,8 @@ public class MirrorActivity extends CarActivity implements SurfaceHolder.Callbac
 		super.onResume();
 		Log.i("[MIRROR][LIFECYCLE] MirrorActivity.onResume");
 		PermataMediaService.requestFocusAndAnchor(this);
-		
+
+		if (tb != null) tb.updateFitFillIcon();
 		if (md == null || md.isDestroyed()) md = MirrorDisplay.get();
 		if (sc != null && md != null) md.setSurface(sc);
 	}
@@ -112,7 +114,7 @@ public class MirrorActivity extends CarActivity implements SurfaceHolder.Callbac
 		int dpi = getResources().getDisplayMetrics().densityDpi;
 		Log.i("[MIRROR][SURFACE] MirrorActivity.surfaceCreated | size=" + r.width() + "x" + r.height() + ", dpi=" + dpi);
 		sc = new SurfaceContainer(h.getSurface(), r.width(), r.height(), dpi);
-				
+
 		if (md == null || md.isDestroyed()) md = MirrorDisplay.get();
 		if (md != null) {
 			md.setSurface(sc);
@@ -124,7 +126,7 @@ public class MirrorActivity extends CarActivity implements SurfaceHolder.Callbac
 		int dpi = getResources().getDisplayMetrics().densityDpi;
 		Log.i("[MIRROR][SURFACE] MirrorActivity.surfaceChanged | size=" + width + "x" + height + ", dpi=" + dpi);
 		sc = new SurfaceContainer(h.getSurface(), width, height, dpi);
-				
+
 		if (md == null || md.isDestroyed()) md = MirrorDisplay.get();
 		if (md != null) md.setSurface(sc);
 	}
@@ -157,7 +159,7 @@ public class MirrorActivity extends CarActivity implements SurfaceHolder.Callbac
 		}
 		disableAccelRotation();
 	}
-	
+
 	static void onRecentButtonClick() {
 		Log.i("[MIRROR][INPUT] Toolbar Button Pressed | button=RECENT");
 		var d = EventDispatcher.get();
@@ -179,7 +181,7 @@ public class MirrorActivity extends CarActivity implements SurfaceHolder.Callbac
 	static void onExitButtonClick() {
 		Log.i("[MIRROR][INPUT] Toolbar Button Pressed | button=SHUTDOWN");
 		MirrorDisplay.close();
-		
+
 		var ctx = PermataApplication.get();
 		if (ctx != null) {
 			Intent shutdownIntent = new Intent(ctx, PermataMediaService.class);
@@ -204,35 +206,50 @@ public class MirrorActivity extends CarActivity implements SurfaceHolder.Callbac
 		private final Animation animation;
 		private int iconSize;
 		private final int pad;
-		
+
+		private AppCompatImageView fitFillButton;
+
 		private long downTime;
 		private float downX, downY;
 		private float initialX, initialY;
 		private View downButton;
 		private boolean moving;
-		private boolean isPositioned = false; 
+		private boolean isPositioned = false;
 
 		public ToolBar(Context ctx) {
 			super(ctx);
 			pad = (int) toPx(ctx, 8);
 			moveTolerance = toPx(ctx, 10);
 			animation = AnimationUtils.loadAnimation(ctx, my.app.utils.R.anim.button_press);
-			
-			iconSize = (int) toPx(ctx, 48); 
-			
+
+			iconSize = (int) toPx(ctx, 48);
+
 			setOrientation(HORIZONTAL);
 			setLayoutParams(new FrameLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT));
 
 			var iconPad = iconSize / 4;
-			
-			var icons = new int[]{R.drawable.home, R.drawable.recent, R.drawable.back, R.drawable.shutdown};
+
+			var icons = new int[]{
+					R.drawable.home,
+					R.drawable.recent,
+					R.drawable.back,
+					R.drawable.fullscreen,
+					R.drawable.shutdown
+			};
 			for (int i = 0; i < icons.length; i++) {
 				var v = new AppCompatImageView(ctx);
 				v.setId(icons[i]);
-				v.setImageResource(icons[i]);
-				
-				if (i == 1 || i == 3) v.setColorFilter(Color.WHITE); 
-				
+				if (icons[i] == R.drawable.fullscreen) {
+					fitFillButton = v;
+					v.setImageResource(MirrorDisplay.isFillMode() ? R.drawable.fullscreen_exit : R.drawable.fullscreen);
+					v.setColorFilter(Color.WHITE);
+				} else {
+					v.setImageResource(icons[i]);
+					if (icons[i] == R.drawable.recent || icons[i] == R.drawable.shutdown) {
+						v.setColorFilter(Color.WHITE);
+					}
+				}
+
 				v.setBackgroundResource(R.drawable.oval_bg);
 				v.setPadding(iconPad, iconPad, iconPad, iconPad);
 				var lp = new LinearLayout.LayoutParams(iconSize, iconSize);
@@ -242,10 +259,10 @@ public class MirrorActivity extends CarActivity implements SurfaceHolder.Callbac
 				v.setScaleType(ImageView.ScaleType.FIT_CENTER);
 				addView(v);
 			}
-			
+
 			addOnLayoutChangeListener((v, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) -> {
-				if (!isPositioned) { 
-					int pw = ((View)getParent()).getWidth();
+				if (!isPositioned) {
+					int pw = ((View) getParent()).getWidth();
 					if (pw > 0) {
 						setX(pw - getWidth() - pad);
 						setY(pad);
@@ -255,6 +272,14 @@ public class MirrorActivity extends CarActivity implements SurfaceHolder.Callbac
 			});
 
 			delayedHide.schedule(5000);
+		}
+
+		void updateFitFillIcon() {
+			if (fitFillButton != null) {
+				fitFillButton.setImageResource(
+						MirrorDisplay.isFillMode() ? R.drawable.fullscreen_exit : R.drawable.fullscreen
+				);
+			}
 		}
 
 		void show() {
@@ -271,10 +296,10 @@ public class MirrorActivity extends CarActivity implements SurfaceHolder.Callbac
 					downTime = uptimeMillis();
 					downX = e.getRawX();
 					downY = e.getRawY();
-					initialX = getX(); 
+					initialX = getX();
 					initialY = getY();
-					moving = false; 
-					
+					moving = false;
+
 					int btnIndex = getButtonAt(e.getX(), e.getY());
 					if (btnIndex >= 0 && btnIndex < getChildCount()) {
 						downButton = getChildAt(btnIndex);
@@ -287,7 +312,7 @@ public class MirrorActivity extends CarActivity implements SurfaceHolder.Callbac
 				case MotionEvent.ACTION_MOVE -> {
 					float deltaX = e.getRawX() - downX;
 					float deltaY = e.getRawY() - downY;
-					
+
 					if (!moving && (Math.abs(deltaX) >= moveTolerance || Math.abs(deltaY) >= moveTolerance)) {
 						moving = true;
 						Log.i("[MIRROR][INPUT] Toolbar Drag Started | startX=" + (int) initialX + ", startY=" + (int) initialY);
@@ -296,13 +321,13 @@ public class MirrorActivity extends CarActivity implements SurfaceHolder.Callbac
 							downButton = null;
 						}
 					}
-					
+
 					if (moving) {
 						int w = getWidth();
 						int h = getHeight();
-						int pw = ((View)getParent()).getWidth();
-						int ph = ((View)getParent()).getHeight();
-						
+						int pw = ((View) getParent()).getWidth();
+						int ph = ((View) getParent()).getHeight();
+
 						var newX = Math.max(pad, Math.min(pw - pad - w, initialX + deltaX));
 						var newY = Math.max(pad, Math.min(ph - pad - h, initialY + deltaY));
 						animate().x(newX).y(newY).setDuration(0).start();
@@ -315,7 +340,7 @@ public class MirrorActivity extends CarActivity implements SurfaceHolder.Callbac
 						Log.i("[MIRROR][INPUT] Toolbar Drag Ended | endX=" + (int) getX() + ", endY=" + (int) getY());
 						return true;
 					}
-					
+
 					if (downButton != null) {
 						downButton.clearAnimation();
 						if ((uptimeMillis() - downTime) < 500) {
@@ -351,9 +376,13 @@ public class MirrorActivity extends CarActivity implements SurfaceHolder.Callbac
 
 		private void handleClick(int viewId) {
 			if (viewId == R.drawable.home) onHomeButtonClick();
-			else if (viewId == R.drawable.recent) onRecentButtonClick(); 
+			else if (viewId == R.drawable.recent) onRecentButtonClick();
 			else if (viewId == R.drawable.back) onBackButtonClick();
-			else if (viewId == R.drawable.shutdown) onExitButtonClick();
+			else if (viewId == R.drawable.fullscreen) {
+				boolean nowFill = MirrorDisplay.toggleFillMode();
+				Log.i("[MIRROR][INPUT] Toolbar Button Pressed | button=FIT_FILL, fillMode=" + nowFill);
+				updateFitFillIcon();
+			} else if (viewId == R.drawable.shutdown) onExitButtonClick();
 		}
 	}
 }
