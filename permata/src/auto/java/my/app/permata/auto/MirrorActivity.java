@@ -241,7 +241,7 @@ public class MirrorActivity extends CarActivity implements SurfaceHolder.Callbac
 				v.setId(icons[i]);
 				if (icons[i] == R.drawable.fullscreen) {
 					fitFillButton = v;
-					v.setImageResource(MirrorDisplay.isFillMode() ? R.drawable.fullscreen_exit : R.drawable.fullscreen);
+					v.setImageResource(MirrorDisplay.isFillMode(false) ? R.drawable.fullscreen_exit : R.drawable.fullscreen);
 					v.setColorFilter(Color.WHITE);
 				} else {
 					v.setImageResource(icons[i]);
@@ -277,7 +277,7 @@ public class MirrorActivity extends CarActivity implements SurfaceHolder.Callbac
 		void updateFitFillIcon() {
 			if (fitFillButton != null) {
 				fitFillButton.setImageResource(
-						MirrorDisplay.isFillMode() ? R.drawable.fullscreen_exit : R.drawable.fullscreen
+						MirrorDisplay.isFillMode(false) ? R.drawable.fullscreen_exit : R.drawable.fullscreen
 				);
 			}
 		}
@@ -379,7 +379,7 @@ public class MirrorActivity extends CarActivity implements SurfaceHolder.Callbac
 			else if (viewId == R.drawable.recent) onRecentButtonClick();
 			else if (viewId == R.drawable.back) onBackButtonClick();
 			else if (viewId == R.drawable.fullscreen) {
-				boolean nowFill = MirrorDisplay.toggleFillMode();
+				boolean nowFill = MirrorDisplay.toggleFillMode(false);
 				Log.i("[MIRROR][INPUT] Toolbar Button Pressed | button=FIT_FILL, fillMode=" + nowFill);
 				updateFitFillIcon();
 			} else if (viewId == R.drawable.shutdown) onExitButtonClick();
