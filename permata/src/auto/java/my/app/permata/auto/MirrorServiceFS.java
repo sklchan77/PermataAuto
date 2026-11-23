@@ -12,7 +12,6 @@ import androidx.annotation.NonNull;
 import androidx.car.app.AppManager;
 import androidx.car.app.CarAppService;
 import androidx.car.app.CarContext;
-import androidx.car.app.CarToast;
 import androidx.car.app.Screen;
 import androidx.car.app.Session;
 import androidx.car.app.SessionInfo;
@@ -45,11 +44,12 @@ public class MirrorServiceFS extends CarAppService {
 	@Override
 	public void onDestroy() {
 		Log.i("[MIRROR_FS][LIFECYCLE] MirrorServiceFS.onDestroy");
+		AccessibilityEventDispatcherService.abortActiveGesture();
 		if (md != null) {
 			md.release();
 			md = null;
 		}
-		sc = null; 
+		sc = null;
 		super.onDestroy();
 	}
 
@@ -61,13 +61,15 @@ public class MirrorServiceFS extends CarAppService {
 		Log.i("[MIRROR_FS][LIFECYCLE] MirrorServiceFS.onTaskRemoved | mirroring=" + mirroring
 				+ ", autoConnected=" + autoConnected);
 
+		AccessibilityEventDispatcherService.abortActiveGesture();
+
 		if (mirroring) {
 			MirrorDisplay.close();
 		} else if (autoConnected) {
 			Log.i("[MIRROR_FS][DECISION] Preserving MirrorServiceFS | reason=AUTO_STILL_CONNECTED");
 			return;
 		}
-		
+
 		if (md != null) {
 			md.release();
 			md = null;
@@ -96,6 +98,9 @@ public class MirrorServiceFS extends CarAppService {
 	}
 
 	private final class MirrorScreen extends Screen implements SurfaceCallback {
+		private static final long TAP_THEN_DRAG_WINDOW_MS = 500L;
+		private static final long SCROLL_LIFT_DELAY_MS = 400L;
+
 		private final HandlerExecutor handler = PermataApplication.get().getHandler();
 		private float scrollStartX;
 		private float scrollStartY;
@@ -105,8 +110,11 @@ public class MirrorServiceFS extends CarAppService {
 		private long scrollMoveTime;
 		private Cancellable scrollUp;
 
-		// [NEW] The Grab Toggle
-		private boolean isGrabMode = false;
+		// [TAP-THEN-DRAG] 500ms hold window state
+		private Cancellable pendingTap;
+		private float pendingTapX;
+		private float pendingTapY;
+		private boolean isAnchoredDrag = false;
 
 		MirrorScreen(@NonNull CarContext ctx) {
 			super(ctx);
@@ -119,14 +127,14 @@ public class MirrorServiceFS extends CarAppService {
 			Log.i("[MIRROR_FS][SURFACE] onSurfaceAvailable | size=" + localSc.getWidth() + "x" + localSc.getHeight()
 					+ ", dpi=" + localSc.getDpi());
 			MirrorServiceFS.sc = localSc;
-			
+
 			if (md == null || md.isDestroyed()) {
 				if (md != null) md.release();
 				md = MirrorDisplay.get();
 			}
-			
+
 			if (md != null) md.setSurface(localSc);
-			
+
 			scrollStartX = localSc.getWidth() / 2f;
 			scrollStartY = localSc.getHeight() / 2f;
 		}
@@ -134,10 +142,12 @@ public class MirrorServiceFS extends CarAppService {
 		@Override
 		public void onSurfaceDestroyed(@NonNull SurfaceContainer localSc) {
 			Log.i("[MIRROR_FS][SURFACE] onSurfaceDestroyed | size=" + localSc.getWidth() + "x" + localSc.getHeight());
+			cancelPendingTap();
 			if (scrollUp != null) {
 				scrollUp.cancel();
 				scrollUp = null;
 			}
+			AccessibilityEventDispatcherService.abortActiveGesture();
 			if (md != null) {
 				md.releaseSurface(localSc);
 			}
@@ -146,58 +156,77 @@ public class MirrorServiceFS extends CarAppService {
 
 		@Override
 		public void onClick(float x, float y) {
-			// [NEW] If Grab Mode is active, swallow the click to prevent opening the bubble, 
-			// and save the coordinates for the upcoming drag.
-			if (isGrabMode) {
-				scrollStartX = x;
-				scrollStartY = y;
-				Log.i("[MIRROR_FS][INPUT] Grab Target Locked | x=" + (int) x + ", y=" + (int) y);
-				CarToast.makeText(getCarContext(), "Target Locked. Drag anywhere.", CarToast.LENGTH_SHORT).show();
-				return;
-			}
-
-			Log.i("[MIRROR_FS][INPUT] Split-Screen Tap | x=" + (int) x + ", y=" + (int) y);
 			if (scrollUp != null) {
 				scrollUp.cancel();
 				scrollUp = null;
+				AccessibilityEventDispatcherService.abortActiveGesture();
 			}
-			if (md() != null) md().tap(x, y);
+
+			// Fast double-tap (typing, TikTok likes, YouTube 10s skip): flush both taps immediately
+			if (pendingTap != null) {
+				float firstX = pendingTapX;
+				float firstY = pendingTapY;
+				cancelPendingTap();
+				Log.i("[MIRROR_FS][INPUT] Fast Double-Tap Flush | first=(" + (int) firstX + "," + (int) firstY
+						+ "), second=(" + (int) x + "," + (int) y + ")");
+				var mDisp = md();
+				if (mDisp != null) {
+					mDisp.tap(firstX, firstY);
+					mDisp.tap(x, y);
+				}
+				return;
+			}
+
+			pendingTapX = x;
+			pendingTapY = y;
+			pendingTap = handler.schedule(() -> {
+				if (pendingTap == null) return;
+				pendingTap = null;
+				Log.i("[MIRROR_FS][INPUT] Split-Screen Tap | x=" + (int) pendingTapX + ", y=" + (int) pendingTapY);
+				var mDisp = md();
+				if (mDisp != null) mDisp.tap(pendingTapX, pendingTapY);
+			}, TAP_THEN_DRAG_WINDOW_MS);
 		}
 
 		@Override
 		public void onScroll(float distanceX, float distanceY) {
 			var mDisp = md();
 			if (mDisp == null || MirrorServiceFS.sc == null) return;
-			
+
 			var time = uptimeMillis();
 			scrollMoveTime = time;
-			
+
 			if (scrollUp == null) {
-				// [NEW] If not in grab mode, default to the center of the screen
-				if (!isGrabMode) {
+				if (pendingTap != null) {
+					cancelPendingTap();
+					scrollStartX = pendingTapX;
+					scrollStartY = pendingTapY;
+					isAnchoredDrag = true;
+				} else {
 					scrollStartX = MirrorServiceFS.sc.getWidth() / 2f;
 					scrollStartY = MirrorServiceFS.sc.getHeight() / 2f;
+					isAnchoredDrag = false;
 				}
 
 				scrollX = scrollStartX;
 				scrollY = scrollStartY;
-				Log.i("[MIRROR_FS][INPUT] Split-Screen Drag Started | grabMode=" + isGrabMode
+				Log.i("[MIRROR_FS][INPUT] Split-Screen Drag Started | anchored=" + isAnchoredDrag
 						+ ", startX=" + (int) scrollX + ", startY=" + (int) scrollY);
-				
+
 				if (!mDisp.motionEvent(time, time, ACTION_DOWN, scrollX, scrollY)) {
 					return;
 				}
 				scrollDownTime = time;
-				scheduleScrollUp(500);
+				scheduleScrollUp(SCROLL_LIFT_DELAY_MS);
 			}
-			
+
 			scrollX -= distanceX;
 			scrollY -= distanceY;
 			mDisp.motionEvent(scrollDownTime, time, ACTION_MOVE, scrollX, scrollY);
-			
+
 			if (scrollUp != null) {
 				scrollUp.cancel();
-				scheduleScrollUp(500);
+				scheduleScrollUp(SCROLL_LIFT_DELAY_MS);
 			}
 		}
 
@@ -214,21 +243,28 @@ public class MirrorServiceFS extends CarAppService {
 				} else {
 					scrollUp = null;
 					mDisp.motionEvent(scrollDownTime, time, ACTION_UP, scrollX, scrollY);
-					Log.i("[MIRROR_FS][INPUT] Split-Screen Drag Ended | grabMode=" + isGrabMode
+					Log.i("[MIRROR_FS][INPUT] Split-Screen Drag Ended | anchored=" + isAnchoredDrag
 							+ ", endX=" + (int) scrollX + ", endY=" + (int) scrollY);
-					// [NEW] Reset Grab Mode after the drag is completely finished
-					isGrabMode = false;
+					isAnchoredDrag = false;
 				}
 			}, delay);
 		}
 
 		@Override
 		public void onScale(float focusX, float focusY, float scaleFactor) {
+			cancelPendingTap();
 			Log.i("[MIRROR_FS][INPUT] Split-Screen Scale | focusX=" + (int) focusX + ", focusY=" + (int) focusY
 					+ ", zoomIn=" + (scaleFactor > 1f));
 			scrollStartX = focusX;
 			scrollStartY = focusY;
 			if (md() != null) md().scale(focusX, focusY, scaleFactor > 1f);
+		}
+
+		private void cancelPendingTap() {
+			if (pendingTap != null) {
+				pendingTap.cancel();
+				pendingTap = null;
+			}
 		}
 
 		@NonNull
@@ -237,41 +273,30 @@ public class MirrorServiceFS extends CarAppService {
 			var homeButton = new Action.Builder().setIcon(
 							new CarIcon.Builder(createWithResource(getCarContext(), R.drawable.home)).build())
 					.setOnClickListener(MirrorActivity::onHomeButtonClick).build();
-					
+
 			var recentButton = new Action.Builder().setIcon(
 							new CarIcon.Builder(createWithResource(getCarContext(), R.drawable.recent)).setTint(androidx.car.app.model.CarColor.DEFAULT).build())
 					.setOnClickListener(MirrorActivity::onRecentButtonClick).build();
-					
+
 			var backButton = new Action.Builder().setIcon(
 							new CarIcon.Builder(createWithResource(getCarContext(), R.drawable.back)).build())
 					.setOnClickListener(MirrorActivity::onBackButtonClick).build();
-					
+
 			var exitButton = new Action.Builder().setIcon(
 							new CarIcon.Builder(createWithResource(getCarContext(), R.drawable.shutdown)).setTint(androidx.car.app.model.CarColor.DEFAULT).build())
 					.setOnClickListener(MirrorActivity::onExitButtonClick).build();
 
-			// [NEW] The Grab Tool Button
-			var grabButton = new Action.Builder().setIcon(
-							new CarIcon.Builder(createWithResource(getCarContext(), R.drawable.cursor))
-							.setTint(androidx.car.app.model.CarColor.DEFAULT).build())
-					.setOnClickListener(() -> {
-						isGrabMode = true;
-						Log.i("[MIRROR_FS][INPUT] Toolbar Button Pressed | button=GRAB, grabMode=ON");
-						CarToast.makeText(getCarContext(), "Grab Mode ON: Tap bubble to lock.", CarToast.LENGTH_SHORT).show();
-					}).build();
-			
 			return new NavigationTemplate.Builder()
 					.setPanModeListener(isPanningMode ->
 							Log.i("[MIRROR_FS][INPUT] Pan Mode Toggled | isPanningMode=" + isPanningMode))
-					// 1. Interactive Floating Tools (Renders on the right edge)
+					// 1. Interactive Floating Tools (Pan button enables onScroll dragging)
 					.setMapActionStrip(new ActionStrip.Builder()
-							.addAction(grabButton)
 							.addAction(Action.PAN)
 							.build())
 					// 2. Primary Navigation Bar (Original 4 buttons remain untouched)
 					.setActionStrip(new ActionStrip.Builder()
 							.addAction(homeButton)
-							.addAction(recentButton) 
+							.addAction(recentButton)
 							.addAction(backButton)
 							.addAction(exitButton)
 							.build())
