@@ -142,8 +142,8 @@ public class MirrorActivity extends CarActivity implements SurfaceHolder.Callbac
 		}
 
 		new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(() -> {
-			if (!PermataApplication.get().isConnectedToAuto()) {
-				Log.i("[MIRROR][DECISION] 5s Post-Destroy Check | autoConnected=false -> action=CLOSE_MIRROR");
+			if (!PermataApplication.get().isConnectedToAuto() && MirrorServiceFS.sc == null) {
+				Log.i("[MIRROR][DECISION] 5s Post-Destroy Check | autoConnected=false, fsSurface=null -> action=CLOSE_MIRROR");
 				MirrorDisplay.close();
 			}
 		}, 5000);
