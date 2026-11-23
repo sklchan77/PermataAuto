@@ -595,8 +595,9 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
         CharSequence cls = event.getClassName();
         String className = (cls != null) ? cls.toString() : null;
 
-        // 2-LAYER UNIVERSAL OVERLAY FILTER: Ignore transient windows, active IME, AA host, and system overlays
-        if (!isTransientWindow(className) && !isIgnoredOverlay(pkgName) && !isCurrentImePackage(pkgName)) {
+        // 2-LAYER UNIVERSAL OVERLAY FILTER: Ignore transient windows, active IME, AA host, system overlays, and car mirroring hosts
+        if (!isTransientWindow(className) && !isIgnoredOverlay(pkgName)
+                && !isCurrentImePackage(pkgName) && !isMirroringHostWindow(pkgName, className)) {
             lastActivePackage = pkgName;
 
             // === [WATCHDOG GOD-MODE: NATIVE APP HIJACKING] (Merged from File B) ===
@@ -665,6 +666,17 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
             // OEM Specific Sledgehammers
             "miui", "xiaomi", "coloros", "oplus", "nexuslauncher", "trebuchet"
     };
+
+    private boolean isMirroringHostWindow(@Nullable String pkgName, @Nullable String className) {
+        if (pkgName == null || !pkgName.equals(getPackageName())) return false;
+        if (!PermataApplication.get().isMirroringMode()) return false;
+        if (className == null) return true;
+        // Allow MainCarActivity, LauncherActivity, and MainActivity to update activePkg normally,
+        // but block MirrorActivity / MirrorServiceFS / ToolBar overlays from overwriting the mirrored phone app.
+        return !className.contains("MainCarActivity")
+                && !className.contains("LauncherActivity")
+                && !className.contains("MainActivity");
+    }
 
     private static boolean isTransientWindow(@Nullable String className) {
         if (className == null) return false;
