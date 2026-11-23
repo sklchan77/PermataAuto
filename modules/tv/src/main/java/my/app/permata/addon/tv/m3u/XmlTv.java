@@ -36,7 +36,6 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
-import java.util.zip.GZIPInputStream;
 
 import javax.xml.parsers.ParserConfigurationException;
 import javax.xml.parsers.SAXParser;
@@ -102,7 +101,10 @@ public class XmlTv implements Closeable {
 
 	public static FutureSupplier<XmlTv> create(TvM3uItem item) {
 		String url = item.getEpgUrl();
-		if (url == null) return completedNull();
+		String resUrl = item.getResource().getEpgUrl();
+		if (url == null || url.trim().isEmpty() || resUrl == null || resUrl.trim().isEmpty()) {
+			return completedNull();
+		}
 
 		try {
 			XmlTv xml = new XmlTv(SQLite.get(item.getResource().getEpgDbFile()));
