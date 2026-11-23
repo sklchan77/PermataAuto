@@ -140,7 +140,7 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
         if (ds == null) return false;
 
         if (PermataApplication.get().isMirroringMode()) {
-            my.app.permata.auto.MirrorDisplay md = my.app.permata.auto.MirrorDisplay.get();
+            my.app.permata.auto.MirrorDisplay md = my.app.permata.auto.MirrorDisplay.getActiveInstance();
             if (md != null) {
                 long now = android.os.SystemClock.uptimeMillis();
 
