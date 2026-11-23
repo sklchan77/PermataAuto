@@ -38,7 +38,7 @@ public class MirrorServiceFS extends CarAppService {
 	@Override
 	public void onCreate() {
 		super.onCreate();
-		Log.i("[MIRROR_FS][LIFECYCLE] MirrorServiceFS.onCreate | type=SPLIT_SCREEN_CAR_APP_SERVICE");
+		Log.i("[MIRROR_FS][LIFECYCLE] MirrorServiceFS.onCreate | type=FULLSCREEN_CAR_APP_SERVICE");
 		md = MirrorDisplay.get();
 	}
 
@@ -82,7 +82,7 @@ public class MirrorServiceFS extends CarAppService {
 	@NonNull
 	@Override
 	public Session onCreateSession(@NonNull SessionInfo sessionInfo) {
-		Log.i("[MIRROR_FS][LIFECYCLE] Split-Screen Mirror Session Created | displayType=" + sessionInfo.getDisplayType());
+		Log.i("[MIRROR_FS][LIFECYCLE] Full-Screen Mirror Session Created | displayType=" + sessionInfo.getDisplayType());
 		return new Session() {
 			@NonNull
 			@Override
@@ -194,7 +194,7 @@ public class MirrorServiceFS extends CarAppService {
 			pendingTap = handler.schedule(() -> {
 				if (pendingTap == null) return;
 				pendingTap = null;
-				Log.i("[MIRROR_FS][INPUT] Split-Screen Tap | x=" + (int) pendingTapX + ", y=" + (int) pendingTapY);
+				Log.i("[MIRROR_FS][INPUT] Full-Screen Tap | x=" + (int) pendingTapX + ", y=" + (int) pendingTapY);
 				var mDisp = md();
 				if (mDisp != null) mDisp.tap(pendingTapX, pendingTapY);
 			}, TAP_THEN_DRAG_WINDOW_MS);
@@ -230,7 +230,7 @@ public class MirrorServiceFS extends CarAppService {
 
 				scrollX = scrollStartX;
 				scrollY = scrollStartY;
-				Log.i("[MIRROR_FS][INPUT] Split-Screen Drag Started | anchored=" + isAnchoredDrag
+				Log.i("[MIRROR_FS][INPUT] Full-Screen Drag Started | anchored=" + isAnchoredDrag
 						+ ", source=" + anchorSource
 						+ ", startX=" + (int) scrollX + ", startY=" + (int) scrollY);
 
@@ -264,7 +264,7 @@ public class MirrorServiceFS extends CarAppService {
 				} else {
 					scrollUp = null;
 					mDisp.motionEvent(scrollDownTime, time, ACTION_UP, scrollX, scrollY);
-					Log.i("[MIRROR_FS][INPUT] Split-Screen Drag Ended | anchored=" + isAnchoredDrag
+					Log.i("[MIRROR_FS][INPUT] Full-Screen Drag Ended | anchored=" + isAnchoredDrag
 							+ ", endX=" + (int) scrollX + ", endY=" + (int) scrollY);
 					isAnchoredDrag = false;
 				}
@@ -283,7 +283,7 @@ public class MirrorServiceFS extends CarAppService {
 			pendingScale = handler.schedule(() -> {
 				if (pendingScale == null) return;
 				pendingScale = null;
-				Log.i("[MIRROR_FS][INPUT] Split-Screen Scale | focusX=" + (int) pendingScaleX
+				Log.i("[MIRROR_FS][INPUT] Full-Screen Scale | focusX=" + (int) pendingScaleX
 						+ ", focusY=" + (int) pendingScaleY + ", zoomIn=" + pendingScaleZoomIn);
 				scrollStartX = pendingScaleX;
 				scrollStartY = pendingScaleY;
