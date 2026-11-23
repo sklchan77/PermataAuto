@@ -69,6 +69,10 @@ public class MirrorDisplay {
 	private static final int ANCHOR_FLAGS = FLAG_NOT_FOCUSABLE | FLAG_NOT_TOUCHABLE | FLAG_KEEP_SCREEN_ON | FLAG_DISMISS_KEYGUARD | FLAG_SHOW_WHEN_LOCKED | FLAG_ALT_FOCUSABLE_IM;
 	private static final int MAX_VD_LONG_EDGE = 1920;
 
+	private static final String PREFS_NAME = "permata_mirror_prefs";
+	private static final String KEY_FILL_FS = "fill_mode_fs";
+	private static final String KEY_FILL_ACTIVITY = "fill_mode_activity";
+
 	private static MirrorDisplay instance;
 	private final Display defaultDisplay;
 	private final float scaleDiff;
@@ -81,6 +85,7 @@ public class MirrorDisplay {
 	private static final Object settingsLock = new Object();
 
 	private static volatile boolean isDimmed = false;
+	private static volatile boolean fillPrefsLoaded = false;
 	private static volatile boolean isFillModeFS = false;
 	private static volatile boolean isFillModeActivity = false;
 	private static int originalAccelState = -1; // [SURGERY] Track original accelerometer state
@@ -128,11 +133,29 @@ public class MirrorDisplay {
 		}
 	}
 
+	private static void ensureFillPrefsLoaded() {
+		if (fillPrefsLoaded) return;
+		synchronized (lifecycleLock) {
+			if (fillPrefsLoaded) return;
+			try {
+				var app = PermataApplication.get();
+				if (app != null) {
+					var prefs = app.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
+					isFillModeFS = prefs.getBoolean(KEY_FILL_FS, false);
+					isFillModeActivity = prefs.getBoolean(KEY_FILL_ACTIVITY, false);
+				}
+			} catch (Exception ignored) {}
+			fillPrefsLoaded = true;
+		}
+	}
+
 	public static boolean isFillMode(boolean isFS) {
+		ensureFillPrefsLoaded();
 		return isFS ? isFillModeFS : isFillModeActivity;
 	}
 
 	public static boolean toggleFillMode(boolean isFS) {
+		ensureFillPrefsLoaded();
 		synchronized (lifecycleLock) {
 			boolean newState;
 			if (isFS) {
@@ -142,6 +165,15 @@ public class MirrorDisplay {
 				isFillModeActivity = !isFillModeActivity;
 				newState = isFillModeActivity;
 			}
+			try {
+				var app = PermataApplication.get();
+				if (app != null) {
+					app.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+							.edit()
+							.putBoolean(isFS ? KEY_FILL_FS : KEY_FILL_ACTIVITY, newState)
+							.apply();
+				}
+			} catch (Exception ignored) {}
 			Log.i("[MIRROR][GL] Scale Mode Changed | surface=" + (isFS ? "FS" : "ACTIVITY")
 					+ ", fillMode=" + newState);
 
@@ -165,6 +197,7 @@ public class MirrorDisplay {
 	}
 
 	private boolean isActiveFillMode() {
+		ensureFillPrefsLoaded();
 		return isCurrentSurfaceFS() ? isFillModeFS : isFillModeActivity;
 	}
 
@@ -182,6 +215,13 @@ public class MirrorDisplay {
 			}
 			instance.refCounter++;
 			return instance;
+		}
+	}
+
+	@Nullable
+	public static MirrorDisplay getActiveInstance() {
+		synchronized (lifecycleLock) {
+			return (instance != null && !instance.isDestroyed) ? instance : null;
 		}
 	}
 
