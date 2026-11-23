@@ -367,6 +367,7 @@ public class KeyEventHandler {
                 String keyLabel = isNext ? "MEDIA_NEXT" : "MEDIA_PREVIOUS";
 
                 boolean isMirroring = PermataApplication.get().isMirroringMode();
+                boolean isCarActive = PermataApplication.get().isConnectedToAuto();
                 String activePkg = AccessibilityEventDispatcherService.getLastActivePackage();
                 boolean isPermata = activePkg != null && activePkg.startsWith("my.app.permata");
 
@@ -375,14 +376,14 @@ public class KeyEventHandler {
                         + ", activePkg=" + activePkg + ", mirroring=" + isMirroring);
                 
                 // === [SMART CROWN CORRECTION] ===
-                if (isPermata) {
+                if (isPermata || (isCarActive && !isMirroring)) {
                     if (currentCrown == PermataApplication.CROWN_NATIVE) {
-                        Log.i(sTag + "[DECISION] Crown Correction | from=NATIVE -> to=IPTV, reason=RETURNED_TO_PERMATA");
+                        String reason = isPermata ? "RETURNED_TO_PERMATA" : "CAR_ACTIVE_NOT_MIRRORING";
+                        Log.i(sTag + "[DECISION] Crown Correction | from=NATIVE -> to=IPTV, reason=" + reason);
                         PermataApplication.setMediaCrown(PermataApplication.CROWN_IPTV);
                         currentCrown = PermataApplication.CROWN_IPTV;
                     }
-                } 
-                else if (activePkg != null && isScrollerPackage(activePkg)) {
+                } else if (activePkg != null && isScrollerPackage(activePkg)) {
                     if (currentCrown != PermataApplication.CROWN_NATIVE) {
                         Log.i(sTag + "[DECISION] Crown Correction | from=" + crownName(currentCrown) + " -> to=NATIVE, reason=SCROLLER_ACTIVE(" + activePkg + ")");
                         PermataApplication.setMediaCrown(PermataApplication.CROWN_NATIVE);
