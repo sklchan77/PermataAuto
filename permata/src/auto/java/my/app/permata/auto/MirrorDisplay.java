@@ -3,7 +3,6 @@ package my.app.permata.auto;
 import static android.content.Context.POWER_SERVICE;
 import static android.content.Context.WINDOW_SERVICE;
 import static android.content.Intent.FLAG_ACTIVITY_CLEAR_TASK;
-import static android.content.Intent.FLAG_ACTIVITY_CLEAR_TOP;
 import static android.content.Intent.FLAG_ACTIVITY_NEW_TASK;
 import static android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE;
 import static android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT;
@@ -29,7 +28,6 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.pm.ActivityInfo;
-import android.content.res.Configuration;
 import android.graphics.Color;
 import android.graphics.Paint;
 import android.graphics.PixelFormat;
@@ -66,7 +64,6 @@ import my.app.permata.PermataApplication;
 import my.app.permata.R;
 import my.app.permata.media.service.PermataMediaService;
 import my.app.permata.ui.activity.MainActivity;
-import my.app.permata.ui.activity.MainActivityDelegate;
 import my.app.utils.async.Completed;
 import my.app.utils.async.FutureSupplier;
 import my.app.utils.async.Promise;
@@ -76,41 +73,43 @@ import my.app.utils.ui.UiUtils;
 public class MirrorDisplay {
 	private static final int OVERLAY_FLAGS = FLAG_NOT_FOCUSABLE | FLAG_KEEP_SCREEN_ON | FLAG_DISMISS_KEYGUARD | FLAG_TURN_SCREEN_ON | FLAG_SHOW_WHEN_LOCKED | FLAG_NOT_TOUCHABLE | FLAG_WATCH_OUTSIDE_TOUCH;
 	private static final int ANCHOR_FLAGS = FLAG_NOT_FOCUSABLE | FLAG_NOT_TOUCHABLE | FLAG_KEEP_SCREEN_ON | FLAG_DISMISS_KEYGUARD | FLAG_SHOW_WHEN_LOCKED | FLAG_ALT_FOCUSABLE_IM;
-					
+	private static final int MAX_VD_LONG_EDGE = 1920;
+
 	private static MirrorDisplay instance;
 	private final Display defaultDisplay;
 	private final float scaleDiff;
 	private WakeLock wakeLock;
-	
+
 	private static final ExecutorService bgExecutor = Executors.newSingleThreadExecutor();
 	private static final ExecutorService touchExecutor = Executors.newSingleThreadExecutor();
-	
-	private static final Object lifecycleLock = new Object(); 
+
+	private static final Object lifecycleLock = new Object();
 	private static final Object settingsLock = new Object();
-	
+
 	private static volatile boolean isDimmed = false;
+	private static volatile boolean isFillMode = false;
 	private static int originalAccelState = -1; // [SURGERY] Track original accelerometer state
-	
-	private volatile long lastInjectedTouchTime = 0; 
-	private final Object touchLock = new Object(); 
-	
+
+	private volatile long lastInjectedTouchTime = 0;
+	private final Object touchLock = new Object();
+
 	private int refCounter = 0;
-	private boolean isDestroyed = false; 
-	
+	private boolean isDestroyed = false;
+
 	private FutureSupplier<Session> session = Completed.cancelled();
 	private SurfaceContainer sc;
-	
+
 	private Overlay overlay;
-	private View rotationAnchor; 
+	private View rotationAnchor;
 	private Metrics currentMetrics;
-	
+
 	private MotionEvent.PointerProperties[] reusableProps;
 	private MotionEvent.PointerCoords[] reusableCoords;
 
 	public static final String ACTION_KILL_WEBVIEW = "my.app.permata.action.KILL_WEBVIEW";
 
 	private final Handler mainHandler = new Handler(Looper.getMainLooper());
-	
+
 	private final Runnable idleDimRunnable = () -> {
 		Log.i("[MIRROR][DECISION] Idle Timer Expired (10s) | action=RE_DIM_AND_LOCK_ORIENTATION");
 		dimScreen(PermataApplication.get());
@@ -125,12 +124,35 @@ public class MirrorDisplay {
 		var size = new Point();
 		defaultDisplay.getRealSize(size);
 		scaleDiff = Math.max(UiUtils.toPx(ctx, 20), Math.min(size.x, size.y) / 20f);
-		
+
 		reusableProps = new MotionEvent.PointerProperties[10];
 		reusableCoords = new MotionEvent.PointerCoords[10];
 		for (int i = 0; i < 10; i++) {
 			reusableProps[i] = new MotionEvent.PointerProperties();
 			reusableCoords[i] = new MotionEvent.PointerCoords();
+		}
+	}
+
+	public static boolean isFillMode() {
+		return isFillMode;
+	}
+
+	public static boolean toggleFillMode() {
+		synchronized (lifecycleLock) {
+			isFillMode = !isFillMode;
+			Log.i("[MIRROR][GL] Scale Mode Changed | fillMode=" + isFillMode);
+			if (instance != null && !instance.isDestroyed) {
+				instance.currentMetrics = null;
+				if (instance.session.isDoneNotFailed()) {
+					try {
+						Session s = instance.session.getOrThrow();
+						if (s != null && s.renderer != null) {
+							s.renderer.setFillMode(isFillMode);
+						}
+					} catch (Exception ignored) {}
+				}
+			}
+			return isFillMode;
 		}
 	}
 
@@ -191,22 +213,30 @@ public class MirrorDisplay {
 			if (isDestroyed) return;
 			var oldSc = this.sc;
 			if (oldSc == sc) return;
-			
+
 			this.sc = sc;
-			currentMetrics = null; 
+			currentMetrics = null;
 			String orient = sc.getWidth() > sc.getHeight() ? "LANDSCAPE" : "PORTRAIT";
 			Log.i("[MIRROR][SURFACE] setSurface | size=" + sc.getWidth() + "x" + sc.getHeight()
 					+ ", dpi=" + sc.getDpi() + ", orientation=" + orient
+					+ ", fillMode=" + isFillMode
 					+ ", sessionActive=" + session.isDoneNotFailed());
-			
+
 			dimScreen(PermataApplication.get());
 			disableAccelRotation(PermataApplication.get());
-			
+
 			if (session.isDoneNotFailed()) {
 				try {
-					var vd = this.session.getOrThrow().vd;
-					vd.setSurface(sc.getSurface());
-					vd.resize(sc.getWidth(), sc.getHeight(), sc.getDpi());
+					var s = this.session.getOrThrow();
+					if (oldSc != null) {
+						s.renderer.detachOutputSurfaceSync();
+						drawMsg(oldSc, R.string.app_name);
+					}
+					int[] vdSize = computeVirtualDisplaySize();
+					s.vd.resize(vdSize[0], vdSize[1], sc.getDpi());
+					s.renderer.setInputSize(vdSize[0], vdSize[1]);
+					s.renderer.setFillMode(isFillMode);
+					s.renderer.setOutputSurface(sc.getSurface(), sc.getWidth(), sc.getHeight());
 					started();
 				} catch (Throwable err) {
 					Log.d(err);
@@ -215,8 +245,8 @@ public class MirrorDisplay {
 				}
 			} else {
 				createSession();
+				if (oldSc != null) drawMsg(oldSc, R.string.app_name);
 			}
-			if (oldSc != null) drawMsg(oldSc, R.string.app_name);
 		}
 	}
 
@@ -227,18 +257,43 @@ public class MirrorDisplay {
 			if (oldSc != sc) return;
 			Log.i("[MIRROR][SURFACE] releaseSurface | size=" + sc.getWidth() + "x" + sc.getHeight());
 			this.sc = null;
-			
+
 			restoreBrightness(PermataApplication.get(), true);
 			restoreAccelRotation(PermataApplication.get(), true);
-			
+
 			if (session.isDoneNotFailed()) {
 				try {
 					Session s = session.getOrThrow();
-					if (s != null && s.vd != null) s.vd.setSurface(null);
-				} catch (Exception e) {}
+					if (s != null && s.renderer != null) {
+						s.renderer.detachOutputSurfaceSync();
+					}
+				} catch (Exception ignored) {}
 			}
 			drawMsg(oldSc, R.string.app_name);
 		}
+	}
+
+	private int[] computeVirtualDisplaySize() {
+		Point size = new Point();
+		defaultDisplay.getRealSize(size);
+		float dw = size.x;
+		float dh = size.y;
+		boolean isLandscape = PermataApplication.get().isMirroringLandscape();
+		if (isLandscape && dw < dh) {
+			float tmp = dw; dw = dh; dh = tmp;
+		} else if (!isLandscape && dw > dh) {
+			float tmp = dw; dw = dh; dh = tmp;
+		}
+
+		float longEdge = Math.max(dw, dh);
+		if (longEdge > MAX_VD_LONG_EDGE) {
+			float factor = MAX_VD_LONG_EDGE / longEdge;
+			dw *= factor;
+			dh *= factor;
+		}
+		int w = Math.max(2, ((int) Math.round(dw)) & ~1);
+		int h = Math.max(2, ((int) Math.round(dh)) & ~1);
+		return new int[]{w, h};
 	}
 
 	private void resetIdleTimer() {
@@ -257,11 +312,10 @@ public class MirrorDisplay {
 		lastInjectedTouchTime = uptimeMillis();
 		var m = metrics();
 		if (m == null) return;
-		
+
 		touchExecutor.execute(() -> {
 			var d = dispatcher();
 			if (d != null) {
-                // [SURGERY] Restored pure coordinate mapping
 				d.tap((x - m.x) * m.scale, (y - m.y) * m.scale);
 			}
 		});
@@ -271,7 +325,7 @@ public class MirrorDisplay {
 		lastInjectedTouchTime = uptimeMillis();
 		var m = metrics();
 		if (m == null) return;
-		
+
 		touchExecutor.execute(() -> {
 			var d = dispatcher();
 			if (d != null) {
@@ -281,8 +335,8 @@ public class MirrorDisplay {
 	}
 
 	public boolean motionEvent(MotionEvent e) {
-		lastInjectedTouchTime = uptimeMillis(); 
-		
+		lastInjectedTouchTime = uptimeMillis();
+
 		MotionEvent clonedEvent = null;
 
 		synchronized (touchLock) {
@@ -303,26 +357,25 @@ public class MirrorDisplay {
 				for (int i = 0; i < cnt; i++) {
 					e.getPointerProperties(i, reusableProps[i]);
 					e.getPointerCoords(i, reusableCoords[i]);
-					reusableProps[i].id = 10 + i; 
+					reusableProps[i].id = 10 + i;
 					reusableProps[i].toolType = MotionEvent.TOOL_TYPE_FINGER;
-					
-                    // [SURGERY] Restored pure relative translation for all dispatchers
+
 					reusableCoords[i].x = (reusableCoords[i].x - m.x) * m.scale;
 					reusableCoords[i].y = (reusableCoords[i].y - m.y) * m.scale;
-                    
+
 					if (reusableCoords[i].pressure <= 0.01f) reusableCoords[i].pressure = 1.0f;
 					if (reusableCoords[i].size <= 0.01f) reusableCoords[i].size = 1.0f;
 				}
-				
+
 				clonedEvent = MotionEvent.obtain(e.getDownTime(), e.getEventTime(), e.getAction(), cnt, reusableProps, reusableCoords,
 						e.getMetaState(), e.getButtonState(), e.getXPrecision(), e.getYPrecision(), e.getDeviceId(),
 						e.getEdgeFlags(), InputDevice.SOURCE_TOUCHSCREEN, e.getFlags());
-						
+
 			} catch (Exception ex) {
 				Log.e(ex, "Touch clone failed.");
 			}
 		}
-		
+
 		if (clonedEvent != null) {
 			final MotionEvent finalEvent = clonedEvent;
 			try {
@@ -334,36 +387,35 @@ public class MirrorDisplay {
 				});
 			} catch (Exception rejectedException) {}
 		}
-		
+
 		return true;
 	}
 
 	public boolean motionEvent(long downTime, long eventTime, int action, float x, float y) {
-		lastInjectedTouchTime = uptimeMillis(); 
-		
+		lastInjectedTouchTime = uptimeMillis();
+
 		MotionEvent clonedEvent = null;
 
 		synchronized (touchLock) {
 			try {
 				var m = metrics();
 				if (m == null) return false;
-				
+
 				reusableProps[0].clear();
-				reusableProps[0].id = 10; 
+				reusableProps[0].id = 10;
 				reusableProps[0].toolType = MotionEvent.TOOL_TYPE_FINGER;
-				
+
 				reusableCoords[0].clear();
-                
-                // [SURGERY] Restored pure relative translation
+
 				reusableCoords[0].x = (x - m.x) * m.scale;
 				reusableCoords[0].y = (y - m.y) * m.scale;
-                
+
 				reusableCoords[0].pressure = 1.0f;
 				reusableCoords[0].size = 1.0f;
-				
+
 				clonedEvent = MotionEvent.obtain(downTime, eventTime, action, 1, reusableProps, reusableCoords,
 						0, 0, 1.0f, 1.0f, 0, 0, InputDevice.SOURCE_TOUCHSCREEN, 0);
-						
+
 			} catch (Exception ex) {}
 		}
 
@@ -378,7 +430,7 @@ public class MirrorDisplay {
 				});
 			} catch (Exception rejectedException) {}
 		}
-		
+
 		return true;
 	}
 
@@ -386,8 +438,8 @@ public class MirrorDisplay {
 		try {
 			var wm = (WindowManager) PermataApplication.get().getSystemService(WINDOW_SERVICE);
 			boolean land = PermataApplication.get().isMirroringLandscape();
-			int targetOrientation = forceCarPriority 
-					? (land ? SCREEN_ORIENTATION_LANDSCAPE : SCREEN_ORIENTATION_PORTRAIT) 
+			int targetOrientation = forceCarPriority
+					? (land ? SCREEN_ORIENTATION_LANDSCAPE : SCREEN_ORIENTATION_PORTRAIT)
 					: ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED;
 
 			if (rotationAnchor != null) {
@@ -397,12 +449,11 @@ public class MirrorDisplay {
 					wm.updateViewLayout(rotationAnchor, anchorLp);
 				}
 			}
-			
+
 			if (overlay != null) {
 				var overlayLp = (WindowManager.LayoutParams) overlay.getLayoutParams();
 				if (overlayLp != null) {
 					overlayLp.screenOrientation = targetOrientation;
-					// [CRASH-PROOF] Dim screen via Window LayoutParams instead of Settings.System
 					overlayLp.screenBrightness = isDimmed ? 0.0f : WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE;
 					wm.updateViewLayout(overlay, overlayLp);
 				}
@@ -417,46 +468,44 @@ public class MirrorDisplay {
 
 	private static void disableAccelRotation(Context ctx) {
 		synchronized (lifecycleLock) {
-			if (instance == null || instance.sc == null || instance.isDestroyed) return; 
+			if (instance == null || instance.sc == null || instance.isDestroyed) return;
 		}
 
 		var a = EventDispatcher.get().getActivity();
 		boolean land = PermataApplication.get().isMirroringLandscape();
-		
+
 		if (a != null) {
 			a.setRequestedOrientation(land ? SCREEN_ORIENTATION_LANDSCAPE : SCREEN_ORIENTATION_PORTRAIT);
 		}
 
-        // [SURGERY] Hard-lock the system accelerometer to prevent car jerking rotation
-        try {
-            android.content.ContentResolver cr = ctx.getContentResolver();
-            if (originalAccelState == -1) {
-                int v = android.provider.Settings.System.getInt(cr, android.provider.Settings.System.ACCELEROMETER_ROTATION, -1);
-                if (v != -1) originalAccelState = v;
-            }
-            android.provider.Settings.System.putInt(cr, android.provider.Settings.System.ACCELEROMETER_ROTATION, 0);
-            android.provider.Settings.System.putInt(cr, android.provider.Settings.System.USER_ROTATION, 
-                    land ? android.view.Surface.ROTATION_90 : android.view.Surface.ROTATION_0);
-            Log.i("[MIRROR][DECISION] Rotation Lock Engaged | orientation=" + (land ? "LANDSCAPE" : "PORTRAIT")
-                    + ", savedAccel=" + originalAccelState);
-        } catch (Exception err) {
-            Log.e(err, "[ROTATION_LOCK] Failed to write system settings.");
-        }
+		try {
+			android.content.ContentResolver cr = ctx.getContentResolver();
+			if (originalAccelState == -1) {
+				int v = android.provider.Settings.System.getInt(cr, android.provider.Settings.System.ACCELEROMETER_ROTATION, -1);
+				if (v != -1) originalAccelState = v;
+			}
+			android.provider.Settings.System.putInt(cr, android.provider.Settings.System.ACCELEROMETER_ROTATION, 0);
+			android.provider.Settings.System.putInt(cr, android.provider.Settings.System.USER_ROTATION,
+					land ? android.view.Surface.ROTATION_90 : android.view.Surface.ROTATION_0);
+			Log.i("[MIRROR][DECISION] Rotation Lock Engaged | orientation=" + (land ? "LANDSCAPE" : "PORTRAIT")
+					+ ", savedAccel=" + originalAccelState);
+		} catch (Exception err) {
+			Log.e(err, "[ROTATION_LOCK] Failed to write system settings.");
+		}
 	}
 
 	private static void restoreAccelRotation(Context ctx, boolean synchronous) {
 		var a = EventDispatcher.get().getActivity();
 		if (a != null) a.setRequestedOrientation(SCREEN_ORIENTATION_UNSPECIFIED);
 
-        // [SURGERY] Restore original accelerometer state when screen wakes up
-        if (originalAccelState != -1) {
-            try {
-                android.provider.Settings.System.putInt(ctx.getContentResolver(), 
-                        android.provider.Settings.System.ACCELEROMETER_ROTATION, originalAccelState);
-                Log.i("[MIRROR][DECISION] Rotation Lock Released | restoredAccel=" + originalAccelState);
-            } catch (Exception err) {}
-            originalAccelState = -1;
-        }
+		if (originalAccelState != -1) {
+			try {
+				android.provider.Settings.System.putInt(ctx.getContentResolver(),
+						android.provider.Settings.System.ACCELEROMETER_ROTATION, originalAccelState);
+				Log.i("[MIRROR][DECISION] Rotation Lock Released | restoredAccel=" + originalAccelState);
+			} catch (Exception err) {}
+			originalAccelState = -1;
+		}
 	}
 
 	private void dimScreen(Context ctx) {
@@ -542,24 +591,24 @@ public class MirrorDisplay {
 				wakeLock.release();
 				wakeLock = null;
 			}
-			
+
 			//noinspection deprecation
 			wakeLock = pmg.newWakeLock(PowerManager.SCREEN_DIM_WAKE_LOCK | ACQUIRE_CAUSES_WAKEUP,
 					"Permata:ScreenLock");
-			if (wakeLock != null) wakeLock.acquire(24 * 3600000); 
+			if (wakeLock != null) wakeLock.acquire(24 * 3600000);
 		}
 
 		if (SDK_INT >= VERSION_CODES.O) {
 			try {
 				var wm = (WindowManager) app.getSystemService(WINDOW_SERVICE);
-				boolean land = (mode == 1); 
-				
+				boolean land = (mode == 1);
+
 				if (rotationAnchor == null) {
 					var anchorLp = new WindowManager.LayoutParams(
 							1, 1, TYPE_APPLICATION_OVERLAY, ANCHOR_FLAGS, PixelFormat.TRANSPARENT);
 					anchorLp.gravity = Gravity.TOP | Gravity.START;
 					anchorLp.screenOrientation = land ? SCREEN_ORIENTATION_LANDSCAPE : SCREEN_ORIENTATION_PORTRAIT;
-					
+
 					rotationAnchor = new View(app);
 					wm.addView(rotationAnchor, anchorLp);
 				}
@@ -590,9 +639,8 @@ public class MirrorDisplay {
 		} catch (IllegalStateException ise) {
 		} catch (Exception err) {}
 
-		// [SURGERY] Delegate Audio Focus and Steering Wheel Anchoring entirely to PermataMediaService
 		PermataMediaService.requestFocusAndAnchor(app);
-		
+
 		setMirroringMode(app, mode);
 	}
 
@@ -600,10 +648,11 @@ public class MirrorDisplay {
 		if (isDestroyed) return;
 		isDestroyed = true;
 		Log.i("[MIRROR][LIFECYCLE] Mirroring Session Closing | action=FULL_CLEANUP");
-		
+
+		AccessibilityEventDispatcherService.abortActiveGesture();
 		noSession();
 		var app = PermataApplication.get();
-		
+
 		mainHandler.removeCallbacks(idleDimRunnable);
 		if (unlockReceiver != null) {
 			try {
@@ -612,44 +661,44 @@ public class MirrorDisplay {
 			unlockReceiver = null;
 		}
 		app.sendBroadcast(new Intent(ACTION_KILL_WEBVIEW));
-		
+
 		restoreBrightness(app, true);
 		restoreAccelRotation(app, true);
-		
+
 		var a = EventDispatcher.get().getActivity();
 		if (a != null) a.setRequestedOrientation(SCREEN_ORIENTATION_UNSPECIFIED);
-		
+
 		if (overlay != null || rotationAnchor != null) {
 			final Overlay oldOverlay = overlay;
 			final View oldAnchor = rotationAnchor;
-			
+
 			mainHandler.post(() -> {
 				try {
 					var wm = (WindowManager) app.getSystemService(WINDOW_SERVICE);
 					if (oldOverlay != null && oldOverlay.isAttachedToWindow()) wm.removeView(oldOverlay);
-					if (oldAnchor != null && oldAnchor.isAttachedToWindow()) wm.removeView(oldAnchor); 
+					if (oldAnchor != null && oldAnchor.isAttachedToWindow()) wm.removeView(oldAnchor);
 				} catch (IllegalArgumentException iae) {
 				} catch (Exception ignored) {}
 			});
-			
+
 			overlay = null;
 			rotationAnchor = null;
 		}
-		
+
 		if (wakeLock != null) {
 			try {
 				if (wakeLock.isHeld()) wakeLock.release();
 			} catch (Exception ignored) {}
 			wakeLock = null;
 		}
-		
+
 		setMirroringMode(app, 0);
 		ProjectionService.stop();
 
 		try {
 			app.stopService(new Intent(app, XposedEventDispatcherService.class));
 		} catch (Exception err) {}
-		
+
 		sc = null;
 		currentMetrics = null;
 		instance = null;
@@ -687,7 +736,7 @@ public class MirrorDisplay {
 			noSession();
 			return;
 		}
-		
+
 		if (session.isDoneNotFailed()) {
 			try {
 				Session oldSession = session.getOrThrow();
@@ -695,9 +744,9 @@ public class MirrorDisplay {
 			} catch (Exception e) {}
 			session = Completed.cancelled();
 		}
-		
-		if (p.isDone()) return; 
-		
+
+		if (p.isDone()) return;
+
 		ProjectionService.start().onCompletion((mp, err) -> {
 			synchronized (lifecycleLock) {
 				if (isDestroyed || session != p) {
@@ -706,13 +755,13 @@ public class MirrorDisplay {
 					}
 					return;
 				}
-				
+
 				if (sc == null) {
 					noSession();
 					return;
 				}
 				if (p.isDone()) return;
-				
+
 				if (err != null) {
 					if (isCancellation(err)) {
 						Log.i("[MIRROR][LIFECYCLE] Screen Capture Rejected by User | action=CLEANUP");
@@ -727,6 +776,7 @@ public class MirrorDisplay {
 					try {
 						p.complete(new Session(mp, MirrorDisplay.this));
 					} catch (Exception ex) {
+						Log.e(ex, "[MIRROR][LIFECYCLE] Session creation failed, retrying");
 						retryCreateSession(p);
 					}
 				}
@@ -776,10 +826,10 @@ public class MirrorDisplay {
 	@Nullable
 	private Metrics metrics() {
 		if (sc == null || !session.isDoneNotFailed() || isDestroyed) return null;
-		
+
 		final Point size = new Point();
 		defaultDisplay.getRealSize(size);
-		
+
 		float dw = size.x;
 		float dh = size.y;
 		float sw = sc.getWidth();
@@ -792,21 +842,22 @@ public class MirrorDisplay {
 		} else if (!isLandscape && dw > dh) {
 			float temp = dw; dw = dh; dh = temp;
 		}
-		
-		if (currentMetrics != null && 
-			currentMetrics.sw == sw && currentMetrics.sh == sh && 
+
+		boolean fill = isFillMode;
+		if (currentMetrics != null &&
+			currentMetrics.fillMode == fill &&
+			currentMetrics.sw == sw && currentMetrics.sh == sh &&
 			currentMetrics.dw == dw && currentMetrics.dh == dh) {
 			return currentMetrics;
 		}
-		
-		currentMetrics = new Metrics(dw, dh, sw, sh);
+
+		currentMetrics = new Metrics(dw, dh, sw, sh, fill);
 		return currentMetrics;
 	}
 
 	private void setMirroringMode(PermataApplication app, int mode) {
 		app.setMirroringMode(mode);
 
-		// [SURGERY] Finish active phone MainActivity directly without spawning a phantom instance
 		mainHandler.post(() -> {
 			MainActivity activeMain = MainActivity.getActiveInstance();
 			if (activeMain != null && !activeMain.isFinishing()) {
@@ -834,16 +885,26 @@ public class MirrorDisplay {
 	private static final class Session extends MediaProjection.Callback {
 		final MediaProjection mp;
 		final VirtualDisplay vd;
+		final GlMirrorRenderer renderer;
 
 		Session(MediaProjection mp, MirrorDisplay md) {
 			this.mp = mp;
 			var sc = md.sc;
 			var app = PermataApplication.get();
 			var name = app.getString(R.string.mirror_service_name);
+			int[] vdSize = md.computeVirtualDisplaySize();
+
+			renderer = new GlMirrorRenderer(vdSize[0], vdSize[1], isFillMode);
+			renderer.setOutputSurface(sc.getSurface(), sc.getWidth(), sc.getHeight());
+
 			mp.registerCallback(this, app.getHandler());
-			vd = mp.createVirtualDisplay(name, sc.getWidth(), sc.getHeight(), sc.getDpi(),
-					DisplayManager.VIRTUAL_DISPLAY_FLAG_OWN_CONTENT_ONLY, sc.getSurface(), null, null);
-			if (vd == null) throw new RuntimeException("Failed to create VirtualDisplay");
+			vd = mp.createVirtualDisplay(name, vdSize[0], vdSize[1], sc.getDpi(),
+					DisplayManager.VIRTUAL_DISPLAY_FLAG_OWN_CONTENT_ONLY,
+					renderer.getInputSurface(), null, null);
+			if (vd == null) {
+				renderer.release();
+				throw new RuntimeException("Failed to create VirtualDisplay");
+			}
 		}
 
 		@Override
@@ -858,9 +919,16 @@ public class MirrorDisplay {
 		}
 
 		void close() {
-			mp.unregisterCallback(this);
-			if (vd != null) vd.release();
-			if (mp != null) mp.stop();
+			try { mp.unregisterCallback(this); } catch (Exception ignored) {}
+			if (vd != null) {
+				try { vd.release(); } catch (Exception ignored) {}
+			}
+			if (renderer != null) {
+				renderer.release();
+			}
+			if (mp != null) {
+				try { mp.stop(); } catch (Exception ignored) {}
+			}
 		}
 	}
 
@@ -868,35 +936,52 @@ public class MirrorDisplay {
 		final float x;
 		final float y;
 		final float scale;
-		final float sw; 
-		final float sh; 
-		final float dw; 
-		final float dh; 
+		final float sw;
+		final float sh;
+		final float dw;
+		final float dh;
+		final boolean fillMode;
 
-		Metrics(float dw, float dh, float sw, float sh) {
+		Metrics(float dw, float dh, float sw, float sh, boolean fillMode) {
 			this.sw = sw;
 			this.sh = sh;
 			this.dw = dw;
 			this.dh = dh;
-			
-			var scale = dw / sw;
-			var scaleH = dh / scale;
-			if (scaleH <= sh) {
-				x = 0f;
-				y = (sh - scaleH) / 2f;
-				assert y >= 0f;
+			this.fillMode = fillMode;
+
+			float scaleW = dw / sw;
+			float scaleH = dh / sh;
+
+			if (fillMode) {
+				if (scaleW >= scaleH) {
+					// Phone is wider than car: match height, crop left/right overhang (x <= 0)
+					this.scale = scaleH;
+					this.y = 0f;
+					this.x = (sw - (dw / this.scale)) / 2f;
+				} else {
+					// Phone is taller than car: match width, crop top/bottom overhang (y <= 0)
+					this.scale = scaleW;
+					this.x = 0f;
+					this.y = (sh - (dh / this.scale)) / 2f;
+				}
 			} else {
-				scale = dh / sh;
-				y = 0f;
-				x = (sw - (dw / scale)) / 2;
-				assert x >= 0f;
+				if (scaleW >= scaleH) {
+					// Fit: match width, letterbox top/bottom (y >= 0)
+					this.scale = scaleW;
+					this.x = 0f;
+					this.y = (sh - (dh / this.scale)) / 2f;
+				} else {
+					// Fit: match height, pillarbox left/right (x >= 0)
+					this.scale = scaleH;
+					this.y = 0f;
+					this.x = (sw - (dw / this.scale)) / 2f;
+				}
 			}
-			this.scale = scale;
 		}
 	}
 
 	private final class Overlay extends FrameLayout {
-		
+
 		public Overlay(@NonNull Context context) {
 			super(context);
 		}
@@ -917,7 +1002,7 @@ public class MirrorDisplay {
 					}
 				}
 			}
-			return false; 
+			return false;
 		}
 	}
 }
