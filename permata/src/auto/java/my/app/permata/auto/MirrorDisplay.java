@@ -87,7 +87,8 @@ public class MirrorDisplay {
 	private static final Object settingsLock = new Object();
 
 	private static volatile boolean isDimmed = false;
-	private static volatile boolean isFillMode = false;
+	private static volatile boolean isFillModeFS = false;
+	private static volatile boolean isFillModeActivity = false;
 	private static int originalAccelState = -1; // [SURGERY] Track original accelerometer state
 
 	private volatile long lastInjectedTouchTime = 0;
@@ -133,27 +134,44 @@ public class MirrorDisplay {
 		}
 	}
 
-	public static boolean isFillMode() {
-		return isFillMode;
+	public static boolean isFillMode(boolean isFS) {
+		return isFS ? isFillModeFS : isFillModeActivity;
 	}
 
-	public static boolean toggleFillMode() {
+	public static boolean toggleFillMode(boolean isFS) {
 		synchronized (lifecycleLock) {
-			isFillMode = !isFillMode;
-			Log.i("[MIRROR][GL] Scale Mode Changed | fillMode=" + isFillMode);
-			if (instance != null && !instance.isDestroyed) {
+			boolean newState;
+			if (isFS) {
+				isFillModeFS = !isFillModeFS;
+				newState = isFillModeFS;
+			} else {
+				isFillModeActivity = !isFillModeActivity;
+				newState = isFillModeActivity;
+			}
+			Log.i("[MIRROR][GL] Scale Mode Changed | surface=" + (isFS ? "FS" : "ACTIVITY")
+					+ ", fillMode=" + newState);
+
+			if (instance != null && !instance.isDestroyed && instance.isCurrentSurfaceFS() == isFS) {
 				instance.currentMetrics = null;
 				if (instance.session.isDoneNotFailed()) {
 					try {
 						Session s = instance.session.getOrThrow();
 						if (s != null && s.renderer != null) {
-							s.renderer.setFillMode(isFillMode);
+							s.renderer.setFillMode(newState);
 						}
 					} catch (Exception ignored) {}
 				}
 			}
-			return isFillMode;
+			return newState;
 		}
+	}
+
+	private boolean isCurrentSurfaceFS() {
+		return sc != null && sc == MirrorServiceFS.sc;
+	}
+
+	private boolean isActiveFillMode() {
+		return isCurrentSurfaceFS() ? isFillModeFS : isFillModeActivity;
 	}
 
 	public static MirrorDisplay get() {
@@ -216,10 +234,11 @@ public class MirrorDisplay {
 
 			this.sc = sc;
 			currentMetrics = null;
+			boolean activeFill = isActiveFillMode();
 			String orient = sc.getWidth() > sc.getHeight() ? "LANDSCAPE" : "PORTRAIT";
 			Log.i("[MIRROR][SURFACE] setSurface | size=" + sc.getWidth() + "x" + sc.getHeight()
 					+ ", dpi=" + sc.getDpi() + ", orientation=" + orient
-					+ ", fillMode=" + isFillMode
+					+ ", fillMode=" + activeFill
 					+ ", sessionActive=" + session.isDoneNotFailed());
 
 			dimScreen(PermataApplication.get());
@@ -235,7 +254,7 @@ public class MirrorDisplay {
 					int[] vdSize = computeVirtualDisplaySize();
 					s.vd.resize(vdSize[0], vdSize[1], sc.getDpi());
 					s.renderer.setInputSize(vdSize[0], vdSize[1]);
-					s.renderer.setFillMode(isFillMode);
+					s.renderer.setFillMode(activeFill);
 					s.renderer.setOutputSurface(sc.getSurface(), sc.getWidth(), sc.getHeight());
 					started();
 				} catch (Throwable err) {
@@ -843,7 +862,7 @@ public class MirrorDisplay {
 			float temp = dw; dw = dh; dh = temp;
 		}
 
-		boolean fill = isFillMode;
+		boolean fill = isActiveFillMode();
 		if (currentMetrics != null &&
 			currentMetrics.fillMode == fill &&
 			currentMetrics.sw == sw && currentMetrics.sh == sh &&
@@ -894,7 +913,7 @@ public class MirrorDisplay {
 			var name = app.getString(R.string.mirror_service_name);
 			int[] vdSize = md.computeVirtualDisplaySize();
 
-			renderer = new GlMirrorRenderer(vdSize[0], vdSize[1], isFillMode);
+			renderer = new GlMirrorRenderer(vdSize[0], vdSize[1], md.isActiveFillMode());
 			renderer.setOutputSurface(sc.getSurface(), sc.getWidth(), sc.getHeight());
 
 			mp.registerCallback(this, app.getHandler());
