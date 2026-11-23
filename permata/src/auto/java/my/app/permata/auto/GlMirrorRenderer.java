@@ -309,7 +309,11 @@ final class GlMirrorRenderer implements SurfaceTexture.OnFrameAvailableListener 
 
 		if (!EGL14.eglMakeCurrent(eglDisplay, eglWindowSurface, eglWindowSurface, eglContext)) {
 			int err = EGL14.eglGetError();
-			Log.e("[MIRROR][GL] eglMakeCurrent(window) FAILED | err=0x" + Integer.toHexString(err));
+			if (err == EGL14.EGL_BAD_SURFACE || err == EGL14.EGL_BAD_NATIVE_WINDOW) {
+				Log.i("[MIRROR][GL] Output surface closed before frame | err=0x" + Integer.toHexString(err));
+			} else {
+				Log.e("[MIRROR][GL] eglMakeCurrent(window) FAILED | err=0x" + Integer.toHexString(err));
+			}
 			destroyWindowSurface(false);
 			return;
 		}
@@ -367,9 +371,11 @@ final class GlMirrorRenderer implements SurfaceTexture.OnFrameAvailableListener 
 
 		if (!EGL14.eglSwapBuffers(eglDisplay, eglWindowSurface)) {
 			int err = EGL14.eglGetError();
-			Log.e("[MIRROR][GL] eglSwapBuffers FAILED | err=0x" + Integer.toHexString(err));
 			if (err == EGL14.EGL_BAD_SURFACE || err == EGL14.EGL_BAD_NATIVE_WINDOW) {
+				Log.i("[MIRROR][GL] Output surface closed mid-frame | err=0x" + Integer.toHexString(err));
 				destroyWindowSurface(false);
+			} else {
+				Log.e("[MIRROR][GL] eglSwapBuffers FAILED | err=0x" + Integer.toHexString(err));
 			}
 		} else if (!loggedFirstFrame) {
 			loggedFirstFrame = true;
