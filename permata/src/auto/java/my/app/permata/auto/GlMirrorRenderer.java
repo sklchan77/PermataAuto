@@ -23,6 +23,8 @@ import java.util.concurrent.TimeUnit;
 import my.app.utils.log.Log;
 
 final class GlMirrorRenderer implements SurfaceTexture.OnFrameAvailableListener {
+	private static final int EGL_RECORDABLE_ANDROID = 0x3142;
+
 	private static final String VERTEX_SHADER =
 			"attribute vec4 aPosition;\n" +
 			"attribute vec4 aTexCoord;\n" +
@@ -86,6 +88,7 @@ final class GlMirrorRenderer implements SurfaceTexture.OnFrameAvailableListener 
 	private int outputHeight;
 	private boolean fillMode;
 	private boolean hasFrame = false;
+	private boolean loggedFirstFrame = false;
 	private volatile boolean released = false;
 
 	GlMirrorRenderer(int inputWidth, int inputHeight, boolean fillMode) {
@@ -135,29 +138,39 @@ final class GlMirrorRenderer implements SurfaceTexture.OnFrameAvailableListener 
 		if (released) return;
 		glHandler.post(() -> {
 			if (released) return;
-			destroyWindowSurface();
+			destroyWindowSurface(false);
 			outputWidth = Math.max(1, width);
 			outputHeight = Math.max(1, height);
+			loggedFirstFrame = false;
 			if (surface != null && surface.isValid() && eglDisplay != EGL14.EGL_NO_DISPLAY && eglConfig != null) {
 				try {
 					int[] surfaceAttribs = {EGL14.EGL_NONE};
 					eglWindowSurface = EGL14.eglCreateWindowSurface(eglDisplay, eglConfig, surface, surfaceAttribs, 0);
 					if (eglWindowSurface == null || eglWindowSurface == EGL14.EGL_NO_SURFACE) {
+						int err = EGL14.eglGetError();
+						Log.e("[MIRROR][GL] eglCreateWindowSurface FAILED | size=" + width + "x" + height
+								+ ", err=0x" + Integer.toHexString(err));
 						eglWindowSurface = EGL14.EGL_NO_SURFACE;
-					} else if (hasFrame) {
-						renderFrame(false);
+					} else {
+						Log.i("[MIRROR][GL] Output surface attached | size=" + width + "x" + height
+								+ ", fillMode=" + fillMode);
+						if (hasFrame) {
+							renderFrame(false);
+						}
 					}
 				} catch (Exception e) {
 					Log.e(e, "[MIRROR][GL] Failed to attach output surface");
 					eglWindowSurface = EGL14.EGL_NO_SURFACE;
 				}
+			} else {
+				Log.w("[MIRROR][GL] setOutputSurface skipped | valid=" + (surface != null && surface.isValid()));
 			}
 		});
 	}
 
 	void detachOutputSurfaceSync() {
 		if (released) return;
-		runSync(this::destroyWindowSurface);
+		runSync(() -> destroyWindowSurface(true));
 	}
 
 	void setFillMode(boolean fill) {
@@ -188,40 +201,72 @@ final class GlMirrorRenderer implements SurfaceTexture.OnFrameAvailableListener 
 	private void initGl() {
 		try {
 			eglDisplay = EGL14.eglGetDisplay(EGL14.EGL_DEFAULT_DISPLAY);
-			if (eglDisplay == EGL14.EGL_NO_DISPLAY) return;
+			if (eglDisplay == EGL14.EGL_NO_DISPLAY) {
+				Log.e("[MIRROR][GL] eglGetDisplay failed");
+				return;
+			}
 
 			int[] version = new int[2];
-			if (!EGL14.eglInitialize(eglDisplay, version, 0, version, 1)) return;
+			if (!EGL14.eglInitialize(eglDisplay, version, 0, version, 1)) {
+				Log.e("[MIRROR][GL] eglInitialize failed");
+				return;
+			}
 
-			int[] configAttribs = {
+			int[] recordableAttribs = {
 					EGL14.EGL_RED_SIZE, 8,
 					EGL14.EGL_GREEN_SIZE, 8,
 					EGL14.EGL_BLUE_SIZE, 8,
 					EGL14.EGL_ALPHA_SIZE, 8,
 					EGL14.EGL_RENDERABLE_TYPE, EGL14.EGL_OPENGL_ES2_BIT,
 					EGL14.EGL_SURFACE_TYPE, EGL14.EGL_WINDOW_BIT | EGL14.EGL_PBUFFER_BIT,
+					EGL_RECORDABLE_ANDROID, 1,
 					EGL14.EGL_NONE
 			};
 			EGLConfig[] configs = new EGLConfig[1];
 			int[] numConfigs = new int[1];
-			if (!EGL14.eglChooseConfig(eglDisplay, configAttribs, 0, configs, 0, 1, numConfigs, 0)
+			if (!EGL14.eglChooseConfig(eglDisplay, recordableAttribs, 0, configs, 0, 1, numConfigs, 0)
 					|| numConfigs[0] <= 0) {
-				return;
+				int[] fallbackAttribs = {
+						EGL14.EGL_RED_SIZE, 8,
+						EGL14.EGL_GREEN_SIZE, 8,
+						EGL14.EGL_BLUE_SIZE, 8,
+						EGL14.EGL_ALPHA_SIZE, 8,
+						EGL14.EGL_RENDERABLE_TYPE, EGL14.EGL_OPENGL_ES2_BIT,
+						EGL14.EGL_SURFACE_TYPE, EGL14.EGL_WINDOW_BIT | EGL14.EGL_PBUFFER_BIT,
+						EGL14.EGL_NONE
+				};
+				if (!EGL14.eglChooseConfig(eglDisplay, fallbackAttribs, 0, configs, 0, 1, numConfigs, 0)
+						|| numConfigs[0] <= 0) {
+					Log.e("[MIRROR][GL] eglChooseConfig failed");
+					return;
+				}
 			}
 			eglConfig = configs[0];
 
 			int[] contextAttribs = {EGL14.EGL_CONTEXT_CLIENT_VERSION, 2, EGL14.EGL_NONE};
 			eglContext = EGL14.eglCreateContext(eglDisplay, eglConfig, EGL14.EGL_NO_CONTEXT, contextAttribs, 0);
-			if (eglContext == null || eglContext == EGL14.EGL_NO_CONTEXT) return;
+			if (eglContext == null || eglContext == EGL14.EGL_NO_CONTEXT) {
+				Log.e("[MIRROR][GL] eglCreateContext failed");
+				return;
+			}
 
 			int[] pbufferAttribs = {EGL14.EGL_WIDTH, 1, EGL14.EGL_HEIGHT, 1, EGL14.EGL_NONE};
 			eglPbuffer = EGL14.eglCreatePbufferSurface(eglDisplay, eglConfig, pbufferAttribs, 0);
-			if (eglPbuffer == null || eglPbuffer == EGL14.EGL_NO_SURFACE) return;
+			if (eglPbuffer == null || eglPbuffer == EGL14.EGL_NO_SURFACE) {
+				Log.e("[MIRROR][GL] eglCreatePbufferSurface failed");
+				return;
+			}
 
-			if (!EGL14.eglMakeCurrent(eglDisplay, eglPbuffer, eglPbuffer, eglContext)) return;
+			if (!EGL14.eglMakeCurrent(eglDisplay, eglPbuffer, eglPbuffer, eglContext)) {
+				Log.e("[MIRROR][GL] eglMakeCurrent(pbuffer) failed");
+				return;
+			}
 
 			program = buildProgram(VERTEX_SHADER, FRAGMENT_SHADER);
-			if (program == 0) return;
+			if (program == 0) {
+				Log.e("[MIRROR][GL] buildProgram failed");
+				return;
+			}
 
 			aPositionLoc = GLES20.glGetAttribLocation(program, "aPosition");
 			aTexCoordLoc = GLES20.glGetAttribLocation(program, "aTexCoord");
@@ -263,7 +308,9 @@ final class GlMirrorRenderer implements SurfaceTexture.OnFrameAvailableListener 
 		}
 
 		if (!EGL14.eglMakeCurrent(eglDisplay, eglWindowSurface, eglWindowSurface, eglContext)) {
-			destroyWindowSurface();
+			int err = EGL14.eglGetError();
+			Log.e("[MIRROR][GL] eglMakeCurrent(window) FAILED | err=0x" + Integer.toHexString(err));
+			destroyWindowSurface(false);
 			return;
 		}
 
@@ -320,14 +367,29 @@ final class GlMirrorRenderer implements SurfaceTexture.OnFrameAvailableListener 
 
 		if (!EGL14.eglSwapBuffers(eglDisplay, eglWindowSurface)) {
 			int err = EGL14.eglGetError();
+			Log.e("[MIRROR][GL] eglSwapBuffers FAILED | err=0x" + Integer.toHexString(err));
 			if (err == EGL14.EGL_BAD_SURFACE || err == EGL14.EGL_BAD_NATIVE_WINDOW) {
-				destroyWindowSurface();
+				destroyWindowSurface(false);
 			}
+		} else if (!loggedFirstFrame) {
+			loggedFirstFrame = true;
+			Log.i("[MIRROR][GL] First frame rendered | in=" + inputWidth + "x" + inputHeight
+					+ ", out=" + outputWidth + "x" + outputHeight + ", fill=" + fillMode);
 		}
 	}
 
-	private void destroyWindowSurface() {
+	private void destroyWindowSurface(boolean clearBlack) {
 		if (eglDisplay != EGL14.EGL_NO_DISPLAY && eglWindowSurface != EGL14.EGL_NO_SURFACE) {
+			if (clearBlack && eglContext != EGL14.EGL_NO_CONTEXT) {
+				try {
+					if (EGL14.eglMakeCurrent(eglDisplay, eglWindowSurface, eglWindowSurface, eglContext)) {
+						GLES20.glViewport(0, 0, Math.max(1, outputWidth), Math.max(1, outputHeight));
+						GLES20.glClearColor(0f, 0f, 0f, 1f);
+						GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT);
+						EGL14.eglSwapBuffers(eglDisplay, eglWindowSurface);
+					}
+				} catch (Exception ignored) {}
+			}
 			if (eglPbuffer != EGL14.EGL_NO_SURFACE && eglContext != EGL14.EGL_NO_CONTEXT) {
 				EGL14.eglMakeCurrent(eglDisplay, eglPbuffer, eglPbuffer, eglContext);
 			} else {
@@ -339,7 +401,7 @@ final class GlMirrorRenderer implements SurfaceTexture.OnFrameAvailableListener 
 	}
 
 	private void releaseGl() {
-		destroyWindowSurface();
+		destroyWindowSurface(true);
 		if (inputSurface != null) {
 			try { inputSurface.release(); } catch (Exception ignored) {}
 			inputSurface = null;
