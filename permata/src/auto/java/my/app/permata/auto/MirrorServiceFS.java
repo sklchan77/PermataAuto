@@ -99,7 +99,7 @@ public class MirrorServiceFS extends CarAppService {
 	}
 
 	private final class MirrorScreen extends Screen implements SurfaceCallback {
-		private static final long TAP_THEN_DRAG_WINDOW_MS = 500L;
+		private static final long TAP_THEN_DRAG_WINDOW_MS = 300L; // Standard human double-tap speed
 		private static final long SCROLL_LIFT_DELAY_MS = 400L;
 
 		private final HandlerExecutor handler = PermataApplication.get().getHandler();
@@ -111,7 +111,7 @@ public class MirrorServiceFS extends CarAppService {
 		private long scrollMoveTime;
 		private Cancellable scrollUp;
 
-		// [TAP-THEN-DRAG] 500ms hold window state
+		// [TAP-THEN-DRAG] 300ms hold window state
 		private Cancellable pendingTap;
 		private float pendingTapX;
 		private float pendingTapY;
@@ -164,7 +164,7 @@ public class MirrorServiceFS extends CarAppService {
 				AccessibilityEventDispatcherService.abortActiveGesture();
 			}
 
-			// Fast double-tap (typing, TikTok likes, YouTube 10s skip): flush both taps immediately
+			// Normal human double-tap (down-up-down-up within 300ms): flush both taps transparently to OS
 			if (pendingTap != null) {
 				float firstX = pendingTapX;
 				float firstY = pendingTapY;
