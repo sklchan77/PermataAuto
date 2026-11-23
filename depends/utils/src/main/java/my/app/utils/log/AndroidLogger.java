@@ -8,6 +8,7 @@ import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.OutputStreamWriter;
 import java.io.PrintWriter;
+import java.io.RandomAccessFile;
 import java.nio.charset.StandardCharsets;
 
 import my.app.utils.BuildConfig;
@@ -150,14 +151,10 @@ public class AndroidLogger extends Logger {
 			}
 
 			for (long threshold = App.get().getLogRotateThreshold(); ; ) {
-				if (w.len >= threshold) {
+				if (threshold > 0 && w.len >= threshold) {
 					w.close();
-					File old = new File(logFile.getAbsolutePath() + ".old");
-					//noinspection ResultOfMethodCallIgnored
-					old.delete();
-					//noinspection ResultOfMethodCallIgnored
-					logFile.renameTo(old);
-					w = new LogWriter(logFile, false);
+					trimHeadHalf(logFile, threshold / 2);
+					w = new LogWriter(logFile, true);
 				}
 
 				w.println(msg.msg);
@@ -183,6 +180,68 @@ public class AndroidLogger extends Logger {
 			}
 		} finally {
 			IoUtils.close(w);
+		}
+	}
+
+	private void trimHeadHalf(File file, long keepBytes) {
+		if (!file.exists() || keepBytes <= 0) return;
+		long fileLen = file.length();
+		if (fileLen <= keepBytes) return;
+
+		byte[] tail;
+		int readLen;
+		try (RandomAccessFile raf = new RandomAccessFile(file, "r")) {
+			long startPos = fileLen - keepBytes;
+			raf.seek(startPos);
+			tail = new byte[(int) keepBytes];
+			readLen = 0;
+			while (readLen < tail.length) {
+				int r = raf.read(tail, readLen, tail.length - readLen);
+				if (r < 0) break;
+				readLen += r;
+			}
+		} catch (Exception ex) {
+			android.util.Log.e(tag, "Failed to read tail for log trim: " + file, ex);
+			return;
+		}
+
+		// Advance past the first newline so the trimmed log starts on a clean line
+		int offset = 0;
+		for (int i = 0; i < readLen; i++) {
+			if (tail[i] == '\n') {
+				offset = i + 1;
+				break;
+			}
+		}
+		int writeLen = readLen - offset;
+		if (writeLen <= 0) {
+			offset = 0;
+			writeLen = readLen;
+		}
+
+		File tmp = new File(file.getAbsolutePath() + ".tmp");
+		try (FileOutputStream fos = new FileOutputStream(tmp, false)) {
+			fos.write(tail, offset, writeLen);
+			fos.getFD().sync();
+		} catch (Exception ex) {
+			//noinspection ResultOfMethodCallIgnored
+			tmp.delete();
+			android.util.Log.e(tag, "Failed to write temp trimmed log: " + tmp, ex);
+			return;
+		}
+
+		if (file.delete() && tmp.renameTo(file)) {
+			return;
+		}
+
+		// Fallback: overwrite directly if atomic rename is blocked by storage
+		try (FileOutputStream fos = new FileOutputStream(file, false)) {
+			fos.write(tail, offset, writeLen);
+		} catch (Exception ex) {
+			android.util.Log.e(tag, "Failed to overwrite trimmed log: " + file, ex);
+		} finally {
+			//noinspection ResultOfMethodCallIgnored
+			tmp.delete();
 		}
 	}
 
