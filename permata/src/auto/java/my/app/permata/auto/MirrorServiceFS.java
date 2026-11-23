@@ -100,6 +100,7 @@ public class MirrorServiceFS extends CarAppService {
 
 	private final class MirrorScreen extends Screen implements SurfaceCallback {
 		private static final long TAP_THEN_DRAG_WINDOW_MS = 300L; // Standard human double-tap speed
+		private static final long SCALE_DRAG_WINDOW_MS = 250L;    // Anchor window when AA fires onScale before onScroll
 		private static final long SCROLL_LIFT_DELAY_MS = 400L;
 
 		private final HandlerExecutor handler = PermataApplication.get().getHandler();
@@ -111,10 +112,17 @@ public class MirrorServiceFS extends CarAppService {
 		private long scrollMoveTime;
 		private Cancellable scrollUp;
 
-		// [TAP-THEN-DRAG] 300ms hold window state
+		// [TAP-THEN-DRAG] 300ms hold window state (onClick -> onScroll)
 		private Cancellable pendingTap;
 		private float pendingTapX;
 		private float pendingTapY;
+
+		// [SCALE-TO-DRAG] 250ms hold window state (onScale -> onScroll when AA intercepts double-tap-drag)
+		private Cancellable pendingScale;
+		private float pendingScaleX;
+		private float pendingScaleY;
+		private boolean pendingScaleZoomIn;
+
 		private boolean isAnchoredDrag = false;
 
 		MirrorScreen(@NonNull CarContext ctx) {
@@ -145,6 +153,7 @@ public class MirrorServiceFS extends CarAppService {
 		public void onSurfaceDestroyed(@NonNull SurfaceContainer localSc) {
 			Log.i("[MIRROR_FS][SURFACE] onSurfaceDestroyed | size=" + localSc.getWidth() + "x" + localSc.getHeight());
 			cancelPendingTap();
+			cancelPendingScale();
 			if (scrollUp != null) {
 				scrollUp.cancel();
 				scrollUp = null;
@@ -158,6 +167,7 @@ public class MirrorServiceFS extends CarAppService {
 
 		@Override
 		public void onClick(float x, float y) {
+			cancelPendingScale();
 			if (scrollUp != null) {
 				scrollUp.cancel();
 				scrollUp = null;
@@ -199,11 +209,19 @@ public class MirrorServiceFS extends CarAppService {
 			scrollMoveTime = time;
 
 			if (scrollUp == null) {
+				String anchorSource = "CENTER";
 				if (pendingTap != null) {
 					cancelPendingTap();
 					scrollStartX = pendingTapX;
 					scrollStartY = pendingTapY;
 					isAnchoredDrag = true;
+					anchorSource = "TAP";
+				} else if (pendingScale != null) {
+					cancelPendingScale();
+					scrollStartX = pendingScaleX;
+					scrollStartY = pendingScaleY;
+					isAnchoredDrag = true;
+					anchorSource = "SCALE_FOCUS";
 				} else {
 					scrollStartX = MirrorServiceFS.sc.getWidth() / 2f;
 					scrollStartY = MirrorServiceFS.sc.getHeight() / 2f;
@@ -213,6 +231,7 @@ public class MirrorServiceFS extends CarAppService {
 				scrollX = scrollStartX;
 				scrollY = scrollStartY;
 				Log.i("[MIRROR_FS][INPUT] Split-Screen Drag Started | anchored=" + isAnchoredDrag
+						+ ", source=" + anchorSource
 						+ ", startX=" + (int) scrollX + ", startY=" + (int) scrollY);
 
 				if (!mDisp.motionEvent(time, time, ACTION_DOWN, scrollX, scrollY)) {
@@ -255,17 +274,35 @@ public class MirrorServiceFS extends CarAppService {
 		@Override
 		public void onScale(float focusX, float focusY, float scaleFactor) {
 			cancelPendingTap();
-			Log.i("[MIRROR_FS][INPUT] Split-Screen Scale | focusX=" + (int) focusX + ", focusY=" + (int) focusY
-					+ ", zoomIn=" + (scaleFactor > 1f));
-			scrollStartX = focusX;
-			scrollStartY = focusY;
-			if (md() != null) md().scale(focusX, focusY, scaleFactor > 1f);
+			cancelPendingScale();
+			if (scrollUp != null) return;
+
+			pendingScaleX = focusX;
+			pendingScaleY = focusY;
+			pendingScaleZoomIn = scaleFactor > 1f;
+			pendingScale = handler.schedule(() -> {
+				if (pendingScale == null) return;
+				pendingScale = null;
+				Log.i("[MIRROR_FS][INPUT] Split-Screen Scale | focusX=" + (int) pendingScaleX
+						+ ", focusY=" + (int) pendingScaleY + ", zoomIn=" + pendingScaleZoomIn);
+				scrollStartX = pendingScaleX;
+				scrollStartY = pendingScaleY;
+				var mDisp = md();
+				if (mDisp != null) mDisp.scale(pendingScaleX, pendingScaleY, pendingScaleZoomIn);
+			}, SCALE_DRAG_WINDOW_MS);
 		}
 
 		private void cancelPendingTap() {
 			if (pendingTap != null) {
 				pendingTap.cancel();
 				pendingTap = null;
+			}
+		}
+
+		private void cancelPendingScale() {
+			if (pendingScale != null) {
+				pendingScale.cancel();
+				pendingScale = null;
 			}
 		}
 
