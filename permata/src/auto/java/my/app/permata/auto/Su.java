@@ -1,6 +1,7 @@
 package my.app.permata.auto;
 
 import static my.app.utils.async.Completed.completed;
+import static my.app.utils.async.Completed.failed;
 
 import android.os.Build;
 
@@ -17,6 +18,7 @@ import my.app.utils.log.Log;
 
 public class Su {
 	private static volatile FutureSupplier<Su> su;
+	private static volatile boolean suUnavailable = false;
 	private final ExecutorService executor;
 	private final PrintWriter pw;
 
@@ -26,15 +28,18 @@ public class Su {
 	}
 
 	public static FutureSupplier<Su> get() {
+		if (suUnavailable) return failed(new IOException("su not available"));
 		var f = su;
 		if (f != null) return f;
 		synchronized (Su.class) {
+			if (suUnavailable) return failed(new IOException("su not available"));
 			if ((f = su) != null) return f;
 			var executor = Executors.newFixedThreadPool(2);
 			var promise = new Promise<PrintWriter>();
 			su = f = promise.map(pw -> new Su(executor, pw)).onSuccess(su -> Su.su = completed(su))
 					.onFailure(err -> {
-						Log.e(err);
+						Log.i("[SETUP_TELEMETRY] Root (su) not available on this device; caching non-root state.");
+						suUnavailable = true;
 						executor.shutdown();
 						Su.su = null;
 					});
@@ -89,7 +94,7 @@ public class Su {
 		synchronized (Su.class) {
 			Log.i("Shutting down Su thread pool.");
 			if (executor != null && !executor.isShutdown()) {
-				executor.shutdownNow(); 
+				executor.shutdownNow();
 			}
 			su = null;
 		}
