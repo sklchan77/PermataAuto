@@ -2,6 +2,7 @@ package my.app.permata.auto;
 
 import static android.accessibilityservice.GestureDescription.getMaxGestureDuration;
 import static android.view.Display.DEFAULT_DISPLAY;
+import static android.view.MotionEvent.ACTION_CANCEL;
 import static android.view.MotionEvent.ACTION_DOWN;
 import static android.view.MotionEvent.ACTION_MOVE;
 import static android.view.MotionEvent.ACTION_POINTER_DOWN;
@@ -49,18 +50,42 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
     private static String clickOnButton;
     public static boolean isConsentGranted = false;
     private static AccessibilityEventDispatcherService instance;
-    
+
     private static volatile String lastActivePackage = null;
     public static volatile boolean isInjectingBack = false;
-    
+
     // [WATCHDOG] Memory Debounce state (Merged from File B)
     private static long lastActiveBtTime = 0;
-    
+
+    private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private final Set<Integer> windowIds =
             (VERSION.SDK_INT < VERSION_CODES.TIRAMISU) ? Collections.emptySet() : new HashSet<>();
     private final Path path = new Path();
     private GestureDescription.Builder gb;
     private Pointer[] pointers = new Pointer[]{new Pointer()};
+
+    // === [4-LAYER SAFE FUSE: SERIALIZED DRAG ENGINE] ===
+    private static final long DRAG_IDLE_TIMEOUT_MS = 800L;
+    private static final long DRAG_INITIAL_HOLD_MS = 35L;
+    private static final long DRAG_SEGMENT_MS = 30L;
+    private static final long DRAG_LIFT_MS = 20L;
+
+    private long dragSessionId = 0L;
+    private boolean isDragDispatching = false;
+    private StrokeDescription activeDragStroke = null;
+    private float lastDragX;
+    private float lastDragY;
+    private boolean hasPendingMove = false;
+    private float pendingMoveX;
+    private float pendingMoveY;
+    private boolean pendingUp = false;
+
+    private final Runnable dragIdleWatchdog = () -> {
+        if (VERSION.SDK_INT >= VERSION_CODES.O) {
+            forceLiftActiveDrag("IDLE_TIMEOUT_800MS");
+        }
+    };
+    // ====================================================
 
     private final BroadcastReceiver commandReceiver = new BroadcastReceiver() {
         @Override
@@ -83,13 +108,21 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
         return lastActivePackage;
     }
 
+    public static void abortActiveGesture() {
+        var ds = instance;
+        if (ds == null || VERSION.SDK_INT < VERSION_CODES.O) return;
+        if (Looper.myLooper() == Looper.getMainLooper()) {
+            ds.forceLiftActiveDrag("EXTERNAL_ABORT");
+        } else {
+            ds.mainHandler.post(() -> ds.forceLiftActiveDrag("EXTERNAL_ABORT"));
+        }
+    }
+
     static int getWindowCount() {
         var ds = instance;
         if (ds == null) return -1;
-        int cnt =
-                (VERSION.SDK_INT >= VERSION_CODES.TIRAMISU) ? ds.windowIds.size() :
-                        ds.listWindows().size();
-        return cnt;
+        return (VERSION.SDK_INT >= VERSION_CODES.TIRAMISU) ? ds.windowIds.size() :
+                ds.listWindows().size();
     }
 
     static void autoClickOnButton(@Nullable String text) {
@@ -105,13 +138,13 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
     public static boolean dispatchUniversalBack() {
         var ds = instance;
         if (ds == null) return false;
-        
+
         if (PermataApplication.get().isMirroringMode()) {
             my.app.permata.auto.MirrorDisplay md = my.app.permata.auto.MirrorDisplay.get();
             if (md != null) {
                 long now = android.os.SystemClock.uptimeMillis();
-                
-                // SURGICAL FIX: Inject the 1x1 focus-clearing tap directly into the Virtual Display. 
+
+                // SURGICAL FIX: Inject the 1x1 focus-clearing tap directly into the Virtual Display.
                 // This protects your landscape orientation but makes it physically impossible to wake the phone.
                 try {
                     md.motionEvent(now, now, android.view.MotionEvent.ACTION_DOWN, 1f, 1f);
@@ -120,7 +153,7 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
 
                 android.view.KeyEvent down = new android.view.KeyEvent(now, now, android.view.KeyEvent.ACTION_DOWN, android.view.KeyEvent.KEYCODE_BACK, 0);
                 android.view.KeyEvent up = new android.view.KeyEvent(now, now, android.view.KeyEvent.ACTION_UP, android.view.KeyEvent.KEYCODE_BACK, 0);
-                
+
                 boolean injected = false;
                 String[] methods = {"keyEvent", "injectKeyEvent", "dispatchKeyEvent", "sendKeyEvent", "injectInputEvent"};
                 for (String mName : methods) {
@@ -142,13 +175,13 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
                 if (injected) return true;
             }
         }
-        
+
         // If not in mirroring mode, or if Virtual Display fails, fall back to global Accessibility tap
         dispatchTap(1f, 1f);
-        
+
         isInjectingBack = true;
         boolean success = ds.performGlobalAction(GLOBAL_ACTION_BACK);
-        new Handler(Looper.getMainLooper()).postDelayed(() -> isInjectingBack = false, 300);
+        ds.mainHandler.postDelayed(() -> isInjectingBack = false, 300);
         return success;
     }
 
@@ -156,7 +189,7 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
         var ds = instance;
         if (ds == null || VERSION.SDK_INT < VERSION_CODES.N) return false;
 
-        try { MirrorDisplay.notifyInjectedTouch(); } catch(Exception e){}
+        try { MirrorDisplay.notifyInjectedTouch(); } catch (Exception ignored) {}
 
         android.util.DisplayMetrics metrics = ds.getResources().getDisplayMetrics();
         float actionX = metrics.widthPixels * 0.50f;
@@ -173,7 +206,7 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
 
         GestureDescription.Builder gestureBuilder = new GestureDescription.Builder();
         gestureBuilder.addStroke(new StrokeDescription(swipePath, 0L, duration));
-        
+
         return ds.dispatchGesture(gestureBuilder.build(), null, null);
     }
 
@@ -182,7 +215,7 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
         if (ds == null) return false;
         return ds.performGlobalAction(GLOBAL_ACTION_HOME);
     }
-    
+
     static boolean dispatchRecent() {
         var ds = instance;
         if (ds == null) return false;
@@ -266,7 +299,7 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
         } else {
             idx = 0;
         }
-        
+
         for (; idx < cnt; idx++) {
             var x = e.getX(idx);
             var y = e.getY(idx);
@@ -282,8 +315,171 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
         var ds = instance;
         if ((VERSION.SDK_INT < VERSION_CODES.O) || (ds == null)) return false;
         if ((x < 0f) || (y < 0f)) return true;
-        var p = instance.pointers[0];
-        return ds.buildGesture(p, downTime, eventTime, action, x, y, false) && ds.dispatch();
+
+        if (Looper.myLooper() == Looper.getMainLooper()) {
+            return ds.handleSerializedDragEvent(action, x, y);
+        } else {
+            ds.mainHandler.post(() -> ds.handleSerializedDragEvent(action, x, y));
+            return true;
+        }
+    }
+
+    @RequiresApi(api = VERSION_CODES.O)
+    private boolean handleSerializedDragEvent(int action, float x, float y) {
+        switch (action) {
+            case ACTION_DOWN -> {
+                if (activeDragStroke != null) {
+                    forceLiftActiveDrag("PREEMPTED_BY_NEW_DOWN");
+                }
+                final long sessionId = ++dragSessionId;
+                lastDragX = x;
+                lastDragY = y;
+                hasPendingMove = false;
+                pendingUp = false;
+                isDragDispatching = true;
+
+                Path p = new Path();
+                p.moveTo(x, y);
+                p.lineTo(x, y);
+                StrokeDescription initial = new StrokeDescription(p, 0L, DRAG_INITIAL_HOLD_MS, true);
+                activeDragStroke = initial;
+                resetDragWatchdog();
+
+                boolean ok = dispatchGesture(
+                        new GestureDescription.Builder().addStroke(initial).build(),
+                        new GestureResultCallback() {
+                            @Override
+                            public void onCompleted(GestureDescription gestureDescription) {
+                                if (sessionId != dragSessionId) return;
+                                isDragDispatching = false;
+                                pumpNextDragSegment(sessionId);
+                            }
+
+                            @Override
+                            public void onCancelled(GestureDescription gestureDescription) {
+                                if (sessionId != dragSessionId) return;
+                                resetDragState();
+                            }
+                        },
+                        mainHandler
+                );
+                if (!ok) {
+                    resetDragState();
+                }
+                return ok;
+            }
+            case ACTION_MOVE -> {
+                if (activeDragStroke == null && !isDragDispatching) return false;
+                pendingMoveX = x;
+                pendingMoveY = y;
+                hasPendingMove = true;
+                resetDragWatchdog();
+                if (!isDragDispatching) {
+                    pumpNextDragSegment(dragSessionId);
+                }
+                return true;
+            }
+            case ACTION_UP, ACTION_CANCEL -> {
+                if (activeDragStroke == null && !isDragDispatching) return true;
+                pendingMoveX = x;
+                pendingMoveY = y;
+                pendingUp = true;
+                if (!isDragDispatching) {
+                    pumpNextDragSegment(dragSessionId);
+                }
+                return true;
+            }
+            default -> {
+                return false;
+            }
+        }
+    }
+
+    @RequiresApi(api = VERSION_CODES.O)
+    private void pumpNextDragSegment(final long sessionId) {
+        if (sessionId != dragSessionId || activeDragStroke == null || isDragDispatching) return;
+
+        if (pendingUp) {
+            mainHandler.removeCallbacks(dragIdleWatchdog);
+            Path p = new Path();
+            p.moveTo(lastDragX, lastDragY);
+            p.lineTo(pendingMoveX, pendingMoveY);
+            StrokeDescription lift = activeDragStroke.continueStroke(p, 0L, DRAG_LIFT_MS, false);
+            resetDragState();
+            try {
+                dispatchGesture(new GestureDescription.Builder().addStroke(lift).build(), null, null);
+            } catch (Exception ignored) {}
+            return;
+        }
+
+        if (hasPendingMove) {
+            hasPendingMove = false;
+            Path p = new Path();
+            p.moveTo(lastDragX, lastDragY);
+            p.lineTo(pendingMoveX, pendingMoveY);
+            StrokeDescription next = activeDragStroke.continueStroke(p, 0L, DRAG_SEGMENT_MS, true);
+            lastDragX = pendingMoveX;
+            lastDragY = pendingMoveY;
+            activeDragStroke = next;
+            isDragDispatching = true;
+            resetDragWatchdog();
+
+            boolean ok = dispatchGesture(
+                    new GestureDescription.Builder().addStroke(next).build(),
+                    new GestureResultCallback() {
+                        @Override
+                        public void onCompleted(GestureDescription gestureDescription) {
+                            if (sessionId != dragSessionId) return;
+                            isDragDispatching = false;
+                            pumpNextDragSegment(sessionId);
+                        }
+
+                        @Override
+                        public void onCancelled(GestureDescription gestureDescription) {
+                            if (sessionId != dragSessionId) return;
+                            resetDragState();
+                        }
+                    },
+                    mainHandler
+            );
+            if (!ok) {
+                resetDragState();
+            }
+        }
+    }
+
+    @RequiresApi(api = VERSION_CODES.O)
+    private void forceLiftActiveDrag(String reason) {
+        mainHandler.removeCallbacks(dragIdleWatchdog);
+        StrokeDescription stroke = activeDragStroke;
+        float x = lastDragX;
+        float y = lastDragY;
+        dragSessionId++;
+        resetDragState();
+
+        if (stroke != null) {
+            Log.w("[MIRROR][SAFE_FUSE] Force-lifting active drag | reason=" + reason);
+            try {
+                Path p = new Path();
+                p.moveTo(x, y);
+                p.lineTo(x, y);
+                StrokeDescription lift = stroke.continueStroke(p, 0L, DRAG_LIFT_MS, false);
+                dispatchGesture(new GestureDescription.Builder().addStroke(lift).build(), null, null);
+            } catch (Exception ignored) {}
+        }
+    }
+
+    private void resetDragWatchdog() {
+        mainHandler.removeCallbacks(dragIdleWatchdog);
+        mainHandler.postDelayed(dragIdleWatchdog, DRAG_IDLE_TIMEOUT_MS);
+    }
+
+    private void resetDragState() {
+        mainHandler.removeCallbacks(dragIdleWatchdog);
+        activeDragStroke = null;
+        isDragDispatching = false;
+        hasPendingMove = false;
+        pendingUp = false;
     }
 
     @RequiresApi(api = VERSION_CODES.O)
@@ -302,7 +498,7 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
             case ACTION_UP -> {
                 if (p.sd == null) return true;
                 path.reset();
-                path.moveTo(x, y); 
+                path.moveTo(x, y);
                 var dur = Math.max(1L, Math.min(eventTime - p.time, getMaxGestureDuration()));
                 var sd = p.sd.continueStroke(path, 0L, dur, false);
                 p.sd = null;
@@ -356,11 +552,11 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
             windowIds.clear();
             windowIds.addAll(listWindows());
         }
-        
+
         IntentFilter filter = new IntentFilter();
         filter.addAction("my.app.permata.ACTION_GLOBAL_BACK");
         filter.addAction("my.app.permata.ACTION_GLOBAL_HOME");
-        filter.addAction("my.app.permata.ACTION_GLOBAL_RECENT"); 
+        filter.addAction("my.app.permata.ACTION_GLOBAL_RECENT");
         if (VERSION.SDK_INT >= VERSION_CODES.TIRAMISU) {
             registerReceiver(commandReceiver, filter, Context.RECEIVER_NOT_EXPORTED);
         } else {
@@ -370,9 +566,12 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
 
     @Override
     public void onDestroy() {
+        if (VERSION.SDK_INT >= VERSION_CODES.O) {
+            forceLiftActiveDrag("SERVICE_DESTROY");
+        }
         super.onDestroy();
         instance = null;
-        isConsentGranted = false; 
+        isConsentGranted = false;
         try {
             unregisterReceiver(commandReceiver);
         } catch (Exception ignored) {}
@@ -395,7 +594,7 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
         String pkgName = (pkg != null) ? pkg.toString() : null;
         CharSequence cls = event.getClassName();
         String className = (cls != null) ? cls.toString() : null;
-        
+
         // 2-LAYER UNIVERSAL OVERLAY FILTER: Ignore transient windows, active IME, AA host, and system overlays
         if (!isTransientWindow(className) && !isIgnoredOverlay(pkgName) && !isCurrentImePackage(pkgName)) {
             lastActivePackage = pkgName;
@@ -432,7 +631,7 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
             }
             checkAndClickMediaProjectionConsent(root, pkgName);
         } finally {
-            root.recycle(); 
+            root.recycle();
         }
     }
 
@@ -444,26 +643,26 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
 
             // Core System, UI & Keyboards
             "systemui", "inputmethod", "launcher", "gboard", "swiftkey", "honeyboard",
-            
+
             // Biometrics, Lock & Keyguard (The Intermittent Blocker Fix)
             "biometrics", "keyguard", "lockscreen", "faceid", "fingerprint",
-            
+
             // Overlays, Dimmers & Always On Displays
-            "alwaysondisplay", "aod", "overlay", "screenfilter", "bluelight", 
+            "alwaysondisplay", "aod", "overlay", "screenfilter", "bluelight",
             "twilight", "lux", "smartface", "hidenotch",
-            
+
             // Edge Panels & Gesture Navigation
             "edgepanel", "edge", "sidegesture", "gestural", "threebutton",
-            
+
             // IM, Social & Phone Popups (The Message Interruption Fix)
             "whatsapp", "telegram", "messenger", "discord", "wechat", "line",
             "viber", "sms", "mms", "messaging", "dialer", "incallui",
-            
+
             // Productivity, Email & Calendar Popups (The Scheduling Interruption Fix)
-            "gmail", "email", "outlook", "mail", "calendar", "reminder", 
+            "gmail", "email", "outlook", "mail", "calendar", "reminder",
             "tasks", "todo", "keep", "alarm", "clock", "notes",
-            
-            // OEM Specific Sledgehammers 
+
+            // OEM Specific Sledgehammers
             "miui", "xiaomi", "coloros", "oplus", "nexuslauncher", "trebuchet"
     };
 
@@ -534,30 +733,30 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
     // ========================================================
 
     private void checkAndClickMediaProjectionConsent(AccessibilityNodeInfo root, String pkgName) {
-        if (isConsentGranted) return; 
-        
+        if (isConsentGranted) return;
+
         if ("com.android.systemui".equals(pkgName) || "android".equals(pkgName) || pkgName.contains("systemui")) {
             String[] targetTexts = new String[]{
                     "Start now", "Start recording", "Allow", "Start",
                     "立即开始", "开始录制", "开始", "允许",
                     "立即開始", "開始錄製", "開始", "允許",
-                    "Mulai sekarang", "Izinkan", 
-                    "Mula sekarang", "Benarkan", 
-                    "เริ่มเลย", "อนุญาต", "เริ่ม", 
-                    "Bắt đầu ngay", "Cho phép", "Bắt đầu", 
-                    "Magsimula na", "Simulan ngayon", "Payagan", 
-                    "अभी शुरू करें", "अनुमति दें", "शुरू करें", 
-                    "இப்போதே தொடங்கு", "அனுமதி", 
+                    "Mulai sekarang", "Izinkan",
+                    "Mula sekarang", "Benarkan",
+                    "เริ่มเลย", "อนุญาต", "เริ่ม",
+                    "Bắt đầu ngay", "Cho phép", "Bắt đầu",
+                    "Magsimula na", "Simulan ngayon", "Payagan",
+                    "अभी शुरू करें", "अनुमति दें", "शुरू करें",
+                    "இப்போதே தொடங்கு", "அனுமதி",
                     "البدء الآن", "ابدأ الآن", "السماح", "بدء",
-                    "今すぐ開始", "許可", "開始", 
-                    "지금 시작", "허용", "시작", 
-                    "Iniciar ahora", "Iniciar grabación", "Permitir", 
-                    "Commencer", "Démarrer", "Autoriser", 
-                    "Jetzt starten", "Starten", "Zulassen", 
-                    "Avvia ora", "Consenti", "Iniciar agora", "Permitir", 
-                    "Начать", "Разрешить", "Начать запись", 
-                    "Şimdi başlat", "İzin ver", 
-                    "Nu starten", "Toestaan", "Rozpocznij teraz", "Zezwól" 
+                    "今すぐ開始", "許可", "開始",
+                    "지금 시작", "허용", "시작",
+                    "Iniciar ahora", "Iniciar grabación", "Permitir",
+                    "Commencer", "Démarrer", "Autoriser",
+                    "Jetzt starten", "Starten", "Zulassen",
+                    "Avvia ora", "Consenti", "Iniciar agora", "Permitir",
+                    "Начать", "Разрешить", "Начать запись",
+                    "Şimdi başlat", "İzin ver",
+                    "Nu starten", "Toestaan", "Rozpocznij teraz", "Zezwól"
             };
 
             for (String text : targetTexts) {
@@ -601,6 +800,9 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
 
     @Override
     public void onInterrupt() {
+        if (VERSION.SDK_INT >= VERSION_CODES.O) {
+            forceLiftActiveDrag("SERVICE_INTERRUPT");
+        }
         if (VERSION.SDK_INT >= VERSION_CODES.TIRAMISU) {
             windowIds.clear();
         }
