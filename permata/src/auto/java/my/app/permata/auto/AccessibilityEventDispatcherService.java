@@ -27,6 +27,7 @@ import android.os.Build.VERSION;
 import android.os.Build.VERSION_CODES;
 import android.os.Handler;
 import android.os.Looper;
+import android.provider.Settings;
 import android.view.MotionEvent;
 import android.view.accessibility.AccessibilityEvent;
 import android.view.accessibility.AccessibilityNodeInfo;
@@ -392,9 +393,11 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
 
         CharSequence pkg = event.getPackageName();
         String pkgName = (pkg != null) ? pkg.toString() : null;
+        CharSequence cls = event.getClassName();
+        String className = (cls != null) ? cls.toString() : null;
         
-        // UNIVERSAL OVERLAY FILTER: Ignore AODs, Launchers, and System UIs
-        if (!isIgnoredOverlay(pkgName)) {
+        // 2-LAYER UNIVERSAL OVERLAY FILTER: Ignore transient windows, active IME, AA host, and system overlays
+        if (!isTransientWindow(className) && !isIgnoredOverlay(pkgName) && !isCurrentImePackage(pkgName)) {
             lastActivePackage = pkgName;
 
             // === [WATCHDOG GOD-MODE: NATIVE APP HIJACKING] (Merged from File B) ===
@@ -433,10 +436,14 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
         }
     }
 
-// === [UNIVERSAL OVERLAY & LAUNCHER FILTER] ===
+    // === [UNIVERSAL OVERLAY & LAUNCHER FILTER] ===
     private static final String[] IGNORE_PKG_KEYWORDS = {
-            // Core System & UI
-            "systemui", "inputmethod", "launcher", "gboard", "swiftkey",
+            // Android Auto Host, Permissions & Voice Assistants
+            "gearhead", "permissioncontroller", "packageinstaller",
+            "googlequicksearchbox", "bixby", "keymapper",
+
+            // Core System, UI & Keyboards
+            "systemui", "inputmethod", "launcher", "gboard", "swiftkey", "honeyboard",
             
             // Biometrics, Lock & Keyguard (The Intermittent Blocker Fix)
             "biometrics", "keyguard", "lockscreen", "faceid", "fingerprint",
@@ -459,6 +466,26 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
             // OEM Specific Sledgehammers 
             "miui", "xiaomi", "coloros", "oplus", "nexuslauncher", "trebuchet"
     };
+
+    private static boolean isTransientWindow(@Nullable String className) {
+        if (className == null) return false;
+        return className.contains("Toast")
+                || className.contains("PopupWindow")
+                || className.contains("VolumeDialog");
+    }
+
+    private boolean isCurrentImePackage(@Nullable String pkgName) {
+        if (pkgName == null) return false;
+        try {
+            String ime = Settings.Secure.getString(getContentResolver(), Settings.Secure.DEFAULT_INPUT_METHOD);
+            if (ime != null) {
+                int slash = ime.indexOf('/');
+                String imePkg = (slash > 0) ? ime.substring(0, slash) : ime;
+                return pkgName.equals(imePkg);
+            }
+        } catch (Exception ignored) {}
+        return false;
+    }
 
     private static boolean isIgnoredOverlay(String pkgName) {
         if (pkgName == null || pkgName.equals("android")) return true;
