@@ -229,7 +229,10 @@ public class MirrorDisplay {
 		synchronized (lifecycleLock) {
 			if (isDestroyed) return;
 			var oldSc = this.sc;
-			if (oldSc == sc) return;
+			if (oldSc != null && oldSc.getSurface() == sc.getSurface()
+					&& oldSc.getWidth() == sc.getWidth() && oldSc.getHeight() == sc.getHeight()) {
+				return;
+			}
 
 			this.sc = sc;
 			currentMetrics = null;
