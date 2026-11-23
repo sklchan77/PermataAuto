@@ -19,6 +19,7 @@ import androidx.car.app.SurfaceCallback;
 import androidx.car.app.SurfaceContainer;
 import androidx.car.app.model.Action;
 import androidx.car.app.model.ActionStrip;
+import androidx.car.app.model.CarColor;
 import androidx.car.app.model.CarIcon;
 import androidx.car.app.model.Template;
 import androidx.car.app.navigation.model.NavigationTemplate;
@@ -137,6 +138,7 @@ public class MirrorServiceFS extends CarAppService {
 
 			scrollStartX = localSc.getWidth() / 2f;
 			scrollStartY = localSc.getHeight() / 2f;
+			invalidate();
 		}
 
 		@Override
@@ -275,7 +277,7 @@ public class MirrorServiceFS extends CarAppService {
 					.setOnClickListener(MirrorActivity::onHomeButtonClick).build();
 
 			var recentButton = new Action.Builder().setIcon(
-							new CarIcon.Builder(createWithResource(getCarContext(), R.drawable.recent)).setTint(androidx.car.app.model.CarColor.DEFAULT).build())
+							new CarIcon.Builder(createWithResource(getCarContext(), R.drawable.recent)).setTint(CarColor.DEFAULT).build())
 					.setOnClickListener(MirrorActivity::onRecentButtonClick).build();
 
 			var backButton = new Action.Builder().setIcon(
@@ -283,14 +285,26 @@ public class MirrorServiceFS extends CarAppService {
 					.setOnClickListener(MirrorActivity::onBackButtonClick).build();
 
 			var exitButton = new Action.Builder().setIcon(
-							new CarIcon.Builder(createWithResource(getCarContext(), R.drawable.shutdown)).setTint(androidx.car.app.model.CarColor.DEFAULT).build())
+							new CarIcon.Builder(createWithResource(getCarContext(), R.drawable.shutdown)).setTint(CarColor.DEFAULT).build())
 					.setOnClickListener(MirrorActivity::onExitButtonClick).build();
+
+			// [FIT/FILL] Single transformable icon: shows fullscreen (Fill) in Fit mode, fullscreen_exit (Fit) in Fill mode
+			int fitFillIconRes = MirrorDisplay.isFillMode() ? R.drawable.fullscreen_exit : R.drawable.fullscreen;
+			var fitFillButton = new Action.Builder().setIcon(
+							new CarIcon.Builder(createWithResource(getCarContext(), fitFillIconRes))
+									.setTint(CarColor.DEFAULT).build())
+					.setOnClickListener(() -> {
+						boolean nowFill = MirrorDisplay.toggleFillMode();
+						Log.i("[MIRROR_FS][INPUT] Toolbar Button Pressed | button=FIT_FILL, fillMode=" + nowFill);
+						invalidate();
+					}).build();
 
 			return new NavigationTemplate.Builder()
 					.setPanModeListener(isPanningMode ->
 							Log.i("[MIRROR_FS][INPUT] Pan Mode Toggled | isPanningMode=" + isPanningMode))
-					// 1. Interactive Floating Tools (Pan button enables onScroll dragging)
+					// 1. Interactive Floating Tools (Fit/Fill toggle + Pan)
 					.setMapActionStrip(new ActionStrip.Builder()
+							.addAction(fitFillButton)
 							.addAction(Action.PAN)
 							.build())
 					// 2. Primary Navigation Bar (Original 4 buttons remain untouched)
