@@ -718,8 +718,13 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 		if (SERVICE_INTERFACE.equals(action)) {
 			isForYouBrowseSession = true;
 			Log.i("[FOR_YOU][LIFECYCLE] PermataMediaService.onBind | action=" + action);
+		} else if (ACTION_MEDIA_SERVICE.equals(action)) {
+			isForYouBrowseSession = false;
+			isTeardownActive = false;
+			lifecycleHandler.removeCallbacks(manualSwipeRunnable);
+			lifecycleHandler.removeCallbacks(hardwareDropRunnable);
+			Log.i(sessionTag() + "[LIFECYCLE] PermataMediaService.onBind | action=" + action + ", teardownTimersCleared=true");
 		} else {
-			if (ACTION_MEDIA_SERVICE.equals(action)) isForYouBrowseSession = false;
 			Log.i(sessionTag() + "[LIFECYCLE] PermataMediaService.onBind | action=" + action);
 		}
 		if (BuildConfig.D || (intent != null && !intent.hasExtra(INTENT_ATTR_NOTIF_COLOR))) {
@@ -731,6 +736,19 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 			return new ServiceBinder();
 		}
 		return super.onBind(intent);
+	}
+
+	@Override
+	public void onRebind(Intent intent) {
+		super.onRebind(intent);
+		String action = intent != null ? intent.getAction() : null;
+		if (ACTION_MEDIA_SERVICE.equals(action)) {
+			isForYouBrowseSession = false;
+			isTeardownActive = false;
+			lifecycleHandler.removeCallbacks(manualSwipeRunnable);
+			lifecycleHandler.removeCallbacks(hardwareDropRunnable);
+			Log.i(sessionTag() + "[LIFECYCLE] PermataMediaService.onRebind | action=" + action + ", teardownTimersCleared=true");
+		}
 	}
 
 	@Override
