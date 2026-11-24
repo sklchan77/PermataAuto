@@ -243,7 +243,7 @@ public interface MainActivityPrefs
 		return Lang.get(getIntPref(LOCALE)).locale;
 	}
 
-	enum Lang {
+enum Lang {
 		EN(Locale.ENGLISH),
 		RU,
 		IT(Locale.ITALIAN),
@@ -261,6 +261,12 @@ public interface MainActivityPrefs
 		AR,
 		ES,
 		KM,
+		MS,
+		ID,
+		ZH_CN(Locale.SIMPLIFIED_CHINESE),
+		TH,
+		HI,
+		TA,
 		;
 
 		private static final List<Lang> values = List.of(values());
