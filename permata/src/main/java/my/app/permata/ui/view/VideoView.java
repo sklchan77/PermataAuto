@@ -31,6 +31,7 @@ import android.graphics.Paint;
 import android.graphics.PixelFormat;
 import android.graphics.PorterDuff;
 import android.graphics.Typeface;
+import android.graphics.drawable.GradientDrawable;
 import android.text.SpannableString;
 import android.text.StaticLayout;
 import android.text.TextPaint;
@@ -157,7 +158,6 @@ public class VideoView extends FrameLayout
 		return (SurfaceView) getChildAt(1);
 	}
 
-
 	public void setClockPos(int pos) {
 		int idx = getChildCount() - 1;
 		int gravity = Gravity.TOP;
@@ -181,6 +181,17 @@ public class VideoView extends FrameLayout
 			Context ctx = getContext();
 			int m = toIntPx(ctx, 10);
 			clock = LayoutInflater.from(ctx).inflate(R.layout.clock_view, this, false);
+			if (clock instanceof TextClock tc) {
+				GradientDrawable pill = new GradientDrawable();
+				pill.setColor(0x99000000);
+				pill.setCornerRadius(toIntPx(ctx, 12));
+				pill.setStroke(toIntPx(ctx, 1), 0x33FFFFFF);
+				tc.setBackground(pill);
+				int padH = toIntPx(ctx, 10);
+				int padV = toIntPx(ctx, 4);
+				tc.setPadding(padH, padV, padH, padV);
+				tc.setFontFeatureSettings("tnum");
+			}
 			lp = new FrameLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT);
 			lp.setMargins(m, m, m, m);
 			addView(clock);
@@ -574,7 +585,6 @@ public class VideoView extends FrameLayout
 		private final String[] grid = new String[9];
 		private final TextPaint[] paint = new TextPaint[3];
 		private final float[] yoff = new float[]{1f, 0.5f, 0.f};
-
 
 		private GridDrawer(float textScale) {
 			super(textScale);
