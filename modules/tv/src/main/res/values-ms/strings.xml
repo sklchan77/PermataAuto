@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="sub_ch">Saluran: %1$d.</string>
+    <string name="sub_gr">Kumpulan: %1$d.</string>
+    <string name="sub_ch_gr">Saluran: %1$d. Kumpulan: %2$d.</string>
+    <string name="add_tv_source">Tambah sumber IPTV M3U</string>
+    <string name="epg_time_shift">Anjakan masa EPG (jam)</string>
+    <string name="logo">Logo saluran</string>
+    <string name="logo_location">Lokasi</string>
+    <string name="logo_location_hint">Folder atau URL asas http(s)</string>
+    <string name="logo_prefer_epg">Utamakan logo daripada EPG</string>
+    <string name="catchup_query">Format pertanyaan</string>
+    <string name="catchup_type">Jenis catchup</string>
+    <string name="catchup_type_cur">Jenis catchup semasa: %1$s</string>
+    <string name="catchup_type_auto">Auto</string>
+    <string name="catchup_days">Bilangan hari</string>
+    <string name="connection_settings">Tetapan sambungan</string>
+
+    <string name="err_failed_to_add_tv_source">Gagal menambah sumber: %1$s</string>
+</resources>
