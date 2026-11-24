@@ -8,9 +8,11 @@ import static android.view.View.VISIBLE;
 import static my.app.permata.media.lib.MediaLib.StreamItem.STREAM_END_TIME;
 import static my.app.permata.media.lib.MediaLib.StreamItem.STREAM_START_TIME;
 
+import android.graphics.Bitmap;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.SystemClock;
+import android.support.v4.media.MediaMetadataCompat;
 import android.support.v4.media.session.MediaControllerCompat;
 import android.support.v4.media.session.MediaSessionCompat;
 import android.support.v4.media.session.PlaybackStateCompat;
@@ -30,6 +32,7 @@ import my.app.permata.media.lib.MediaLib;
 import my.app.permata.media.lib.MediaLib.PlayableItem;
 import my.app.permata.media.lib.MediaLib.StreamItem;
 import my.app.permata.media.pref.PlaybackControlPrefs;
+import my.app.permata.ui.view.ControlPanelView;
 import my.app.utils.app.App;
 import my.app.utils.async.FutureSupplier;
 import my.app.utils.event.BasicEventBroadcaster;
@@ -247,6 +250,7 @@ public class PermataServiceUiBinder extends BasicEventBroadcaster<PermataService
 		bound = true;
 		mediaController.registerCallback(callback);
 		callback.onPlaybackStateChanged(mediaController.getPlaybackState());
+		callback.onMetadataChanged(mediaController.getMetadata());
 		Log.d("UI bound");
 	}
 
@@ -292,6 +296,12 @@ public class PermataServiceUiBinder extends BasicEventBroadcaster<PermataService
 		callback.pauseProgressUpdate(false);
 	}
 
+	private void updateControlPanelAccent(@Nullable Bitmap art) {
+		if (controlPanel instanceof ControlPanelView cp) {
+			cp.updateDynamicAccent(art);
+		}
+	}
+
 	private final class MediaControllerCallback extends MediaControllerCompat.Callback {
 		private final Handler handler = PermataApplication.get().getHandler();
 		private final StringBuilder timeBuilder = new StringBuilder(10);
@@ -301,6 +311,18 @@ public class PermataServiceUiBinder extends BasicEventBroadcaster<PermataService
 		FutureSupplier<Long> duration;
 
 		MediaControllerCallback() {
+		}
+
+		@Override
+		public void onMetadataChanged(MediaMetadataCompat metadata) {
+			if (!bound) return;
+			Bitmap art = null;
+			if (metadata != null) {
+				art = metadata.getBitmap(MediaMetadataCompat.METADATA_KEY_ALBUM_ART);
+				if (art == null) art = metadata.getBitmap(MediaMetadataCompat.METADATA_KEY_ART);
+				if (art == null) art = metadata.getBitmap(MediaMetadataCompat.METADATA_KEY_DISPLAY_ICON);
+			}
+			updateControlPanelAccent(art);
 		}
 
 		@Override
@@ -320,6 +342,7 @@ public class PermataServiceUiBinder extends BasicEventBroadcaster<PermataService
 					fireBroadcastEvent(Listener::onPlaybackStopped);
 					resetProgressBar();
 					showPanel(false);
+					updateControlPanelAccent(null);
 					break;
 				case PlaybackStateCompat.STATE_FAST_FORWARDING:
 				case PlaybackStateCompat.STATE_REWINDING:
@@ -337,6 +360,15 @@ public class PermataServiceUiBinder extends BasicEventBroadcaster<PermataService
 				PlayableItem old = currentItem;
 				currentItem = i;
 				fireBroadcastEvent(l -> l.onPlayableChanged(old, i));
+				if (i != null) {
+					i.getMediaDescription().main().onSuccess(md -> {
+						if ((i == currentItem) && (md != null) && (md.getIconBitmap() != null)) {
+							updateControlPanelAccent(md.getIconBitmap());
+						}
+					});
+				} else {
+					updateControlPanelAccent(null);
+				}
 			}
 		}
 
