@@ -84,12 +84,13 @@ public interface MainActivityPrefs
 	}
 
 	static boolean hasThemePref(MainActivityDelegate a, List<Pref<?>> prefs) {
-		if (AUTO && a.isCarActivity()) return prefs.contains(THEME_AA);
+		if (AUTO && a.isCarActivity()) return prefs.contains(THEME_AA) || prefs.contains(THEME_MAIN);
 		return prefs.contains(THEME_MAIN);
 	}
 
 	default int getThemePref(boolean auto) {
-		return (AUTO && auto) ? getIntPref(THEME_AA) : getIntPref(THEME_MAIN);
+		if (AUTO && auto && hasPref(THEME_AA)) return getIntPref(THEME_AA);
+		return getIntPref(THEME_MAIN);
 	}
 
 	@Nullable
@@ -256,11 +257,11 @@ public interface MainActivityPrefs
 		ZH_TW(Locale.TRADITIONAL_CHINESE),
 		KO,
 		FR(Locale.FRENCH),
-  RO,
+		RO,
 		AR,
 		ES,
 		KM,
-    ;
+		;
 
 		private static final List<Lang> values = List.of(values());
 		private static final Map<String, Lang> nameToValue = new HashMap<>();
