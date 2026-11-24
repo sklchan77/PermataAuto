@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="force_dark">強制深色模式（如果支援）</string>
+    <string name="force_dark_sub">%1$s。選擇\"自動\"以跟隨裝置主題。</string>
+    <string name="force_dark_auto">自動</string>
+    <string name="force_dark_enabled">已啟用</string>
+    <string name="force_dark_disabled">已停用</string>
+    <string name="user_agent">User-Agent</string>
+    <string name="user_agent_desktop">User-Agent - 桌面版</string>
+    <string name="desktop_version">桌面版</string>
+    <string name="full_screen">全螢幕</string>
+    <string name="full_screen_exit">結束全螢幕</string>
+    <string name="video_scaling_fill_proportional">按比例填滿</string>
+    <string name="video_quality">影片畫質</string>
+    <string name="open_on_start">啟動時開啟</string>
+    <string name="resume_last_video">繼續播放上次的影片</string>
+    <string name="resume_last_video_sub">開啟 YouTube 時繼續播放上次未看完的影片（例如車輛熄火後）</string>
+    <string name="auto_highest_video_quality">自動選擇最高影片畫質</string>
+    <string name="youtube_player_controls">全螢幕時使用 YouTube 控制項</string>
+    <string name="youtube_player_controls_sub">取代 Permata 控制面板：進度列、字幕、設定、連按兩下快轉/倒轉</string>
+    <string name="reopen_video_min">在車內重新開啟上次影片的時限（分鐘）</string>
+    <string name="reopen_video_min_sub">當 Permata 車機畫面再次開啟時（如熄火後），若在此時限內則重新開啟上次的影片。設為 0 將始終開啟 YouTube 首頁</string>
+    <string name="try_to_skip_ad">嘗試略過廣告</string>
+    <string name="sponsorblock_sub">觀看 YouTube 時略過社群標記的片段。</string>
+    <string name="sponsorblock_enable">啟用 SponsorBlock</string>
+    <string name="sponsorblock_enable_sub">從 sponsor.ajay.app 取得目前影片的片段資料。</string>
+    <string name="sponsorblock_cat_sponsor">贊助商片段</string>
+    <string name="sponsorblock_cat_selfpromo">自我推廣</string>
+    <string name="sponsorblock_cat_interaction">互動提醒</string>
+    <string name="sponsorblock_cat_intro">片頭與過場</string>
+    <string name="sponsorblock_cat_outro">片尾與工作人員名單</string>
+    <string name="sponsorblock_cat_preview">預告與回顧</string>
+    <string name="sponsorblock_cat_hook">精彩搶先看</string>
+    <string name="sponsorblock_cat_music_offtopic">非音樂部分</string>
+    <string name="sponsorblock_cat_filler">填充內容</string>
+    <string name="sponsorblock_cat_filler_sub">積極分類；預設停用。</string>
+    <string name="youtube_pause_on_leave">離開畫面時暫停</string>
+    <string name="youtube_pause_on_leave_sub">當 Permata 離開畫面時暫停，返回時繼續播放。關閉：保持背景播放</string>
+</resources>
