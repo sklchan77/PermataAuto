@@ -392,7 +392,8 @@ public class MainActivityDelegate extends ActivityDelegate
 	@Override
 	protected void onActivitySaveInstanceState(@NonNull Bundle outState) {
 		super.onActivitySaveInstanceState(outState);
-		if (isRecreating()) {
+		Activity a = (getAppActivity() instanceof Activity act) ? act : null;
+		if (isRecreating() || (a != null && a.isChangingConfigurations())) {
 			outState.putInt("navId", getActiveNavItemId());
 			outState.putInt("fragmentId", getActiveFragmentId());
 		}
@@ -480,8 +481,9 @@ public class MainActivityDelegate extends ActivityDelegate
 		return getMediaServiceBinder().getMediaSessionCallback().getPlaybackControlPrefs();
 	}
 
-	public static void setTheme(Context ctx, boolean auto) {
-		@StyleRes int theme = switch (Prefs.instance.getThemePref(auto)) {
+	@StyleRes
+	public static int getThemeRes(Context ctx, boolean auto) {
+		return switch (Prefs.instance.getThemePref(auto)) {
 			case MainActivityPrefs.THEME_LIGHT -> R.style.AppTheme_Light;
 			case MainActivityPrefs.THEME_SYSTEM -> {
 				if ((ctx.getResources().getConfiguration().uiMode & Configuration.UI_MODE_NIGHT_MASK) ==
@@ -495,6 +497,10 @@ public class MainActivityDelegate extends ActivityDelegate
 			case MainActivityPrefs.THEME_CLASSIC -> R.style.AppTheme_Classic;
 			default -> R.style.AppTheme_Dark;
 		};
+	}
+
+	public static void setTheme(Context ctx, boolean auto) {
+		@StyleRes int theme = getThemeRes(ctx, auto);
 		ctx.setTheme(theme);
 		if ((VERSION.SDK_INT >= VERSION_CODES.S) && (ctx instanceof Activity a)) {
 			a.getSplashScreen().setSplashScreenTheme(theme);
