@@ -3,40 +3,40 @@
 
     <style name="AppTheme.Dark">
 
-        <item name="android:colorBackground">#0F1012</item>
+        <item name="android:colorBackground">#0B0B0F</item>
 
         <!-- Status bar-->
-        <item name="colorPrimaryDark">#1C1B1F</item>
+        <item name="colorPrimaryDark">#16161D</item>
 
         <!-- Tool/Nav bars -->
         <item name="colorPrimary">?colorPrimaryDark</item>
-        <item name="colorOnPrimary">#4E6AA2</item>
+        <item name="colorOnPrimary">#DCE4F5</item>
         <item name="android:textColorPrimary">?colorOnPrimary</item>
 
         <!-- List/Media items -->
-        <item name="colorSecondary">?android:colorBackground</item>
-        <item name="colorOnSecondary">?colorOnPrimary</item>
-        <item name="android:textColorSecondary">#FFFFFF</item>
-        <item name="boxStrokeColor">#804E6AA2</item>
+        <item name="colorSecondary">#14141B</item>
+        <item name="colorOnSecondary">#7BA4F7</item>
+        <item name="android:textColorSecondary">#F2F4F8</item>
+        <item name="boxStrokeColor">#26FFFFFF</item>
 
         <!-- Active media item -->
         <item name="alpha">1</item>
-        <item name="colorSecondaryVariant">#A11477</item>
-        <item name="android:textColorTertiary">#F6F4FA</item>
+        <item name="colorSecondaryVariant">#263B66</item>
+        <item name="android:textColorTertiary">#FFFFFF</item>
 
         <!-- Popup menu -->
-        <item name="colorSurface">?colorPrimary</item>
-        <item name="colorOnSurface">?colorOnPrimary</item>
-        <item name="colorPrimarySurface">#1F1331</item>
-        <item name="colorOnPrimarySurface">?colorOnPrimary</item>
+        <item name="colorSurface">#1E1E28</item>
+        <item name="colorOnSurface">#DCE4F5</item>
+        <item name="colorPrimarySurface">#272736</item>
+        <item name="colorOnPrimarySurface">#FFFFFF</item>
 
-        <item name="colorAccent">?colorSecondaryVariant</item>
-        <item name="rippleColor">?colorAccent</item>
+        <item name="colorAccent">#5C85D6</item>
+        <item name="rippleColor">#407BA4F7</item>
 
-        <item name="android:textColorHint">#A1A7B3</item>
+        <item name="android:textColorHint">#8E96A6</item>
 
-        <item name="colorControlNormal">?boxStrokeColor</item>
-        <item name="colorControlActivated">?colorOnPrimary</item>
+        <item name="colorControlNormal">#6E7687</item>
+        <item name="colorControlActivated">#7BA4F7</item>
 
     </style>
 
