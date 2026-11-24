@@ -62,6 +62,7 @@ public class NavButtonView extends LinearLayoutCompat {
 			lp.gravity = Gravity.CENTER;
 			t.setLayoutParams(lp);
 			t.setTextAppearance(navBar.textAppearance);
+			t.setTextColor(navBar.getTint());
 			t.setVisibility(GONE);
 			addView(t);
 		}
