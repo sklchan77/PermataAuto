@@ -404,6 +404,12 @@ public abstract class ActivityDelegate implements EventBroadcaster<ActivityListe
 		if (input != null) switchingTo.setInput(input);
 		try {
 			tr.commitNow();
+			View v = switchingTo.getView();
+			if (v != null) {
+				v.animate().cancel();
+				v.setAlpha(0f);
+				v.animate().alpha(1f).setDuration(150).start();
+			}
 			postBroadcastEvent(FRAGMENT_CHANGED);
 			return switchingTo;
 		} catch (IllegalStateException err) {
