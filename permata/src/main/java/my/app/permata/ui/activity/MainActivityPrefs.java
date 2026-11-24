@@ -65,7 +65,7 @@ public interface MainActivityPrefs
 			Pref.s("VOICE_CONTROL_LANG", () -> Locale.getDefault().toLanguageTag());
 	Pref<IntSupplier> CLOCK_POS = Pref.i("CLOCK_POS", CLOCK_POS_NONE);
 	Pref<IntSupplier> LOCALE =
-			Pref.i("LOCALE", () -> Lang.get(Locale.getDefault().getLanguage()).ordinal());
+			Pref.i("LOCALE", () -> Lang.get(Locale.getDefault().toLanguageTag()).ordinal());
 
 	Pref<IntSupplier> THEME_AA = Pref.i("THEME_AA", THEME_DARK);
 	Pref<BooleanSupplier> HIDE_BARS_AA = AUTO ? Pref.b("HIDE_BARS_AA", false) : null;
@@ -243,7 +243,7 @@ public interface MainActivityPrefs
 		return Lang.get(getIntPref(LOCALE)).locale;
 	}
 
-enum Lang {
+	enum Lang {
 		EN(Locale.ENGLISH),
 		RU,
 		IT(Locale.ITALIAN),
@@ -262,7 +262,7 @@ enum Lang {
 		ES,
 		KM,
 		MS,
-		ID,
+		ID(Locale.forLanguageTag("id")),
 		ZH_CN(Locale.SIMPLIFIED_CHINESE),
 		TH,
 		HI,
@@ -275,12 +275,15 @@ enum Lang {
 
 		static {
 			for (var v : values) {
-				nameToValue.put(v.locale.getLanguage(), v);
+				nameToValue.put(v.locale.toLanguageTag().toLowerCase(Locale.ROOT), v);
+				nameToValue.putIfAbsent(v.locale.getLanguage().toLowerCase(Locale.ROOT), v);
 			}
+			nameToValue.put("in", ID);
+			nameToValue.put("id", ID);
 		}
 
 		Lang() {
-			locale = new Locale(name().toLowerCase());
+			locale = new Locale(name().toLowerCase(Locale.ROOT));
 		}
 
 		Lang(Locale locale) {
@@ -296,7 +299,13 @@ enum Lang {
 		}
 
 		public static Lang get(String name) {
-			var value = nameToValue.get(name);
+			if (name == null) return Lang.EN;
+			String key = name.toLowerCase(Locale.ROOT);
+			var value = nameToValue.get(key);
+			if (value == null) {
+				int dash = key.indexOf('-');
+				if (dash > 0) value = nameToValue.get(key.substring(0, dash));
+			}
 			return (value == null) ? Lang.EN : value;
 		}
 	}
