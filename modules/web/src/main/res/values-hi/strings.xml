@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="force_dark">यदि समर्थित हो, तो डार्क मोड बाध्य करें</string>
+    <string name="force_dark_sub">%1$s. डिवाइस थीम का पालन करने के लिए \"ऑटो\" चुनें।</string>
+    <string name="force_dark_auto">ऑटो</string>
+    <string name="force_dark_enabled">सक्षम</string>
+    <string name="force_dark_disabled">अक्षम</string>
+    <string name="user_agent">User-Agent</string>
+    <string name="user_agent_desktop">User-Agent - डेस्कटॉप संस्करण</string>
+    <string name="desktop_version">डेस्कटॉप संस्करण</string>
+    <string name="full_screen">फुल स्क्रीन</string>
+    <string name="full_screen_exit">फुल स्क्रीन से बाहर निकलें</string>
+    <string name="video_scaling_fill_proportional">आनुपातिक रूप से भरें</string>
+    <string name="video_quality">वीडियो गुणवत्ता</string>
+    <string name="open_on_start">शुरू होने पर खोलें</string>
+    <string name="resume_last_video">अंतिम वीडियो फिर से शुरू करें</string>
+    <string name="resume_last_video_sub">YouTube खुलने पर अंतिम अधूरा वीडियो जारी रखें, जैसे कार बंद करने के बाद</string>
+    <string name="auto_highest_video_quality">उच्चतम वीडियो गुणवत्ता स्वतः चुनें</string>
+    <string name="youtube_player_controls">फुल स्क्रीन में YouTube के नियंत्रण उपयोग करें</string>
+    <string name="youtube_player_controls_sub">Permata के कंट्रोल पैनल के बजाय: प्रोग्रेस बार, कैप्शन, सेटिंग्स, सीक करने के लिए डबल-टैप</string>
+    <string name="reopen_video_min">कार में अंतिम वीडियो को इतने समय के भीतर फिर से खोलें (मिनट)</string>
+    <string name="reopen_video_min_sub">जब Permata की कार स्क्रीन फिर से खुलती है (जैसे कार बंद करने के बाद), तो यदि समय इस सीमा से कम है, तो यह छोड़ा हुआ वीडियो फिर से खोलेगा। 0 हमेशा YouTube होम खोलेगा</string>
+    <string name="try_to_skip_ad">विज्ञापन छोड़ने का प्रयास करें</string>
+    <string name="sponsorblock_sub">YouTube देखते समय समुदाय द्वारा चिह्नित सेगमेंट छोड़ें।</string>
+    <string name="sponsorblock_enable">SponsorBlock सक्षम करें</string>
+    <string name="sponsorblock_enable_sub">वर्तमान वीडियो के लिए sponsor.ajay.app से सेगमेंट डेटा लाता है।</string>
+    <string name="sponsorblock_cat_sponsor">प्रायोजक सेगमेंट</string>
+    <string name="sponsorblock_cat_selfpromo">स्व-प्रचार</string>
+    <string name="sponsorblock_cat_interaction">इंटरैक्शन रिमाइंडर</string>
+    <string name="sponsorblock_cat_intro">इंट्रो और मध्यांतर</string>
+    <string name="sponsorblock_cat_outro">एंडकार्ड और क्रेडिट</string>
+    <string name="sponsorblock_cat_preview">प्रीव्यू और रीकैप</string>
+    <string name="sponsorblock_cat_hook">हुक्स (Hooks)</string>
+    <string name="sponsorblock_cat_music_offtopic">गैर-संगीत अनुभाग</string>
+    <string name="sponsorblock_cat_filler">फ़िलर (Filler)</string>
+    <string name="sponsorblock_cat_filler_sub">आक्रामक श्रेणी; डिफ़ॉल्ट रूप से अक्षम।</string>
+    <string name="youtube_pause_on_leave">स्क्रीन छोड़ने पर पॉज़ करें</string>
+    <string name="youtube_pause_on_leave_sub">Permata के स्क्रीन से हटने पर पॉज़ करें और वापस आने पर फिर से शुरू करें। बंद: बैकग्राउंड में चलता रहेगा</string>
+</resources>
