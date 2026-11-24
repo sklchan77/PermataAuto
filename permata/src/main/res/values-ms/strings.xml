@@ -1,0 +1,349 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="addons">Tambahan</string>
+    <string name="addon_name_tv">TV</string>
+    <string name="addon_name_web_browser">Pelayar web</string>
+
+    <string name="interface_prefs">Antara muka</string>
+    <string name="interface_prefs_aa">Android Auto</string>
+    <string name="playback_settings">Tetapan main balik</string>
+    <string name="playback_control">Kawalan main balik</string>
+    <string name="engine_prefs">Enjin media</string>
+
+    <string name="theme">Tema aplikasi</string>
+    <string name="theme_sub">Tema semasa: %1$s</string>
+    <string name="theme_light">Cerah</string>
+    <string name="theme_dark">Gelap</string>
+    <string name="theme_system">Sistem</string>
+    <string name="theme_black">Hitam</string>
+    <string name="theme_star_wars">Star Wars</string>
+    <string name="theme_purple">Ungu</string>
+    <string name="theme_classic">Klasik</string>
+
+    <string name="nav_bar_pos">Kedudukan bar navigasi</string>
+    <string name="nav_bar_pos_sub">Kedudukan semasa: %1$s</string>
+    <string name="nav_bar_pos_bottom">Bawah</string>
+    <string name="nav_bar_pos_left">Kiri</string>
+    <string name="nav_bar_pos_right">Kanan</string>
+
+    <string name="show_track_icons">Tunjuk ikon trek</string>
+    <string name="lang">Bahasa</string>
+    <string name="trans_lang">Bahasa terjemahan</string>
+    <string name="hide_bars">Sembunyikan bar</string>
+    <string name="hide_bars_sub">Sembunyikan bar atas dan bawah apabila panel kawalan dipaparkan</string>
+    <string name="show_pg_up_down">Tunjuk butang halaman atas/bawah</string>
+    <string name="use_dpad_cursor">Gunakan kursor untuk navigasi D-pad</string>
+    <string name="fullscreen_mode">Mod skrin penuh</string>
+    <string name="nav_bar_size">Saiz bar navigasi</string>
+    <string name="tool_bar_size">Saiz bar alat</string>
+    <string name="control_panel_size">Saiz panel kawalan</string>
+    <string name="text_icon_size">Saiz teks dan ikon</string>
+    <string name="subtitles_size">Saiz teks sari kata</string>
+
+    <string name="key_bindings">Tetapan kekunci</string>
+    <string name="key_on_click">Apabila diklik</string>
+    <string name="key_on_long_click">Apabila ditekan lama</string>
+    <string name="key_on_dbl_click">Apabila diklik dua kali</string>
+    <string name="action_stop">Henti</string>
+    <string name="action_play">Main</string>
+    <string name="action_pause">Jeda</string>
+    <string name="action_play_pause">Main/Jeda</string>
+    <string name="action_prev">Main sebelumnya</string>
+    <string name="action_next">Main seterusnya</string>
+    <string name="action_prev_folder">Main folder sebelumnya</string>
+    <string name="action_next_folder">Main folder seterusnya</string>
+    <string name="action_rw">Undur</string>
+    <string name="action_ff">Maju pantas</string>
+    <string name="action_vol_up">Kuatkan kelantangan</string>
+    <string name="action_vol_down">Perlahankan kelantangan</string>
+    <string name="action_vol_mute_unmute">Senyap/Nyahsenyap</string>
+    <string name="action_activate_voice_ctrl">Aktifkan kawalan suara</string>
+    <string name="action_menu">Menu</string>
+    <string name="action_cp_menu">Menu panel kawalan</string>
+    <string name="action_back_or_exit">Kembali atau keluar</string>
+    <string name="action_exit">Keluar</string>
+    <string name="action_default">Lalai</string>
+    <string name="action_none">Tiada</string>
+
+    <string name="play_next_on_completion">Main seterusnya selepas tamat</string>
+    <string name="nothing_to_resume">Tiada apa-apa untuk disambung</string>
+
+    <string name="rw_ff_click">Undur/Maju - klik</string>
+    <string name="rw_ff_long_click">Undur/Maju - tekan lama</string>
+    <string name="prev_next_long_click">Sebelum/Seterusnya - tekan lama</string>
+    <string name="play_pause_stop">Henti apabila Main/Jeda ditekan lama</string>
+
+    <string name="time">Masa</string>
+    <string name="time_unit">Unit masa</string>
+    <string name="time_unit_sub">Nilai semasa: %1$s</string>
+    <string name="time_unit_second">Saat</string>
+    <string name="time_unit_minute">Minit</string>
+    <string name="time_unit_percent">Peratus</string>
+
+    <string name="video_control">Kawalan video</string>
+    <string name="video_control_start_delay">Tunjuk semasa mula</string>
+    <string name="video_control_touch_delay">Tunjuk semasa disentuh</string>
+    <string name="video_control_seek_delay">Tunjuk semasa mencari</string>
+    <string name="video_aa_show_status">Tunjuk bar status dalam Android Auto</string>
+
+    <string name="enable_exoplayer">Dayakan ExoPlayer</string>
+    <string name="enable_vlcplayer">Dayakan VLC</string>
+    <string name="preferred_audio_engine">Enjin audio pilihan</string>
+    <string name="preferred_video_engine">Enjin video pilihan</string>
+    <string name="engine_installed">Enjin media dipasang: %1$s</string>
+    <string name="engine_uninstalled">Enjin media dinyahpasang: %1$s</string>
+
+    <string name="preferred_media_scanner">Pengimbas media pilihan</string>
+    <string name="preferred_media_scanner_default">Lalai</string>
+    <string name="preferred_media_scanner_system">Sistem</string>
+
+    <string name="voice_search">Carian suara</string>
+    <string name="voice_control">Kawalan suara</string>
+    <string name="voice_control_fb">Butang terapung</string>
+    <string name="voice_control_sub_long">Aktifkan kawalan suara dengan tekan lama</string>
+    <string name="voice_control_subst">Penggantian perkataan</string>
+    <string name="voice_control_subst_sub">Gantikan perkataan dengan perkataan atau frasa lain</string>
+    <string name="voice_control_subst_hint">hidup: main\nmati: jeda</string>
+
+    <string name="module_installation">Pemasangan modul: %1$s</string>
+    <string name="install_pending">Pemasangan tertangguh: %1$s</string>
+    <string name="downloading">Memuat turun %1$s</string>
+    <string name="installing">Memasang %1$s</string>
+
+    <string name="speed">Kelajuan</string>
+    <string name="audio_effects">Kesan audio</string>
+    <string name="equalier">Penyamaan</string>
+    <string name="preset_name">Nama pratetap</string>
+    <string name="virtualizer">Pemaya</string>
+    <string name="auto">Auto</string>
+    <string name="binaural">Binaural</string>
+    <string name="transaural">Transaural</string>
+    <string name="bass_boost">Penggalak bes</string>
+    <string name="vol_boost">Penggalak kelantangan</string>
+    <string name="strength">Kekuatan</string>
+    <string name="apply_to">Gunakan pada</string>
+
+    <string name="video">Video</string>
+    <string name="video_settings">Tetapan video</string>
+    <string name="video_scaling">Penskalaan video</string>
+    <string name="hw_accel">Pecutan perkakasan</string>
+    <string name="hw_accel_auto">Auto</string>
+    <string name="hw_accel_full">Penuh</string>
+    <string name="hw_accel_decoding">Penyahkodan</string>
+    <string name="hw_accel_disabled">Dinyahdayakan</string>
+    <string name="video_scaling_best">Padanan terbaik</string>
+    <string name="video_scaling_fill">Isi skrin</string>
+    <string name="video_scaling_orig">Saiz asal</string>
+
+    <string name="audio">Audio</string>
+    <string name="audio_delay">Lengah audio</string>
+    <string name="audio_delay_aa">Lengah audio - Android Auto</string>
+    <string name="preferred_audio_lang">Bahasa strim audio pilihan</string>
+    <string name="preferred_audio_key">Utamakan strim audio dengan kata kunci</string>
+    <string name="select_audio_stream">Pilih strim audio</string>
+
+    <string name="subtitles">Sari kata</string>
+    <string name="subtitles_auto">Dijana secara automatik</string>
+    <string name="subtitle_delay">Lengah sari kata</string>
+    <string name="display_subtitles">Papar sari kata</string>
+    <string name="preferred_sub_lang">Bahasa sari kata pilihan</string>
+    <string name="preferred_sub_key">Utamakan sari kata dengan kata kunci</string>
+    <string name="select_subtitles">Pilih sari kata</string>
+
+    <string name="sub_gen_buf">Panjang penimbal</string>
+    <string name="sub_gen_buf_sub">Pramuat ke hadapan mengikut bilangan saat yang ditetapkan</string>
+    <string name="sub_gen_chunk">Panjang bahagian</string>
+    <string name="sub_gen_chunk_sub">Proses penimbal dalam bahagian mengikut tempoh yang ditetapkan</string>
+    <string name="sub_gen_model">Model</string>
+    <string name="sub_gen_translate">Terjemah</string>
+    <string name="sub_gen_use_gpu">Gunakan GPU</string>
+    <string name="sub_gen_single">Segmen tunggal</string>
+    <string name="sub_gen_single_sub">Transkripsi keseluruhan bahagian sebagai satu segmen tunggal</string>
+    <string name="sub_gen_downloading">Sila tunggu sementara model dimuat turun.</string>
+    <string name="sub_gen_download_fail">Gagal memuat turun model: %s!</string>
+    <string name="sub_gen_cleanup">Padam model muat turun lain daripada cache</string>
+    <string name="sub_gen_cleanup_done">Dipadam: %s</string>
+
+    <string name="eq_hz">%1$s Hz</string>
+    <string name="eq_khz">%1$s kHz</string>
+
+    <string name="current_track">Trek semasa</string>
+    <string name="current_folder">Folder semasa</string>
+
+    <string name="folders">Folder</string>
+    <string name="favorites">Kegemaran</string>
+    <string name="playlists">Senarai main</string>
+    <string name="search">Cari</string>
+    <string name="filter">Tapis</string>
+    <string name="settings">Tetapan</string>
+    <string name="menu">Menu</string>
+    <string name="exit">Keluar</string>
+    <string name="cancel">Batal</string>
+    <string name="got_to_current">Trek semasa</string>
+
+    <string name="view">Paparan</string>
+    <string name="title">Tajuk</string>
+    <string name="subtitle">Sari kata</string>
+    <string name="seq_num">Nombor urutan</string>
+    <string name="track_name">Nama</string>
+    <string name="file_name">Nama fail</string>
+    <string name="date">Tarikh</string>
+    <string name="random">Rawak</string>
+    <string name="descending">Menurun</string>
+    <string name="album">Album</string>
+    <string name="artist">Artis</string>
+    <string name="duration">Tempoh</string>
+
+    <string name="sort_by">Isih mengikut</string>
+    <string name="do_not_sort">Jangan isih</string>
+
+    <string name="play">Main</string>
+    <string name="pause">Jeda</string>
+    <string name="stop">Henti</string>
+    <string name="prev">Sebelumnya</string>
+    <string name="next">Seterusnya</string>
+    <string name="rewind">Undur</string>
+    <string name="fast_forward">Maju pantas</string>
+    <string name="repeat">Ulang</string>
+    <string name="repeat_disable">Jangan ulang</string>
+    <string name="shuffle">Rombak</string>
+    <string name="shuffle_disable">Jangan rombak</string>
+    <string name="programme_guide">Panduan program</string>
+    <string name="favorites_add">Tambah ke kegemaran</string>
+    <string name="favorites_remove">Buang daripada kegemaran</string>
+    <string name="mark_watched">Tanda sebagai sudah ditonton</string>
+    <string name="mark_unwatched">Tanda sebagai belum ditonton</string>
+    <string name="preferred_media_engine">Enjin media pilihan</string>
+    <string name="by_default">Lalai</string>
+
+    <string name="playlist_add">Tambah ke senarai main</string>
+    <string name="playlist_remove_item">Buang daripada senarai main</string>
+    <string name="playlist_create">Cipta senarai main</string>
+    <string name="playlist_remove">Padam senarai main</string>
+    <string name="playlist_name">Nama senarai main</string>
+
+    <string name="bookmarks">Penanda halaman</string>
+    <string name="create_bookmark">Cipta penanda halaman</string>
+    <string name="remove_bookmark">Padam penanda halaman</string>
+    <string name="remove_all_bookmarks">Padam semua penanda halaman</string>
+    <string name="bookmark_name">Nama</string>
+    <string name="bookmark_time">Masa</string>
+
+    <string name="folder_subtitle">Fail: %1$d. Folder: %2$d.</string>
+    <string name="browsable_subtitle">Trek: %1$d.</string>
+    <string name="add_folder">Tambah folder</string>
+    <string name="remove_folder">Buang folder</string>
+    <string name="select">Pilih</string>
+    <string name="select_all">Pilih semua</string>
+    <string name="unselect_all">Nyahpilih semua</string>
+    <string name="refresh">Muat semula</string>
+    <string name="rescan">Imbas semula</string>
+    <string name="share">Kongsi</string>
+    <string name="edit">Sunting</string>
+    <string name="delete">Padam</string>
+    <string name="delete_confirm">Padam %1$s?</string>
+    <string name="delete_file_title">Padam fail</string>
+    <string name="delete_file_question">Adakah anda pasti mahu memadam fail ini?</string>
+    <string name="delete_file_failed">Gagal memadam fail %1$s</string>
+    <string name="loading">Memuatkan…</string>
+    <string name="press_back_again">Tekan butang kembali sekali lagi untuk keluar.</string>
+    <string name="please_restart_app">Sila mulakan semula aplikasi.</string>
+    <string name="use_phone_to_grant_perm">Sila gunakan telefon anda untuk memberikan kebenaran yang diperlukan.</string>
+
+    <string name="vfs_content">Kandungan</string>
+    <string name="vfs_file_system">Sistem fail</string>
+    <string name="vfs_gdrive">Google Drive</string>
+    <string name="m3u_playlist">Senarai main M3U</string>
+    <string name="m3u_playlist_name">Nama</string>
+    <string name="m3u_playlist_location">Lokasi</string>
+    <string name="m3u_playlist_location_hint">Fail atau URL http(s)</string>
+    <string name="m3u_playlist_video">Senarai main video</string>
+
+    <string name="eq_manual">Manual</string>
+    <string name="eq_normal">Normal</string>
+    <string name="eq_classical">Klasik</string>
+    <string name="eq_dance">Tarian</string>
+    <string name="eq_flat">Rata</string>
+    <string name="eq_folk">Rakyat</string>
+    <string name="eq_heavy_metal">Heavy Metal</string>
+    <string name="eq_hip_hop">Hip Hop</string>
+    <string name="eq_jazz">Jaz</string>
+    <string name="eq_pop">Pop</string>
+    <string name="eq_rock">Rok</string>
+
+    <string name="host">Hos</string>
+    <string name="port">Port</string>
+    <string name="path">Laluan</string>
+    <string name="share_name">Nama perkongsian</string>
+    <string name="domain">Domain</string>
+    <string name="username">Nama pengguna</string>
+    <string name="password">Kata laluan</string>
+    <string name="private_key">Kunci peribadi</string>
+    <string name="private_key_pass">Kata laluan kunci peribadi</string>
+
+    <string name="donate">Belanja kopi untuk pembangun</string>
+    <string name="donate_text">Jika anda menyukai aplikasi ini, pertimbangkan untuk membelanja saya secawan kopi.</string>
+    <string name="use_phone_for_donation">Sila gunakan telefon anda untuk membelanja kopi.</string>
+
+    <string name="timer">Pemasa</string>
+    <string name="hours">Jam</string>
+    <string name="minutes">Minit</string>
+
+    <string name="enable">Dayakan</string>
+    <string name="move_left">Alih ke kiri</string>
+    <string name="move_right">Alih ke kanan</string>
+    <string name="move_up">Alih ke atas</string>
+    <string name="move_down">Alih ke bawah</string>
+
+    <string name="sys_bars_on_video_touch">Tunjuk bar sistem apabila video disentuh</string>
+    <string name="play_video_landscape">Mainkan video dalam mod landskap</string>
+    <string name="clock_pos">Kedudukan jam</string>
+    <string name="clock_pos_none">Tiada</string>
+    <string name="clock_pos_left">Kiri</string>
+    <string name="clock_pos_right">Kanan</string>
+    <string name="clock_pos_center">Tengah</string>
+    <string name="change_brightness">Tukar kecerahan semasa memainkan video</string>
+    <string name="video_brightness">Kecerahan video</string>
+    <string name="change_brightness_sub">Kecerahan juga boleh ditukar dengan tatal dua jari</string>
+    <string name="watched_threshold">Ambang tontonan</string>
+    <string name="watched_threshold_sub">Tandakan video sebagai sudah ditonton jika melebihi peratusan ini</string>
+
+    <string name="other">Lain-lain</string>
+    <string name="check_updates">Semak kemas kini semasa permulaan</string>
+    <string name="update">Kemas kini</string>
+    <string name="update_question">Versi baharu %1$s tersedia.\nAdakah anda mahu mengemas kini aplikasi?</string>
+    <string name="export_prefs">Eksport tetapan ke fail</string>
+    <string name="export_prefs_sub">Eksport tetapan, folder, senarai main dan lain-lain ke fail</string>
+    <string name="export_prefs_ok">Tetapan telah disimpan dalam fail %1$s.</string>
+    <string name="export_prefs_failed">Gagal mengeksport tetapan: %1$s</string>
+    <string name="import_prefs">Import tetapan daripada fail</string>
+    <string name="import_prefs_sub">Import tetapan yang pernah dieksport daripada fail</string>
+    <string name="import_prefs_ok">Tetapan berjaya diimport.\nSila mulakan semula aplikasi.</string>
+    <string name="import_prefs_failed">Gagal mengimport tetapan: %1$s</string>
+    <string name="prefs_not_found">Tiada tetapan ditemui</string>
+    <string name="open_log">Buka fail log</string>
+    <string name="unlock_phone_and_grant">Buka kunci telefon dan berikan kebenaran yang diminta.</string>
+    <string name="screen_capture_rejected">Permintaan tangkapan skrin ditolak.</string>
+    <string name="accessibility_dsc">Perkhidmatan kebolehcapaian digunakan oleh Permata Mirror untuk mensimulasikan acara skrin sentuh.</string>
+    <string name="media_projection_action_text">Mula sekarang</string>
+
+    <string name="about">Perihal</string>
+    <string name="about_html"><![CDATA[<H1 align="center">Permata Auto Media Player</H1>
+        <p>Permata Auto Media Player ialah pemain audio dan video sumber terbuka dengan antara muka yang ringkas dan intuitif.</p>
+        <p><b>Pengarang:</b> sklchan77</p>
+        <p><b>Versi:</b> %1$s (%2$d)</p>
+        <p><b>Laman utama: </b> <a href="%3$s">%3$s</a></p>
+        ]]></string>
+
+    <string name="err_failed_to_play">Gagal memainkan %s</string>
+    <string name="err_failed_to_play_cause">Gagal memainkan %1$s: %2$s</string>
+    <string name="err_unsupported_source_type">Jenis sumber tidak disokong: %s</string>
+    <string name="err_playlist_exists">Senarai main sudah wujud: %1$s</string>
+    <string name="err_invalid_playlist_name">Nama senarai main tidak sah: %1$s</string>
+    <string name="err_failed_add_folder">Gagal menambah folder: %1$s</string>
+    <string name="err_failed_open_url">Gagal membuka URL: %1$s</string>
+    <string name="err_failed_install_module">Gagal memasang modul: %1$s</string>
+    <string name="err_failed_to_download">Gagal memuat turun %1$s</string>
+    <string name="err_no_audio_record_perm">Kebenaran rakaman audio tidak diberikan</string>
+    <string name="err_failed_start_service">Gagal memulakan perkhidmatan: %s</string>
+</resources>
