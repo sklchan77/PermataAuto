@@ -31,7 +31,9 @@ import android.os.LocaleList;
 import android.os.OperationCanceledException;
 import android.os.SystemClock;
 import android.text.TextWatcher;
+import android.view.ContextThemeWrapper;
 import android.view.KeyEvent;
+import android.view.LayoutInflater;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
@@ -236,6 +238,13 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 	public void onConfigurationChanged(Configuration configuration) {
 		super.onConfigurationChanged(configuration);
 		applyCarThemeAndWindowBg();
+	}
+
+	@Override
+	public void setContentView(int layoutResID) {
+		Context themedCtx = new ContextThemeWrapper(this, MainActivityDelegate.getThemeRes(this, true));
+		View view = LayoutInflater.from(themedCtx).inflate(layoutResID, null);
+		super.setContentView(view);
 	}
 
 	@Override
