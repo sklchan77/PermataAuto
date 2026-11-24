@@ -5,13 +5,18 @@ import static android.content.res.Configuration.SCREEN_WIDTH_DP_UNDEFINED;
 import static android.view.ViewGroup.LayoutParams.MATCH_PARENT;
 import static my.app.utils.ui.UiUtils.getTextAppearanceSize;
 import static my.app.utils.ui.UiUtils.isVisible;
+import static my.app.utils.ui.UiUtils.toIntPx;
 import static my.app.utils.ui.fragment.ViewFragmentMediator.attachMediator;
 
 import android.content.Context;
 import android.content.res.Configuration;
 import android.content.res.TypedArray;
 import android.graphics.Color;
+import android.graphics.drawable.ColorDrawable;
 import android.graphics.drawable.Drawable;
+import android.graphics.drawable.GradientDrawable;
+import android.graphics.drawable.InsetDrawable;
+import android.graphics.drawable.StateListDrawable;
 import android.util.AttributeSet;
 import android.view.MotionEvent;
 import android.view.View;
@@ -27,6 +32,7 @@ import androidx.annotation.StringRes;
 import androidx.annotation.StyleRes;
 import androidx.appcompat.widget.LinearLayoutCompat;
 import androidx.core.content.ContextCompat;
+import androidx.core.graphics.ColorUtils;
 
 import my.app.utils.R;
 import my.app.utils.function.Function;
@@ -194,6 +200,34 @@ public class NavBarView extends LinearLayoutCompat implements ActivityListener {
 		return tint;
 	}
 
+	Drawable createPillBackground() {
+		Context ctx = getContext();
+		int radius = toIntPx(ctx, 16);
+		int insetH = toIntPx(ctx, 6);
+		int insetV = toIntPx(ctx, 4);
+		int baseColor = (tint != Color.TRANSPARENT) ? tint : Color.WHITE;
+
+		GradientDrawable focused = new GradientDrawable();
+		focused.setColor(ColorUtils.setAlphaComponent(baseColor, 46));
+		focused.setCornerRadius(radius);
+		focused.setStroke(toIntPx(ctx, 2), ColorUtils.setAlphaComponent(baseColor, 200));
+
+		GradientDrawable selected = new GradientDrawable();
+		selected.setColor(ColorUtils.setAlphaComponent(baseColor, 52));
+		selected.setCornerRadius(radius);
+
+		GradientDrawable pressed = new GradientDrawable();
+		pressed.setColor(ColorUtils.setAlphaComponent(baseColor, 72));
+		pressed.setCornerRadius(radius);
+
+		StateListDrawable sld = new StateListDrawable();
+		sld.addState(new int[]{android.R.attr.state_pressed}, new InsetDrawable(pressed, insetH, insetV, insetH, insetV));
+		sld.addState(new int[]{android.R.attr.state_focused}, new InsetDrawable(focused, insetH, insetV, insetH, insetV));
+		sld.addState(new int[]{android.R.attr.state_selected}, new InsetDrawable(selected, insetH, insetV, insetH, insetV));
+		sld.addState(new int[]{}, new ColorDrawable(Color.TRANSPARENT));
+		return sld;
+	}
+
 	@Override
 	public View focusSearch(View focused, int direction) {
 		View v = getMediator().focusSearch(this, focused, direction);
@@ -350,6 +384,7 @@ public class NavBarView extends LinearLayoutCompat implements ActivityListener {
 				NavBarView nb, Function<NavBarView, B> constructor, Drawable icon, CharSequence text) {
 			B b = constructor.apply(nb);
 			initButton(b, icon, text);
+			b.setBackground(nb.createPillBackground());
 			return b;
 		}
 
