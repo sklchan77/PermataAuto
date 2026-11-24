@@ -167,38 +167,52 @@ public final class AudioEffects {
             }
         });
     }
+
+    private static boolean getBoolWithGlobalFallback(@NonNull SharedPreferences prefs, @NonNull String pfx, @NonNull String key) {
+        if (!pfx.isEmpty() && prefs.contains(pfx + key)) {
+            return prefs.getBoolean(pfx + key, false);
+        }
+        return prefs.getBoolean(key, false);
+    }
+
+    private static int getIntWithGlobalFallback(@NonNull SharedPreferences prefs, @NonNull String pfx, @NonNull String key) {
+        if (!pfx.isEmpty() && prefs.contains(pfx + key)) {
+            return prefs.getInt(pfx + key, 0);
+        }
+        return prefs.getInt(key, 0);
+    }
+
     private void loadAndApplyPersistedSettings(@NonNull Context context) {
         try {
             SharedPreferences prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
             final String pfx = (activeChannelId == null) ? "" : activeChannelId + "_";
-            
-            // Reusable optimization StringBuilder to permanently eliminate high-frequency GC allocations inside loops
+
             StringBuilder keyBuilder = new StringBuilder(64);
 
-            boolean eqEnabled = prefs.getBoolean(pfx + KEY_EQ_ENABLED, false);
-            boolean virtEnabled = prefs.getBoolean(pfx + KEY_VIRT_ENABLED, false);
-            boolean bassEnabled = prefs.getBoolean(pfx + KEY_BASS_ENABLED, false);
-            boolean loudEnabled = prefs.getBoolean(pfx + KEY_LOUD_ENABLED, false);
-            boolean volBoostActive = prefs.getBoolean(pfx + KEY_VOLUME_BOOST_ACTIVE, false);
+            boolean eqEnabled = getBoolWithGlobalFallback(prefs, pfx, KEY_EQ_ENABLED);
+            boolean virtEnabled = getBoolWithGlobalFallback(prefs, pfx, KEY_VIRT_ENABLED);
+            boolean bassEnabled = getBoolWithGlobalFallback(prefs, pfx, KEY_BASS_ENABLED);
+            boolean loudEnabled = getBoolWithGlobalFallback(prefs, pfx, KEY_LOUD_ENABLED);
+            boolean volBoostActive = getBoolWithGlobalFallback(prefs, pfx, KEY_VOLUME_BOOST_ACTIVE);
 
             if (bassBoost != null) {
-                short bassStrength = (short) prefs.getInt(pfx + KEY_BASS_STRENGTH, 0);
+                short bassStrength = (short) getIntWithGlobalFallback(prefs, pfx, KEY_BASS_STRENGTH);
                 setBassBoostStrengthInternal(bassStrength);
             }
             if (virtualizer != null && SDK_INT < 35) {
-                short virtStrength = (short) prefs.getInt(pfx + KEY_VIRT_STRENGTH, 0);
+                short virtStrength = (short) getIntWithGlobalFallback(prefs, pfx, KEY_VIRT_STRENGTH);
                 setVirtualizerStrengthInternal(virtStrength);
             }
             if (loudnessEnhancer != null) {
-                int targetGain = prefs.getInt(pfx + KEY_LOUD_GAIN, 0);
+                int targetGain = getIntWithGlobalFallback(prefs, pfx, KEY_LOUD_GAIN);
                 setLoudnessEnhancementGainInternal(targetGain);
             }
             if (equalizer != null) {
                 short bands = equalizer.getNumberOfBands();
                 for (short i = 0; i < bands; i++) {
                     keyBuilder.setLength(0);
-                    String bandKey = keyBuilder.append(pfx).append(KEY_EQ_BAND_PREFIX).append(i).toString();
-                    short savedGain = (short) prefs.getInt(bandKey, 0);
+                    String baseBandKey = keyBuilder.append(KEY_EQ_BAND_PREFIX).append(i).toString();
+                    short savedGain = (short) getIntWithGlobalFallback(prefs, pfx, baseBandKey);
                     setEqualizerBandGainInternal(i, savedGain);
                 }
             }
