@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="sub_ch">频道：%1$d。</string>
+    <string name="sub_gr">分组：%1$d。</string>
+    <string name="sub_ch_gr">频道：%1$d。分组：%2$d。</string>
+    <string name="add_tv_source">添加 M3U IPTV 源</string>
+    <string name="epg_time_shift">EPG 时移（小时）</string>
+    <string name="logo">频道台标</string>
+    <string name="logo_location">位置</string>
+    <string name="logo_location_hint">文件夹或 http(s) 基础 URL</string>
+    <string name="logo_prefer_epg">优先使用 EPG 中的台标</string>
+    <string name="catchup_query">查询格式</string>
+    <string name="catchup_type">回看类型</string>
+    <string name="catchup_type_cur">当前回看类型：%1$s</string>
+    <string name="catchup_type_auto">自动</string>
+    <string name="catchup_days">天数</string>
+    <string name="connection_settings">连接设置</string>
+
+    <string name="err_failed_to_add_tv_source">添加源失败：%1$s</string>
+</resources>
