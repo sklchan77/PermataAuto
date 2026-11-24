@@ -5,9 +5,11 @@ import static my.app.permata.addon.web.PermataWebClient.isYoutubeUri;
 import static my.app.permata.util.Utils.dynCtx;
 
 import android.content.Context;
+import android.content.res.Configuration;
 import android.content.res.Resources;
 import android.net.Uri;
 import android.os.Bundle;
+import android.os.LocaleList;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
@@ -21,6 +23,7 @@ import androidx.core.content.res.ResourcesCompat;
 import java.io.UnsupportedEncodingException;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
+import java.util.Locale;
 import java.util.Map;
 
 import my.app.permata.BuildConfig;
@@ -29,6 +32,7 @@ import my.app.permata.addon.AddonManager;
 import my.app.permata.addon.web.yt.YoutubeFragment;
 import my.app.permata.ui.activity.MainActivityDelegate;
 import my.app.permata.ui.activity.MainActivityListener;
+import my.app.permata.ui.activity.MainActivityPrefs;
 import my.app.permata.ui.activity.VoiceCommand;
 import my.app.permata.ui.fragment.MainActivityFragment;
 import my.app.utils.function.BooleanConsumer;
@@ -61,7 +65,38 @@ public class WebBrowserFragment extends MainActivityFragment
 	public View onCreateView(@NonNull LayoutInflater inflater, @Nullable ViewGroup container,
 													 @Nullable Bundle savedInstanceState) {
 		dynCtx(requireContext());
-		return inflater.inflate(R.layout.browser, container, false);
+		View v = inflater.inflate(R.layout.browser, container, false);
+		reapplySavedLocaleAfterWebView(requireContext());
+		return v;
+	}
+
+	@SuppressWarnings("deprecation")
+	private static void reapplySavedLocaleAfterWebView(@NonNull Context ctx) {
+		try {
+			PreferenceStore ps = PermataApplication.get().getPreferenceStore();
+			if (!ps.hasPref(MainActivityPrefs.LOCALE)) return;
+			Locale loc = MainActivityPrefs.Lang.get(ps.getIntPref(MainActivityPrefs.LOCALE)).locale;
+			if (loc == null) return;
+			applyLocaleToResources(PermataApplication.get().getResources(), loc);
+			applyLocaleToResources(ctx.getResources(), loc);
+		} catch (Exception ex) {
+			Log.w(ex, "Failed to re-apply locale after WebView initialization");
+		}
+	}
+
+	@SuppressWarnings("deprecation")
+	private static void applyLocaleToResources(@NonNull Resources res, @NonNull Locale loc) {
+		Locale.setDefault(loc);
+		Configuration cfg = new Configuration(res.getConfiguration());
+		if (VERSION.SDK_INT >= VERSION_CODES.N) {
+			LocaleList list = new LocaleList(loc);
+			LocaleList.setDefault(list);
+			cfg.setLocales(list);
+		} else {
+			cfg.setLocale(loc);
+		}
+		cfg.setLayoutDirection(loc);
+		res.updateConfiguration(cfg, res.getDisplayMetrics());
 	}
 
 	@Override
