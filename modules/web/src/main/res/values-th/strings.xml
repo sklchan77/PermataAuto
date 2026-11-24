@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="force_dark">บังคับใช้โหมดมืด หากรองรับ</string>
+    <string name="force_dark_sub">%1$s เลือก \"อัตโนมัติ\" เพื่อใช้ตามธีมของอุปกรณ์</string>
+    <string name="force_dark_auto">อัตโนมัติ</string>
+    <string name="force_dark_enabled">เปิดใช้งาน</string>
+    <string name="force_dark_disabled">ปิดใช้งาน</string>
+    <string name="user_agent">User-Agent</string>
+    <string name="user_agent_desktop">User-Agent - เวอร์ชันเดสก์ท็อป</string>
+    <string name="desktop_version">เวอร์ชันเดสก์ท็อป</string>
+    <string name="full_screen">เต็มหน้าจอ</string>
+    <string name="full_screen_exit">ออกจากโหมดเต็มหน้าจอ</string>
+    <string name="video_scaling_fill_proportional">เติมเต็มตามสัดส่วน</string>
+    <string name="video_quality">คุณภาพวิดีโอ</string>
+    <string name="open_on_start">เปิดเมื่อเริ่มต้น</string>
+    <string name="resume_last_video">เล่นวิดีโอล่าสุดต่อ</string>
+    <string name="resume_last_video_sub">เล่นวิดีโอล่าสุดที่ยังดูไม่จบต่อเมื่อเปิด YouTube เช่น หลังจากดับเครื่องยนต์</string>
+    <string name="auto_highest_video_quality">เลือกคุณภาพวิดีโอสูงสุดอัตโนมัติ</string>
+    <string name="youtube_player_controls">ใช้ตัวควบคุมของ YouTube ในโหมดเต็มหน้าจอ</string>
+    <string name="youtube_player_controls_sub">แทนแผงควบคุมของ Permata: แถบความคืบหน้า คำบรรยาย การตั้งค่า แตะสองครั้งเพื่อเลื่อนเวลา</string>
+    <string name="reopen_video_min">เปิดวิดีโอล่าสุดในรถอีกครั้งภายใน (นาที)</string>
+    <string name="reopen_video_min_sub">เมื่อหน้าจอรถของ Permata เปิดอีกครั้ง เช่น หลังดับเครื่อง ระบบจะเปิดวิดีโอที่ดูค้างไว้หากยังไม่เกินเวลานี้ หากตั้งเป็น 0 จะเปิดหน้าแรกของ YouTube เสมอ</string>
+    <string name="try_to_skip_ad">พยายามข้ามโฆษณา</string>
+    <string name="sponsorblock_sub">ข้ามช่วงที่ชุมชนช่วยกันระบุขณะรับชม YouTube</string>
+    <string name="sponsorblock_enable">เปิดใช้งาน SponsorBlock</string>
+    <string name="sponsorblock_enable_sub">ดึงข้อมูลช่วงวิดีโอจาก sponsor.ajay.app สำหรับวิดีโอปัจจุบัน</string>
+    <string name="sponsorblock_cat_sponsor">ช่วงผู้สนับสนุน</string>
+    <string name="sponsorblock_cat_selfpromo">การโปรโมตตัวเอง</string>
+    <string name="sponsorblock_cat_interaction">การแจ้งเตือนให้มีส่วนร่วม</string>
+    <string name="sponsorblock_cat_intro">อินโทรและช่วงคั่น</string>
+    <string name="sponsorblock_cat_outro">ตอนท้ายและเครดิต</string>
+    <string name="sponsorblock_cat_preview">ตัวอย่างและสรุปย่อ</string>
+    <string name="sponsorblock_cat_hook">ช่วงเกริ่นนำ (Hook)</string>
+    <string name="sponsorblock_cat_music_offtopic">ช่วงที่ไม่ใช่เพลง</string>
+    <string name="sponsorblock_cat_filler">เนื้อหาส่วนเกิน (Filler)</string>
+    <string name="sponsorblock_cat_filler_sub">หมวดหมู่แบบเข้มงวด ปิดใช้งานเป็นค่าเริ่มต้น</string>
+    <string name="youtube_pause_on_leave">หยุดชั่วคราวเมื่อออกจากหน้าจอ</string>
+    <string name="youtube_pause_on_leave_sub">หยุดชั่วคราวเมื่อ Permata พับหน้าจอลงและเล่นต่อเมื่อกลับมา ปิด: เล่นต่อในพื้นหลัง</string>
+</resources>
