@@ -1127,7 +1127,7 @@ public class MainActivityDelegate extends ActivityDelegate
 			getBody().getVideoView().setClockPos(getPrefs().getClockPosPref());
 		} else if (prefs.contains(LOCALE)) {
 			PermataApplication.get().updateAppLocale(getPrefs().getLocalePref());
-			recreate();
+			if (isCarActivityNotMirror()) recreate();
 		}
 	}
 
