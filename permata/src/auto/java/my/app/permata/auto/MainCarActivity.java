@@ -20,7 +20,6 @@ import android.content.ContextWrapper;
 import android.content.Intent;
 import android.content.res.Configuration;
 import android.graphics.Color;
-import android.graphics.PorterDuff;
 import android.graphics.drawable.ColorDrawable;
 import android.graphics.drawable.Drawable;
 import android.graphics.drawable.StateListDrawable;
@@ -432,7 +431,6 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 			super(d.getContext());
 			activity = d;
 			setId(R.id.cursor);
-			setColorFilter(Color.WHITE, PorterDuff.Mode.SRC_IN);
 			setLayoutParams(new ConstraintLayout.LayoutParams(size, size));
 			setImageDrawable(AppCompatResources.getDrawable(d.getContext(), R.drawable.cursor));
 			setOnClickListener(this);
@@ -579,7 +577,7 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 			}
 
 			if (!focusFb(screen(), cursorX, cursorY)) requestFocus();
-			animate().x(cursorX).y(cursorY).setDuration(0).start();
+			animate().x(cursorX).y(cursorY).setDuration(40).start();
 		}
 
 		private boolean focusFb(ViewGroup screen, float cursorX, float cursorY) {
