@@ -20,11 +20,14 @@ import static my.app.utils.ui.UiUtils.showAlert;
 
 import android.content.Context;
 import android.content.Intent;
+import android.content.res.Configuration;
+import android.content.res.Resources;
 import android.media.AudioManager;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Environment;
+import android.os.LocaleList;
 import android.view.MotionEvent;
 
 import androidx.activity.OnBackPressedCallback;
@@ -42,6 +45,7 @@ import java.io.File;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Locale;
 
 import my.app.permata.BuildConfig;
 import my.app.permata.PermataApplication;
@@ -105,6 +109,7 @@ public class MainActivity extends SplitCompatActivityBase
 		super.finish();
 	}
 
+	@SuppressWarnings("deprecation")
 	@Override
 	protected void onCreate(Bundle savedInstanceState) {
 		Log.i("[PHONE][LIFECYCLE] MainActivity.onCreate | state="
@@ -121,6 +126,27 @@ public class MainActivity extends SplitCompatActivityBase
 			}
 		});
 		super.onCreate(savedInstanceState);
+
+		// Re-apply locale after super.onCreate() to counter Chromium WebView resetting
+		// the Activity Resources configuration when WebBrowserFragment is restored.
+		PreferenceStore ps = PermataApplication.get().getPreferenceStore();
+		if (ps.hasPref(MainActivityPrefs.LOCALE)) {
+			Locale target = MainActivityPrefs.Lang.get(ps.getIntPref(MainActivityPrefs.LOCALE)).locale;
+			if (target != null) {
+				Locale.setDefault(target);
+				Resources res = getResources();
+				Configuration cfg = new Configuration(res.getConfiguration());
+				if (SDK_INT >= Build.VERSION_CODES.N) {
+					LocaleList list = new LocaleList(target);
+					LocaleList.setDefault(list);
+					cfg.setLocales(list);
+				} else {
+					cfg.setLocale(target);
+				}
+				cfg.setLayoutDirection(target);
+				res.updateConfiguration(cfg, res.getDisplayMetrics());
+			}
+		}
 	}
 
 	@Override
