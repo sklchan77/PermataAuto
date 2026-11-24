@@ -584,7 +584,6 @@ public class MainActivityDelegate extends ActivityDelegate
 		return navBarMediator;
 	}
 
-
 	public ControlPanelView getControlPanel() {
 		return controlPanel;
 	}
@@ -604,11 +603,31 @@ public class MainActivityDelegate extends ActivityDelegate
 
 	public void setBarsHidden(boolean barsHidden) {
 		App.get().getHandler().post(() -> {
+			if (this.barsHidden == barsHidden) return;
 			this.barsHidden = barsHidden;
-			int visibility = barsHidden ? GONE : VISIBLE;
 			ToolBarView tb = getToolBar();
-			if (tb.getMediator() != ToolBarView.Mediator.Invisible.instance) tb.setVisibility(visibility);
-			getNavBar().setVisibility(visibility);
+			NavBarView nb = getNavBar();
+			boolean animateTb = (tb != null) && (tb.getMediator() != ToolBarView.Mediator.Invisible.instance);
+
+			if (barsHidden) {
+				if (animateTb) {
+					tb.animate().alpha(0f).setDuration(150).withEndAction(() -> tb.setVisibility(GONE)).start();
+				}
+				if (nb != null) {
+					nb.animate().alpha(0f).setDuration(150).withEndAction(() -> nb.setVisibility(GONE)).start();
+				}
+			} else {
+				if (animateTb) {
+					tb.setAlpha(0f);
+					tb.setVisibility(VISIBLE);
+					tb.animate().alpha(1f).setDuration(150).start();
+				}
+				if (nb != null) {
+					nb.setAlpha(0f);
+					nb.setVisibility(VISIBLE);
+					nb.animate().alpha(1f).setDuration(150).start();
+				}
+			}
 		});
 	}
 
@@ -1235,6 +1254,7 @@ public class MainActivityDelegate extends ActivityDelegate
 		private final boolean textInput;
 		private final SpeechRecognizer recognizer;
 		private final MaterialTextView text;
+		private AppCompatImageView micIcon;
 		private PlaybackStateCompat playbackState;
 
 		private SpeechListener(Promise<List<String>> promise, boolean textInput) {
@@ -1284,6 +1304,7 @@ public class MainActivityDelegate extends ActivityDelegate
 				LinearLayoutCompat layout = new LinearLayoutCompat(ctx);
 				layout.setOrientation(LinearLayoutCompat.VERTICAL);
 				AppCompatImageView img = new AppCompatImageView(ctx);
+				micIcon = img;
 				TypedArray ta = ctx.getTheme()
 						.obtainStyledAttributes(new int[]{com.google.android.material.R.attr.colorOnSecondary});
 				int imgColor = ta.getColor(0, 0);
@@ -1356,6 +1377,10 @@ public class MainActivityDelegate extends ActivityDelegate
 
 		@Override
 		public void onRmsChanged(float rmsdB) {
+			if (micIcon == null) return;
+			float norm = Math.max(0f, Math.min(1f, (rmsdB + 2f) / 12f));
+			float scale = 1.0f + (norm * 0.25f);
+			micIcon.animate().scaleX(scale).scaleY(scale).setDuration(60).start();
 		}
 
 		@Override
