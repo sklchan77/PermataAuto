@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="force_dark">Paksa mod gelap, jika disokong</string>
+    <string name="force_dark_sub">%1$s. Pilih \"Auto\" untuk mengikut tema peranti.</string>
+    <string name="force_dark_auto">Auto</string>
+    <string name="force_dark_enabled">Didayakan</string>
+    <string name="force_dark_disabled">Dinyahdayakan</string>
+    <string name="user_agent">User-Agent</string>
+    <string name="user_agent_desktop">User-Agent - Versi desktop</string>
+    <string name="desktop_version">Versi desktop</string>
+    <string name="full_screen">Skrin penuh</string>
+    <string name="full_screen_exit">Keluar dari skrin penuh</string>
+    <string name="video_scaling_fill_proportional">Isi secara berkadar</string>
+    <string name="video_quality">Kualiti video</string>
+    <string name="open_on_start">Buka semasa mula</string>
+    <string name="resume_last_video">Sambung video terakhir</string>
+    <string name="resume_last_video_sub">Teruskan video terakhir yang belum selesai apabila YouTube dibuka, cth. selepas kereta dimatikan</string>
+    <string name="auto_highest_video_quality">Pilih kualiti video tertinggi secara automatik</string>
+    <string name="youtube_player_controls">Gunakan kawalan YouTube dalam skrin penuh</string>
+    <string name="youtube_player_controls_sub">Bukan panel kawalan Permata: bar kemajuan, sari kata, tetapan, ketik dua kali untuk melangkau</string>
+    <string name="reopen_video_min">Buka semula video terakhir dalam kereta dalam tempoh (minit)</string>
+    <string name="reopen_video_min_sub">Apabila skrin kereta Permata dibuka semula, cth. selepas mematikan kereta, ia akan membuka semula video yang anda tinggalkan jika kurang daripada tempoh ini. 0 sentiasa membuka laman utama YouTube</string>
+    <string name="try_to_skip_ad">Cuba langkau iklan</string>
+    <string name="sponsorblock_sub">Langkau segmen sumbangan komuniti semasa menonton YouTube.</string>
+    <string name="sponsorblock_enable">Dayakan SponsorBlock</string>
+    <string name="sponsorblock_enable_sub">Mendapatkan data segmen daripada sponsor.ajay.app untuk video semasa.</string>
+    <string name="sponsorblock_cat_sponsor">Segmen penaja</string>
+    <string name="sponsorblock_cat_selfpromo">Promosi diri</string>
+    <string name="sponsorblock_cat_interaction">Peringatan interaksi</string>
+    <string name="sponsorblock_cat_intro">Intro dan selingan</string>
+    <string name="sponsorblock_cat_outro">Kad penamat dan kredit</string>
+    <string name="sponsorblock_cat_preview">Pratonton dan ringkasan</string>
+    <string name="sponsorblock_cat_hook">Tarikan awal (Hook)</string>
+    <string name="sponsorblock_cat_music_offtopic">Bahagian bukan muzik</string>
+    <string name="sponsorblock_cat_filler">Pengisi (Filler)</string>
+    <string name="sponsorblock_cat_filler_sub">Kategori agresif; dinyahdayakan secara lalai.</string>
+    <string name="youtube_pause_on_leave">Jeda apabila meninggalkan skrin</string>
+    <string name="youtube_pause_on_leave_sub">Jeda apabila Permata tiada di skrin dan sambung apabila kembali. Mati: teruskan main di latar belakang</string>
+</resources>
