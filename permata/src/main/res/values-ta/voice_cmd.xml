@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="utf-8"?>
+
+<!DOCTYPE resources [
+    <!ENTITY action_find "தேடு">
+    <!ENTITY action_open "திற">
+    <!ENTITY action_pause "இடைநிறுத்து">
+    <!ENTITY action_stop "நிறுத்து">
+    <!ENTITY action_play "இயக்கு">
+    <!ENTITY location_folders "கோப்புறைகள்?">
+    <!ENTITY location_favorites "பிடித்தவை">
+    <!ENTITY location_playlists "பிளேலிஸ்ட்கள்?">
+    <!ENTITY location_tv "டிவி|tv">
+    <!ENTITY location_youtube "யூடியூப்|youtube">
+    <!ENTITY location_browser "உலாவி">
+    <!ENTITY time_unit_second "வினாடிகள்?">
+    <!ENTITY time_unit_minute "நிமிடங்கள்?">
+    <!ENTITY time_unit_hour "மணிநேரம்">
+    ]>
+
+<resources>
+    <string name="vcmd_action_find">&action_find;</string>
+    <string name="vcmd_action_open">&action_open;</string>
+    <string name="vcmd_action_pause">&action_pause;</string>
+    <string name="vcmd_action_stop">&action_stop;</string>
+    <string name="vcmd_action_play">(&action_play;)|தொடங்கு</string>
+    <string name="vcmd_action_play_favorites">(&action_play;) (&location_favorites;)</string>
+    <string name="vcmd_action_sub_on">வசனங்களை (இயக்கு|காட்டு)</string>
+    <string name="vcmd_action_sub_off">வசனங்களை (நிறுத்து|மறை)</string>
+    <string name="vcmd_action_sub_change">வசனங்களை மாற்று</string>
+    <string name="vcmd_action_audio_change">ஒலியை மாற்று</string>
+    <string name="vcmd_location_folders">&location_folders;</string>
+    <string name="vcmd_location_favorites">&location_favorites;</string>
+    <string name="vcmd_location_playlists">&location_playlists;</string>
+    <string name="vcmd_location_tv">&location_tv;</string>
+    <string name="vcmd_location_youtube">&location_youtube;</string>
+    <string name="vcmd_location_browser">&location_browser;</string>
+    <string name="vcmd_time_unit_second">&time_unit_second;</string>
+    <string name="vcmd_time_unit_minute">&time_unit_minute;</string>
+    <string name="vcmd_time_unit_hour">&time_unit_hour;</string>
+    <string name="vcmd_nums">பூஜ்ஜியம் ஒன்று இரண்டு மூன்று நான்கு ஐந்து ஆறு ஏழு எட்டு ஒன்பது</string>
+
+    <string name="vcmd_cur_track">தற்போதைய பாடல்( காட்டு)?</string>
+    <string name="vcmd_ff">(முன்னோக்கி நகர்த்து|முன்னோக்கு) (?&lt;N&gt;\\d+|\\p{L}+) ?(?&lt;U&gt;(&time_unit_second;)|(&time_unit_minute;)|(&time_unit_hour;))</string>
+    <string name="vcmd_rw">(பின்னோக்கி நகர்த்து|பின்னோக்கு) (?&lt;N&gt;\\d+|\\p{L}+) ?(?&lt;U&gt;(&time_unit_second;)|(&time_unit_minute;)|(&time_unit_hour;))</string>
+    <string name="vcmd_find_play_open">(?&lt;A&gt;(&action_find;)|(&action_play;)|(&action_open;))? ?((?&lt;L&gt;(&location_folders;)|(&location_favorites;)|(&location_playlists;)|(&location_tv;)|(&location_youtube;)|(&location_browser;)))? ?(?&lt;Q&gt;.+)</string>
+    <string name="vcmd_chat">(chat( ?gpt)?)(?&lt;Q&gt;.*)</string>
+</resources>
