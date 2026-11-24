@@ -49,13 +49,13 @@ public class NavBarView extends LinearLayoutCompat implements ActivityListener {
 	public static final int POSITION_LEFT = 1;
 	public static final int POSITION_RIGHT = 2;
 	@ColorInt
-	private final int tint;
+	private int tint;
 	@DimenRes
 	private final int size;
 	@StyleRes
 	final int textAppearance;
 	@ColorInt
-	private final int bgColor;
+	private int bgColor;
 	private int position;
 	private Mediator mediator;
 
@@ -74,12 +74,37 @@ public class NavBarView extends LinearLayoutCompat implements ActivityListener {
 		position = ta.getInt(R.styleable.NavBarView_position, POSITION_BOTTOM);
 		bgColor = ta.getColor(R.styleable.NavBarView_android_colorBackground, Color.TRANSPARENT);
 		ta.recycle();
-		setBackgroundColor(bgColor);
+		refreshThemeColors(context);
 		if (position != POSITION_BOTTOM) setOrientation(VERTICAL);
 
 		ActivityDelegate a = getActivity();
 		a.addBroadcastListener(this, Mediator.DEFAULT_EVENT_MASK);
 		setMediator(a.getActiveFragment());
+	}
+
+	private void refreshThemeColors(@NonNull Context context) {
+		TypedArray ta = context.obtainStyledAttributes(null, R.styleable.NavBarView,
+				com.google.android.material.R.attr.bottomNavigationStyle, R.style.Theme_Utils_Base_NavBarStyle);
+		int resolvedTint = ta.getColor(R.styleable.NavBarView_tint, Color.TRANSPARENT);
+		int resolvedBg = ta.getColor(R.styleable.NavBarView_android_colorBackground, Color.TRANSPARENT);
+		ta.recycle();
+
+		if (resolvedBg == Color.TRANSPARENT) {
+			TypedArray fallback = context.getTheme().obtainStyledAttributes(
+					new int[]{android.R.attr.colorBackground});
+			resolvedBg = fallback.getColor(0, Color.TRANSPARENT);
+			fallback.recycle();
+		}
+		if (resolvedTint == Color.TRANSPARENT) {
+			TypedArray fallback = context.getTheme().obtainStyledAttributes(
+					new int[]{com.google.android.material.R.attr.colorOnSurface});
+			resolvedTint = fallback.getColor(0, Color.WHITE);
+			fallback.recycle();
+		}
+
+		tint = resolvedTint;
+		bgColor = resolvedBg;
+		setBackgroundColor(bgColor);
 	}
 
 	public int getPosition() {
@@ -185,6 +210,7 @@ public class NavBarView extends LinearLayoutCompat implements ActivityListener {
 	@Override
 	protected void onConfigurationChanged(Configuration newConfig) {
 		super.onConfigurationChanged(newConfig);
+		refreshThemeColors(getContext());
 		Mediator m = getMediator();
 		if (m != null) {
 			m.disable(this);
