@@ -2,12 +2,14 @@ package my.app.permata.ui.view;
 
 import android.content.Context;
 import android.util.AttributeSet;
+import android.view.ContextThemeWrapper;
 import android.view.MotionEvent;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.core.view.GestureDetectorCompat;
 
+import my.app.permata.PermataApplication;
 import my.app.permata.ui.activity.MainActivityDelegate;
 import my.app.utils.ui.view.GestureListener;
 import my.app.utils.ui.view.NavBarView;
@@ -19,13 +21,20 @@ public class PermataNavBarView extends NavBarView implements GestureListener {
 	private final GestureDetectorCompat gestureDetector;
 
 	public PermataNavBarView(@NonNull Context context, @Nullable AttributeSet attrs) {
-		super(context, attrs);
-		gestureDetector = new GestureDetectorCompat(context, this);
+		super(wrapTheme(context), attrs);
+		gestureDetector = new GestureDetectorCompat(getContext(), this);
 	}
 
 	public PermataNavBarView(@NonNull Context context, @Nullable AttributeSet attrs, int defStyleAttr) {
-		super(context, attrs, defStyleAttr);
-		gestureDetector = new GestureDetectorCompat(context, this);
+		super(wrapTheme(context), attrs, defStyleAttr);
+		gestureDetector = new GestureDetectorCompat(getContext(), this);
+	}
+
+	private static Context wrapTheme(@NonNull Context context) {
+		PermataApplication app = PermataApplication.get();
+		boolean isAuto = (app != null) && (app.isConnectedToAuto() || app.isMirroringMode());
+		if (!isAuto) return context;
+		return new ContextThemeWrapper(context, MainActivityDelegate.getThemeRes(context, true));
 	}
 
 	protected boolean interceptTouchEvent(MotionEvent e) {
