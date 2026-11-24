@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="force_dark">ஆதரிக்கப்பட்டால், இருள் பயன்முறையை கட்டாயப்படுத்து</string>
+    <string name="force_dark_sub">%1$s. சாதனத் தீமைப் பின்பற்ற \"தானியங்கி\" என்பதைத் தேர்ந்தெடுக்கவும்.</string>
+    <string name="force_dark_auto">தானியங்கி</string>
+    <string name="force_dark_enabled">இயக்கப்பட்டது</string>
+    <string name="force_dark_disabled">முடக்கப்பட்டது</string>
+    <string name="user_agent">User-Agent</string>
+    <string name="user_agent_desktop">User-Agent - டெஸ்க்டாப் பதிப்பு</string>
+    <string name="desktop_version">டெஸ்க்டாப் பதிப்பு</string>
+    <string name="full_screen">முழுத்திரை</string>
+    <string name="full_screen_exit">முழுத்திரையிலிருந்து வெளியேறு</string>
+    <string name="video_scaling_fill_proportional">விகிதாச்சாரப்படி நிரப்பு</string>
+    <string name="video_quality">வீடியோ தரம்</string>
+    <string name="open_on_start">தொடங்கும்போது திற</string>
+    <string name="resume_last_video">கடைசி வீடியோவைத் தொடர்</string>
+    <string name="resume_last_video_sub">YouTube திறக்கும்போது கடைசியாக முடிக்காத வீடியோவைத் தொடரவும், எ.கா. கார் அணைக்கப்பட்ட பிறகு</string>
+    <string name="auto_highest_video_quality">அதிகபட்ச வீடியோ தரத்தைத் தானாகத் தேர்ந்தெடு</string>
+    <string name="youtube_player_controls">முழுத்திரையில் YouTube கட்டுப்பாடுகளைப் பயன்படுத்து</string>
+    <string name="youtube_player_controls_sub">Permata கட்டுப்பாட்டுப் பலகத்திற்குப் பதிலாக: முன்னேற்றப் பட்டி, வசனங்கள், அமைப்புகள், நகர்த்த இருமுறை தட்டவும்</string>
+    <string name="reopen_video_min">காரில் கடைசி வீடியோவை மீண்டும் திறக்கும் கால அளவு (நிமிடங்கள்)</string>
+    <string name="reopen_video_min_sub">Permata கார் திரை மீண்டும் திறக்கும்போது (எ.கா. காரை அணைத்த பிறகு), இந்த நேரத்திற்குள் இருந்தால் விட்ட வீடியோவை மீண்டும் திறக்கும். 0 எப்போதும் YouTube முகப்பைத் திறக்கும்</string>
+    <string name="try_to_skip_ad">விளம்பரத்தைத் தவிர்க்க முயற்சி செய்</string>
+    <string name="sponsorblock_sub">YouTube பார்க்கும்போது சமூகத்தால் குறிக்கப்பட்ட பகுதிகளைத் தவிர்க்கவும்.</string>
+    <string name="sponsorblock_enable">SponsorBlock ஐ இயக்கு</string>
+    <string name="sponsorblock_enable_sub">தற்போதைய வீடியோவிற்கான பகுதித் தரவை sponsor.ajay.app இலிருந்து பெறுகிறது.</string>
+    <string name="sponsorblock_cat_sponsor">விளம்பரதாரர் பகுதிகள்</string>
+    <string name="sponsorblock_cat_selfpromo">சுய விளம்பரம்</string>
+    <string name="sponsorblock_cat_interaction">தொடர்பு நினைவூட்டல்கள்</string>
+    <string name="sponsorblock_cat_intro">அறிமுகம் மற்றும் இடைவேளைகள்</string>
+    <string name="sponsorblock_cat_outro">முடிவு அட்டைகள் மற்றும் நன்றிகள்</string>
+    <string name="sponsorblock_cat_preview">முன்னோட்டம் மற்றும் சுருக்கம்</string>
+    <string name="sponsorblock_cat_hook">ஆரம்ப ஈர்ப்பு (Hooks)</string>
+    <string name="sponsorblock_cat_music_offtopic">இசை அல்லாத பகுதிகள்</string>
+    <string name="sponsorblock_cat_filler">நிரப்பு பகுதிகள் (Filler)</string>
+    <string name="sponsorblock_cat_filler_sub">தீவிர வகை; இயல்புநிலையில் முடக்கப்பட்டுள்ளது.</string>
+    <string name="youtube_pause_on_leave">திரையை விட்டு வெளியேறும்போது இடைநிறுத்து</string>
+    <string name="youtube_pause_on_leave_sub">Permata திரையிலிருந்து விலகும்போது இடைநிறுத்தி, திரும்பும்போது தொடரும். முடக்கு: பின்னணியில் தொடர்ந்து இயங்கும்</string>
+</resources>
