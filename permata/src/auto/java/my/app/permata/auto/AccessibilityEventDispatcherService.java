@@ -32,6 +32,7 @@ import android.provider.Settings;
 import android.view.MotionEvent;
 import android.view.accessibility.AccessibilityEvent;
 import android.view.accessibility.AccessibilityNodeInfo;
+import android.view.accessibility.AccessibilityWindowInfo;
 
 import androidx.annotation.Nullable;
 import androidx.annotation.RequiresApi;
@@ -63,6 +64,27 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
     private final Path path = new Path();
     private GestureDescription.Builder gb;
     private Pointer[] pointers = new Pointer[]{new Pointer()};
+
+    // === [UNIVERSAL SCROLLABLE NATIVE APPS (TOP-2 WINDOW PRIORITY)] ===
+    private static final Set<String> SCROLLER_APPS = new HashSet<>(Arrays.asList(
+            "com.ss.android.ugc.trill",      // TikTok Asia
+            "com.zhiliaoapp.musically",      // TikTok Global
+            "com.ss.android.ugc.aweme",      // Douyin
+            "com.ss.android.ugc.aweme.lite", // Douyin Lite
+            "com.instagram.android",         // Instagram Reels
+            "com.instagram.barcelona",       // Threads
+            "com.facebook.katana",           // Facebook Reels
+            "com.facebook.lite",             // Facebook Lite
+            "com.google.android.youtube",    // YouTube Shorts
+            "com.xingin.xhs",                // Xiaohongshu (RedNote)
+            "com.smile.gifmaker",            // Kuaishou
+            "com.kuaishou.nebula",           // Kuaishou Express
+            "com.kwai.video",                // Kwai
+            "tv.danmaku.bili",               // Bilibili
+            "com.reddit.frontpage",          // Reddit
+            "com.snapchat.android",          // Snapchat Spotlight
+            "com.twitter.android"            // X (Twitter)
+    ));
 
     // === [4-LAYER SAFE FUSE: SERIALIZED DRAG ENGINE] ===
     private static final long DRAG_IDLE_TIMEOUT_MS = 800L;
@@ -105,7 +127,64 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
     }
 
     public static String getLastActivePackage() {
+        var ds = instance;
+        if (ds != null) {
+            String livePkg = ds.resolveTopApplicationPackage();
+            if (livePkg != null) {
+                lastActivePackage = livePkg;
+                return livePkg;
+            }
+        }
         return lastActivePackage;
+    }
+
+    @Nullable
+    private String resolveTopApplicationPackage() {
+        try {
+            List<AccessibilityWindowInfo> windows = getWindows();
+            if (windows == null || windows.isEmpty()) return null;
+
+            List<AccessibilityWindowInfo> appWindows = new ArrayList<>();
+            for (AccessibilityWindowInfo w : windows) {
+                if (w == null) continue;
+                if ((VERSION.SDK_INT >= VERSION_CODES.R) && (w.getDisplayId() != DEFAULT_DISPLAY)) continue;
+                if (w.getType() == TYPE_APPLICATION) {
+                    appWindows.add(w);
+                }
+            }
+            if (appWindows.isEmpty()) return null;
+
+            // Sort highest Z-order (topmost) first
+            appWindows.sort((a, b) -> Integer.compare(b.getLayer(), a.getLayer()));
+
+            String topPkg = null;
+            int checked = 0;
+            for (AccessibilityWindowInfo w : appWindows) {
+                AccessibilityNodeInfo root = w.getRoot();
+                if (root == null) continue;
+                String pkg = null;
+                try {
+                    CharSequence p = root.getPackageName();
+                    if (p != null) pkg = p.toString();
+                } finally {
+                    root.recycle();
+                }
+                if (pkg == null || isIgnoredOverlay(pkg) || isCurrentImePackage(pkg)) continue;
+
+                // If Permata itself is the topmost app window, keep control in Permata
+                if (checked == 0 && pkg.equals(getPackageName())) {
+                    return pkg;
+                }
+                if (topPkg == null) topPkg = pkg;
+                if (SCROLLER_APPS.contains(pkg)) {
+                    return pkg;
+                }
+                if (++checked >= 2) break;
+            }
+            return topPkg;
+        } catch (Exception ignored) {
+            return null;
+        }
     }
 
     public static void abortActiveGesture() {
@@ -658,10 +737,10 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
 
             // IM, Social & Phone Popups (The Message Interruption Fix)
             "whatsapp", "telegram", "messenger", "discord", "wechat", "line",
-            "viber", "sms", "mms", "messaging", "dialer", "incallui",
+            "viber", "sms", "mms", "messaging", "dialer", "incallui", "truecaller",
 
             // Productivity, Email & Calendar Popups (The Scheduling Interruption Fix)
-            "gmail", "email", "outlook", "mail", "calendar", "reminder",
+            "com.google.android.gm", "gmail", "email", "outlook", "mail", "calendar", "reminder",
             "tasks", "todo", "keep", "alarm", "clock", "notes",
 
             // OEM Specific Sledgehammers
