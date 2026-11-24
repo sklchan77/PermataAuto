@@ -7,36 +7,36 @@
         <item name="android:editTextColor">#FFFFFF</item>
 
         <!-- Status bar-->
-        <item name="colorPrimaryDark">#000000</item>
+        <item name="colorPrimaryDark">#0D0D11</item>
 
         <!-- Tool/Nav bars -->
-        <item name="colorPrimary">#000000</item>
-        <item name="colorOnPrimary">#FFFFFF</item>
-        <item name="android:textColorPrimary">#FFFFFF</item>
+        <item name="colorPrimary">#0D0D11</item>
+        <item name="colorOnPrimary">#F5F5F7</item>
+        <item name="android:textColorPrimary">#F5F5F7</item>
 
         <!-- List/Media items -->
-        <item name="colorSecondary">#000000</item>
-        <item name="colorOnSecondary">#6A6A6A</item>
+        <item name="colorSecondary">#121217</item>
+        <item name="colorOnSecondary">#98A2B3</item>
         <item name="android:textColorSecondary">#FFFFFF</item>
-        <item name="boxStrokeColor">#6A6A6A</item>
+        <item name="boxStrokeColor">#26FFFFFF</item>
 
         <!-- Active media item -->
-        <item name="alpha">0.7</item>
-        <item name="colorSecondaryVariant">#6A6A6A</item>
+        <item name="alpha">0.85</item>
+        <item name="colorSecondaryVariant">#272733</item>
         <item name="android:textColorTertiary">#FFFFFF</item>
 
         <!-- Popup menu -->
-        <item name="colorSurface">#242424</item>
+        <item name="colorSurface">#181820</item>
         <item name="colorOnSurface">#FFFFFF</item>
-        <item name="colorPrimarySurface">#000000</item>
+        <item name="colorPrimarySurface">#22222E</item>
         <item name="colorOnPrimarySurface">#FFFFFF</item>
 
         <item name="colorAccent">#FFFFFF</item>
-        <item name="rippleColor">#6A6A6A</item>
+        <item name="rippleColor">#40FFFFFF</item>
 
-        <item name="android:textColorHint">#6A6A6A</item>
+        <item name="android:textColorHint">#7D8594</item>
 
-        <item name="colorControlNormal">#FFFFFF</item>
+        <item name="colorControlNormal">#98A2B3</item>
         <item name="colorControlActivated">#FFFFFF</item>
 
     </style>
