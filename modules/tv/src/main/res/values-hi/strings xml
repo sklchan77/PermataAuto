@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="sub_ch">चैनल: %1$d.</string>
+    <string name="sub_gr">समूह: %1$d.</string>
+    <string name="sub_ch_gr">चैनल: %1$d. समूह: %2$d.</string>
+    <string name="add_tv_source">M3U IPTV स्रोत जोड़ें</string>
+    <string name="epg_time_shift">EPG समय बदलाव (घंटे)</string>
+    <string name="logo">चैनल लोगो</string>
+    <string name="logo_location">स्थान</string>
+    <string name="logo_location_hint">फ़ोल्डर या http(s) बेस URL</string>
+    <string name="logo_prefer_epg">EPG के लोगो को प्राथमिकता दें</string>
+    <string name="catchup_query">क्वेरी प्रारूप</string>
+    <string name="catchup_type">कैचअप प्रकार</string>
+    <string name="catchup_type_cur">वर्तमान कैचअप प्रकार: %1$s</string>
+    <string name="catchup_type_auto">ऑटो</string>
+    <string name="catchup_days">दिनों की संख्या</string>
+    <string name="connection_settings">कनेक्शन सेटिंग्स</string>
+
+    <string name="err_failed_to_add_tv_source">स्रोत जोड़ने में विफल: %1$s</string>
+</resources>
