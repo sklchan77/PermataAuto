@@ -19,7 +19,7 @@
         <item name="appEqualizerStyle">@style/AppTheme.EqualizerStyle</item>
         <item name="appStreamProgressStyle">@style/AppTheme.StreamProgressStyle</item>
         <item name="appVideoInfoStyle">@style/AppTheme.VideoInfoStyle</item>
-        <item name="cornerRadius">5dp</item>
+        <item name="cornerRadius">12dp</item>
     </style>
 
     <style name="AppTheme.MediaItemStyle">
@@ -63,7 +63,7 @@
     <style name="AppTheme.StreamProgressStyle">
         <item name="indicatorColor">#FFD600</item>
         <item name="trackColor">?attr/colorSecondary</item>
-        <item name="trackCornerRadius">2dp</item>
+        <item name="trackCornerRadius">4dp</item>
     </style>
 
 </resources>
