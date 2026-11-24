@@ -99,15 +99,16 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 
 		MainActivityDelegate.setTheme(this, true);
 		super.onCreate(savedInstanceState);
+		MainActivityDelegate.setTheme(this, true);
 		initCarActivity(this);
 
 		try {
-			Intent hijackIntent = new Intent(this, my.app.permata.media.service.PermataMediaService.class);
-			hijackIntent.setAction(my.app.permata.media.service.PermataMediaService.ACTION_HIJACK_FOCUS);
-			startService(hijackIntent);
+			Intent focusIntent = new Intent(this, my.app.permata.media.service.PermataMediaService.class);
+			focusIntent.setAction(my.app.permata.media.service.PermataMediaService.ACTION_HIJACK_FOCUS);
+			startService(focusIntent);
 			Log.i("[CAR][AUDIO] Hijack Focus Intent Fired | trigger=onCreate");
 		} catch (Exception e) {
-			Log.e(e, "MainCarActivity: Failed to fire hijack intent on creation.");
+			Log.e(e, "MainCarActivity: Failed to fire focus reclaim intent on creation.");
 		}
 
 		if (serviceReused) {
@@ -153,9 +154,9 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 		getActivityDelegate().onSuccess(MainActivityDelegate::onActivityResume);
 		
 		try {
-			Intent hijackIntent = new Intent(this, my.app.permata.media.service.PermataMediaService.class);
-			hijackIntent.setAction(my.app.permata.media.service.PermataMediaService.ACTION_HIJACK_FOCUS);
-			startService(hijackIntent);
+			Intent focusIntent = new Intent(this, my.app.permata.media.service.PermataMediaService.class);
+			focusIntent.setAction(my.app.permata.media.service.PermataMediaService.ACTION_HIJACK_FOCUS);
+			startService(focusIntent);
 		} catch (Exception e) {}
 	}
 
