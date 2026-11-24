@@ -1,0 +1,349 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="addons">துணை நிரல்கள்</string>
+    <string name="addon_name_tv">டிவி</string>
+    <string name="addon_name_web_browser">இணைய உலாவி</string>
+
+    <string name="interface_prefs">இடைமுகம்</string>
+    <string name="interface_prefs_aa">Android Auto</string>
+    <string name="playback_settings">இயக்க அமைப்புகள்</string>
+    <string name="playback_control">இயக்கக் கட்டுப்பாடு</string>
+    <string name="engine_prefs">ஊடக இயந்திரம்</string>
+
+    <string name="theme">செயலி தீம்</string>
+    <string name="theme_sub">தற்போதைய தீம்: %1$s</string>
+    <string name="theme_light">ஒளி</string>
+    <string name="theme_dark">இருள்</string>
+    <string name="theme_system">கணினி</string>
+    <string name="theme_black">கருப்பு</string>
+    <string name="theme_star_wars">Star Wars</string>
+    <string name="theme_purple">ஊதா</string>
+    <string name="theme_classic">கிளாசிக்</string>
+
+    <string name="nav_bar_pos">வழிசெலுத்தல் பட்டி நிலை</string>
+    <string name="nav_bar_pos_sub">தற்போதைய நிலை: %1$s</string>
+    <string name="nav_bar_pos_bottom">கீழே</string>
+    <string name="nav_bar_pos_left">இடது</string>
+    <string name="nav_bar_pos_right">வலது</string>
+
+    <string name="show_track_icons">பாடல் சின்னங்களைக் காட்டு</string>
+    <string name="lang">மொழி</string>
+    <string name="trans_lang">மொழிபெயர்ப்பு மொழி</string>
+    <string name="hide_bars">பட்டிகளை மறை</string>
+    <string name="hide_bars_sub">கட்டுப்பாட்டுப் பலகம் தோன்றும்போது மேல் மற்றும் கீழ் பட்டிகளை மறை</string>
+    <string name="show_pg_up_down">பக்கம் மேல்/கீழ் பொத்தான்களைக் காட்டு</string>
+    <string name="use_dpad_cursor">D-pad வழிசெலுத்தலுக்கு கர்சரைப் பயன்படுத்து</string>
+    <string name="fullscreen_mode">முழுத்திரை பயன்முறை</string>
+    <string name="nav_bar_size">வழிசெலுத்தல் பட்டி அளவு</string>
+    <string name="tool_bar_size">கருவிப்பட்டி அளவு</string>
+    <string name="control_panel_size">கட்டுப்பாட்டுப் பலக அளவு</string>
+    <string name="text_icon_size">உரை மற்றும் சின்ன அளவு</string>
+    <string name="subtitles_size">வசன உரை அளவு</string>
+
+    <string name="key_bindings">விசை இணைப்புகள்</string>
+    <string name="key_on_click">கிளிக் செய்யும்போது</string>
+    <string name="key_on_long_click">நீண்ட நேரம் அழுத்தும்போது</string>
+    <string name="key_on_dbl_click">இருமுறை கிளிக் செய்யும்போது</string>
+    <string name="action_stop">நிறுத்து</string>
+    <string name="action_play">இயக்கு</string>
+    <string name="action_pause">இடைநிறுத்து</string>
+    <string name="action_play_pause">இயக்கு/இடைநிறுத்து</string>
+    <string name="action_prev">முந்தையதை இயக்கு</string>
+    <string name="action_next">அடுத்ததை இயக்கு</string>
+    <string name="action_prev_folder">முந்தைய கோப்புறையை இயக்கு</string>
+    <string name="action_next_folder">அடுத்த கோப்புறையை இயக்கு</string>
+    <string name="action_rw">பின்னோக்கி நகர்த்து</string>
+    <string name="action_ff">முன்னோக்கி நகர்த்து</string>
+    <string name="action_vol_up">ஒலியளவை அதிகரி</string>
+    <string name="action_vol_down">ஒலியளவைக் குறை</string>
+    <string name="action_vol_mute_unmute">ஒலியடக்கு/ஒலியியக்கு</string>
+    <string name="action_activate_voice_ctrl">குரல் கட்டுப்பாட்டை இயக்கு</string>
+    <string name="action_menu">பட்டியல்</string>
+    <string name="action_cp_menu">கட்டுப்பாட்டுப் பலகப் பட்டியல்</string>
+    <string name="action_back_or_exit">பின்செல் அல்லது வெளியேறு</string>
+    <string name="action_exit">வெளியேறு</string>
+    <string name="action_default">இயல்புநிலை</string>
+    <string name="action_none">ஏதுமில்லை</string>
+
+    <string name="play_next_on_completion">முடிந்ததும் அடுத்ததை இயக்கு</string>
+    <string name="nothing_to_resume">தொடர எதுவும் இல்லை</string>
+
+    <string name="rw_ff_click">பின்னோக்கு/முன்னோக்கு - கிளிக்</string>
+    <string name="rw_ff_long_click">பின்னோக்கு/முன்னோக்கு - நீண்ட அழுத்தம்</string>
+    <string name="prev_next_long_click">முந்தைய/அடுத்த - நீண்ட அழுத்தம்</string>
+    <string name="play_pause_stop">இயக்கு/இடைநிறுத்து பொத்தானை நீண்ட நேரம் அழுத்தினால் நிறுத்து</string>
+
+    <string name="time">நேரம்</string>
+    <string name="time_unit">நேர அலகு</string>
+    <string name="time_unit_sub">தற்போதைய மதிப்பு: %1$s</string>
+    <string name="time_unit_second">வினாடி</string>
+    <string name="time_unit_minute">நிமிடம்</string>
+    <string name="time_unit_percent">சதவீதம்</string>
+
+    <string name="video_control">வீடியோ கட்டுப்பாடு</string>
+    <string name="video_control_start_delay">தொடங்கும்போது காட்டு</string>
+    <string name="video_control_touch_delay">தொடும்போது காட்டு</string>
+    <string name="video_control_seek_delay">நகர்த்தும்போது காட்டு</string>
+    <string name="video_aa_show_status">Android Auto இல் நிலைப் பட்டியைக் காட்டு</string>
+
+    <string name="enable_exoplayer">ExoPlayer ஐ இயக்கு</string>
+    <string name="enable_vlcplayer">VLC ஐ இயக்கு</string>
+    <string name="preferred_audio_engine">விருப்பமான ஒலி இயந்திரம்</string>
+    <string name="preferred_video_engine">விருப்பமான வீடியோ இயந்திரம்</string>
+    <string name="engine_installed">ஊடக இயந்திரம் நிறுவப்பட்டது: %1$s</string>
+    <string name="engine_uninstalled">ஊடக இயந்திரம் நீக்கப்பட்டது: %1$s</string>
+
+    <string name="preferred_media_scanner">விருப்பமான ஊடக ஸ்கேனர்</string>
+    <string name="preferred_media_scanner_default">இயல்புநிலை</string>
+    <string name="preferred_media_scanner_system">கணினி</string>
+
+    <string name="voice_search">குரல் தேடல்</string>
+    <string name="voice_control">குரல் கட்டுப்பாடு</string>
+    <string name="voice_control_fb">மிதக்கும் பொத்தான்</string>
+    <string name="voice_control_sub_long">நீண்ட நேரம் அழுத்தும்போது குரல் கட்டுப்பாட்டை இயக்கு</string>
+    <string name="voice_control_subst">சொல் மாற்றீடு</string>
+    <string name="voice_control_subst_sub">ஒரு சொல்லை வேறொரு சொல் அல்லது சொற்றொடரால் மாற்று</string>
+    <string name="voice_control_subst_hint">இயக்கு: play\nநிறுத்து: pause</string>
+
+    <string name="module_installation">தொகுதி நிறுவல்: %1$s</string>
+    <string name="install_pending">நிறுவல் நிலுவையில் உள்ளது: %1$s</string>
+    <string name="downloading">%1$s பதிவிறக்கப்படுகிறது</string>
+    <string name="installing">%1$s நிறுவப்படுகிறது</string>
+
+    <string name="speed">வேகம்</string>
+    <string name="audio_effects">ஒலி விளைவுகள்</string>
+    <string name="equalier">சமப்படுத்தி</string>
+    <string name="preset_name">முன்னமைவு பெயர்</string>
+    <string name="virtualizer">மெய்நிகர் ஒலி</string>
+    <string name="auto">தானியங்கி</string>
+    <string name="binaural">பைனாரல்</string>
+    <string name="transaural">டிரான்ஸாரல்</string>
+    <string name="bass_boost">பேஸ் ஊக்கி</string>
+    <string name="vol_boost">ஒலியளவு ஊக்கி</string>
+    <string name="strength">வலிமை</string>
+    <string name="apply_to">பயன்படுத்து</string>
+
+    <string name="video">வீடியோ</string>
+    <string name="video_settings">வீடியோ அமைப்புகள்</string>
+    <string name="video_scaling">வீடியோ அளவிடுதல்</string>
+    <string name="hw_accel">வன்பொருள் முடுக்கம்</string>
+    <string name="hw_accel_auto">தானியங்கி</string>
+    <string name="hw_accel_full">முழுமை</string>
+    <string name="hw_accel_decoding">டீகோடிங்</string>
+    <string name="hw_accel_disabled">முடக்கப்பட்டது</string>
+    <string name="video_scaling_best">சிறந்த பொருத்தம்</string>
+    <string name="video_scaling_fill">திரையை நிரப்பு</string>
+    <string name="video_scaling_orig">அசல் அளவு</string>
+
+    <string name="audio">ஒலி</string>
+    <string name="audio_delay">ஒலி தாமதம்</string>
+    <string name="audio_delay_aa">ஒலி தாமதம் - Android Auto</string>
+    <string name="preferred_audio_lang">விருப்பமான ஒலி மொழிகள்</string>
+    <string name="preferred_audio_key">முக்கியச் சொற்கள் கொண்ட ஒலித் தடத்திற்கு முன்னுரிமை</string>
+    <string name="select_audio_stream">ஒலித் தடத்தைத் தேர்ந்தெடு</string>
+
+    <string name="subtitles">வசனங்கள்</string>
+    <string name="subtitles_auto">தானாக உருவாக்கப்பட்டது</string>
+    <string name="subtitle_delay">வசன தாமதம்</string>
+    <string name="display_subtitles">வசனங்களைக் காட்டு</string>
+    <string name="preferred_sub_lang">விருப்பமான வசன மொழிகள்</string>
+    <string name="preferred_sub_key">முக்கியச் சொற்கள் கொண்ட வசனத்திற்கு முன்னுரிமை</string>
+    <string name="select_subtitles">வசனங்களைத் தேர்ந்தெடு</string>
+
+    <string name="sub_gen_buf">இடையக நீளம்</string>
+    <string name="sub_gen_buf_sub">குறிப்பிட்ட வினாடிகள் முன்னதாகவே ஏற்று</string>
+    <string name="sub_gen_chunk">துண்டு நீளம்</string>
+    <string name="sub_gen_chunk_sub">குறிப்பிட்ட கால அளவு துண்டுகளாக இடையகத்தைச் செயலாக்கு</string>
+    <string name="sub_gen_model">மாதிரி</string>
+    <string name="sub_gen_translate">மொழிபெயர்</string>
+    <string name="sub_gen_use_gpu">GPU ஐப் பயன்படுத்து</string>
+    <string name="sub_gen_single">ஒற்றைப் பிரிவு</string>
+    <string name="sub_gen_single_sub">முழு துண்டையும் ஒற்றைப் பிரிவாக எழுத்துப்பெயர்</string>
+    <string name="sub_gen_downloading">மாதிரி பதிவிறக்கப்படும் வரை காத்திருக்கவும்.</string>
+    <string name="sub_gen_download_fail">மாதிரியைப் பதிவிறக்க முடியவில்லை: %s!</string>
+    <string name="sub_gen_cleanup">தற்காலிக சேமிப்பிலிருந்து பிற பதிவிறக்கப்பட்ட மாதிரிகளை நீக்கு</string>
+    <string name="sub_gen_cleanup_done">நீக்கப்பட்டது: %s</string>
+
+    <string name="eq_hz">%1$s Hz</string>
+    <string name="eq_khz">%1$s kHz</string>
+
+    <string name="current_track">தற்போதைய பாடல்</string>
+    <string name="current_folder">தற்போதைய கோப்புறை</string>
+
+    <string name="folders">கோப்புறைகள்</string>
+    <string name="favorites">பிடித்தவை</string>
+    <string name="playlists">பிளேலிஸ்ட்கள்</string>
+    <string name="search">தேடு</string>
+    <string name="filter">வடிகட்டு</string>
+    <string name="settings">அமைப்புகள்</string>
+    <string name="menu">பட்டியல்</string>
+    <string name="exit">வெளியேறு</string>
+    <string name="cancel">ரத்து செய்</string>
+    <string name="got_to_current">தற்போதைய பாடல்</string>
+
+    <string name="view">காட்சி</string>
+    <string name="title">தலைப்பு</string>
+    <string name="subtitle">துணைத் தலைப்பு</string>
+    <string name="seq_num">வரிசை எண்</string>
+    <string name="track_name">பெயர்</string>
+    <string name="file_name">கோப்பு பெயர்</string>
+    <string name="date">தேதி</string>
+    <string name="random">தற்செயல்</string>
+    <string name="descending">இறங்கு வரிசை</string>
+    <string name="album">ஆல்பம்</string>
+    <string name="artist">கலைஞர்</string>
+    <string name="duration">கால அளவு</string>
+
+    <string name="sort_by">வரிசைப்படுத்து</string>
+    <string name="do_not_sort">வரிசைப்படுத்த வேண்டாம்</string>
+
+    <string name="play">இயக்கு</string>
+    <string name="pause">இடைநிறுத்து</string>
+    <string name="stop">நிறுத்து</string>
+    <string name="prev">முந்தையது</string>
+    <string name="next">அடுத்தது</string>
+    <string name="rewind">பின்னோக்கு</string>
+    <string name="fast_forward">முன்னோக்கு</string>
+    <string name="repeat">மீண்டும் இயக்கு</string>
+    <string name="repeat_disable">மீண்டும் இயக்க வேண்டாம்</string>
+    <string name="shuffle">கலைத்து இயக்கு</string>
+    <string name="shuffle_disable">கலைத்து இயக்க வேண்டாம்</string>
+    <string name="programme_guide">நிகழ்ச்சி வழிகாட்டி</string>
+    <string name="favorites_add">பிடித்தவற்றில் சேர்</string>
+    <string name="favorites_remove">பிடித்தவற்றிலிருந்து நீக்கு</string>
+    <string name="mark_watched">பார்த்ததாகக் குறி</string>
+    <string name="mark_unwatched">பார்க்காததாகக் குறி</string>
+    <string name="preferred_media_engine">விருப்பமான ஊடக இயந்திரம்</string>
+    <string name="by_default">இயல்புநிலை</string>
+
+    <string name="playlist_add">பிளேலிஸ்ட்டில் சேர்</string>
+    <string name="playlist_remove_item">பிளேலிஸ்ட்டிலிருந்து நீக்கு</string>
+    <string name="playlist_create">பிளேலிஸ்ட் உருவாக்கு</string>
+    <string name="playlist_remove">பிளேலிஸ்ட்டை நீக்கு</string>
+    <string name="playlist_name">பிளேலிஸ்ட் பெயர்</string>
+
+    <string name="bookmarks">புத்தகக்குறிகள்</string>
+    <string name="create_bookmark">புத்தகக்குறி உருவாக்கு</string>
+    <string name="remove_bookmark">புத்தகக்குறியை நீக்கு</string>
+    <string name="remove_all_bookmarks">அனைத்து புத்தகக்குறிகளையும் நீக்கு</string>
+    <string name="bookmark_name">பெயர்</string>
+    <string name="bookmark_time">நேரம்</string>
+
+    <string name="folder_subtitle">கோப்புகள்: %1$d. கோப்புறைகள்: %2$d.</string>
+    <string name="browsable_subtitle">பாடல்கள்: %1$d.</string>
+    <string name="add_folder">கோப்புறை சேர்</string>
+    <string name="remove_folder">கோப்புறையை நீக்கு</string>
+    <string name="select">தேர்ந்தெடு</string>
+    <string name="select_all">அனைத்தையும் தேர்ந்தெடு</string>
+    <string name="unselect_all">அனைத்துத் தேர்வையும் நீக்கு</string>
+    <string name="refresh">புதுப்பி</string>
+    <string name="rescan">மீண்டும் ஸ்கேன் செய்</string>
+    <string name="share">பகிர்</string>
+    <string name="edit">திருத்து</string>
+    <string name="delete">நீக்கு</string>
+    <string name="delete_confirm">%1$s ஐ நீக்கவா?</string>
+    <string name="delete_file_title">கோப்பை நீக்கு</string>
+    <string name="delete_file_question">இந்தக் கோப்பை நிச்சயமாக நீக்க விரும்புகிறீர்களா?</string>
+    <string name="delete_file_failed">%1$s கோப்பை நீக்க முடியவில்லை</string>
+    <string name="loading">ஏற்றுகிறது…</string>
+    <string name="press_back_again">வெளியேற பின்செல் பொத்தானை மீண்டும் அழுத்தவும்.</string>
+    <string name="please_restart_app">செயலியை மீண்டும் தொடங்கவும்.</string>
+    <string name="use_phone_to_grant_perm">தேவையான அனுமதிகளை வழங்க உங்கள் தொலைபேசியைப் பயன்படுத்தவும்.</string>
+
+    <string name="vfs_content">உள்ளடக்கம்</string>
+    <string name="vfs_file_system">கோப்பு முறைமை</string>
+    <string name="vfs_gdrive">Google Drive</string>
+    <string name="m3u_playlist">M3U பிளேலிஸ்ட்</string>
+    <string name="m3u_playlist_name">பெயர்</string>
+    <string name="m3u_playlist_location">இருப்பிடம்</string>
+    <string name="m3u_playlist_location_hint">கோப்பு அல்லது http(s) URL</string>
+    <string name="m3u_playlist_video">வீடியோ பிளேலிஸ்ட்</string>
+
+    <string name="eq_manual">கைமுறை</string>
+    <string name="eq_normal">இயல்பு</string>
+    <string name="eq_classical">செவ்வியல்</string>
+    <string name="eq_dance">நடனம்</string>
+    <string name="eq_flat">சமநிலை</string>
+    <string name="eq_folk">நாட்டுப்புறம்</string>
+    <string name="eq_heavy_metal">ஹெவி மெட்டல்</string>
+    <string name="eq_hip_hop">ஹிப் ஹாப்</string>
+    <string name="eq_jazz">ஜாஸ்</string>
+    <string name="eq_pop">பாப்</string>
+    <string name="eq_rock">ராக்</string>
+
+    <string name="host">ஹோஸ்ட்</string>
+    <string name="port">போர்ட்</string>
+    <string name="path">பாதை</string>
+    <string name="share_name">பகிர்வு பெயர்</string>
+    <string name="domain">டொமைன்</string>
+    <string name="username">பயனர் பெயர்</string>
+    <string name="password">கடவுச்சொல்</string>
+    <string name="private_key">தனிப்பட்ட விசை</string>
+    <string name="private_key_pass">தனிப்பட்ட விசை கடவுச்சொல்</string>
+
+    <string name="donate">உருவாக்குநருக்கு காபி</string>
+    <string name="donate_text">இந்தச் செயலி உங்களுக்குப் பிடித்திருந்தால், எனக்கு ஒரு கப் காபி வாங்கித் தர பரிசீலிக்கவும்.</string>
+    <string name="use_phone_for_donation">காபி வாங்கித் தர உங்கள் தொலைபேசியைப் பயன்படுத்தவும்.</string>
+
+    <string name="timer">நேரக்கணக்கி</string>
+    <string name="hours">மணிநேரம்</string>
+    <string name="minutes">நிமிடங்கள்</string>
+
+    <string name="enable">இயக்கு</string>
+    <string name="move_left">இடது நகர்த்து</string>
+    <string name="move_right">வலது நகர்த்து</string>
+    <string name="move_up">மேலே நகர்த்து</string>
+    <string name="move_down">கீழே நகர்த்து</string>
+
+    <string name="sys_bars_on_video_touch">வீடியோவைத் தொடும்போது கணினி பட்டிகளைக் காட்டு</string>
+    <string name="play_video_landscape">வீடியோவை அகலத்திரை பயன்முறையில் இயக்கு</string>
+    <string name="clock_pos">கடிகார நிலை</string>
+    <string name="clock_pos_none">ஏதுமில்லை</string>
+    <string name="clock_pos_left">இடது</string>
+    <string name="clock_pos_right">வலது</string>
+    <string name="clock_pos_center">மையம்</string>
+    <string name="change_brightness">வீடியோ இயக்கும்போது ஒளிர்வை மாற்று</string>
+    <string name="video_brightness">வீடியோ ஒளிர்வு</string>
+    <string name="change_brightness_sub">இரு விரல்களால் நகர்த்தியும் ஒளிர்வை மாற்றலாம்</string>
+    <string name="watched_threshold">பார்த்ததாகக் குறிக்கும் வரம்பு</string>
+    <string name="watched_threshold_sub">இந்த சதவீதத்திற்கு மேல் பார்த்திருந்தால் வீடியோவைப் பார்த்ததாகக் குறி</string>
+
+    <string name="other">மற்றவை</string>
+    <string name="check_updates">தொடங்கும்போது புதுப்பிப்புகளைச் சரிபார்</string>
+    <string name="update">புதுப்பி</string>
+    <string name="update_question">புதிய பதிப்பு %1$s கிடைக்கிறது.\nசெயலியைப் புதுப்பிக்க விரும்புகிறீர்களா?</string>
+    <string name="export_prefs">விருப்பத்தேர்வுகளைக் கோப்பாக ஏற்றுமதி செய்</string>
+    <string name="export_prefs_sub">அமைப்புகள், கோப்புறைகள், பிளேலிஸ்ட்கள் முதலியவற்றைக் கோப்பாக ஏற்றுமதி செய்</string>
+    <string name="export_prefs_ok">விருப்பத்தேர்வுகள் %1$s கோப்பில் சேமிக்கப்பட்டன.</string>
+    <string name="export_prefs_failed">விருப்பத்தேர்வுகளை ஏற்றுமதி செய்ய முடியவில்லை: %1$s</string>
+    <string name="import_prefs">கோப்பிலிருந்து விருப்பத்தேர்வுகளை இறக்குமதி செய்</string>
+    <string name="import_prefs_sub">முன்பு ஏற்றுமதி செய்யப்பட்ட விருப்பத்தேர்வுகளைக் கோப்பிலிருந்து இறக்குமதி செய்</string>
+    <string name="import_prefs_ok">விருப்பத்தேர்வுகள் வெற்றிகரமாக இறக்குமதி செய்யப்பட்டன.\nசெயலியை மீண்டும் தொடங்கவும்.</string>
+    <string name="import_prefs_failed">விருப்பத்தேர்வுகளை இறக்குமதி செய்ய முடியவில்லை: %1$s</string>
+    <string name="prefs_not_found">விருப்பத்தேர்வுகள் எதுவும் காணப்படவில்லை</string>
+    <string name="open_log">பதிவுக் கோப்பைத் திற</string>
+    <string name="unlock_phone_and_grant">தொலைபேசியைத் திறந்து கோரப்பட்ட அனுமதிகளை வழங்கவும்.</string>
+    <string name="screen_capture_rejected">திரை பதிவு கோரிக்கை நிராகரிக்கப்பட்டது.</string>
+    <string name="accessibility_dsc">தொடுதிரை நிகழ்வுகளைப் போலியாக இயக்க Permata Mirror அணுகல்தன்மை சேவையைப் பயன்படுத்துகிறது.</string>
+    <string name="media_projection_action_text">இப்போது தொடங்கு</string>
+
+    <string name="about">பற்றி</string>
+    <string name="about_html"><![CDATA[<H1 align="center">Permata Auto Media Player</H1>
+        <p>Permata Auto Media Player என்பது எளிமையான மற்றும் உள்ளுணர்வு இடைமுகத்துடன் கூடிய திறந்த மூல ஒலி மற்றும் வீடியோ இயக்கியாகும்.</p>
+        <p><b>உருவாக்குநர்:</b> sklchan77</p>
+        <p><b>பதிப்பு:</b> %1$s (%2$d)</p>
+        <p><b>முகப்புப் பக்கம்: </b> <a href="%3$s">%3$s</a></p>
+        ]]></string>
+
+    <string name="err_failed_to_play">%s ஐ இயக்க முடியவில்லை</string>
+    <string name="err_failed_to_play_cause">%1$s ஐ இயக்க முடியவில்லை: %2$s</string>
+    <string name="err_unsupported_source_type">ஆதரிக்கப்படாத மூல வகை: %s</string>
+    <string name="err_playlist_exists">பிளேலிஸ்ட் ஏற்கனவே உள்ளது: %1$s</string>
+    <string name="err_invalid_playlist_name">தவறான பிளேலிஸ்ட் பெயர்: %1$s</string>
+    <string name="err_failed_add_folder">கோப்புறையைச் சேர்க்க முடியவில்லை: %1$s</string>
+    <string name="err_failed_open_url">URL ஐத் திறக்க முடியவில்லை: %1$s</string>
+    <string name="err_failed_install_module">தொகுதியை நிறுவ முடியவில்லை: %1$s</string>
+    <string name="err_failed_to_download">%1$s ஐப் பதிவிறக்க முடியவில்லை</string>
+    <string name="err_no_audio_record_perm">ஒலிப்பதிவு அனுமதி வழங்கப்படவில்லை</string>
+    <string name="err_failed_start_service">சேவையைத் தொடங்க முடியவில்லை: %s</string>
+</resources>
