@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="utf-8"?>
+
+<!DOCTYPE resources [
+    <!ENTITY action_find "查找|搜索|找">
+    <!ENTITY action_open "打开">
+    <!ENTITY action_pause "暂停">
+    <!ENTITY action_stop "停止">
+    <!ENTITY action_play "播放">
+    <!ENTITY location_folders "文件夹">
+    <!ENTITY location_favorites "收藏夹|收藏">
+    <!ENTITY location_playlists "播放列表">
+    <!ENTITY location_tv "电视|tv">
+    <!ENTITY location_youtube "youtube|油管">
+    <!ENTITY location_browser "浏览器">
+    <!ENTITY time_unit_second "秒钟?">
+    <!ENTITY time_unit_minute "分钟?">
+    <!ENTITY time_unit_hour "小时">
+    ]>
+
+<resources>
+    <string name="vcmd_action_find">&action_find;</string>
+    <string name="vcmd_action_open">&action_open;</string>
+    <string name="vcmd_action_pause">&action_pause;</string>
+    <string name="vcmd_action_stop">&action_stop;</string>
+    <string name="vcmd_action_play">(&action_play;)|开始</string>
+    <string name="vcmd_action_play_favorites">(&action_play;) ?(&location_favorites;)</string>
+    <string name="vcmd_action_sub_on">(打开|开启|显示) ?字幕</string>
+    <string name="vcmd_action_sub_off">(关闭|隐藏) ?字幕</string>
+    <string name="vcmd_action_sub_change">(切换|更改) ?字幕</string>
+    <string name="vcmd_action_audio_change">(切换|更改) ?(音轨|音频)</string>
+    <string name="vcmd_location_folders">&location_folders;</string>
+    <string name="vcmd_location_favorites">&location_favorites;</string>
+    <string name="vcmd_location_playlists">&location_playlists;</string>
+    <string name="vcmd_location_tv">&location_tv;</string>
+    <string name="vcmd_location_youtube">&location_youtube;</string>
+    <string name="vcmd_location_browser">&location_browser;</string>
+    <string name="vcmd_time_unit_second">&time_unit_second;</string>
+    <string name="vcmd_time_unit_minute">&time_unit_minute;</string>
+    <string name="vcmd_time_unit_hour">&time_unit_hour;</string>
+    <string name="vcmd_nums">零 一 二 三 四 五 六 七 八 九</string>
+
+    <string name="vcmd_cur_track">(显示)?当前曲目</string>
+    <string name="vcmd_ff">(快进|前进) ?(?&lt;N&gt;\\d+|\\p{L}+) ?(?&lt;U&gt;(&time_unit_second;)|(&time_unit_minute;)|(&time_unit_hour;))</string>
+    <string name="vcmd_rw">(快退|后退) ?(?&lt;N&gt;\\d+|\\p{L}+) ?(?&lt;U&gt;(&time_unit_second;)|(&time_unit_minute;)|(&time_unit_hour;))</string>
+    <string name="vcmd_find_play_open">(?&lt;A&gt;(&action_find;)|(&action_play;)|(&action_open;))? ?(在?(?&lt;L&gt;(&location_folders;)|(&location_favorites;)|(&location_playlists;)|(&location_tv;)|(&location_youtube;)|(&location_browser;))中?)? ?(?&lt;Q&gt;.+)</string>
+    <string name="vcmd_chat">(chat( ?gpt)?)(?&lt;Q&gt;.*)</string>
+</resources>
