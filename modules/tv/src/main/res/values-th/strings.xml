@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="sub_ch">ช่อง: %1$d</string>
+    <string name="sub_gr">กลุ่ม: %1$d</string>
+    <string name="sub_ch_gr">ช่อง: %1$d กลุ่ม: %2$d</string>
+    <string name="add_tv_source">เพิ่มแหล่งที่มา M3U IPTV</string>
+    <string name="epg_time_shift">เลื่อนเวลา EPG (ชั่วโมง)</string>
+    <string name="logo">โลโก้ช่อง</string>
+    <string name="logo_location">ตำแหน่ง</string>
+    <string name="logo_location_hint">โฟลเดอร์หรือ URL หลักแบบ http(s)</string>
+    <string name="logo_prefer_epg">เลือกใช้โลโก้จาก EPG ก่อน</string>
+    <string name="catchup_query">รูปแบบคำสั่งค้นหา</string>
+    <string name="catchup_type">ประเภท Catchup</string>
+    <string name="catchup_type_cur">ประเภท Catchup ปัจจุบัน: %1$s</string>
+    <string name="catchup_type_auto">อัตโนมัติ</string>
+    <string name="catchup_days">จำนวนวัน</string>
+    <string name="connection_settings">การตั้งค่าการเชื่อมต่อ</string>
+
+    <string name="err_failed_to_add_tv_source">ไม่สามารถเพิ่มแหล่งที่มาได้: %1$s</string>
+</resources>
