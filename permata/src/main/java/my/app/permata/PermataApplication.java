@@ -15,6 +15,8 @@ import android.os.LocaleList;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
+import androidx.appcompat.app.AppCompatDelegate;
+import androidx.core.os.LocaleListCompat;
 
 import java.io.File;
 import java.util.Locale;
@@ -90,11 +92,24 @@ public class PermataApplication extends NetSplitCompatApp {
 		}
 		cfg.setLayoutDirection(loc);
 		res.updateConfiguration(cfg, res.getDisplayMetrics());
+
+		LocaleListCompat locales = (loc != null)
+				? LocaleListCompat.forLanguageTags(loc.toLanguageTag())
+				: LocaleListCompat.getEmptyLocaleList();
+		AppCompatDelegate.setApplicationLocales(locales);
 	}
 
 	@Override
 	public void onCreate() {
 		super.onCreate();
+		var ps = getPreferenceStore();
+		if (ps.hasPref(LOCALE)) {
+			var loc = MainActivityPrefs.Lang.get(ps.getIntPref(LOCALE)).locale;
+			if (loc != null) {
+				AppCompatDelegate.setApplicationLocales(
+						LocaleListCompat.forLanguageTags(loc.toLanguageTag()));
+			}
+		}
 		vfsManager = new PermataVfsManager();
 		bitmapCache = new BitmapCache();
 	}
