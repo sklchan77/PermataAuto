@@ -8,8 +8,11 @@ import static my.app.utils.ui.UiUtils.getTextAppearanceSize;
 import static my.app.utils.ui.UiUtils.isVisible;
 import static my.app.utils.ui.UiUtils.toIntPx;
 
+import android.animation.ValueAnimator;
 import android.content.Context;
+import android.content.res.ColorStateList;
 import android.content.res.TypedArray;
+import android.graphics.Bitmap;
 import android.os.Bundle;
 import android.os.Parcelable;
 import android.util.AttributeSet;
@@ -23,7 +26,9 @@ import androidx.annotation.IdRes;
 import androidx.annotation.Nullable;
 import androidx.annotation.StyleRes;
 import androidx.constraintlayout.widget.ConstraintLayout;
+import androidx.core.graphics.ColorUtils;
 import androidx.core.view.GestureDetectorCompat;
+import androidx.palette.graphics.Palette;
 import com.google.android.material.textview.MaterialTextView;
 import java.util.List;
 import my.app.permata.R;
@@ -73,6 +78,7 @@ public class ControlPanelView extends ConstraintLayout implements
 
     private final GestureDetectorCompat gestureDetector;
     private final ImageView showHideBars;
+    private final int defaultBgColor;
 
     @DimenRes
     private final int size;
@@ -80,6 +86,8 @@ public class ControlPanelView extends ConstraintLayout implements
     @StyleRes
     private final int textAppearance;
 
+    private int currentBgColor;
+    private ValueAnimator bgAnimator;
     private PlaybackControlPrefs prefs;
     private HideTimer hideTimer;
     private byte mask;
@@ -98,7 +106,9 @@ public class ControlPanelView extends ConstraintLayout implements
         try {
             this.size = ta.getLayoutDimension(R.styleable.ControlPanelView_size, 0);
             this.textAppearance = ta.getResourceId(R.styleable.ControlPanelView_textAppearance, 0);
-            setBackgroundColor(ta.getColor(R.styleable.ControlPanelView_android_colorBackground, 0));
+            this.defaultBgColor = ta.getColor(R.styleable.ControlPanelView_android_colorBackground, 0);
+            this.currentBgColor = this.defaultBgColor;
+            setBackgroundColor(this.defaultBgColor);
         } finally {
             ta.recycle();
         }
@@ -116,6 +126,46 @@ public class ControlPanelView extends ConstraintLayout implements
         
         setShowHideBarsIcon(delegate);
     }
+
+    public void updateDynamicAccent(@Nullable Bitmap art) {
+        if (art == null || art.isRecycled()) {
+            animateBackgroundColor(this.defaultBgColor);
+            return;
+        }
+
+        Palette.from(art).generate(palette -> {
+            if (palette == null || !isAttachedToWindow()) return;
+            int swatchColor = palette.getDarkVibrantColor(
+                    palette.getDarkMutedColor(
+                            palette.getMutedColor(this.defaultBgColor)));
+            int blendedBg = ColorUtils.blendARGB(this.defaultBgColor, swatchColor, 0.28f);
+            animateBackgroundColor(blendedBg);
+
+            int accentColor = palette.getLightVibrantColor(
+                    palette.getVibrantColor(0));
+            if (accentColor != 0) {
+                ControlPanelSeekView seek = findViewById(R.id.seek_bar);
+                if (seek != null) {
+                    ColorStateList csl = ColorStateList.valueOf(accentColor);
+                    seek.setProgressTintList(csl);
+                    seek.setThumbTintList(csl);
+                }
+            }
+        });
+    }
+
+    private void animateBackgroundColor(int targetColor) {
+        if (this.currentBgColor == targetColor) return;
+        if (this.bgAnimator != null) this.bgAnimator.cancel();
+        this.bgAnimator = ValueAnimator.ofArgb(this.currentBgColor, targetColor);
+        this.bgAnimator.setDuration(250);
+        this.bgAnimator.addUpdateListener(anim -> {
+            this.currentBgColor = (int) anim.getAnimatedValue();
+            setBackgroundColor(this.currentBgColor);
+        });
+        this.bgAnimator.start();
+    }
+
     @Nullable
     @Override
     protected Parcelable onSaveInstanceState() {
@@ -580,6 +630,7 @@ public class ControlPanelView extends ConstraintLayout implements
                 ((ViewGroup) getParent()).addView(this.playbackTimer);
                 this.playbackTimer.setBackgroundResource(R.drawable.playback_timer_bg);
                 this.playbackTimer.setTextAppearance(this.textAppearance);
+                this.playbackTimer.setFontFeatureSettings("tnum");
                 
                 ViewGroup.LayoutParams lp = this.playbackTimer.getLayoutParams();
                 if (lp instanceof LayoutParams clp) {
@@ -1076,6 +1127,11 @@ public class ControlPanelView extends ConstraintLayout implements
 
     @Override
     protected void onDetachedFromWindow() {
+        if (this.bgAnimator != null) {
+            this.bgAnimator.cancel();
+            this.bgAnimator = null;
+        }
+
         // 1. Clear all callbacks scheduled on this specific view instance
         removeCallbacks(null); 
         
