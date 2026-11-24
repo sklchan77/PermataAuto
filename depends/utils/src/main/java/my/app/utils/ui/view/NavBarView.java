@@ -83,16 +83,18 @@ public class NavBarView extends LinearLayoutCompat implements ActivityListener {
 	}
 
 	private void refreshThemeColors(@NonNull Context context) {
-		TypedArray ta = context.obtainStyledAttributes(null, R.styleable.NavBarView,
-				com.google.android.material.R.attr.bottomNavigationStyle, R.style.Theme_Utils_Base_NavBarStyle);
-		int resolvedTint = ta.getColor(R.styleable.NavBarView_tint, Color.TRANSPARENT);
-		int resolvedBg = ta.getColor(R.styleable.NavBarView_android_colorBackground, Color.TRANSPARENT);
-		ta.recycle();
+		TypedArray themeAttrs = context.getTheme().obtainStyledAttributes(new int[]{
+				com.google.android.material.R.attr.colorPrimary,
+				com.google.android.material.R.attr.colorOnPrimary
+		});
+		int resolvedBg = themeAttrs.getColor(0, Color.TRANSPARENT);
+		int resolvedTint = themeAttrs.getColor(1, Color.TRANSPARENT);
+		themeAttrs.recycle();
 
 		if (resolvedBg == Color.TRANSPARENT) {
 			TypedArray fallback = context.getTheme().obtainStyledAttributes(
 					new int[]{android.R.attr.colorBackground});
-			resolvedBg = fallback.getColor(0, Color.TRANSPARENT);
+			resolvedBg = fallback.getColor(0, Color.BLACK);
 			fallback.recycle();
 		}
 		if (resolvedTint == Color.TRANSPARENT) {
@@ -102,8 +104,8 @@ public class NavBarView extends LinearLayoutCompat implements ActivityListener {
 			fallback.recycle();
 		}
 
-		tint = resolvedTint;
 		bgColor = resolvedBg;
+		tint = resolvedTint;
 		setBackgroundColor(bgColor);
 	}
 
