@@ -123,8 +123,9 @@ public class MainActivity extends SplitCompatActivityBase
 
 	@Override
 	protected void onDestroy() {
+		boolean isChangingConfig = isChangingConfigurations();
 		Log.i("[PHONE][LIFECYCLE] MainActivity.onDestroy | isFinishing=" + isFinishing()
-				+ ", changingConfig=" + isChangingConfigurations());
+				+ ", changingConfig=" + isChangingConfig);
 		AddonManager.get().removeBroadcastListener(this);
 
 		// === THE GOLDEN GATE: GUARD CHECK ===
@@ -143,7 +144,7 @@ public class MainActivity extends SplitCompatActivityBase
 				var cb = delegate.getMediaSessionCallback();
 				var cur = cb.getCurrentItem();
 				isVideo = (cur != null && cur.isVideo());
-				if (isVideo && !isAutoConnected && !isMirroring) {
+				if (isVideo && !isChangingConfig && !isAutoConnected && !isMirroring) {
 					stoppedPhoneVideo = true;
 					cb.onStop();
 				} else {
@@ -158,8 +159,9 @@ public class MainActivity extends SplitCompatActivityBase
 			Log.w(e, "Exception while checking Golden Gate status.");
 		}
 
-		boolean preserveBridge = (isAutoConnected || isMirroring || isPlaying || isBluetoothActive);
-		Log.i("[PHONE][DECISION] Golden Gate | auto=" + isAutoConnected
+		boolean preserveBridge = (isChangingConfig || isAutoConnected || isMirroring || isPlaying || isBluetoothActive);
+		Log.i("[PHONE][DECISION] Golden Gate | changingConfig=" + isChangingConfig
+				+ ", auto=" + isAutoConnected
 				+ ", mirror=" + isMirroring
 				+ ", playing=" + isPlaying
 				+ ", bt=" + isBluetoothActive
@@ -168,7 +170,8 @@ public class MainActivity extends SplitCompatActivityBase
 				+ " -> action=" + (preserveBridge ? "PRESERVE_SERVICE_BRIDGE" : "FULL_TEARDOWN"));
 
 		if (preserveBridge) {
-			// Intentionally leave the static `service` connection alive so car projection and background audio aren't interrupted.
+			// Intentionally leave the static `service` connection alive so car projection,
+			// configuration recreations (locale/theme/rotation), and background audio aren't interrupted.
 		} else {
 			// =========================================================================================
 			// THE ZOMBIE KILL SWITCH
