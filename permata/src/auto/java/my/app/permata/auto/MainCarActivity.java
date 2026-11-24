@@ -19,11 +19,15 @@ import android.content.Context;
 import android.content.ContextWrapper;
 import android.content.Intent;
 import android.content.res.Configuration;
+import android.content.res.Resources;
+import android.content.res.TypedArray;
 import android.graphics.Color;
 import android.graphics.drawable.ColorDrawable;
 import android.graphics.drawable.Drawable;
 import android.graphics.drawable.StateListDrawable;
+import android.os.Build;
 import android.os.Bundle;
+import android.os.LocaleList;
 import android.os.OperationCanceledException;
 import android.os.SystemClock;
 import android.text.TextWatcher;
@@ -47,10 +51,14 @@ import androidx.recyclerview.widget.RecyclerView;
 import com.google.android.apps.auto.sdk.CarActivity;
 import com.google.android.apps.auto.sdk.CarUiController;
 
+import java.util.Locale;
+
+import my.app.permata.PermataApplication;
 import my.app.permata.R;
 import my.app.permata.action.KeyEventHandler;
 import my.app.permata.media.service.PermataMediaServiceConnection;
 import my.app.permata.ui.activity.MainActivity;
+import my.app.permata.ui.activity.MainActivityPrefs;
 import my.app.permata.ui.activity.PermataActivity;
 import my.app.permata.ui.activity.MainActivityDelegate;
 import my.app.permata.ui.view.MediaItemListView;
@@ -59,6 +67,7 @@ import my.app.utils.async.FutureSupplier;
 import my.app.utils.function.Cancellable;
 import my.app.utils.function.Supplier;
 import my.app.utils.log.Log;
+import my.app.utils.pref.PreferenceStore;
 import my.app.utils.ui.activity.ActivityDelegate;
 import my.app.utils.ui.fragment.ActivityFragment;
 import my.app.utils.ui.menu.OverlayMenu;
@@ -88,6 +97,47 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 		super.attachBaseContext(MainActivityDelegate.attachBaseContext(base));
 	}
 
+	@SuppressWarnings("deprecation")
+	private static void applySavedLocaleToResources(@NonNull Context ctx) {
+		try {
+			PreferenceStore ps = PermataApplication.get().getPreferenceStore();
+			if (!ps.hasPref(MainActivityPrefs.LOCALE)) return;
+			Locale loc = MainActivityPrefs.Lang.get(ps.getIntPref(MainActivityPrefs.LOCALE)).locale;
+			if (loc == null) return;
+			Locale.setDefault(loc);
+			for (Resources res : new Resources[]{PermataApplication.get().getResources(), ctx.getResources()}) {
+				Configuration cfg = new Configuration(res.getConfiguration());
+				if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+					LocaleList list = new LocaleList(loc);
+					LocaleList.setDefault(list);
+					cfg.setLocales(list);
+				} else {
+					cfg.setLocale(loc);
+				}
+				cfg.setLayoutDirection(loc);
+				res.updateConfiguration(cfg, res.getDisplayMetrics());
+			}
+		} catch (Exception ex) {
+			Log.w(ex, "MainCarActivity: Failed to apply saved locale to resources");
+		}
+	}
+
+	private void applyCarThemeAndWindowBg() {
+		applySavedLocaleToResources(this);
+		MainActivityDelegate.setTheme(this, true);
+		try {
+			Window w = getWindow();
+			if (w != null) {
+				TypedArray ta = getTheme().obtainStyledAttributes(new int[]{android.R.attr.colorBackground});
+				int bgColor = ta.getColor(0, Color.BLACK);
+				ta.recycle();
+				w.setBackgroundDrawable(new ColorDrawable(bgColor));
+			}
+		} catch (Exception ex) {
+			Log.w(ex, "MainCarActivity: Failed to apply theme background to CarWindow");
+		}
+	}
+
 	@Override
 	public void onCreate(Bundle savedInstanceState) {
 		PermataMediaServiceConnection s = service;
@@ -96,9 +146,10 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 				+ (savedInstanceState == null ? "FRESH" : "RESTORED")
 				+ ", serviceReused=" + serviceReused);
 
+		applySavedLocaleToResources(this);
 		MainActivityDelegate.setTheme(this, true);
 		super.onCreate(savedInstanceState);
-		MainActivityDelegate.setTheme(this, true);
+		applyCarThemeAndWindowBg();
 		initCarActivity(this);
 
 		try {
@@ -130,6 +181,7 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 	}
 
 	private MainActivityDelegate onCreate(Bundle state, PermataMediaServiceConnection s) {
+		applyCarThemeAndWindowBg();
 		MainActivityDelegate d = new MainActivityDelegate(this, s.createBinder());
 		ActivityDelegate.setContextToDelegate(ctx -> {
 			Context c = ctx;
@@ -183,6 +235,7 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 	@Override
 	public void onConfigurationChanged(Configuration configuration) {
 		super.onConfigurationChanged(configuration);
+		applyCarThemeAndWindowBg();
 	}
 
 	@Override
