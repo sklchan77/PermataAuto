@@ -43,7 +43,6 @@ import android.content.SharedPreferences;
 import android.content.pm.ActivityInfo;
 import android.content.res.ColorStateList;
 import android.content.res.Configuration;
-import android.content.res.Resources;
 import android.content.res.TypedArray;
 import android.net.Uri;
 import android.os.Build.VERSION;
@@ -210,12 +209,7 @@ public class MainActivityDelegate extends ActivityDelegate
 	public static Context attachBaseContext(Context ctx) {
 		MainActivityPrefs prefs = Prefs.instance;
 		if (!prefs.hasPref(LOCALE)) return ctx;
-
-		var cfg = ctx.getResources().getConfiguration();
-		var loc = prefs.getLocalePref();
-		cfg.setLocale(loc);
-		Locale.setDefault(loc);
-		return ctx.createConfigurationContext(cfg);
+		return PermataApplication.applyLocale(ctx, prefs.getLocalePref());
 	}
 
 	public static Uri toIntentUri(String action, String itemId) {
@@ -1113,6 +1107,7 @@ public class MainActivityDelegate extends ActivityDelegate
 		} else if (prefs.contains(CLOCK_POS)) {
 			getBody().getVideoView().setClockPos(getPrefs().getClockPosPref());
 		} else if (prefs.contains(LOCALE)) {
+			PermataApplication.get().updateAppLocale(getPrefs().getLocalePref());
 			recreate();
 		}
 	}
