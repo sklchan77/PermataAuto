@@ -92,14 +92,16 @@ public class MainActivity extends SplitCompatActivityBase
 
 	@Override
 	protected void attachBaseContext(Context base) {
-		super.attachBaseContext(MainActivityDelegate.attachBaseContext(base));
+		if (SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+			super.attachBaseContext(base);
+		} else {
+			super.attachBaseContext(MainActivityDelegate.attachBaseContext(base));
+		}
 	}
 
 	@Override
 	public void finish() {
 		Log.i("[PHONE][LIFECYCLE] MainActivity.finish");
-		// Removed the old blind disconnect. 
-		// Teardown is now intelligently evaluated in onDestroy().
 		super.finish();
 	}
 
@@ -128,7 +130,6 @@ public class MainActivity extends SplitCompatActivityBase
 				+ ", changingConfig=" + isChangingConfig);
 		AddonManager.get().removeBroadcastListener(this);
 
-		// === THE GOLDEN GATE: GUARD CHECK ===
 		boolean isAutoConnected = false;
 		boolean isMirroring = false;
 		boolean isPlaying = false;
@@ -173,11 +174,6 @@ public class MainActivity extends SplitCompatActivityBase
 			// Intentionally leave the static `service` connection alive so car projection,
 			// configuration recreations (locale/theme/rotation), and background audio aren't interrupted.
 		} else {
-			// =========================================================================================
-			// THE ZOMBIE KILL SWITCH
-			// Explicitly command the Android OS to destroy the foreground service and its MediaSession
-			// when the car abruptly disconnects. This prevents the YouTube notification from getting stuck.
-			// =========================================================================================
 			try {
 				Intent killServiceIntent = new Intent(this, my.app.permata.media.service.PermataMediaService.class);
 				stopService(killServiceIntent);
@@ -185,7 +181,6 @@ public class MainActivity extends SplitCompatActivityBase
 			} catch (Exception e) {
 				Log.e(e, "Golden Gate: Failed to execute Zombie Kill Switch.");
 			}
-			// =========================================================================================
 
 			PermataMediaServiceConnection s = service;
 			service = null;
@@ -194,7 +189,6 @@ public class MainActivity extends SplitCompatActivityBase
 			}
 		}
 
-		// Purge delayed UI tasks to prevent activity memory leaks
 		try {
 			if (PermataApplication.get() != null && PermataApplication.get().getHandler() != null) {
 				PermataApplication.get().getHandler().removeCallbacksAndMessages(this);
