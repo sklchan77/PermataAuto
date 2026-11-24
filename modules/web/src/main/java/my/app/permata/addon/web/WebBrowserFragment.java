@@ -86,12 +86,12 @@ public class WebBrowserFragment extends MainActivityFragment
 	public void onDestroyView() {
 		MainActivityDelegate.getActivityDelegate(requireContext()).onSuccess(this::unregisterListeners);
 		
-		// === SAFE WEBVIEW ASSASSIN: DETACH BEFORE DESTROY ===
 		PermataWebView v = getWebView();
 		if (v != null) {
 			Log.i("Safely detaching and destroying PermataWebView to prevent render thread freeze.");
-			v.loadUrl("about:blank");
 			v.stopLoading();
+			v.onPause();
+			v.loadUrl("about:blank");
 			v.clearHistory();
 			
 			// Detach from parent view hierarchy to prevent Chromium C++ deadlock
@@ -101,7 +101,6 @@ public class WebBrowserFragment extends MainActivityFragment
 			v.removeAllViews();
 			v.destroy();
 		}
-		// ====================================================
 		
 		super.onDestroyView();
 	}
@@ -124,8 +123,7 @@ public class WebBrowserFragment extends MainActivityFragment
 		
 		PermataWebView v = getWebView();
 		if (v != null) {
-			// [SURGERY] HTML5 Assassin: Forcibly pause all active media tags in the background 
-			// before Android freezes the Chromium engine. This releases Audio Focus so YouTube can speak.
+			// Pause all active HTML5 media tags before Chromium suspends to release audio focus cleanly.
 			v.evaluateJavascript(
 				"(function() { " +
 				"  document.querySelectorAll('video, audio').forEach(function(media) { " +
