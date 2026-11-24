@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="sub_ch">頻道：%1$d。</string>
+    <string name="sub_gr">群組：%1$d。</string>
+    <string name="sub_ch_gr">頻道：%1$d。群組：%2$d。</string>
+    <string name="add_tv_source">新增 M3U IPTV 來源</string>
+    <string name="epg_time_shift">EPG 時移（小時）</string>
+    <string name="logo">頻道台標</string>
+    <string name="logo_location">位置</string>
+    <string name="logo_location_hint">資料夾或 http(s) 基礎 URL</string>
+    <string name="logo_prefer_epg">優先使用 EPG 中的台標</string>
+    <string name="catchup_query">查詢格式</string>
+    <string name="catchup_type">回看類型</string>
+    <string name="catchup_type_cur">目前回看類型：%1$s</string>
+    <string name="catchup_type_auto">自動</string>
+    <string name="catchup_days">天數</string>
+    <string name="connection_settings">連線設定</string>
+
+    <string name="err_failed_to_add_tv_source">新增來源失敗：%1$s</string>
+</resources>
