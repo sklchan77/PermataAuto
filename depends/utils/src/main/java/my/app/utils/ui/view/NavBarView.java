@@ -84,7 +84,7 @@ public class NavBarView extends LinearLayoutCompat implements ActivityListener {
 
 	private void refreshThemeColors(@NonNull Context context) {
 		TypedArray themeAttrs = context.getTheme().obtainStyledAttributes(new int[]{
-				com.google.android.material.R.attr.colorPrimary,
+				androidx.appcompat.R.attr.colorPrimary,
 				com.google.android.material.R.attr.colorOnPrimary
 		});
 		int resolvedBg = themeAttrs.getColor(0, Color.TRANSPARENT);
