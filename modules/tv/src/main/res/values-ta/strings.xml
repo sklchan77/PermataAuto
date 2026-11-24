@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="sub_ch">அலைவரிசைகள்: %1$d.</string>
+    <string name="sub_gr">குழுக்கள்: %1$d.</string>
+    <string name="sub_ch_gr">அலைவரிசைகள்: %1$d. குழுக்கள்: %2$d.</string>
+    <string name="add_tv_source">M3U IPTV மூலத்தைச் சேர்</string>
+    <string name="epg_time_shift">EPG நேர மாற்றம் (மணிநேரம்)</string>
+    <string name="logo">அலைவரிசை சின்னங்கள்</string>
+    <string name="logo_location">இருப்பிடம்</string>
+    <string name="logo_location_hint">கோப்புறை அல்லது http(s) அடிப்படை URL</string>
+    <string name="logo_prefer_epg">EPG சின்னங்களுக்கு முன்னுரிமை</string>
+    <string name="catchup_query">வினவல் வடிவம்</string>
+    <string name="catchup_type">Catchup வகை</string>
+    <string name="catchup_type_cur">தற்போதைய Catchup வகை: %1$s</string>
+    <string name="catchup_type_auto">தானியங்கி</string>
+    <string name="catchup_days">நாட்களின் எண்ணிக்கை</string>
+    <string name="connection_settings">இணைப்பு அமைப்புகள்</string>
+
+    <string name="err_failed_to_add_tv_source">மூலத்தைச் சேர்க்க முடியவில்லை: %1$s</string>
+</resources>
