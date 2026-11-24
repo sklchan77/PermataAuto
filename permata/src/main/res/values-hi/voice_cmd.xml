@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="utf-8"?>
+
+<!DOCTYPE resources [
+    <!ENTITY action_find "खोजें|ढूंढें">
+    <!ENTITY action_open "खोलें">
+    <!ENTITY action_pause "पॉज़">
+    <!ENTITY action_stop "रोकें|बंद करें">
+    <!ENTITY action_play "चलाएं|प्ले">
+    <!ENTITY location_folders "फ़ोल्डर">
+    <!ENTITY location_favorites "पसंदीदा">
+    <!ENTITY location_playlists "प्लेलिस्ट">
+    <!ENTITY location_tv "टीवी|tv">
+    <!ENTITY location_youtube "यूट्यूब|youtube">
+    <!ENTITY location_browser "ब्राउज़र">
+    <!ENTITY time_unit_second "सेकंड">
+    <!ENTITY time_unit_minute "मिनट">
+    <!ENTITY time_unit_hour "घंटा|घंटे">
+    ]>
+
+<resources>
+    <string name="vcmd_action_find">&action_find;</string>
+    <string name="vcmd_action_open">&action_open;</string>
+    <string name="vcmd_action_pause">&action_pause;</string>
+    <string name="vcmd_action_stop">&action_stop;</string>
+    <string name="vcmd_action_play">(&action_play;)|शुरू करें</string>
+    <string name="vcmd_action_play_favorites">(&action_play;) (&location_favorites;)</string>
+    <string name="vcmd_action_sub_on">सबटाइटल (चालू करें|दिखाएं)</string>
+    <string name="vcmd_action_sub_off">सबटाइटल (बंद करें|छिपाएं)</string>
+    <string name="vcmd_action_sub_change">सबटाइटल बदलें</string>
+    <string name="vcmd_action_audio_change">ऑडियो (स्ट्रीम )?बदलें</string>
+    <string name="vcmd_location_folders">&location_folders;</string>
+    <string name="vcmd_location_favorites">&location_favorites;</string>
+    <string name="vcmd_location_playlists">&location_playlists;</string>
+    <string name="vcmd_location_tv">&location_tv;</string>
+    <string name="vcmd_location_youtube">&location_youtube;</string>
+    <string name="vcmd_location_browser">&location_browser;</string>
+    <string name="vcmd_time_unit_second">&time_unit_second;</string>
+    <string name="vcmd_time_unit_minute">&time_unit_minute;</string>
+    <string name="vcmd_time_unit_hour">&time_unit_hour;</string>
+    <string name="vcmd_nums">शून्य एक दो तीन चार पांच छह सात आठ नौ</string>
+
+    <string name="vcmd_cur_track">वर्तमान ट्रैक( दिखाएं)?</string>
+    <string name="vcmd_ff">(आगे बढ़ाएं|फ़ास्ट फ़ॉरवर्ड) (?&lt;N&gt;\\d+|\\p{L}+) ?(?&lt;U&gt;(&time_unit_second;)|(&time_unit_minute;)|(&time_unit_hour;))</string>
+    <string name="vcmd_rw">(पीछे करें|रिवाइंड) (?&lt;N&gt;\\d+|\\p{L}+) ?(?&lt;U&gt;(&time_unit_second;)|(&time_unit_minute;)|(&time_unit_hour;))</string>
+    <string name="vcmd_find_play_open">(?&lt;A&gt;(&action_find;)|(&action_play;)|(&action_open;))? ?((?&lt;L&gt;(&location_folders;)|(&location_favorites;)|(&location_playlists;)|(&location_tv;)|(&location_youtube;)|(&location_browser;))( में)?)? ?(?&lt;Q&gt;.+)</string>
+    <string name="vcmd_chat">(chat( ?gpt)?)(?&lt;Q&gt;.*)</string>
+</resources>
