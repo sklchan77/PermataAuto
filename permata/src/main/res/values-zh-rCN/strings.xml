@@ -1,0 +1,349 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="addons">插件</string>
+    <string name="addon_name_tv">电视</string>
+    <string name="addon_name_web_browser">网页浏览器</string>
+
+    <string name="interface_prefs">界面</string>
+    <string name="interface_prefs_aa">Android Auto</string>
+    <string name="playback_settings">播放设置</string>
+    <string name="playback_control">播放控制</string>
+    <string name="engine_prefs">媒体引擎</string>
+
+    <string name="theme">应用主题</string>
+    <string name="theme_sub">当前主题：%1$s</string>
+    <string name="theme_light">浅色</string>
+    <string name="theme_dark">深色</string>
+    <string name="theme_system">跟随系统</string>
+    <string name="theme_black">纯黑</string>
+    <string name="theme_star_wars">星球大战</string>
+    <string name="theme_purple">紫色</string>
+    <string name="theme_classic">经典</string>
+
+    <string name="nav_bar_pos">导航栏位置</string>
+    <string name="nav_bar_pos_sub">当前位置：%1$s</string>
+    <string name="nav_bar_pos_bottom">底部</string>
+    <string name="nav_bar_pos_left">左侧</string>
+    <string name="nav_bar_pos_right">右侧</string>
+
+    <string name="show_track_icons">显示曲目图标</string>
+    <string name="lang">语言</string>
+    <string name="trans_lang">翻译语言</string>
+    <string name="hide_bars">隐藏栏</string>
+    <string name="hide_bars_sub">控制面板显示时隐藏顶部和底部栏</string>
+    <string name="show_pg_up_down">显示上/下翻页按钮</string>
+    <string name="use_dpad_cursor">使用光标进行方向键导航</string>
+    <string name="fullscreen_mode">全屏模式</string>
+    <string name="nav_bar_size">导航栏大小</string>
+    <string name="tool_bar_size">工具栏大小</string>
+    <string name="control_panel_size">控制面板大小</string>
+    <string name="text_icon_size">文字和图标大小</string>
+    <string name="subtitles_size">字幕文字大小</string>
+
+    <string name="key_bindings">按键绑定</string>
+    <string name="key_on_click">单击时</string>
+    <string name="key_on_long_click">长按时</string>
+    <string name="key_on_dbl_click">双击时</string>
+    <string name="action_stop">停止</string>
+    <string name="action_play">播放</string>
+    <string name="action_pause">暂停</string>
+    <string name="action_play_pause">播放/暂停</string>
+    <string name="action_prev">播放上一首</string>
+    <string name="action_next">播放下一首</string>
+    <string name="action_prev_folder">播放上一文件夹</string>
+    <string name="action_next_folder">播放下一文件夹</string>
+    <string name="action_rw">快退</string>
+    <string name="action_ff">快进</string>
+    <string name="action_vol_up">增大音量</string>
+    <string name="action_vol_down">减小音量</string>
+    <string name="action_vol_mute_unmute">静音/取消静音</string>
+    <string name="action_activate_voice_ctrl">启动语音控制</string>
+    <string name="action_menu">菜单</string>
+    <string name="action_cp_menu">控制面板菜单</string>
+    <string name="action_back_or_exit">返回或退出</string>
+    <string name="action_exit">退出</string>
+    <string name="action_default">默认</string>
+    <string name="action_none">无</string>
+
+    <string name="play_next_on_completion">播放完毕后自动播放下一首</string>
+    <string name="nothing_to_resume">没有可恢复的内容</string>
+
+    <string name="rw_ff_click">快退/快进 - 单击</string>
+    <string name="rw_ff_long_click">快退/快进 - 长按</string>
+    <string name="prev_next_long_click">上一首/下一首 - 长按</string>
+    <string name="play_pause_stop">长按播放/暂停键时停止播放</string>
+
+    <string name="time">时间</string>
+    <string name="time_unit">时间单位</string>
+    <string name="time_unit_sub">当前值：%1$s</string>
+    <string name="time_unit_second">秒</string>
+    <string name="time_unit_minute">分钟</string>
+    <string name="time_unit_percent">百分比</string>
+
+    <string name="video_control">视频控制</string>
+    <string name="video_control_start_delay">开始时显示</string>
+    <string name="video_control_touch_delay">触摸时显示</string>
+    <string name="video_control_seek_delay">拖动进度时显示</string>
+    <string name="video_aa_show_status">在 Android Auto 中显示状态栏</string>
+
+    <string name="enable_exoplayer">启用 ExoPlayer</string>
+    <string name="enable_vlcplayer">启用 VLC</string>
+    <string name="preferred_audio_engine">首选音频引擎</string>
+    <string name="preferred_video_engine">首选视频引擎</string>
+    <string name="engine_installed">媒体引擎已安装：%1$s</string>
+    <string name="engine_uninstalled">媒体引擎已卸载：%1$s</string>
+
+    <string name="preferred_media_scanner">首选媒体扫描器</string>
+    <string name="preferred_media_scanner_default">默认</string>
+    <string name="preferred_media_scanner_system">系统</string>
+
+    <string name="voice_search">语音搜索</string>
+    <string name="voice_control">语音控制</string>
+    <string name="voice_control_fb">悬浮按钮</string>
+    <string name="voice_control_sub_long">长按启动语音控制</string>
+    <string name="voice_control_subst">词语替换</string>
+    <string name="voice_control_subst_sub">将词语替换为其他词语或短语</string>
+    <string name="voice_control_subst_hint">开: 播放\n关: 暂停</string>
+
+    <string name="module_installation">模块安装：%1$s</string>
+    <string name="install_pending">等待安装：%1$s</string>
+    <string name="downloading">正在下载 %1$s</string>
+    <string name="installing">正在安装 %1$s</string>
+
+    <string name="speed">速度</string>
+    <string name="audio_effects">音效</string>
+    <string name="equalier">均衡器</string>
+    <string name="preset_name">预设名称</string>
+    <string name="virtualizer">虚拟环绕声</string>
+    <string name="auto">自动</string>
+    <string name="binaural">双耳</string>
+    <string name="transaural">跨耳</string>
+    <string name="bass_boost">低音增强</string>
+    <string name="vol_boost">音量增强</string>
+    <string name="strength">强度</string>
+    <string name="apply_to">应用于</string>
+
+    <string name="video">视频</string>
+    <string name="video_settings">视频设置</string>
+    <string name="video_scaling">视频缩放</string>
+    <string name="hw_accel">硬件加速</string>
+    <string name="hw_accel_auto">自动</string>
+    <string name="hw_accel_full">完全</string>
+    <string name="hw_accel_decoding">仅解码</string>
+    <string name="hw_accel_disabled">已禁用</string>
+    <string name="video_scaling_best">最佳适应</string>
+    <string name="video_scaling_fill">填充屏幕</string>
+    <string name="video_scaling_orig">原始大小</string>
+
+    <string name="audio">音频</string>
+    <string name="audio_delay">音频延迟</string>
+    <string name="audio_delay_aa">音频延迟 - Android Auto</string>
+    <string name="preferred_audio_lang">首选音轨语言</string>
+    <string name="preferred_audio_key">优先选择包含关键字的音轨</string>
+    <string name="select_audio_stream">选择音轨</string>
+
+    <string name="subtitles">字幕</string>
+    <string name="subtitles_auto">自动生成</string>
+    <string name="subtitle_delay">字幕延迟</string>
+    <string name="display_subtitles">显示字幕</string>
+    <string name="preferred_sub_lang">首选字幕语言</string>
+    <string name="preferred_sub_key">优先选择包含关键字的字幕</string>
+    <string name="select_subtitles">选择字幕</string>
+
+    <string name="sub_gen_buf">缓冲长度</string>
+    <string name="sub_gen_buf_sub">提前预加载指定的秒数</string>
+    <string name="sub_gen_chunk">分段长度</string>
+    <string name="sub_gen_chunk_sub">按指定时长分段处理缓冲区</string>
+    <string name="sub_gen_model">模型</string>
+    <string name="sub_gen_translate">翻译</string>
+    <string name="sub_gen_use_gpu">使用 GPU</string>
+    <string name="sub_gen_single">单一段落</string>
+    <string name="sub_gen_single_sub">将整个分段转录为单一段落</string>
+    <string name="sub_gen_downloading">正在下载模型，请稍候。</string>
+    <string name="sub_gen_download_fail">模型下载失败：%s！</string>
+    <string name="sub_gen_cleanup">从缓存中删除其他已下载的模型</string>
+    <string name="sub_gen_cleanup_done">已删除：%s</string>
+
+    <string name="eq_hz">%1$s Hz</string>
+    <string name="eq_khz">%1$s kHz</string>
+
+    <string name="current_track">当前曲目</string>
+    <string name="current_folder">当前文件夹</string>
+
+    <string name="folders">文件夹</string>
+    <string name="favorites">收藏夹</string>
+    <string name="playlists">播放列表</string>
+    <string name="search">搜索</string>
+    <string name="filter">筛选</string>
+    <string name="settings">设置</string>
+    <string name="menu">菜单</string>
+    <string name="exit">退出</string>
+    <string name="cancel">取消</string>
+    <string name="got_to_current">当前曲目</string>
+
+    <string name="view">视图</string>
+    <string name="title">标题</string>
+    <string name="subtitle">副标题</string>
+    <string name="seq_num">序号</string>
+    <string name="track_name">名称</string>
+    <string name="file_name">文件名</string>
+    <string name="date">日期</string>
+    <string name="random">随机</string>
+    <string name="descending">降序</string>
+    <string name="album">专辑</string>
+    <string name="artist">艺术家</string>
+    <string name="duration">时长</string>
+
+    <string name="sort_by">排序方式</string>
+    <string name="do_not_sort">不排序</string>
+
+    <string name="play">播放</string>
+    <string name="pause">暂停</string>
+    <string name="stop">停止</string>
+    <string name="prev">上一首</string>
+    <string name="next">下一首</string>
+    <string name="rewind">快退</string>
+    <string name="fast_forward">快进</string>
+    <string name="repeat">循环</string>
+    <string name="repeat_disable">不循环</string>
+    <string name="shuffle">随机播放</string>
+    <string name="shuffle_disable">不随机播放</string>
+    <string name="programme_guide">节目指南</string>
+    <string name="favorites_add">添加到收藏夹</string>
+    <string name="favorites_remove">从收藏夹移除</string>
+    <string name="mark_watched">标记为已观看</string>
+    <string name="mark_unwatched">标记为未观看</string>
+    <string name="preferred_media_engine">首选媒体引擎</string>
+    <string name="by_default">默认</string>
+
+    <string name="playlist_add">添加到播放列表</string>
+    <string name="playlist_remove_item">从播放列表移除</string>
+    <string name="playlist_create">创建播放列表</string>
+    <string name="playlist_remove">删除播放列表</string>
+    <string name="playlist_name">播放列表名称</string>
+
+    <string name="bookmarks">书签</string>
+    <string name="create_bookmark">创建书签</string>
+    <string name="remove_bookmark">删除书签</string>
+    <string name="remove_all_bookmarks">删除所有书签</string>
+    <string name="bookmark_name">名称</string>
+    <string name="bookmark_time">时间</string>
+
+    <string name="folder_subtitle">文件：%1$d。文件夹：%2$d。</string>
+    <string name="browsable_subtitle">曲目：%1$d。</string>
+    <string name="add_folder">添加文件夹</string>
+    <string name="remove_folder">移除文件夹</string>
+    <string name="select">选择</string>
+    <string name="select_all">全选</string>
+    <string name="unselect_all">取消全选</string>
+    <string name="refresh">刷新</string>
+    <string name="rescan">重新扫描</string>
+    <string name="share">分享</string>
+    <string name="edit">编辑</string>
+    <string name="delete">删除</string>
+    <string name="delete_confirm">确定删除 %1$s 吗？</string>
+    <string name="delete_file_title">删除文件</string>
+    <string name="delete_file_question">确定要删除此文件吗？</string>
+    <string name="delete_file_failed">删除文件 %1$s 失败</string>
+    <string name="loading">正在加载…</string>
+    <string name="press_back_again">再按一次返回键退出。</string>
+    <string name="please_restart_app">请重启应用程序。</string>
+    <string name="use_phone_to_grant_perm">请使用手机授予所需权限。</string>
+
+    <string name="vfs_content">内容</string>
+    <string name="vfs_file_system">文件系统</string>
+    <string name="vfs_gdrive">Google 云端硬盘</string>
+    <string name="m3u_playlist">M3U 播放列表</string>
+    <string name="m3u_playlist_name">名称</string>
+    <string name="m3u_playlist_location">位置</string>
+    <string name="m3u_playlist_location_hint">文件或 http(s) 链接</string>
+    <string name="m3u_playlist_video">视频播放列表</string>
+
+    <string name="eq_manual">手动</string>
+    <string name="eq_normal">正常</string>
+    <string name="eq_classical">古典</string>
+    <string name="eq_dance">舞曲</string>
+    <string name="eq_flat">平坦</string>
+    <string name="eq_folk">民谣</string>
+    <string name="eq_heavy_metal">重金属</string>
+    <string name="eq_hip_hop">嘻哈</string>
+    <string name="eq_jazz">爵士</string>
+    <string name="eq_pop">流行</string>
+    <string name="eq_rock">摇滚</string>
+
+    <string name="host">主机</string>
+    <string name="port">端口</string>
+    <string name="path">路径</string>
+    <string name="share_name">共享名称</string>
+    <string name="domain">域</string>
+    <string name="username">用户名</string>
+    <string name="password">密码</string>
+    <string name="private_key">私钥</string>
+    <string name="private_key_pass">私钥密码</string>
+
+    <string name="donate">请开发者喝杯咖啡</string>
+    <string name="donate_text">如果您喜欢这款应用，欢迎请我喝杯咖啡。</string>
+    <string name="use_phone_for_donation">请使用手机进行捐赠。</string>
+
+    <string name="timer">定时器</string>
+    <string name="hours">小时</string>
+    <string name="minutes">分钟</string>
+
+    <string name="enable">启用</string>
+    <string name="move_left">左移</string>
+    <string name="move_right">右移</string>
+    <string name="move_up">上移</string>
+    <string name="move_down">下移</string>
+
+    <string name="sys_bars_on_video_touch">触摸视频时显示系统栏</string>
+    <string name="play_video_landscape">以横屏模式播放视频</string>
+    <string name="clock_pos">时钟位置</string>
+    <string name="clock_pos_none">无</string>
+    <string name="clock_pos_left">左侧</string>
+    <string name="clock_pos_right">右侧</string>
+    <string name="clock_pos_center">居中</string>
+    <string name="change_brightness">播放视频时调节亮度</string>
+    <string name="video_brightness">视频亮度</string>
+    <string name="change_brightness_sub">也可以通过双指滑动来调节亮度</string>
+    <string name="watched_threshold">已观看阈值</string>
+    <string name="watched_threshold_sub">如果观看进度超过此百分比，则将视频标记为已观看</string>
+
+    <string name="other">其他</string>
+    <string name="check_updates">启动时检查更新</string>
+    <string name="update">更新</string>
+    <string name="update_question">新版本 %1$s 可用。\n您要更新应用吗？</string>
+    <string name="export_prefs">将设置导出到文件</string>
+    <string name="export_prefs_sub">将设置、文件夹、播放列表等导出到文件</string>
+    <string name="export_prefs_ok">设置已保存到文件 %1$s。</string>
+    <string name="export_prefs_failed">导出设置失败：%1$s</string>
+    <string name="import_prefs">从文件导入设置</string>
+    <string name="import_prefs_sub">从文件导入之前导出的设置</string>
+    <string name="import_prefs_ok">设置导入成功。\n请重启应用程序。</string>
+    <string name="import_prefs_failed">导入设置失败：%1$s</string>
+    <string name="prefs_not_found">未找到设置</string>
+    <string name="open_log">打开日志文件</string>
+    <string name="unlock_phone_and_grant">请解锁手机并授予所需权限。</string>
+    <string name="screen_capture_rejected">屏幕录制请求被拒绝。</string>
+    <string name="accessibility_dsc">Permata Mirror 使用无障碍服务来模拟触摸屏操作。</string>
+    <string name="media_projection_action_text">立即开始</string>
+
+    <string name="about">关于</string>
+    <string name="about_html"><![CDATA[<H1 align="center">Permata Auto Media Player</H1>
+        <p>Permata Auto Media Player 是一款界面简洁直观的开源音视频播放器。</p>
+        <p><b>作者：</b> sklchan77</p>
+        <p><b>版本：</b> %1$s (%2$d)</p>
+        <p><b>主页：</b> <a href="%3$s">%3$s</a></p>
+        ]]></string>
+
+    <string name="err_failed_to_play">播放 %s 失败</string>
+    <string name="err_failed_to_play_cause">播放 %1$s 失败：%2$s</string>
+    <string name="err_unsupported_source_type">不支持的源类型：%s</string>
+    <string name="err_playlist_exists">播放列表已存在：%1$s</string>
+    <string name="err_invalid_playlist_name">无效的播放列表名称：%1$s</string>
+    <string name="err_failed_add_folder">添加文件夹失败：%1$s</string>
+    <string name="err_failed_open_url">打开链接失败：%1$s</string>
+    <string name="err_failed_install_module">安装模块失败：%1$s</string>
+    <string name="err_failed_to_download">下载 %1$s 失败</string>
+    <string name="err_no_audio_record_perm">未授予录音权限</string>
+    <string name="err_failed_start_service">启动服务失败：%s</string>
+</resources>
