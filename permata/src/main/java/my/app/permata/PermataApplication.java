@@ -7,7 +7,11 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.ServiceConnection;
 import android.content.SharedPreferences;
+import android.content.res.Configuration;
+import android.content.res.Resources;
+import android.os.Build;
 import android.os.IBinder;
+import android.os.LocaleList;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
@@ -37,25 +41,55 @@ public class PermataApplication extends NetSplitCompatApp {
 	private int mirroringMode;
 	private ServiceConnection eventService;
 
-    // === [GLOBAL MEDIA CROWN] ===
-    public static final int CROWN_IPTV = 0;
-    public static final int CROWN_WEB = 1;
-    public static final int CROWN_NATIVE = 2;
-    private static volatile int activeMediaCrown = CROWN_IPTV;
+	// === [GLOBAL MEDIA CROWN] ===
+	public static final int CROWN_IPTV = 0;
+	public static final int CROWN_WEB = 1;
+	public static final int CROWN_NATIVE = 2;
+	private static volatile int activeMediaCrown = CROWN_IPTV;
 
-    public static void setMediaCrown(int crownOwner) {
-        activeMediaCrown = crownOwner;
-        Log.i("[ROUTING_TELEMETRY]", "Media Crown transferred to: " + 
-            (crownOwner == CROWN_IPTV ? "IPTV" : crownOwner == CROWN_WEB ? "WEB" : "NATIVE"));
-    }
+	public static void setMediaCrown(int crownOwner) {
+		activeMediaCrown = crownOwner;
+		Log.i("[ROUTING_TELEMETRY]", "Media Crown transferred to: " +
+				(crownOwner == CROWN_IPTV ? "IPTV" : crownOwner == CROWN_WEB ? "WEB" : "NATIVE"));
+	}
 
-    public static int getMediaCrown() {
-        return activeMediaCrown;
-    }
-    // ============================
+	public static int getMediaCrown() {
+		return activeMediaCrown;
+	}
+	// ============================
 
 	public static PermataApplication get() {
 		return App.get();
+	}
+
+	public static Context applyLocale(Context ctx, Locale loc) {
+		Locale.setDefault(loc);
+		Configuration cfg = new Configuration(ctx.getResources().getConfiguration());
+		if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+			LocaleList list = new LocaleList(loc);
+			LocaleList.setDefault(list);
+			cfg.setLocales(list);
+		} else {
+			cfg.setLocale(loc);
+		}
+		cfg.setLayoutDirection(loc);
+		return ctx.createConfigurationContext(cfg);
+	}
+
+	@SuppressWarnings("deprecation")
+	public void updateAppLocale(Locale loc) {
+		Locale.setDefault(loc);
+		Resources res = getResources();
+		Configuration cfg = new Configuration(res.getConfiguration());
+		if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+			LocaleList list = new LocaleList(loc);
+			LocaleList.setDefault(list);
+			cfg.setLocales(list);
+		} else {
+			cfg.setLocale(loc);
+		}
+		cfg.setLayoutDirection(loc);
+		res.updateConfiguration(cfg, res.getDisplayMetrics());
 	}
 
 	@Override
@@ -70,10 +104,7 @@ public class PermataApplication extends NetSplitCompatApp {
 		var ps = SharedPreferenceStore.create(ctx.getSharedPreferences("permata", MODE_PRIVATE));
 		if (ps.hasPref(LOCALE)) {
 			var loc = MainActivityPrefs.Lang.get(ps.getIntPref(LOCALE)).locale;
-			var cfg = ctx.getResources().getConfiguration();
-			cfg.setLocale(loc);
-			Locale.setDefault(loc);
-			ctx = ctx.createConfigurationContext(cfg);
+			ctx = applyLocale(ctx, loc);
 		} else {
 			preferenceStore = ps;
 		}
