@@ -80,23 +80,31 @@ public class PermataApplication extends NetSplitCompatApp {
 
 	@SuppressWarnings("deprecation")
 	public void updateAppLocale(Locale loc) {
-		Locale.setDefault(loc);
-		Resources res = getResources();
-		Configuration cfg = new Configuration(res.getConfiguration());
-		if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-			LocaleList list = new LocaleList(loc);
-			LocaleList.setDefault(list);
-			cfg.setLocales(list);
-		} else {
-			cfg.setLocale(loc);
-		}
-		cfg.setLayoutDirection(loc);
-		res.updateConfiguration(cfg, res.getDisplayMetrics());
-
 		LocaleListCompat locales = (loc != null)
 				? LocaleListCompat.forLanguageTags(loc.toLanguageTag())
 				: LocaleListCompat.getEmptyLocaleList();
+
+		// 1. Update AppCompat / Android 13+ LocaleManager FIRST so it always detects the diff
+		// and rebuilds the AssetManager string table on the very first switch.
 		AppCompatDelegate.setApplicationLocales(locales);
+
+		// 2. Keep default Locale synced and only apply legacy updateConfiguration on API < 33 or CarActivity.
+		if (loc != null) {
+			Locale.setDefault(loc);
+			if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU || isConnectedToAuto()) {
+				Resources res = getResources();
+				Configuration cfg = new Configuration(res.getConfiguration());
+				if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+					LocaleList list = new LocaleList(loc);
+					LocaleList.setDefault(list);
+					cfg.setLocales(list);
+				} else {
+					cfg.setLocale(loc);
+				}
+				cfg.setLayoutDirection(loc);
+				res.updateConfiguration(cfg, res.getDisplayMetrics());
+			}
+		}
 	}
 
 	@Override
@@ -106,8 +114,10 @@ public class PermataApplication extends NetSplitCompatApp {
 		if (ps.hasPref(LOCALE)) {
 			var loc = MainActivityPrefs.Lang.get(ps.getIntPref(LOCALE)).locale;
 			if (loc != null) {
-				AppCompatDelegate.setApplicationLocales(
-						LocaleListCompat.forLanguageTags(loc.toLanguageTag()));
+				LocaleListCompat target = LocaleListCompat.forLanguageTags(loc.toLanguageTag());
+				if (!target.equals(AppCompatDelegate.getApplicationLocales())) {
+					AppCompatDelegate.setApplicationLocales(target);
+				}
 			}
 		}
 		vfsManager = new PermataVfsManager();
