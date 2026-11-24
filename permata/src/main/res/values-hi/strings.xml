@@ -1,0 +1,349 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="addons">ऐड-ऑन</string>
+    <string name="addon_name_tv">टीवी</string>
+    <string name="addon_name_web_browser">वेब ब्राउज़र</string>
+
+    <string name="interface_prefs">इंटरफ़ेस</string>
+    <string name="interface_prefs_aa">Android Auto</string>
+    <string name="playback_settings">प्लेबैक सेटिंग्स</string>
+    <string name="playback_control">प्लेबैक नियंत्रण</string>
+    <string name="engine_prefs">मीडिया इंजन</string>
+
+    <string name="theme">एप्लिकेशन थीम</string>
+    <string name="theme_sub">वर्तमान थीम: %1$s</string>
+    <string name="theme_light">लाइट</string>
+    <string name="theme_dark">डार्क</string>
+    <string name="theme_system">सिस्टम</string>
+    <string name="theme_black">ब्लैक</string>
+    <string name="theme_star_wars">Star Wars</string>
+    <string name="theme_purple">बैंगनी</string>
+    <string name="theme_classic">क्लासिक</string>
+
+    <string name="nav_bar_pos">नेविगेशन बार की स्थिति</string>
+    <string name="nav_bar_pos_sub">वर्तमान स्थिति: %1$s</string>
+    <string name="nav_bar_pos_bottom">नीचे</string>
+    <string name="nav_bar_pos_left">बाएं</string>
+    <string name="nav_bar_pos_right">दाएं</string>
+
+    <string name="show_track_icons">ट्रैक आइकन दिखाएं</string>
+    <string name="lang">भाषा</string>
+    <string name="trans_lang">अनुवाद भाषा</string>
+    <string name="hide_bars">बार छिपाएं</string>
+    <string name="hide_bars_sub">कंट्रोल पैनल दिखने पर ऊपर और नीचे के बार छिपाएं</string>
+    <string name="show_pg_up_down">पेज अप/डाउन बटन दिखाएं</string>
+    <string name="use_dpad_cursor">D-pad नेविगेशन के लिए कर्सर का उपयोग करें</string>
+    <string name="fullscreen_mode">फुलस्क्रीन मोड</string>
+    <string name="nav_bar_size">नेविगेशन बार का आकार</string>
+    <string name="tool_bar_size">टूल बार का आकार</string>
+    <string name="control_panel_size">कंट्रोल पैनल का आकार</string>
+    <string name="text_icon_size">टेक्स्ट और आइकन का आकार</string>
+    <string name="subtitles_size">सबटाइटल टेक्स्ट का आकार</string>
+
+    <string name="key_bindings">की बाइंडिंग्स</string>
+    <string name="key_on_click">क्लिक करने पर</string>
+    <string name="key_on_long_click">लंबे समय तक दबाने पर</string>
+    <string name="key_on_dbl_click">डबल क्लिक करने पर</string>
+    <string name="action_stop">रोकें</string>
+    <string name="action_play">चलाएं</string>
+    <string name="action_pause">पॉज़ करें</string>
+    <string name="action_play_pause">चलाएं/पॉज़ करें</string>
+    <string name="action_prev">पिछला चलाएं</string>
+    <string name="action_next">अगला चलाएं</string>
+    <string name="action_prev_folder">पिछला फ़ोल्डर चलाएं</string>
+    <string name="action_next_folder">अगला फ़ोल्डर चलाएं</string>
+    <string name="action_rw">रिवाइंड</string>
+    <string name="action_ff">फ़ास्ट फ़ॉरवर्ड</string>
+    <string name="action_vol_up">आवाज़ बढ़ाएं</string>
+    <string name="action_vol_down">आवाज़ कम करें</string>
+    <string name="action_vol_mute_unmute">म्यूट/अनम्यूट</string>
+    <string name="action_activate_voice_ctrl">वॉइस नियंत्रण सक्रिय करें</string>
+    <string name="action_menu">मेनू</string>
+    <string name="action_cp_menu">कंट्रोल पैनल मेनू</string>
+    <string name="action_back_or_exit">वापस जाएं या बाहर निकलें</string>
+    <string name="action_exit">बाहर निकलें</string>
+    <string name="action_default">डिफ़ॉल्ट</string>
+    <string name="action_none">कोई नहीं</string>
+
+    <string name="play_next_on_completion">समाप्त होने पर अगला चलाएं</string>
+    <string name="nothing_to_resume">फिर से शुरू करने के लिए कुछ नहीं है</string>
+
+    <string name="rw_ff_click">रिवाइंड/फ़ॉरवर्ड - क्लिक</string>
+    <string name="rw_ff_long_click">रिवाइंड/फ़ॉरवर्ड - लंबा प्रेस</string>
+    <string name="prev_next_long_click">पिछला/अगला - लंबा प्रेस</string>
+    <string name="play_pause_stop">प्ले/पॉज़ को लंबा दबाने पर रोकें</string>
+
+    <string name="time">समय</string>
+    <string name="time_unit">समय की इकाई</string>
+    <string name="time_unit_sub">वर्तमान मान: %1$s</string>
+    <string name="time_unit_second">सेकंड</string>
+    <string name="time_unit_minute">मिनट</string>
+    <string name="time_unit_percent">प्रतिशत</string>
+
+    <string name="video_control">वीडियो नियंत्रण</string>
+    <string name="video_control_start_delay">शुरू होने पर दिखाएं</string>
+    <string name="video_control_touch_delay">टच करने पर दिखाएं</string>
+    <string name="video_control_seek_delay">सीक करने पर दिखाएं</string>
+    <string name="video_aa_show_status">Android Auto में स्टेटस बार दिखाएं</string>
+
+    <string name="enable_exoplayer">ExoPlayer सक्षम करें</string>
+    <string name="enable_vlcplayer">VLC सक्षम करें</string>
+    <string name="preferred_audio_engine">पसंदीदा ऑडियो इंजन</string>
+    <string name="preferred_video_engine">पसंदीदा वीडियो इंजन</string>
+    <string name="engine_installed">मीडिया इंजन इंस्टॉल हो गया: %1$s</string>
+    <string name="engine_uninstalled">मीडिया इंजन अनइंस्टॉल हो गया: %1$s</string>
+
+    <string name="preferred_media_scanner">पसंदीदा मीडिया स्कैनर</string>
+    <string name="preferred_media_scanner_default">डिफ़ॉल्ट</string>
+    <string name="preferred_media_scanner_system">सिस्टम</string>
+
+    <string name="voice_search">वॉइस खोज</string>
+    <string name="voice_control">वॉइस नियंत्रण</string>
+    <string name="voice_control_fb">फ़्लोटिंग बटन</string>
+    <string name="voice_control_sub_long">लंबे समय तक दबाने पर वॉइस नियंत्रण सक्रिय करें</string>
+    <string name="voice_control_subst">शब्द प्रतिस्थापन</string>
+    <string name="voice_control_subst_sub">किसी शब्द को दूसरे शब्द या वाक्यांश से बदलें</string>
+    <string name="voice_control_subst_hint">चालू: चलाएं\nबंद: पॉज़ करें</string>
+
+    <string name="module_installation">मॉड्यूल इंस्टॉलेशन: %1$s</string>
+    <string name="install_pending">इंस्टॉलेशन लंबित है: %1$s</string>
+    <string name="downloading">%1$s डाउनलोड हो रहा है</string>
+    <string name="installing">%1$s इंस्टॉल हो रहा है</string>
+
+    <string name="speed">गति</string>
+    <string name="audio_effects">ऑडियो प्रभाव</string>
+    <string name="equalier">इक्वलाइज़र</string>
+    <string name="preset_name">प्रीसेट नाम</string>
+    <string name="virtualizer">वर्चुअलाइज़र</string>
+    <string name="auto">ऑटो</string>
+    <string name="binaural">बायनॉरल</string>
+    <string name="transaural">ट्रांसनॉरल</string>
+    <string name="bass_boost">बास बूस्ट</string>
+    <string name="vol_boost">वॉल्यूम बूस्ट</string>
+    <string name="strength">तीव्रता</string>
+    <string name="apply_to">इस पर लागू करें</string>
+
+    <string name="video">वीडियो</string>
+    <string name="video_settings">वीडियो सेटिंग्स</string>
+    <string name="video_scaling">वीडियो स्केलिंग</string>
+    <string name="hw_accel">हार्डवेयर त्वरण</string>
+    <string name="hw_accel_auto">ऑटो</string>
+    <string name="hw_accel_full">पूर्ण</string>
+    <string name="hw_accel_decoding">डिकोडिंग</string>
+    <string name="hw_accel_disabled">अक्षम</string>
+    <string name="video_scaling_best">सर्वोत्तम फ़िट</string>
+    <string name="video_scaling_fill">स्क्रीन भरें</string>
+    <string name="video_scaling_orig">मूल आकार</string>
+
+    <string name="audio">ऑडियो</string>
+    <string name="audio_delay">ऑडियो विलंब</string>
+    <string name="audio_delay_aa">ऑडियो विलंब - Android Auto</string>
+    <string name="preferred_audio_lang">पसंदीदा ऑडियो स्ट्रीम भाषाएं</string>
+    <string name="preferred_audio_key">कीवर्ड वाले ऑडियो स्ट्रीम को प्राथमिकता दें</string>
+    <string name="select_audio_stream">ऑडियो स्ट्रीम चुनें</string>
+
+    <string name="subtitles">सबटाइटल</string>
+    <string name="subtitles_auto">स्वतः जनित</string>
+    <string name="subtitle_delay">सबटाइटल विलंब</string>
+    <string name="display_subtitles">सबटाइटल दिखाएं</string>
+    <string name="preferred_sub_lang">पसंदीदा सबटाइटल भाषाएं</string>
+    <string name="preferred_sub_key">कीवर्ड वाले सबटाइटल को प्राथमिकता दें</string>
+    <string name="select_subtitles">सबटाइटल चुनें</string>
+
+    <string name="sub_gen_buf">बफ़र लंबाई</string>
+    <string name="sub_gen_buf_sub">निर्दिष्ट सेकंड पहले से प्रीलोड करें</string>
+    <string name="sub_gen_chunk">खंड की लंबाई</string>
+    <string name="sub_gen_chunk_sub">निर्दिष्ट अवधि के खंडों में बफ़र को प्रोसेस करें</string>
+    <string name="sub_gen_model">मॉडल</string>
+    <string name="sub_gen_translate">अनुवाद करें</string>
+    <string name="sub_gen_use_gpu">GPU का उपयोग करें</string>
+    <string name="sub_gen_single">एकल खंड</string>
+    <string name="sub_gen_single_sub">पूरे खंड को एक ही सेगमेंट के रूप में ट्रांसक्राइब करें</string>
+    <string name="sub_gen_downloading">मॉडल डाउनलोड होने तक कृपया प्रतीक्षा करें।</string>
+    <string name="sub_gen_download_fail">मॉडल डाउनलोड करने में विफल: %s!</string>
+    <string name="sub_gen_cleanup">कैश से अन्य डाउनलोड किए गए मॉडल हटाएं</string>
+    <string name="sub_gen_cleanup_done">हटाया गया: %s</string>
+
+    <string name="eq_hz">%1$s Hz</string>
+    <string name="eq_khz">%1$s kHz</string>
+
+    <string name="current_track">वर्तमान ट्रैक</string>
+    <string name="current_folder">वर्तमान फ़ोल्डर</string>
+
+    <string name="folders">फ़ोल्डर</string>
+    <string name="favorites">पसंदीदा</string>
+    <string name="playlists">प्लेलिस्ट</string>
+    <string name="search">खोजें</string>
+    <string name="filter">फ़िल्टर</string>
+    <string name="settings">सेटिंग्स</string>
+    <string name="menu">मेनू</string>
+    <string name="exit">बाहर निकलें</string>
+    <string name="cancel">रद्द करें</string>
+    <string name="got_to_current">वर्तमान ट्रैक</string>
+
+    <string name="view">दृश्य</string>
+    <string name="title">शीर्षक</string>
+    <string name="subtitle">उपशीर्षक</string>
+    <string name="seq_num">क्रम संख्या</string>
+    <string name="track_name">नाम</string>
+    <string name="file_name">फ़ाइल का नाम</string>
+    <string name="date">तिथि</string>
+    <string name="random">रैंडम</string>
+    <string name="descending">अवरोही</string>
+    <string name="album">एल्बम</string>
+    <string name="artist">कलाकार</string>
+    <string name="duration">अवधि</string>
+
+    <string name="sort_by">इसके अनुसार क्रमबद्ध करें</string>
+    <string name="do_not_sort">क्रमबद्ध न करें</string>
+
+    <string name="play">चलाएं</string>
+    <string name="pause">पॉज़ करें</string>
+    <string name="stop">रोकें</string>
+    <string name="prev">पिछला</string>
+    <string name="next">अगला</string>
+    <string name="rewind">रिवाइंड</string>
+    <string name="fast_forward">फ़ास्ट फ़ॉरवर्ड</string>
+    <string name="repeat">दोहराएं</string>
+    <string name="repeat_disable">न दोहराएं</string>
+    <string name="shuffle">शफ़ल</string>
+    <string name="shuffle_disable">शफ़ल न करें</string>
+    <string name="programme_guide">कार्यक्रम मार्गदर्शिका</string>
+    <string name="favorites_add">पसंदीदा में जोड़ें</string>
+    <string name="favorites_remove">पसंदीदा से हटाएं</string>
+    <string name="mark_watched">देखा हुआ चिह्नित करें</string>
+    <string name="mark_unwatched">नहीं देखा हुआ चिह्नित करें</string>
+    <string name="preferred_media_engine">पसंदीदा मीडिया इंजन</string>
+    <string name="by_default">डिफ़ॉल्ट</string>
+
+    <string name="playlist_add">प्लेलिस्ट में जोड़ें</string>
+    <string name="playlist_remove_item">प्लेलिस्ट से हटाएं</string>
+    <string name="playlist_create">प्लेलिस्ट बनाएं</string>
+    <string name="playlist_remove">प्लेलिस्ट हटाएं</string>
+    <string name="playlist_name">प्लेलिस्ट का नाम</string>
+
+    <string name="bookmarks">बुकमार्क</string>
+    <string name="create_bookmark">बुकमार्क बनाएं</string>
+    <string name="remove_bookmark">बुकमार्क हटाएं</string>
+    <string name="remove_all_bookmarks">सभी बुकमार्क हटाएं</string>
+    <string name="bookmark_name">नाम</string>
+    <string name="bookmark_time">समय</string>
+
+    <string name="folder_subtitle">फ़ाइलें: %1$d. फ़ोल्डर: %2$d.</string>
+    <string name="browsable_subtitle">ट्रैक: %1$d.</string>
+    <string name="add_folder">फ़ोल्डर जोड़ें</string>
+    <string name="remove_folder">फ़ोल्डर हटाएं</string>
+    <string name="select">चुनें</string>
+    <string name="select_all">सभी चुनें</string>
+    <string name="unselect_all">सभी का चयन रद्द करें</string>
+    <string name="refresh">रीफ़्रेश करें</string>
+    <string name="rescan">फिर से स्कैन करें</string>
+    <string name="share">शेयर करें</string>
+    <string name="edit">संपादित करें</string>
+    <string name="delete">हटाएं</string>
+    <string name="delete_confirm">क्या %1$s को हटाएं?</string>
+    <string name="delete_file_title">फ़ाइल हटाएं</string>
+    <string name="delete_file_question">क्या आप वाकई इस फ़ाइल को हटाना चाहते हैं?</string>
+    <string name="delete_file_failed">फ़ाइल %1$s को हटाने में विफल</string>
+    <string name="loading">लोड हो रहा है…</string>
+    <string name="press_back_again">बाहर निकलने के लिए फिर से बैक बटन दबाएं।</string>
+    <string name="please_restart_app">कृपया एप्लिकेशन को पुनः आरंभ करें।</string>
+    <string name="use_phone_to_grant_perm">कृपया आवश्यक अनुमतियां देने के लिए अपने फ़ोन का उपयोग करें।</string>
+
+    <string name="vfs_content">सामग्री</string>
+    <string name="vfs_file_system">फ़ाइल सिस्टम</string>
+    <string name="vfs_gdrive">Google ड्राइव</string>
+    <string name="m3u_playlist">M3U प्लेलिस्ट</string>
+    <string name="m3u_playlist_name">नाम</string>
+    <string name="m3u_playlist_location">स्थान</string>
+    <string name="m3u_playlist_location_hint">फ़ाइल या http(s) URL</string>
+    <string name="m3u_playlist_video">वीडियो प्लेलिस्ट</string>
+
+    <string name="eq_manual">मैनुअल</string>
+    <string name="eq_normal">सामान्य</string>
+    <string name="eq_classical">शास्त्रीय</string>
+    <string name="eq_dance">डांस</string>
+    <string name="eq_flat">फ़्लैट</string>
+    <string name="eq_folk">लोक</string>
+    <string name="eq_heavy_metal">हेवी मेटल</string>
+    <string name="eq_hip_hop">हिप हॉप</string>
+    <string name="eq_jazz">जैज़</string>
+    <string name="eq_pop">पॉप</string>
+    <string name="eq_rock">रॉक</string>
+
+    <string name="host">होस्ट</string>
+    <string name="port">पोर्ट</string>
+    <string name="path">पथ</string>
+    <string name="share_name">शेयर नाम</string>
+    <string name="domain">डोमेन</string>
+    <string name="username">उपयोगकर्ता नाम</string>
+    <string name="password">पासवर्ड</string>
+    <string name="private_key">निजी कुंजी</string>
+    <string name="private_key_pass">निजी कुंजी पासवर्ड</string>
+
+    <string name="donate">डेवलपर के लिए कॉफ़ी</string>
+    <string name="donate_text">यदि आपको यह एप्लिकेशन पसंद है, तो कृपया मुझे एक कप कॉफ़ी पिलाने पर विचार करें।</string>
+    <string name="use_phone_for_donation">कॉफ़ी खरीदने के लिए कृपया अपने फ़ोन का उपयोग करें।</string>
+
+    <string name="timer">टाइमर</string>
+    <string name="hours">घंटे</string>
+    <string name="minutes">मिनट</string>
+
+    <string name="enable">सक्षम करें</string>
+    <string name="move_left">बाएं ले जाएं</string>
+    <string name="move_right">दाएं ले जाएं</string>
+    <string name="move_up">ऊपर ले जाएं</string>
+    <string name="move_down">नीचे ले जाएं</string>
+
+    <string name="sys_bars_on_video_touch">वीडियो टच करने पर सिस्टम बार दिखाएं</string>
+    <string name="play_video_landscape">वीडियो को लैंडस्केप मोड में चलाएं</string>
+    <string name="clock_pos">घड़ी की स्थिति</string>
+    <string name="clock_pos_none">कोई नहीं</string>
+    <string name="clock_pos_left">बाएं</string>
+    <string name="clock_pos_right">दाएं</string>
+    <string name="clock_pos_center">मध्य</string>
+    <string name="change_brightness">वीडियो चलाते समय चमक बदलें</string>
+    <string name="video_brightness">वीडियो की चमक</string>
+    <string name="change_brightness_sub">दो उंगलियों से स्क्रॉल करके भी चमक बदली जा सकती है</string>
+    <string name="watched_threshold">देखी गई सीमा</string>
+    <string name="watched_threshold_sub">यदि इस प्रतिशत से अधिक देखा गया है, तो वीडियो को देखा हुआ चिह्नित करें</string>
+
+    <string name="other">अन्य</string>
+    <string name="check_updates">स्टार्टअप पर अपडेट जांचें</string>
+    <string name="update">अपडेट</string>
+    <string name="update_question">नया संस्करण %1$s उपलब्ध है।\nक्या आप ऐप को अपडेट करना चाहेंगे?</string>
+    <string name="export_prefs">प्राथमिकताओं को फ़ाइल में निर्यात करें</string>
+    <string name="export_prefs_sub">सेटिंग्स, फ़ोल्डर, प्लेलिस्ट आदि को फ़ाइल में निर्यात करें</string>
+    <string name="export_prefs_ok">प्राथमिकताएं %1$s फ़ाइल में सहेजी गई हैं।</string>
+    <string name="export_prefs_failed">प्राथमिकताएं निर्यात करने में विफल: %1$s</string>
+    <string name="import_prefs">फ़ाइल से प्राथमिकताएं आयात करें</string>
+    <string name="import_prefs_sub">फ़ाइल से पहले निर्यात की गई प्राथमिकताएं आयात करें</string>
+    <string name="import_prefs_ok">प्राथमिकताएं सफलतापूर्वक आयात हो गईं।\nकृपया एप्लिकेशन को पुनः आरंभ करें।</string>
+    <string name="import_prefs_failed">प्राथमिकताएं आयात करने में विफल: %1$s</string>
+    <string name="prefs_not_found">कोई प्राथमिकता नहीं मिली</string>
+    <string name="open_log">लॉग फ़ाइल खोलें</string>
+    <string name="unlock_phone_and_grant">फ़ोन अनलॉक करें और अनुरोधित अनुमतियां दें।</string>
+    <string name="screen_capture_rejected">स्क्रीन कैप्चर अनुरोध अस्वीकार कर दिया गया।</string>
+    <string name="accessibility_dsc">Permata Mirror द्वारा टच स्क्रीन ईवेंट को अनुकरण करने के लिए एक्सेसिबिलिटी सेवा का उपयोग किया जाता है।</string>
+    <string name="media_projection_action_text">अभी शुरू करें</string>
+
+    <string name="about">के बारे में</string>
+    <string name="about_html"><![CDATA[<H1 align="center">Permata Auto Media Player</H1>
+        <p>Permata Auto Media Player एक सरल और सहज इंटरफ़ेस वाला ओपन सोर्स ऑडियो और वीडियो प्लेयर है।</p>
+        <p><b>लेखक:</b> sklchan77</p>
+        <p><b>संस्करण:</b> %1$s (%2$d)</p>
+        <p><b>होम पेज: </b> <a href="%3$s">%3$s</a></p>
+        ]]></string>
+
+    <string name="err_failed_to_play">%s चलाने में विफल</string>
+    <string name="err_failed_to_play_cause">%1$s चलाने में विफल: %2$s</string>
+    <string name="err_unsupported_source_type">असमर्थित स्रोत प्रकार: %s</string>
+    <string name="err_playlist_exists">प्लेलिस्ट पहले से मौजूद है: %1$s</string>
+    <string name="err_invalid_playlist_name">अमान्य प्लेलिस्ट नाम: %1$s</string>
+    <string name="err_failed_add_folder">फ़ोल्डर जोड़ने में विफल: %1$s</string>
+    <string name="err_failed_open_url">URL खोलने में विफल: %1$s</string>
+    <string name="err_failed_install_module">मॉड्यूल इंस्टॉल करने में विफल: %1$s</string>
+    <string name="err_failed_to_download">%1$s डाउनलोड करने में विफल</string>
+    <string name="err_no_audio_record_perm">ऑडियो रिकॉर्डिंग की अनुमति नहीं दी गई है</string>
+    <string name="err_failed_start_service">सेवा शुरू करने में विफल: %s</string>
+</resources>
