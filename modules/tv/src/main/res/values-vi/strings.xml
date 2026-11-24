@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="sub_ch">Kênh: %1$d.</string>
+    <string name="sub_gr">Nhóm: %1$d.</string>
+    <string name="sub_ch_gr">Kênh: %1$d. Nhóm: %2$d.</string>
+    <string name="add_tv_source">Thêm nguồn M3U IPTV</string>
+    <string name="epg_time_shift">Độ lệch thời gian EPG (giờ)</string>
+    <string name="logo">Logo kênh</string>
+    <string name="logo_location">Vị trí</string>
+    <string name="logo_location_hint">Thư mục hoặc URL gốc http(s)</string>
+    <string name="logo_prefer_epg">Ưu tiên logo từ EPG</string>
+    <string name="catchup_query">Định dạng truy vấn</string>
+    <string name="catchup_type">Loại xem lại (Catchup)</string>
+    <string name="catchup_type_cur">Loại xem lại hiện tại: %1$s</string>
+    <string name="catchup_type_auto">Tự động</string>
+    <string name="catchup_days">Số ngày</string>
+    <string name="connection_settings">Cài đặt kết nối</string>
+
+    <string name="err_failed_to_add_tv_source">Không thể thêm nguồn: %1$s</string>
+</resources>
