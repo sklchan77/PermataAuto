@@ -11,6 +11,7 @@ import android.content.Context;
 import android.content.res.TypedArray;
 import android.graphics.Color;
 import android.graphics.drawable.Drawable;
+import android.graphics.drawable.GradientDrawable;
 import android.util.AttributeSet;
 import android.view.Gravity;
 import android.view.View;
@@ -51,8 +52,16 @@ public class OverlayMenuView extends ScrollView implements OverlayMenu {
 				androidx.appcompat.R.attr.popupMenuStyle,
 				R.style.Theme_Utils_Base_PopupMenuStyle);
 		headerColor = ta.getColor(OverlayMenuView_colorPrimarySurface, Color.TRANSPARENT);
-		setBackgroundColor(ta.getColor(OverlayMenuView_android_colorBackground, Color.TRANSPARENT));
+		int bgColor = ta.getColor(OverlayMenuView_android_colorBackground, Color.TRANSPARENT);
 		ta.recycle();
+
+		GradientDrawable bg = new GradientDrawable();
+		bg.setColor(bgColor);
+		bg.setCornerRadius(toPx(ctx, 14));
+		bg.setStroke((int) Math.max(1, toPx(ctx, 1)), 0x26FFFFFF);
+		setBackground(bg);
+		setClipToOutline(true);
+		setElevation(toPx(ctx, 12));
 	}
 
 	@Override
@@ -66,7 +75,11 @@ public class OverlayMenuView extends ScrollView implements OverlayMenu {
 	private void showMenu(MenuBuilder builder) {
 		ActivityDelegate.get(getContext()).setActiveMenu(this);
 		this.builder = builder;
+		setAlpha(0f);
+		setScaleX(0.96f);
+		setScaleY(0.96f);
 		setVisibility(VISIBLE);
+		animate().alpha(1f).scaleX(1f).scaleY(1f).setDuration(140).start();
 
 		ViewGroup g = builder.view;
 		builder.consumer.apply(builder).main().onSuccess(ignore -> {
@@ -119,6 +132,7 @@ public class OverlayMenuView extends ScrollView implements OverlayMenu {
 		View f = builder.focus;
 		builder.cleanUp();
 		builder = null;
+		animate().cancel();
 		setVisibility(GONE);
 		a.setActiveMenu(null);
 		if (ch != null) ch.menuClosed(this);
