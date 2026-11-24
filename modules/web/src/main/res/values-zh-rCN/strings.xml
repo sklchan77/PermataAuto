@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="force_dark">强制深色模式（如果支持）</string>
+    <string name="force_dark_sub">%1$s。选择\"自动\"以跟随设备主题。</string>
+    <string name="force_dark_auto">自动</string>
+    <string name="force_dark_enabled">已启用</string>
+    <string name="force_dark_disabled">已禁用</string>
+    <string name="user_agent">User-Agent</string>
+    <string name="user_agent_desktop">User-Agent - 桌面版</string>
+    <string name="desktop_version">桌面版</string>
+    <string name="full_screen">全屏</string>
+    <string name="full_screen_exit">退出全屏</string>
+    <string name="video_scaling_fill_proportional">按比例填充</string>
+    <string name="video_quality">视频画质</string>
+    <string name="open_on_start">启动时打开</string>
+    <string name="resume_last_video">继续播放上次的视频</string>
+    <string name="resume_last_video_sub">打开 YouTube 时继续播放上次未看完的视频（例如车辆熄火后）</string>
+    <string name="auto_highest_video_quality">自动选择最高视频画质</string>
+    <string name="youtube_player_controls">全屏时使用 YouTube 控件</string>
+    <string name="youtube_player_controls_sub">替代 Permata 控制面板：进度条、字幕、设置、双击快进/快退</string>
+    <string name="reopen_video_min">在车内重新打开上次视频的时限（分钟）</string>
+    <string name="reopen_video_min_sub">当 Permata 车机界面再次打开时（如熄火后），如果在此时限内则重新打开上次的视频。设为 0 将始终打开 YouTube 首页</string>
+    <string name="try_to_skip_ad">尝试跳过广告</string>
+    <string name="sponsorblock_sub">观看 YouTube 时跳过社区标记的片段。</string>
+    <string name="sponsorblock_enable">启用 SponsorBlock</string>
+    <string name="sponsorblock_enable_sub">从 sponsor.ajay.app 获取当前视频的片段数据。</string>
+    <string name="sponsorblock_cat_sponsor">赞助商片段</string>
+    <string name="sponsorblock_cat_selfpromo">自我推广</string>
+    <string name="sponsorblock_cat_interaction">互动提醒（一键三连等）</string>
+    <string name="sponsorblock_cat_intro">片头与过场</string>
+    <string name="sponsorblock_cat_outro">片尾与致谢</string>
+    <string name="sponsorblock_cat_preview">预告与回顾</string>
+    <string name="sponsorblock_cat_hook">精彩抢先看</string>
+    <string name="sponsorblock_cat_music_offtopic">非音乐部分</string>
+    <string name="sponsorblock_cat_filler">填充内容</string>
+    <string name="sponsorblock_cat_filler_sub">激进分类；默认禁用。</string>
+    <string name="youtube_pause_on_leave">离开屏幕时暂停</string>
+    <string name="youtube_pause_on_leave_sub">当 Permata 切到后台时暂停，返回时继续播放。关闭：保持后台播放</string>
+</resources>
