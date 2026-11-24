@@ -103,6 +103,7 @@ dependencies {
     
     // FIX 2: Explicitly loads the AndroidX media compatibility layer to enable MediaBrowserServiceCompat structure resolution.
     implementation 'androidx.media:media:1.7.0'
+    implementation 'androidx.palette:palette:1.0.0'
 
     implementation libs.androidxMedia
     implementation libs.androidxAppcompat
