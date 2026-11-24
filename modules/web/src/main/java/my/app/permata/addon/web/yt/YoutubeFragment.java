@@ -108,7 +108,14 @@ public class YoutubeFragment extends WebBrowserFragment implements PermataServic
 
 	@Override
 	public void onDestroyView() {
-		unregisterListeners(MainActivityDelegate.get(requireContext()));
+		MainActivityDelegate a = MainActivityDelegate.getActivityDelegate(getContext()).peek();
+		if (a != null) {
+			PermataServiceUiBinder b = a.getMediaServiceBinder();
+			if (b != null && YoutubeMediaEngine.isYoutubeItem(b.getCurrentItem())) {
+				b.getMediaSessionCallback().onStop();
+			}
+			unregisterListeners(a);
+		}
 		super.onDestroyView();
 	}
 
@@ -137,8 +144,7 @@ public class YoutubeFragment extends WebBrowserFragment implements PermataServic
 			});
 		}
 
-		// [SURGERY] HTML5 Assassin: Forcibly pause all active media tags in the background 
-		// before Android freezes the Chromium engine. This releases Audio Focus for other apps.
+		// Pause all active HTML5 media tags before Chromium suspends to release audio focus cleanly.
 		PermataWebView v = getWebView();
 		if (v != null) {
 			v.evaluateJavascript(
