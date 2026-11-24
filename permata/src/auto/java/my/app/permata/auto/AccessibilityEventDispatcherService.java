@@ -648,9 +648,10 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
             // Biometrics, Lock & Keyguard (The Intermittent Blocker Fix)
             "biometrics", "keyguard", "lockscreen", "faceid", "fingerprint",
 
-            // Overlays, Dimmers & Always On Displays
+            // Overlays, Dimmers, Rotation Control & Always On Displays
             "alwaysondisplay", "aod", "overlay", "screenfilter", "bluelight",
             "twilight", "lux", "smartface", "hidenotch",
+            "rotationcontrol", "snowlife01",
 
             // Edge Panels & Gesture Navigation
             "edgepanel", "edge", "sidegesture", "gestural", "threebutton",
