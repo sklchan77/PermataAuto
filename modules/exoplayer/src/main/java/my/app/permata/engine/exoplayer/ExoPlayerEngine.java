@@ -36,7 +36,6 @@ import androidx.media3.exoplayer.DefaultRenderersFactory;
 import androidx.media3.exoplayer.ExoPlayer;
 import androidx.media3.exoplayer.audio.AudioSink;
 import androidx.media3.exoplayer.audio.DefaultAudioSink;
-import androidx.media3.exoplayer.audio.DefaultAudioTrackBufferSizeProvider;
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory;
 import androidx.media3.exoplayer.upstream.DefaultBandwidthMeter;
 import androidx.media3.exoplayer.upstream.DefaultLoadErrorHandlingPolicy;
@@ -44,7 +43,6 @@ import androidx.media3.exoplayer.upstream.LoadErrorHandlingPolicy;
 
 import org.chromium.net.CronetEngine;
 
-import java.io.IOException;
 import java.lang.ref.WeakReference;
 import java.lang.reflect.Field;
 import java.net.CookieHandler;
@@ -327,6 +325,18 @@ public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener 
         });
     }
 
+    private void syncAudioEffectsForSource(@Nullable PlayableItem currentSrc, final long currentGeneration) {
+        if (currentSrc == null) return;
+        final String channelIdentifier = currentSrc.getLocation().toString();
+        asyncIoExecutor.execute(() -> {
+            if (currentGeneration != activeStreamId.get()) return;
+            AudioEffects fx = getAudioEffects();
+            if (fx != null) {
+                fx.loadAndApplyPersistedSettingsForChannel(my.app.utils.app.App.get(), channelIdentifier);
+            }
+        });
+    }
+
     private void handleAudioSessionInitialization(int audioSessionId) {
         synchronized (engineLock) {
             if (audioSessionId == C.AUDIO_SESSION_ID_UNSET || audioSessionId == 0) return;
@@ -335,19 +345,7 @@ public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener 
             }
             audioEffects = AudioEffects.create(appCtx, 1, audioSessionId);
             Log.i("ExoPlayerEngine", "Audio Effects pipeline re-anchored successfully to audio session: " + audioSessionId);
-            
-            final PlayableItem currentSrc = source;
-            if (currentSrc != null) {
-                final long currentGeneration = activeStreamId.get();
-                asyncIoExecutor.execute(() -> {
-                    if (currentGeneration != activeStreamId.get()) return;
-                    AudioEffects fx = getAudioEffects();
-                    if (fx != null) {
-                        String channelIdentifier = "exo_file_" + currentSrc.getLocation().hashCode();
-                        fx.loadAndApplyPersistedSettingsForChannel(my.app.utils.app.App.get(), channelIdentifier);
-                    }
-                });
-            }
+            syncAudioEffectsForSource(source, activeStreamId.get());
         }
     }
 
@@ -421,6 +419,7 @@ public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener 
             Uri uri = source.getLocation();
             this.isHls = Util.inferContentType(uri) == C.CONTENT_TYPE_HLS;
 
+            syncAudioEffectsForSource(source, currentGeneration);
             universallyResolveAndPrepare(source, uri, currentGeneration);
         }
     }
@@ -643,17 +642,7 @@ public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener 
                                         group.getMediaTrackGroup(), j))
                                 .build());
 
-                        final long streamTrackId = info.getId();
-                        final PlayableItem currentSrc = source;
-                        if (currentSrc != null) {
-                            asyncIoExecutor.execute(() -> {
-                                AudioEffects fx = getAudioEffects();
-                                if (fx != null) {
-                                    String streamTrackIdentifier = "exo_file_" + currentSrc.getLocation().hashCode() + "_track_" + streamTrackId;
-                                    fx.loadAndApplyPersistedSettingsForChannel(my.app.utils.app.App.get(), streamTrackIdentifier);
-                                }
-                            });
-                        }
+                        syncAudioEffectsForSource(source, activeStreamId.get());
                         return;
                     }
                 }
