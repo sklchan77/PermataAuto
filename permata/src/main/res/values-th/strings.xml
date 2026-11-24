@@ -1,0 +1,349 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="addons">ส่วนเสริม</string>
+    <string name="addon_name_tv">ทีวี</string>
+    <string name="addon_name_web_browser">เว็บเบราว์เซอร์</string>
+
+    <string name="interface_prefs">ส่วนติดต่อผู้ใช้</string>
+    <string name="interface_prefs_aa">Android Auto</string>
+    <string name="playback_settings">การตั้งค่าการเล่น</string>
+    <string name="playback_control">การควบคุมการเล่น</string>
+    <string name="engine_prefs">เอนจินสื่อ</string>
+
+    <string name="theme">ธีมแอปพลิเคชัน</string>
+    <string name="theme_sub">ธีมปัจจุบัน: %1$s</string>
+    <string name="theme_light">สว่าง</string>
+    <string name="theme_dark">มืด</string>
+    <string name="theme_system">ตามระบบ</string>
+    <string name="theme_black">ดำสนิท</string>
+    <string name="theme_star_wars">Star Wars</string>
+    <string name="theme_purple">สีม่วง</string>
+    <string name="theme_classic">คลาสสิก</string>
+
+    <string name="nav_bar_pos">ตำแหน่งแถบนำทาง</string>
+    <string name="nav_bar_pos_sub">ตำแหน่งปัจจุบัน: %1$s</string>
+    <string name="nav_bar_pos_bottom">ด้านล่าง</string>
+    <string name="nav_bar_pos_left">ด้านซ้าย</string>
+    <string name="nav_bar_pos_right">ด้านขวา</string>
+
+    <string name="show_track_icons">แสดงไอคอนแทร็ก</string>
+    <string name="lang">ภาษา</string>
+    <string name="trans_lang">ภาษาที่ใช้แปล</string>
+    <string name="hide_bars">ซ่อนแถบ</string>
+    <string name="hide_bars_sub">ซ่อนแถบด้านบนและด้านล่างเมื่อแผงควบคุมปรากฏขึ้น</string>
+    <string name="show_pg_up_down">แสดงปุ่มเลื่อนหน้าขึ้น/ลง</string>
+    <string name="use_dpad_cursor">ใช้เคอร์เซอร์สำหรับการนำทางด้วย D-pad</string>
+    <string name="fullscreen_mode">โหมดเต็มหน้าจอ</string>
+    <string name="nav_bar_size">ขนาดแถบนำทาง</string>
+    <string name="tool_bar_size">ขนาดแถบเครื่องมือ</string>
+    <string name="control_panel_size">ขนาดแผงควบคุม</string>
+    <string name="text_icon_size">ขนาดข้อความและไอคอน</string>
+    <string name="subtitles_size">ขนาดข้อความคำบรรยาย</string>
+
+    <string name="key_bindings">การกำหนดปุ่มกด</string>
+    <string name="key_on_click">เมื่อคลิก</string>
+    <string name="key_on_long_click">เมื่อกดค้าง</string>
+    <string name="key_on_dbl_click">เมื่อดับเบิลคลิก</string>
+    <string name="action_stop">หยุด</string>
+    <string name="action_play">เล่น</string>
+    <string name="action_pause">หยุดชั่วคราว</string>
+    <string name="action_play_pause">เล่น/หยุดชั่วคราว</string>
+    <string name="action_prev">เล่นก่อนหน้า</string>
+    <string name="action_next">เล่นถัดไป</string>
+    <string name="action_prev_folder">เล่นโฟลเดอร์ก่อนหน้า</string>
+    <string name="action_next_folder">เล่นโฟลเดอร์ถัดไป</string>
+    <string name="action_rw">กรอกลับ</string>
+    <string name="action_ff">กรอไปข้างหน้า</string>
+    <string name="action_vol_up">เพิ่มระดับเสียง</string>
+    <string name="action_vol_down">ลดระดับเสียง</string>
+    <string name="action_vol_mute_unmute">ปิดเสียง/เปิดเสียง</string>
+    <string name="action_activate_voice_ctrl">เปิดใช้งานการควบคุมด้วยเสียง</string>
+    <string name="action_menu">เมนู</string>
+    <string name="action_cp_menu">เมนูแผงควบคุม</string>
+    <string name="action_back_or_exit">ย้อนกลับหรือออก</string>
+    <string name="action_exit">ออก</string>
+    <string name="action_default">ค่าเริ่มต้น</string>
+    <string name="action_none">ไม่มี</string>
+
+    <string name="play_next_on_completion">เล่นรายการถัดไปเมื่อจบ</string>
+    <string name="nothing_to_resume">ไม่มีรายการให้เล่นต่อ</string>
+
+    <string name="rw_ff_click">กรอกลับ/ไปข้างหน้า - คลิก</string>
+    <string name="rw_ff_long_click">กรอกลับ/ไปข้างหน้า - กดค้าง</string>
+    <string name="prev_next_long_click">ก่อนหน้า/ถัดไป - กดค้าง</string>
+    <string name="play_pause_stop">หยุดเมื่อกดปุ่มเล่น/หยุดชั่วคราวค้างไว้</string>
+
+    <string name="time">เวลา</string>
+    <string name="time_unit">หน่วยเวลา</string>
+    <string name="time_unit_sub">ค่าปัจจุบัน: %1$s</string>
+    <string name="time_unit_second">วินาที</string>
+    <string name="time_unit_minute">นาที</string>
+    <string name="time_unit_percent">เปอร์เซ็นต์</string>
+
+    <string name="video_control">การควบคุมวิดีโอ</string>
+    <string name="video_control_start_delay">แสดงเมื่อเริ่มต้น</string>
+    <string name="video_control_touch_delay">แสดงเมื่อแตะ</string>
+    <string name="video_control_seek_delay">แสดงเมื่อเลื่อนเวลา</string>
+    <string name="video_aa_show_status">แสดงแถบสถานะใน Android Auto</string>
+
+    <string name="enable_exoplayer">เปิดใช้งาน ExoPlayer</string>
+    <string name="enable_vlcplayer">เปิดใช้งาน VLC</string>
+    <string name="preferred_audio_engine">เอนจินเสียงที่ต้องการ</string>
+    <string name="preferred_video_engine">เอนจินวิดีโอที่ต้องการ</string>
+    <string name="engine_installed">ติดตั้งเอนจินสื่อแล้ว: %1$s</string>
+    <string name="engine_uninstalled">ถอนการติดตั้งเอนจินสื่อแล้ว: %1$s</string>
+
+    <string name="preferred_media_scanner">ตัวสแกนสื่อที่ต้องการ</string>
+    <string name="preferred_media_scanner_default">ค่าเริ่มต้น</string>
+    <string name="preferred_media_scanner_system">ระบบ</string>
+
+    <string name="voice_search">ค้นหาด้วยเสียง</string>
+    <string name="voice_control">การควบคุมด้วยเสียง</string>
+    <string name="voice_control_fb">ปุ่มลอย</string>
+    <string name="voice_control_sub_long">เปิดใช้งานการควบคุมด้วยเสียงเมื่อกดค้าง</string>
+    <string name="voice_control_subst">การแทนที่คำ</string>
+    <string name="voice_control_subst_sub">แทนที่คำด้วยคำหรือวลีอื่น</string>
+    <string name="voice_control_subst_hint">เปิด: เล่น\nปิด: หยุดชั่วคราว</string>
+
+    <string name="module_installation">การติดตั้งโมดูล: %1$s</string>
+    <string name="install_pending">รอการติดตั้ง: %1$s</string>
+    <string name="downloading">กำลังดาวน์โหลด %1$s</string>
+    <string name="installing">กำลังติดตั้ง %1$s</string>
+
+    <string name="speed">ความเร็ว</string>
+    <string name="audio_effects">เอฟเฟกต์เสียง</string>
+    <string name="equalier">อีควอไลเซอร์</string>
+    <string name="preset_name">ชื่อพรีเซ็ต</string>
+    <string name="virtualizer">ระบบเสียงเสมือนจริง</string>
+    <string name="auto">อัตโนมัติ</string>
+    <string name="binaural">ไบเนอรัล</string>
+    <string name="transaural">ทรานส์เนอรัล</string>
+    <string name="bass_boost">เพิ่มเสียงเบส</string>
+    <string name="vol_boost">เพิ่มระดับเสียง</string>
+    <string name="strength">ความแรง</string>
+    <string name="apply_to">นำไปใช้กับ</string>
+
+    <string name="video">วิดีโอ</string>
+    <string name="video_settings">การตั้งค่าวิดีโอ</string>
+    <string name="video_scaling">การปรับขนาดวิดีโอ</string>
+    <string name="hw_accel">การเร่งความเร็วด้วยฮาร์ดแวร์</string>
+    <string name="hw_accel_auto">อัตโนมัติ</string>
+    <string name="hw_accel_full">เต็มรูปแบบ</string>
+    <string name="hw_accel_decoding">การถอดรหัส</string>
+    <string name="hw_accel_disabled">ปิดใช้งาน</string>
+    <string name="video_scaling_best">พอดีที่สุด</string>
+    <string name="video_scaling_fill">เต็มหน้าจอ</string>
+    <string name="video_scaling_orig">ขนาดต้นฉบับ</string>
+
+    <string name="audio">เสียง</string>
+    <string name="audio_delay">ความหน่วงของเสียง</string>
+    <string name="audio_delay_aa">ความหน่วงของเสียง - Android Auto</string>
+    <string name="preferred_audio_lang">ภาษาสตรีมเสียงที่ต้องการ</string>
+    <string name="preferred_audio_key">เลือกสตรีมเสียงที่มีคำสำคัญก่อน</string>
+    <string name="select_audio_stream">เลือกสตรีมเสียง</string>
+
+    <string name="subtitles">คำบรรยาย</string>
+    <string name="subtitles_auto">สร้างอัตโนมัติ</string>
+    <string name="subtitle_delay">ความหน่วงของคำบรรยาย</string>
+    <string name="display_subtitles">แสดงคำบรรยาย</string>
+    <string name="preferred_sub_lang">ภาษาคำบรรยายที่ต้องการ</string>
+    <string name="preferred_sub_key">เลือกคำบรรยายที่มีคำสำคัญก่อน</string>
+    <string name="select_subtitles">เลือกคำบรรยาย</string>
+
+    <string name="sub_gen_buf">ความยาวบัฟเฟอร์</string>
+    <string name="sub_gen_buf_sub">โหลดล่วงหน้าตามจำนวนวินาทีที่กำหนด</string>
+    <string name="sub_gen_chunk">ความยาวส่วนย่อย</string>
+    <string name="sub_gen_chunk_sub">ประมวลผลบัฟเฟอร์เป็นส่วนย่อยตามระยะเวลาที่กำหนด</string>
+    <string name="sub_gen_model">โมเดล</string>
+    <string name="sub_gen_translate">แปลภาษา</string>
+    <string name="sub_gen_use_gpu">ใช้ GPU</string>
+    <string name="sub_gen_single">ช่วงเดียว</string>
+    <string name="sub_gen_single_sub">ถอดความทั้งส่วนย่อยเป็นช่วงเดียว</string>
+    <string name="sub_gen_downloading">โปรดรอสักครู่ขณะกำลังดาวน์โหลดโมเดล</string>
+    <string name="sub_gen_download_fail">ไม่สามารถดาวน์โหลดโมเดลได้: %s!</string>
+    <string name="sub_gen_cleanup">ลบโมเดลอื่นที่ดาวน์โหลดไว้ออกจากแคช</string>
+    <string name="sub_gen_cleanup_done">ลบแล้ว: %s</string>
+
+    <string name="eq_hz">%1$s Hz</string>
+    <string name="eq_khz">%1$s kHz</string>
+
+    <string name="current_track">แทร็กปัจจุบัน</string>
+    <string name="current_folder">โฟลเดอร์ปัจจุบัน</string>
+
+    <string name="folders">โฟลเดอร์</string>
+    <string name="favorites">รายการโปรด</string>
+    <string name="playlists">เพลย์ลิสต์</string>
+    <string name="search">ค้นหา</string>
+    <string name="filter">ตัวกรอง</string>
+    <string name="settings">การตั้งค่า</string>
+    <string name="menu">เมนู</string>
+    <string name="exit">ออก</string>
+    <string name="cancel">ยกเลิก</string>
+    <string name="got_to_current">แทร็กปัจจุบัน</string>
+
+    <string name="view">มุมมอง</string>
+    <string name="title">ชื่อเรื่อง</string>
+    <string name="subtitle">ชื่อรอง</string>
+    <string name="seq_num">หมายเลขลำดับ</string>
+    <string name="track_name">ชื่อ</string>
+    <string name="file_name">ชื่อไฟล์</string>
+    <string name="date">วันที่</string>
+    <string name="random">สุ่ม</string>
+    <string name="descending">จากมากไปน้อย</string>
+    <string name="album">อัลบั้ม</string>
+    <string name="artist">ศิลปิน</string>
+    <string name="duration">ระยะเวลา</string>
+
+    <string name="sort_by">เรียงตาม</string>
+    <string name="do_not_sort">ไม่ต้องเรียงลำดับ</string>
+
+    <string name="play">เล่น</string>
+    <string name="pause">หยุดชั่วคราว</string>
+    <string name="stop">หยุด</string>
+    <string name="prev">ก่อนหน้า</string>
+    <string name="next">ถัดไป</string>
+    <string name="rewind">กรอกลับ</string>
+    <string name="fast_forward">กรอไปข้างหน้า</string>
+    <string name="repeat">เล่นซ้ำ</string>
+    <string name="repeat_disable">ไม่เล่นซ้ำ</string>
+    <string name="shuffle">สุ่มเพลง</string>
+    <string name="shuffle_disable">ไม่สุ่มเพลง</string>
+    <string name="programme_guide">ผังรายการ</string>
+    <string name="favorites_add">เพิ่มในรายการโปรด</string>
+    <string name="favorites_remove">ลบออกจากรายการโปรด</string>
+    <string name="mark_watched">ทำเครื่องหมายว่าดูแล้ว</string>
+    <string name="mark_unwatched">ทำเครื่องหมายว่ายังไม่ได้ดู</string>
+    <string name="preferred_media_engine">เอนจินสื่อที่ต้องการ</string>
+    <string name="by_default">ค่าเริ่มต้น</string>
+
+    <string name="playlist_add">เพิ่มในเพลย์ลิสต์</string>
+    <string name="playlist_remove_item">ลบออกจากเพลย์ลิสต์</string>
+    <string name="playlist_create">สร้างเพลย์ลิสต์</string>
+    <string name="playlist_remove">ลบเพลย์ลิสต์</string>
+    <string name="playlist_name">ชื่อเพลย์ลิสต์</string>
+
+    <string name="bookmarks">บุ๊กมาร์ก</string>
+    <string name="create_bookmark">สร้างบุ๊กมาร์ก</string>
+    <string name="remove_bookmark">ลบบุ๊กมาร์ก</string>
+    <string name="remove_all_bookmarks">ลบบุ๊กมาร์กทั้งหมด</string>
+    <string name="bookmark_name">ชื่อ</string>
+    <string name="bookmark_time">เวลา</string>
+
+    <string name="folder_subtitle">ไฟล์: %1$d โฟลเดอร์: %2$d</string>
+    <string name="browsable_subtitle">แทร็ก: %1$d</string>
+    <string name="add_folder">เพิ่มโฟลเดอร์</string>
+    <string name="remove_folder">ลบโฟลเดอร์</string>
+    <string name="select">เลือก</string>
+    <string name="select_all">เลือกทั้งหมด</string>
+    <string name="unselect_all">ยกเลิกการเลือกทั้งหมด</string>
+    <string name="refresh">รีเฟรช</string>
+    <string name="rescan">สแกนใหม่</string>
+    <string name="share">แชร์</string>
+    <string name="edit">แก้ไข</string>
+    <string name="delete">ลบ</string>
+    <string name="delete_confirm">ลบ %1$s หรือไม่?</string>
+    <string name="delete_file_title">ลบไฟล์</string>
+    <string name="delete_file_question">คุณแน่ใจหรือไม่ว่าต้องการลบไฟล์นี้?</string>
+    <string name="delete_file_failed">ไม่สามารถลบไฟล์ %1$s ได้</string>
+    <string name="loading">กำลังโหลด…</string>
+    <string name="press_back_again">กดปุ่มย้อนกลับอีกครั้งเพื่อออก</string>
+    <string name="please_restart_app">โปรดรีสตาร์ทแอปพลิเคชัน</string>
+    <string name="use_phone_to_grant_perm">โปรดใช้โทรศัพท์ของคุณเพื่ออนุญาตสิทธิ์ที่จำเป็น</string>
+
+    <string name="vfs_content">เนื้อหา</string>
+    <string name="vfs_file_system">ระบบไฟล์</string>
+    <string name="vfs_gdrive">Google Drive</string>
+    <string name="m3u_playlist">เพลย์ลิสต์ M3U</string>
+    <string name="m3u_playlist_name">ชื่อ</string>
+    <string name="m3u_playlist_location">ตำแหน่ง</string>
+    <string name="m3u_playlist_location_hint">ไฟล์หรือ URL http(s)</string>
+    <string name="m3u_playlist_video">เพลย์ลิสต์วิดีโอ</string>
+
+    <string name="eq_manual">กำหนดเอง</string>
+    <string name="eq_normal">ปกติ</string>
+    <string name="eq_classical">คลาสสิก</string>
+    <string name="eq_dance">แดนซ์</string>
+    <string name="eq_flat">แฟลต</string>
+    <string name="eq_folk">โฟล์ก</string>
+    <string name="eq_heavy_metal">เฮฟวีเมทัล</string>
+    <string name="eq_hip_hop">ฮิปฮอป</string>
+    <string name="eq_jazz">แจ๊ส</string>
+    <string name="eq_pop">ป๊อป</string>
+    <string name="eq_rock">ร็อก</string>
+
+    <string name="host">โฮสต์</string>
+    <string name="port">พอร์ต</string>
+    <string name="path">เส้นทาง</string>
+    <string name="share_name">ชื่อแชร์</string>
+    <string name="domain">โดเมน</string>
+    <string name="username">ชื่อผู้ใช้</string>
+    <string name="password">รหัสผ่าน</string>
+    <string name="private_key">คีย์ส่วนตัว</string>
+    <string name="private_key_pass">รหัสผ่านคีย์ส่วนตัว</string>
+
+    <string name="donate">เลี้ยงกาแฟผู้พัฒนา</string>
+    <string name="donate_text">หากคุณชอบแอปพลิเคชันนี้ สามารถสนับสนุนค่ากาแฟให้ผมได้ครับ</string>
+    <string name="use_phone_for_donation">โปรดใช้โทรศัพท์ของคุณเพื่อเลี้ยงกาแฟ</string>
+
+    <string name="timer">ตัวตั้งเวลา</string>
+    <string name="hours">ชั่วโมง</string>
+    <string name="minutes">นาที</string>
+
+    <string name="enable">เปิดใช้งาน</string>
+    <string name="move_left">เลื่อนซ้าย</string>
+    <string name="move_right">เลื่อนขวา</string>
+    <string name="move_up">เลื่อนขึ้น</string>
+    <string name="move_down">เลื่อนลง</string>
+
+    <string name="sys_bars_on_video_touch">แสดงแถบระบบเมื่อแตะวิดีโอ</string>
+    <string name="play_video_landscape">เล่นวิดีโอในโหมดแนวนอน</string>
+    <string name="clock_pos">ตำแหน่งนาฬิกา</string>
+    <string name="clock_pos_none">ไม่มี</string>
+    <string name="clock_pos_left">ซ้าย</string>
+    <string name="clock_pos_right">ขวา</string>
+    <string name="clock_pos_center">ตรงกลาง</string>
+    <string name="change_brightness">ปรับความสว่างขณะเล่นวิดีโอ</string>
+    <string name="video_brightness">ความสว่างของวิดีโอ</string>
+    <string name="change_brightness_sub">สามารถปรับความสว่างด้วยการเลื่อนสองนิ้วได้เช่นกัน</string>
+    <string name="watched_threshold">เกณฑ์การดูแล้ว</string>
+    <string name="watched_threshold_sub">ทำเครื่องหมายวิดีโอว่าดูแล้วหากดูเกินเปอร์เซ็นต์ที่กำหนดนี้</string>
+
+    <string name="other">อื่นๆ</string>
+    <string name="check_updates">ตรวจสอบการอัปเดตเมื่อเริ่มต้น</string>
+    <string name="update">อัปเดต</string>
+    <string name="update_question">มีเวอร์ชันใหม่ %1$s พร้อมใช้งาน\nคุณต้องการอัปเดตแอปหรือไม่?</string>
+    <string name="export_prefs">ส่งออกการตั้งค่าไปยังไฟล์</string>
+    <string name="export_prefs_sub">ส่งออกการตั้งค่า โฟลเดอร์ เพลย์ลิสต์ ฯลฯ ไปยังไฟล์</string>
+    <string name="export_prefs_ok">บันทึกการตั้งค่าลงในไฟล์ %1$s เรียบร้อยแล้ว</string>
+    <string name="export_prefs_failed">ส่งออกการตั้งค่าไม่สำเร็จ: %1$s</string>
+    <string name="import_prefs">นำเข้าการตั้งค่าจากไฟล์</string>
+    <string name="import_prefs_sub">นำเข้าการตั้งค่าที่เคยส่งออกไว้จากไฟล์</string>
+    <string name="import_prefs_ok">นำเข้าการตั้งค่าสำเร็จแล้ว\nโปรดรีสตาร์ทแอปพลิเคชัน</string>
+    <string name="import_prefs_failed">นำเข้าการตั้งค่าไม่สำเร็จ: %1$s</string>
+    <string name="prefs_not_found">ไม่พบการตั้งค่า</string>
+    <string name="open_log">เปิดไฟล์บันทึก</string>
+    <string name="unlock_phone_and_grant">ปลดล็อกโทรศัพท์และอนุญาตสิทธิ์ที่ร้องขอ</string>
+    <string name="screen_capture_rejected">คำขอบันทึกหน้าจอถูกปฏิเสธ</string>
+    <string name="accessibility_dsc">บริการการเข้าถึงถูกใช้งานโดย Permata Mirror เพื่อจำลองการแตะหน้าจอ</string>
+    <string name="media_projection_action_text">เริ่มเลย</string>
+
+    <string name="about">เกี่ยวกับ</string>
+    <string name="about_html"><![CDATA[<H1 align="center">Permata Auto Media Player</H1>
+        <p>Permata Auto Media Player เป็นเครื่องเล่นเสียงและวิดีโอแบบโอเพนซอร์สที่มีอินเทอร์เฟซที่เรียบง่ายและใช้งานง่าย</p>
+        <p><b>ผู้พัฒนา:</b> sklchan77</p>
+        <p><b>เวอร์ชัน:</b> %1$s (%2$d)</p>
+        <p><b>หน้าแรก: </b> <a href="%3$s">%3$s</a></p>
+        ]]></string>
+
+    <string name="err_failed_to_play">ไม่สามารถเล่น %s ได้</string>
+    <string name="err_failed_to_play_cause">ไม่สามารถเล่น %1$s ได้: %2$s</string>
+    <string name="err_unsupported_source_type">ไม่รองรับประเภทแหล่งที่มา: %s</string>
+    <string name="err_playlist_exists">มีเพลย์ลิสต์นี้อยู่แล้ว: %1$s</string>
+    <string name="err_invalid_playlist_name">ชื่อเพลย์ลิสต์ไม่ถูกต้อง: %1$s</string>
+    <string name="err_failed_add_folder">ไม่สามารถเพิ่มโฟลเดอร์ได้: %1$s</string>
+    <string name="err_failed_open_url">ไม่สามารถเปิด URL ได้: %1$s</string>
+    <string name="err_failed_install_module">ไม่สามารถติดตั้งโมดูลได้: %1$s</string>
+    <string name="err_failed_to_download">ไม่สามารถดาวน์โหลด %1$s ได้</string>
+    <string name="err_no_audio_record_perm">ไม่ได้รับอนุญาตสิทธิ์ในการบันทึกเสียง</string>
+    <string name="err_failed_start_service">ไม่สามารถเริ่มบริการได้: %s</string>
+</resources>
