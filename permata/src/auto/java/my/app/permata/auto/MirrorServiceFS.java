@@ -101,11 +101,9 @@ public class MirrorServiceFS extends CarAppService {
 	}
 
 	private final class MirrorScreen extends Screen implements SurfaceCallback {
-		// Stage 1: Cancel tap and drag directly if finger moves within 450ms after onClick
-		private static final long TAP_HOLD_INTERCEPT_MS = 450L;
-		// Stage 2: Keep tap / drag-end coordinate armed for 2.5s for floating window handles
+		// Keep tap / drag-end coordinate armed for 2.5s for floating window handles
 		private static final long RECENT_ANCHOR_TTL_MS = 2500L;
-		// Stage 3: Keep Double-Tap / QuickScale coordinate armed for 3.0s without clicking or zooming
+		// Keep Double-Tap / QuickScale coordinate armed for 3.0s without clicking or zooming
 		private static final long SCALE_ANCHOR_TTL_MS = 3000L;
 		private static final long SCALE_SETTLE_MS = 240L;
 		private static final float MIN_PINCH_DELTA = 0.12f;
@@ -123,12 +121,7 @@ public class MirrorServiceFS extends CarAppService {
 		private long scrollMoveTime;
 		private Cancellable scrollUp;
 
-		// Stage 1: Pending pre-tap intercept state
-		private Cancellable pendingTap;
-		private float pendingTapX;
-		private float pendingTapY;
-
-		// Stage 2 & 3: Persistent post-tap / Double-Tap / QuickScale / chained-drag anchor state
+		// Persistent post-tap / Double-Tap / QuickScale / chained-drag anchor state
 		private float anchorX = -1f;
 		private float anchorY = -1f;
 		private long anchorExpiryTime = 0L;
@@ -173,7 +166,6 @@ public class MirrorServiceFS extends CarAppService {
 		@Override
 		public void onSurfaceDestroyed(@NonNull SurfaceContainer localSc) {
 			Log.i("[MIRROR_FS][SURFACE] onSurfaceDestroyed | size=" + localSc.getWidth() + "x" + localSc.getHeight());
-			cancelPendingTap();
 			cancelPendingScale();
 			clearAnchor();
 			if (scrollUp != null) {
@@ -198,33 +190,11 @@ public class MirrorServiceFS extends CarAppService {
 				AccessibilityEventDispatcherService.abortActiveGesture();
 			}
 
-			// Fast sequential taps: flush first tap immediately so typing/navigation never drops input
-			if (pendingTap != null) {
-				float firstX = pendingTapX;
-				float firstY = pendingTapY;
-				cancelPendingTap();
-				armAnchor(x, y, RECENT_ANCHOR_TTL_MS, "DOUBLE_TAP");
-				Log.i("[MIRROR_FS][INPUT] Fast Sequential Tap Flush | first=(" + (int) firstX + "," + (int) firstY
-						+ "), second=(" + (int) x + "," + (int) y + ")");
-				var mDisp = md();
-				if (mDisp != null) {
-					mDisp.tapFS(firstX, firstY);
-					mDisp.tapFS(x, y);
-				}
-				return;
-			}
-
-			pendingTapX = x;
-			pendingTapY = y;
-			pendingTap = handler.schedule(() -> {
-				if (pendingTap == null) return;
-				pendingTap = null;
-				armAnchor(pendingTapX, pendingTapY, RECENT_ANCHOR_TTL_MS, "RECENT_TAP");
-				Log.i("[MIRROR_FS][INPUT] Full-Screen Tap | x=" + (int) pendingTapX + ", y=" + (int) pendingTapY
-						+ " (anchor armed " + RECENT_ANCHOR_TTL_MS + "ms)");
-				var mDisp = md();
-				if (mDisp != null) mDisp.tapFS(pendingTapX, pendingTapY);
-			}, TAP_HOLD_INTERCEPT_MS);
+			armAnchor(x, y, RECENT_ANCHOR_TTL_MS, "RECENT_TAP");
+			Log.i("[MIRROR_FS][INPUT] Full-Screen Tap | x=" + (int) x + ", y=" + (int) y
+					+ " (anchor armed " + RECENT_ANCHOR_TTL_MS + "ms)");
+			var mDisp = md();
+			if (mDisp != null) mDisp.tapFS(x, y);
 		}
 
 		@Override
@@ -238,13 +208,7 @@ public class MirrorServiceFS extends CarAppService {
 
 			if (scrollUp == null) {
 				String anchorSource;
-				if (pendingTap != null) {
-					cancelPendingTap();
-					scrollStartX = pendingTapX;
-					scrollStartY = pendingTapY;
-					isAnchoredDrag = true;
-					anchorSource = "TAP_HOLD";
-				} else if (pendingScale != null) {
+				if (pendingScale != null) {
 					cancelPendingScale();
 					scrollStartX = scaleBurstStartX;
 					scrollStartY = scaleBurstStartY;
@@ -317,7 +281,6 @@ public class MirrorServiceFS extends CarAppService {
 
 		@Override
 		public void onScale(float focusX, float focusY, float scaleFactor) {
-			cancelPendingTap();
 			if (scrollUp != null) return;
 
 			if (pendingScale == null) {
@@ -381,13 +344,6 @@ public class MirrorServiceFS extends CarAppService {
 
 		private float clamp(float val, float min, float max) {
 			return Math.max(min, Math.min(max, val));
-		}
-
-		private void cancelPendingTap() {
-			if (pendingTap != null) {
-				pendingTap.cancel();
-				pendingTap = null;
-			}
 		}
 
 		private void cancelPendingScale() {
