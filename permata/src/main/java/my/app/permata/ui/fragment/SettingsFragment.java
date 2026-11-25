@@ -791,7 +791,6 @@ public class SettingsFragment extends MainActivityFragment
 	}
 
 	private void buildCustomThemeItems(MainActivityDelegate a, PreferenceSet s, boolean isAutoPrefs) {
-		Context ctx = a.getContext();
 		CustomThemeManager.Palette current = CustomThemeManager.getActiveCustomPalette(isAutoPrefs);
 
 		// 1. Load Base Built-In Theme or User Preset (Option A)
@@ -813,7 +812,7 @@ public class SettingsFragment extends MainActivityFragment
 		if (!savedPresets.isEmpty()) {
 			s.addButton(o -> {
 				o.title = R.string.custom_theme_delete_preset;
-				o.onClick = () -> showDeletePresetMenu(a, s, savedPresets);
+				o.onClick = () -> showDeletePresetMenu(a, s, isAutoPrefs, savedPresets);
 			});
 		}
 
@@ -903,6 +902,7 @@ public class SettingsFragment extends MainActivityFragment
 
 	private void showDeletePresetMenu(MainActivityDelegate a,
 									  PreferenceSet s,
+									  boolean isAutoPrefs,
 									  List<CustomThemeManager.Palette> savedPresets) {
 		a.getContextMenu().show(b -> {
 			b.setTitle(R.string.custom_theme_delete_preset);
@@ -910,8 +910,7 @@ public class SettingsFragment extends MainActivityFragment
 				String presetName = savedPresets.get(i).name;
 				b.addItem(UiUtils.getArrayItemId(i), presetName).setHandler(item -> {
 					CustomThemeManager.deletePreset(presetName);
-					s.configure(sub -> buildCustomThemeItems(a, sub, s == null));
-					if (adapter != null) adapter.setPreferenceSet(s);
+					refreshCustomThemeSubmenu(s, isAutoPrefs);
 					return true;
 				});
 			}
