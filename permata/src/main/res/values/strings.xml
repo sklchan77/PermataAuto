@@ -56,6 +56,26 @@
     <string name="theme_purple">Purple</string>
     <string name="theme_classic">Classic</string>
 
+<!-- Custom Theme & Startup Randomizer -->
+    <string name="theme_custom">Custom</string>
+    <string name="theme_random">Random (On Startup)</string>
+    <string name="custom_theme_customize">Customize Theme</string>
+    <string name="custom_theme_customize_sub">Edit colors, copy built-in themes, or manage presets</string>
+    <string name="custom_theme_load_preset">Load Base / Preset</string>
+    <string name="custom_theme_builtin_prefix">Built-in: %1$s</string>
+    <string name="custom_theme_save_preset">Save Custom Preset</string>
+    <string name="custom_theme_save_preset_sub">Save current colors as a reusable theme</string>
+    <string name="custom_theme_delete_preset">Delete Saved Preset</string>
+    <string name="custom_theme_preset_name">Preset Name</string>
+    <string name="custom_theme_preset_saved">Saved theme preset: %1$s</string>
+    <string name="custom_theme_slot_bg">Window Background</string>
+    <string name="custom_theme_slot_bars">Bars &amp; Control Panel</string>
+    <string name="custom_theme_slot_surface">Menus &amp; Dialogs</string>
+    <string name="custom_theme_slot_accent">Accent &amp; Progress</string>
+    <string name="custom_theme_slot_text_primary">Primary Text (Bars)</string>
+    <string name="custom_theme_slot_text_secondary">Secondary Text (Lists &amp; Menus)</string>
+    <string name="custom_theme_slot_icons">Icon Tint</string>
+
     <string name="nav_bar_pos">Navigation bar position</string>
     <string name="nav_bar_pos_sub">Current position: %1$s</string>
     <string name="nav_bar_pos_bottom">Bottom</string>
