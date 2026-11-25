@@ -67,7 +67,6 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
     private GestureDescription.Builder gb;
     private Pointer[] pointers = new Pointer[]{new Pointer()};
 
-    // Scrollable feed apps prioritized during top-window lookup
     private static final Set<String> SCROLLER_APPS = new HashSet<>(Arrays.asList(
             "com.ss.android.ugc.trill",
             "com.zhiliaoapp.musically",
@@ -88,17 +87,16 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
             "com.twitter.android"
     ));
 
-    // Serialized continuous stroke engine for single-finger scrolling and overlay dragging
+    // Full-Screen Mirroring (MirrorServiceFS) serialized continuous drag engine
     private static final long DRAG_IDLE_TIMEOUT_MS = 1500L;
     private static final long DRAG_CENTER_HOLD_MS = 35L;
-    private static final long DRAG_ANCHORED_HOLD_MS = 95L;
+    private static final long DRAG_ANCHORED_HOLD_MS = 110L;
     private static final long DRAG_MIN_SEGMENT_MS = 32L;
-    private static final long DRAG_MAX_SEGMENT_MS = 110L;
+    private static final long DRAG_MAX_SEGMENT_MS = 120L;
     private static final long DRAG_CENTER_LIFT_MS = 25L;
-    private static final long DRAG_ANCHORED_SETTLE_LIFT_MS = 65L;
+    private static final long DRAG_ANCHORED_SETTLE_LIFT_MS = 75L;
 
     private static volatile boolean nextDragAnchored = false;
-    private boolean activeMultiTouch = false;
 
     private long dragSessionId = 0L;
     private boolean currentDragAnchored = false;
@@ -350,26 +348,25 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
         var ds = instance;
         if ((VERSION.SDK_INT < VERSION_CODES.O) || (ds == null) || (e == null)) return false;
 
-        var cnt = e.getPointerCount();
-        var action = e.getActionMasked();
-
-        // Route single-finger touch streams into the serialized main-thread StrokeDescription engine
-        if (cnt == 1 && !ds.activeMultiTouch
-                && (action == ACTION_DOWN || action == ACTION_MOVE || action == ACTION_UP || action == ACTION_CANCEL)) {
-            return dispatchMotionEvent(e.getDownTime(), e.getEventTime(), action, e.getX(0), e.getY(0));
-        }
-
-        if (cnt > 1 || action == ACTION_POINTER_DOWN) {
-            if (!ds.activeMultiTouch) {
-                ds.activeMultiTouch = true;
-                abortActiveGesture();
+        // Full-Screen Mirroring (MirrorServiceFS) tagged stream -> serialized continuous drag engine
+        int edgeFlags = e.getEdgeFlags();
+        if ((edgeFlags & MirrorDisplay.EDGE_FLAG_FS_STREAM) != 0) {
+            final int fsAction = e.getActionMasked();
+            final float fsX = e.getX(0);
+            final float fsY = e.getY(0);
+            final boolean fsAnchored = (edgeFlags & MirrorDisplay.EDGE_FLAG_FS_ANCHORED) != 0;
+            if (Looper.myLooper() == Looper.getMainLooper()) {
+                return ds.handleSerializedDragEvent(fsAction, fsX, fsY, fsAnchored);
+            } else {
+                ds.mainHandler.post(() -> ds.handleSerializedDragEvent(fsAction, fsX, fsY, fsAnchored));
+                return true;
             }
         }
-        if (action == ACTION_UP || action == ACTION_CANCEL) {
-            ds.activeMultiTouch = false;
-        }
 
+        // Split-Screen Mirroring (MirrorActivity) -> 100% original multi-pointer gesture builder
         var pointers = ds.pointers;
+        var cnt = e.getPointerCount();
+        var action = e.getActionMasked();
         boolean completePrev;
 
         if ((cnt > 1) && (action == ACTION_MOVE)) {
@@ -404,9 +401,11 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
         }
 
         for (; idx < cnt; idx++) {
-            float[] pt = ds.clampToDisplay(e.getX(idx), e.getY(idx));
+            var x = e.getX(idx);
+            var y = e.getY(idx);
+            if ((x < 0f) || (y < 0f)) continue;
             var p = pointers[idx];
-            if (!ds.buildGesture(p, downTime, eventTime, action, pt[0], pt[1], completePrev)) return false;
+            if (!ds.buildGesture(p, downTime, eventTime, action, x, y, completePrev)) return false;
         }
 
         return (ds.gb == null) || ds.dispatch();
@@ -415,18 +414,24 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
     static boolean dispatchMotionEvent(long downTime, long eventTime, int action, float x, float y) {
         var ds = instance;
         if ((VERSION.SDK_INT < VERSION_CODES.O) || (ds == null)) return false;
+        if ((x < 0f) || (y < 0f)) return true;
+
+        final boolean anchored = nextDragAnchored;
+        if (action == ACTION_DOWN) {
+            nextDragAnchored = false;
+        }
 
         if (Looper.myLooper() == Looper.getMainLooper()) {
-            return ds.handleSerializedDragEvent(action, x, y);
+            return ds.handleSerializedDragEvent(action, x, y, anchored);
         } else {
-            ds.mainHandler.post(() -> ds.handleSerializedDragEvent(action, x, y));
+            ds.mainHandler.post(() -> ds.handleSerializedDragEvent(action, x, y, anchored));
             return true;
         }
     }
 
     private float[] clampToDisplay(float x, float y) {
-        float maxW = 1920f;
-        float maxH = 1080f;
+        float maxW = 8192f;
+        float maxH = 8192f;
         try {
             DisplayManager dm = (DisplayManager) getSystemService(Context.DISPLAY_SERVICE);
             Display d = (dm != null) ? dm.getDisplay(DEFAULT_DISPLAY) : null;
@@ -459,7 +464,7 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
     }
 
     @RequiresApi(api = VERSION_CODES.O)
-    private boolean handleSerializedDragEvent(int action, float rawX, float rawY) {
+    private boolean handleSerializedDragEvent(int action, float rawX, float rawY, boolean anchored) {
         float[] pt = clampToDisplay(rawX, rawY);
         float x = pt[0];
         float y = pt[1];
@@ -470,8 +475,7 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
                     forceLiftActiveDrag("PREEMPTED_BY_NEW_DOWN");
                 }
                 final long sessionId = ++dragSessionId;
-                currentDragAnchored = nextDragAnchored;
-                nextDragAnchored = false;
+                currentDragAnchored = anchored;
 
                 lastDragX = x;
                 lastDragY = y;
@@ -500,7 +504,7 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
                             @Override
                             public void onCancelled(GestureDescription gestureDescription) {
                                 if (sessionId != dragSessionId) return;
-                                Log.w("[MIRROR][DRAG] Initial stroke cancelled | anchored=" + currentDragAnchored);
+                                Log.w("[MIRROR_FS][DRAG] Initial stroke cancelled | anchored=" + currentDragAnchored);
                                 resetDragState();
                             }
                         },
@@ -544,7 +548,7 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
 
         float dist = (float) Math.hypot(pendingMoveX - lastDragX, pendingMoveY - lastDragY);
 
-        // Complete pending travel before lifting so floating bubbles/windows park instead of flinging
+        // Complete pending travel first so overlay windows and chat bubbles park cleanly at destination
         if (hasPendingMove && dist > 1.5f) {
             hasPendingMove = false;
             Path p = new Path();
@@ -552,7 +556,7 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
             p.lineTo(pendingMoveX, pendingMoveY);
 
             long segMs = currentDragAnchored
-                    ? Math.max(45L, Math.min(DRAG_MAX_SEGMENT_MS, Math.round(dist * 0.28f)))
+                    ? Math.max(50L, Math.min(DRAG_MAX_SEGMENT_MS, Math.round(dist * 0.32f)))
                     : DRAG_MIN_SEGMENT_MS;
 
             StrokeDescription next = activeDragStroke.continueStroke(p, 0L, segMs, true);
@@ -575,7 +579,7 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
                         @Override
                         public void onCancelled(GestureDescription gestureDescription) {
                             if (sessionId != dragSessionId) return;
-                            Log.w("[MIRROR][DRAG] Move stroke cancelled | anchored=" + currentDragAnchored);
+                            Log.w("[MIRROR_FS][DRAG] Move stroke cancelled | anchored=" + currentDragAnchored);
                             resetDragState();
                         }
                     },
@@ -613,7 +617,7 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
         resetDragState();
 
         if (stroke != null) {
-            Log.w("[MIRROR][SAFE_FUSE] Force-lifting active drag | reason=" + reason);
+            Log.w("[MIRROR_FS][SAFE_FUSE] Ending active drag stroke | reason=" + reason);
             try {
                 Path p = new Path();
                 p.moveTo(x, y);
@@ -756,7 +760,7 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
             lastActivePackage = pkgName;
 
             if (isStubbornNativeApp(pkgName) && isCarSessionActive()) {
-                Log.w("[WATCHDOG_TELEMETRY] Foreground media app detected: " + pkgName + ". Requesting audio session sync.");
+                Log.w("[WATCHDOG_TELEMETRY] Stubborn App Detected: " + pkgName + ". Firing Aggressive Reclaim!");
                 Intent reclaimIntent = new Intent(this, my.app.permata.media.service.PermataMediaService.class);
                 reclaimIntent.setAction("my.app.permata.action.AGGRESSIVE_RECLAIM");
                 try {
@@ -789,7 +793,6 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
         }
     }
 
-    // System UI, keyboard, launcher, and popup package filter
     private static final String[] IGNORE_PKG_KEYWORDS = {
             "gearhead", "permissioncontroller", "packageinstaller",
             "googlequicksearchbox", "bixby", "keymapper",
@@ -868,7 +871,11 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
             }
         } catch (Exception ignored) {}
 
-        return System.currentTimeMillis() - lastActiveBtTime < 30000;
+        if (System.currentTimeMillis() - lastActiveBtTime < 30000) {
+            return true;
+        }
+
+        return false;
     }
 
     private void checkAndClickMediaProjectionConsent(AccessibilityNodeInfo root, String pkgName) {
