@@ -40,8 +40,9 @@ public interface MainActivityPrefs
 	int CLOCK_POS_CENTER = 3;
 
 	Pref<IntSupplier> THEME_MAIN = Pref.i("THEME_MAIN", THEME_CLASSIC);
-	Pref<Supplier<String>> CUSTOM_THEME_ACTIVE = Pref.s("CUSTOM_THEME_ACTIVE", "");
+Pref<Supplier<String>> CUSTOM_THEME_ACTIVE = Pref.s("CUSTOM_THEME_ACTIVE", "");
 	Pref<Supplier<String>> CUSTOM_THEME_PRESETS = Pref.s("CUSTOM_THEME_PRESETS", "");
+	Pref<Supplier<String>> CUSTOM_COLOR_SWATCHES = Pref.s("CUSTOM_COLOR_SWATCHES", "");
 
 	Pref<BooleanSupplier> HIDE_BARS = Pref.b("HIDE_BARS", false);
 	Pref<BooleanSupplier> FULLSCREEN = Pref.b("FULLSCREEN", false);
