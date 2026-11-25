@@ -95,6 +95,7 @@ import my.app.utils.vfs.local.LocalFileSystem;
 public class SettingsFragment extends MainActivityFragment
 		implements MainActivityListener, PreferenceStore.Listener {
 	private PreferenceViewAdapter adapter;
+	private RecyclerView listView;
 
 	@Override
 	public int getFragmentId() {
@@ -133,7 +134,7 @@ public class SettingsFragment extends MainActivityFragment
 			a.addBroadcastListener(this);
 			a.getPrefs().addBroadcastListener(this);
 
-			RecyclerView listView = view.findViewById(my.app.utils.R.id.prefs_list_view);
+			listView = view.findViewById(my.app.utils.R.id.prefs_list_view);
 			listView.setHasFixedSize(true);
 			listView.setLayoutManager(new LinearLayoutManager(getContext()));
 			listView.setAdapter(adapter);
@@ -158,6 +159,7 @@ public class SettingsFragment extends MainActivityFragment
 				.removeBroadcastListeners(l -> l instanceof AddonPrefsBuilder);
 		if (adapter != null) adapter.onDestroy();
 		adapter = null;
+		listView = null;
 	}
 
 	@Override
@@ -856,7 +858,7 @@ public class SettingsFragment extends MainActivityFragment
 					latest.setSlot(slot, pickedColor);
 					CustomThemeManager.saveActiveCustomPalette(isAutoPrefs, latest);
 					ensureCustomThemeActive(a, themePref);
-					refreshCustomThemeSubmenu(s, isAutoPrefs, themePref);
+					refreshCustomThemeSubmenu(a, s, isAutoPrefs, themePref);
 				});
 			};
 		});
@@ -881,7 +883,7 @@ public class SettingsFragment extends MainActivityFragment
 					CustomThemeManager.Palette extracted = CustomThemeManager.extractBuiltInPalette(ctx, info.themeId);
 					CustomThemeManager.saveActiveCustomPalette(isAutoPrefs, extracted);
 					ensureCustomThemeActive(a, themePref);
-					refreshCustomThemeSubmenu(s, isAutoPrefs, themePref);
+					refreshCustomThemeSubmenu(a, s, isAutoPrefs, themePref);
 					return true;
 				});
 			}
@@ -891,7 +893,7 @@ public class SettingsFragment extends MainActivityFragment
 				b.addItem(UiUtils.getArrayItemId(itemIdx++), preset.name).setHandler(item -> {
 					CustomThemeManager.saveActiveCustomPalette(isAutoPrefs, preset.copy());
 					ensureCustomThemeActive(a, themePref);
-					refreshCustomThemeSubmenu(s, isAutoPrefs, themePref);
+					refreshCustomThemeSubmenu(a, s, isAutoPrefs, themePref);
 					return true;
 				});
 			}
@@ -910,7 +912,7 @@ public class SettingsFragment extends MainActivityFragment
 					CustomThemeManager.savePreset(active);
 					CustomThemeManager.saveActiveCustomPalette(isAutoPrefs, active);
 					ensureCustomThemeActive(a, themePref);
-					refreshCustomThemeSubmenu(s, isAutoPrefs, themePref);
+					refreshCustomThemeSubmenu(a, s, isAutoPrefs, themePref);
 					UiUtils.showInfo(a.getContext(),
 							a.getContext().getString(R.string.custom_theme_preset_saved, active.name));
 				});
@@ -927,22 +929,41 @@ public class SettingsFragment extends MainActivityFragment
 				String presetName = savedPresets.get(i).name;
 				b.addItem(UiUtils.getArrayItemId(i), presetName).setHandler(item -> {
 					CustomThemeManager.deletePreset(presetName);
-					refreshCustomThemeSubmenu(s, isAutoPrefs, themePref);
+					refreshCustomThemeSubmenu(a, s, isAutoPrefs, themePref);
 					return true;
 				});
 			}
 		});
 	}
 
-	private void refreshCustomThemeSubmenu(PreferenceSet s,
+	private void refreshCustomThemeSubmenu(MainActivityDelegate a,
+										   PreferenceSet s,
 										   boolean isAutoPrefs,
 										   Pref<IntSupplier> themePref) {
-		MainActivityDelegate.getActivityDelegate(requireContext()).onSuccess(a -> {
-			s.configure(sub -> buildCustomThemeItems(a, sub, isAutoPrefs, themePref));
-			if (adapter != null && adapter.getPreferenceSet() == s) {
-				adapter.setPreferenceSet(s);
+		int firstPos = RecyclerView.NO_POSITION;
+		int firstOffset = 0;
+		LinearLayoutManager lm = (listView != null && listView.getLayoutManager() instanceof LinearLayoutManager m)
+				? m : null;
+		if (lm != null) {
+			firstPos = lm.findFirstVisibleItemPosition();
+			View firstChild = (firstPos != RecyclerView.NO_POSITION) ? lm.findViewByPosition(firstPos) : null;
+			if (firstChild != null) firstOffset = firstChild.getTop() - listView.getPaddingTop();
+		}
+
+		s.configure(sub -> buildCustomThemeItems(a, sub, isAutoPrefs, themePref));
+		if (adapter != null && adapter.getPreferenceSet() == s) {
+			adapter.setPreferenceSet(s);
+			if (lm != null && firstPos != RecyclerView.NO_POSITION) {
+				final int restorePos = firstPos;
+				final int restoreOffset = firstOffset;
+				listView.post(() -> lm.scrollToPositionWithOffset(restorePos, restoreOffset));
 			}
-		});
+		}
+		if (listView != null) {
+			listView.post(() -> CustomThemeManager.applyIfCustom(a));
+		} else {
+			CustomThemeManager.applyIfCustom(a);
+		}
 	}
 
 	private void addAddons(PreferenceSet set) {
