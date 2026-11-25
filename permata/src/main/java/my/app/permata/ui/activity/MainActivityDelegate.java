@@ -1117,12 +1117,18 @@ public class MainActivityDelegate extends ActivityDelegate
 			if (AUTO && prefs.contains(THEME_AA) && getPrefs().getIntPref(THEME_AA) == THEME_RANDOM) {
 				CustomThemeManager.rerollRandomTheme(true);
 			}
-			boolean onlyCustomPaletteEdited = !prefs.contains(THEME_MAIN) && !prefs.contains(THEME_AA)
-					&& (prefs.contains(CUSTOM_THEME_ACTIVE)
-					|| (CUSTOM_THEME_ACTIVE_AA != null && prefs.contains(CUSTOM_THEME_ACTIVE_AA)));
-			if (onlyCustomPaletteEdited && auto) {
+
+			boolean currentDeviceThemeChanged = auto
+					? (AUTO && prefs.contains(THEME_AA))
+					: prefs.contains(THEME_MAIN);
+			boolean currentDevicePaletteChanged = auto
+					? (CUSTOM_THEME_ACTIVE_AA != null && prefs.contains(CUSTOM_THEME_ACTIVE_AA))
+					: prefs.contains(CUSTOM_THEME_ACTIVE);
+			boolean isCustomNow = getPrefs().getThemePref(auto) == MainActivityPrefs.THEME_CUSTOM;
+
+			if (isCustomNow && (currentDevicePaletteChanged || currentDeviceThemeChanged)) {
 				CustomThemeManager.applyIfCustom(this);
-			} else {
+			} else if (currentDeviceThemeChanged) {
 				recreate();
 			}
 		} else if (MainActivityPrefs.hasNavBarPosPref(this, prefs)) {
