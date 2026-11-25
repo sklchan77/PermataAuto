@@ -101,14 +101,15 @@ public class MirrorServiceFS extends CarAppService {
 	}
 
 	private final class MirrorScreen extends Screen implements SurfaceCallback {
-		// Stage 1: Cancel tap & drag directly if finger moves within 380ms (prevents opening collapsed bubbles)
-		private static final long TAP_HOLD_INTERCEPT_MS = 380L;
-		// Stage 2: Keep tap / drag-end coordinate armed for 2.5s so floating window titlebars grab reliably
+		// Stage 1: Cancel tap and drag directly if finger moves within 450ms after onClick
+		private static final long TAP_HOLD_INTERCEPT_MS = 450L;
+		// Stage 2: Keep tap / drag-end coordinate armed for 2.5s for floating window handles
 		private static final long RECENT_ANCHOR_TTL_MS = 2500L;
-		// Stage 3: Keep QuickScale (double-tap-hold) coordinate armed for 3.0s without clicking or zooming
+		// Stage 3: Keep Double-Tap / QuickScale coordinate armed for 3.0s without clicking or zooming
 		private static final long SCALE_ANCHOR_TTL_MS = 3000L;
-		private static final long SCALE_SETTLE_MS = 260L;
+		private static final long SCALE_SETTLE_MS = 240L;
 		private static final float MIN_PINCH_DELTA = 0.12f;
+		private static final float MIN_TWO_FINGER_FOCUS_DRIFT_PX = 0.5f;
 
 		private static final long SCROLL_LIFT_CENTER_MS = 340L;
 		private static final long SCROLL_LIFT_ANCHORED_MS = 480L;
@@ -127,17 +128,20 @@ public class MirrorServiceFS extends CarAppService {
 		private float pendingTapX;
 		private float pendingTapY;
 
-		// Stage 2 & 3: Persistent post-tap / QuickScale / chained-drag anchor state
+		// Stage 2 & 3: Persistent post-tap / Double-Tap / QuickScale / chained-drag anchor state
 		private float anchorX = -1f;
 		private float anchorY = -1f;
 		private long anchorExpiryTime = 0L;
 		private String anchorKind = "CENTER";
 
-		// QuickScale vs Two-Finger Pinch discriminator state
+		// Double-Tap / QuickScale vs Two-Finger Pinch discriminator state
 		private Cancellable pendingScale;
 		private float scaleBurstStartX;
 		private float scaleBurstStartY;
+		private float scaleBurstFirstFactor = 1.0f;
 		private float scaleBurstCumulative = 1.0f;
+		private float scaleBurstMaxDrift = 0f;
+		private int scaleBurstCount = 0;
 
 		private boolean isAnchoredDrag = false;
 
@@ -194,18 +198,18 @@ public class MirrorServiceFS extends CarAppService {
 				AccessibilityEventDispatcherService.abortActiveGesture();
 			}
 
-			// Fast human double-tap: flush both taps and arm anchor at second tap
+			// Fast sequential taps: flush first tap immediately so typing/navigation never drops input
 			if (pendingTap != null) {
 				float firstX = pendingTapX;
 				float firstY = pendingTapY;
 				cancelPendingTap();
 				armAnchor(x, y, RECENT_ANCHOR_TTL_MS, "DOUBLE_TAP");
-				Log.i("[MIRROR_FS][INPUT] Fast Double-Tap Flush | first=(" + (int) firstX + "," + (int) firstY
+				Log.i("[MIRROR_FS][INPUT] Fast Sequential Tap Flush | first=(" + (int) firstX + "," + (int) firstY
 						+ "), second=(" + (int) x + "," + (int) y + ")");
 				var mDisp = md();
 				if (mDisp != null) {
-					mDisp.tap(firstX, firstY);
-					mDisp.tap(x, y);
+					mDisp.tapFS(firstX, firstY);
+					mDisp.tapFS(x, y);
 				}
 				return;
 			}
@@ -219,7 +223,7 @@ public class MirrorServiceFS extends CarAppService {
 				Log.i("[MIRROR_FS][INPUT] Full-Screen Tap | x=" + (int) pendingTapX + ", y=" + (int) pendingTapY
 						+ " (anchor armed " + RECENT_ANCHOR_TTL_MS + "ms)");
 				var mDisp = md();
-				if (mDisp != null) mDisp.tap(pendingTapX, pendingTapY);
+				if (mDisp != null) mDisp.tapFS(pendingTapX, pendingTapY);
 			}, TAP_HOLD_INTERCEPT_MS);
 		}
 
@@ -265,9 +269,7 @@ public class MirrorServiceFS extends CarAppService {
 						+ ", source=" + anchorSource
 						+ ", startX=" + (int) scrollX + ", startY=" + (int) scrollY);
 
-				AccessibilityEventDispatcherService.setNextDragAnchored(isAnchoredDrag);
-				if (!mDisp.motionEvent(time, time, ACTION_DOWN, scrollX, scrollY)) {
-					AccessibilityEventDispatcherService.setNextDragAnchored(false);
+				if (!mDisp.motionEventFS(time, time, ACTION_DOWN, scrollX, scrollY, isAnchoredDrag)) {
 					isAnchoredDrag = false;
 					return;
 				}
@@ -277,7 +279,7 @@ public class MirrorServiceFS extends CarAppService {
 
 			scrollX = clamp(scrollX - distanceX, 0f, curSc.getWidth());
 			scrollY = clamp(scrollY - distanceY, 0f, curSc.getHeight());
-			mDisp.motionEvent(scrollDownTime, time, ACTION_MOVE, scrollX, scrollY);
+			mDisp.motionEventFS(scrollDownTime, time, ACTION_MOVE, scrollX, scrollY, isAnchoredDrag);
 
 			if (scrollUp != null) {
 				scrollUp.cancel();
@@ -303,9 +305,8 @@ public class MirrorServiceFS extends CarAppService {
 					scrollUp = null;
 					boolean wasAnchored = isAnchoredDrag;
 					isAnchoredDrag = false;
-					mDisp.motionEvent(scrollDownTime, time, ACTION_UP, scrollX, scrollY);
+					mDisp.motionEventFS(scrollDownTime, time, ACTION_UP, scrollX, scrollY, wasAnchored);
 					if (wasAnchored) {
-						// Allow immediate follow-up drag from the new parked position
 						armAnchor(scrollX, scrollY, RECENT_ANCHOR_TTL_MS, "CHAINED_DRAG");
 					}
 					Log.i("[MIRROR_FS][INPUT] Full-Screen Drag Ended | anchored=" + wasAnchored
@@ -322,32 +323,44 @@ public class MirrorServiceFS extends CarAppService {
 			if (pendingScale == null) {
 				scaleBurstStartX = focusX;
 				scaleBurstStartY = focusY;
+				scaleBurstFirstFactor = scaleFactor;
 				scaleBurstCumulative = scaleFactor;
+				scaleBurstMaxDrift = 0f;
+				scaleBurstCount = 1;
 			} else {
 				pendingScale.cancel();
 				scaleBurstCumulative *= scaleFactor;
+				float drift = (float) Math.hypot(focusX - scaleBurstStartX, focusY - scaleBurstStartY);
+				if (drift > scaleBurstMaxDrift) scaleBurstMaxDrift = drift;
+				scaleBurstCount++;
 			}
 
-			// Pre-arm silent anchor immediately so an instant swipe grabs the bubble without clicking it
+			// Pre-arm silent anchor immediately so an instant swipe grabs the bubble without opening it
 			armAnchor(scaleBurstStartX, scaleBurstStartY, SCALE_ANCHOR_TTL_MS, "SCALE_ANCHOR");
 
 			pendingScale = handler.schedule(() -> {
 				if (pendingScale == null) return;
 				pendingScale = null;
 				float delta = Math.abs(scaleBurstCumulative - 1.0f);
-				if (delta >= MIN_PINCH_DELTA) {
+				boolean isHostDoubleTap = (scaleBurstCount == 1) || (Math.abs(scaleBurstFirstFactor - 2.0f) < 0.05f);
+				boolean isTwoFingerPinch = !isHostDoubleTap
+						&& scaleBurstCount >= 3
+						&& scaleBurstMaxDrift >= MIN_TWO_FINGER_FOCUS_DRIFT_PX
+						&& delta >= MIN_PINCH_DELTA;
+
+				if (isTwoFingerPinch) {
 					clearAnchor();
 					boolean zoomIn = scaleBurstCumulative > 1.0f;
 					Log.i(String.format(Locale.US,
-							"[MIRROR_FS][INPUT] Full-Screen Scale | focusX=%d, focusY=%d, factor=%.2f, zoomIn=%b",
+							"[MIRROR_FS][INPUT] Full-Screen Pinch Scale | focusX=%d, focusY=%d, factor=%.2f, zoomIn=%b",
 							(int) scaleBurstStartX, (int) scaleBurstStartY, scaleBurstCumulative, zoomIn));
 					var mDisp = md();
-					if (mDisp != null) mDisp.scale(scaleBurstStartX, scaleBurstStartY, zoomIn);
+					if (mDisp != null) mDisp.scaleFS(scaleBurstStartX, scaleBurstStartY, zoomIn);
 				} else {
 					armAnchor(scaleBurstStartX, scaleBurstStartY, SCALE_ANCHOR_TTL_MS, "SCALE_ANCHOR");
 					Log.i(String.format(Locale.US,
-							"[MIRROR_FS][INPUT] Silent Drag-Anchor Armed | x=%d, y=%d (QuickScale delta=%.3f)",
-							(int) scaleBurstStartX, (int) scaleBurstStartY, delta));
+							"[MIRROR_FS][INPUT] Silent Drag-Anchor Armed | x=%d, y=%d, count=%d, firstFactor=%.2f, drift=%.2f",
+							(int) scaleBurstStartX, (int) scaleBurstStartY, scaleBurstCount, scaleBurstFirstFactor, scaleBurstMaxDrift));
 				}
 			}, SCALE_SETTLE_MS);
 		}
