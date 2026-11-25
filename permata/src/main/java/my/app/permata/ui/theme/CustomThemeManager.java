@@ -1,14 +1,15 @@
 package my.app.permata.ui.theme;
 
-import android.app.Activity;
 import android.content.Context;
 import android.content.res.ColorStateList;
+import android.content.res.TypedArray;
 import android.graphics.Color;
 import android.graphics.drawable.ColorDrawable;
+import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
-import android.os.Build;
 import android.text.InputFilter;
 import android.util.DisplayMetrics;
+import android.view.ContextThemeWrapper;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
@@ -25,6 +26,7 @@ import android.widget.TextView;
 import androidx.annotation.ColorInt;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
+import androidx.annotation.StringRes;
 import androidx.annotation.StyleRes;
 import androidx.core.graphics.ColorUtils;
 import androidx.recyclerview.widget.RecyclerView;
@@ -60,6 +62,27 @@ public final class CustomThemeManager {
 	public static final int SLOT_TEXT_PRIMARY = 4;
 	public static final int SLOT_TEXT_SECONDARY = 5;
 	public static final int SLOT_ICON_TINT = 6;
+
+	public static final class BuiltInThemeInfo {
+		public final int themeId;
+		@StyleRes public final int styleRes;
+		@StringRes public final int nameRes;
+
+		BuiltInThemeInfo(int themeId, @StyleRes int styleRes, @StringRes int nameRes) {
+			this.themeId = themeId;
+			this.styleRes = styleRes;
+			this.nameRes = nameRes;
+		}
+	}
+
+	public static final List<BuiltInThemeInfo> BUILT_IN_THEMES = List.of(
+			new BuiltInThemeInfo(MainActivityPrefs.THEME_CLASSIC, R.style.AppTheme_Classic, R.string.theme_classic),
+			new BuiltInThemeInfo(MainActivityPrefs.THEME_DARK, R.style.AppTheme_Dark, R.string.theme_dark),
+			new BuiltInThemeInfo(MainActivityPrefs.THEME_BLACK, R.style.AppTheme_Black, R.string.theme_black),
+			new BuiltInThemeInfo(MainActivityPrefs.THEME_STAR_WARS, R.style.AppTheme_BlackStarWars, R.string.theme_star_wars),
+			new BuiltInThemeInfo(MainActivityPrefs.THEME_PURPLE, R.style.AppTheme_Purple, R.string.theme_purple),
+			new BuiltInThemeInfo(MainActivityPrefs.THEME_LIGHT, R.style.AppTheme_Light, R.string.theme_light)
+	);
 
 	private static final int[] BUILT_IN_RANDOM_POOL = new int[]{
 			MainActivityPrefs.THEME_DARK,
@@ -115,16 +138,16 @@ public final class CustomThemeManager {
 			this.iconTint = iconTint;
 		}
 
-		public static Palette createDefault() {
+		public static Palette createFallback() {
 			return new Palette(
-					"Default Custom",
-					0xFF121212, // windowBg
-					0xFF1F1B24, // primaryBars
-					0xFF25202B, // surfaceMenu
-					0xFFBB86FC, // accent
-					0xFFFFFFFF, // textPrimary
-					0xFFE0E0E0, // textSecondary
-					0xFFFFFFFF  // iconTint
+					"Custom",
+					0xFF121212,
+					0xFF1F1B24,
+					0xFF25202B,
+					0xFFBB86FC,
+					0xFFFFFFFF,
+					0xFFE0E0E0,
+					0xFFFFFFFF
 			);
 		}
 
@@ -182,7 +205,7 @@ public final class CustomThemeManager {
 
 		@NonNull
 		public static Palette fromJson(@Nullable JSONObject o) {
-			Palette def = createDefault();
+			Palette def = createFallback();
 			if (o == null) return def;
 			return new Palette(
 					o.optString("name", def.name),
@@ -198,6 +221,61 @@ public final class CustomThemeManager {
 	}
 
 	// =========================================================================
+	// Built-In XML Theme Extractor (Option A)
+	// =========================================================================
+
+	@NonNull
+	public static Palette extractBuiltInPalette(@NonNull Context ctx, int themeId) {
+		BuiltInThemeInfo target = BUILT_IN_THEMES.get(0);
+		for (BuiltInThemeInfo info : BUILT_IN_THEMES) {
+			if (info.themeId == themeId) {
+				target = info;
+				break;
+			}
+		}
+		return extractFromStyle(ctx, target.styleRes, ctx.getString(target.nameRes));
+	}
+
+	@NonNull
+	public static Palette extractFromStyle(@NonNull Context ctx, @StyleRes int styleRes, @NonNull String label) {
+		try {
+			Context themed = new ContextThemeWrapper(ctx, styleRes);
+			int windowBg = resolveAttrColor(themed, android.R.attr.colorBackground, 0xFF121212);
+			TypedArray wta = themed.getTheme().obtainStyledAttributes(new int[]{android.R.attr.windowBackground});
+			Drawable wd = wta.getDrawable(0);
+			wta.recycle();
+			if (wd instanceof ColorDrawable cd) {
+				windowBg = cd.getColor();
+			}
+
+			int primaryBars = resolveAttrColor(themed, androidx.appcompat.R.attr.colorPrimary, 0xFF1F1B24);
+			int surfaceMenu = resolveAttrColor(themed, com.google.android.material.R.attr.colorSurface, primaryBars);
+			int accent = resolveAttrColor(themed, androidx.appcompat.R.attr.colorAccent, 0xFFBB86FC);
+			int textPrimary = resolveAttrColor(themed, android.R.attr.textColorPrimary, Color.WHITE);
+			int textSecondary = resolveAttrColor(themed, android.R.attr.textColorSecondary, 0xFFE0E0E0);
+			int iconTint = resolveAttrColor(themed, com.google.android.material.R.attr.colorOnPrimary, textPrimary);
+
+			return new Palette(label, windowBg, primaryBars, surfaceMenu, accent,
+					textPrimary, textSecondary, iconTint);
+		} catch (Exception ex) {
+			Log.w(ex, "Failed extracting built-in theme style, using fallback");
+			return Palette.createFallback();
+		}
+	}
+
+	@ColorInt
+	private static int resolveAttrColor(@NonNull Context themedCtx, int attr, @ColorInt int fallback) {
+		TypedArray ta = themedCtx.getTheme().obtainStyledAttributes(new int[]{attr});
+		try {
+			ColorStateList csl = ta.getColorStateList(0);
+			if (csl != null) return csl.getDefaultColor();
+			return ta.getColor(0, fallback);
+		} finally {
+			ta.recycle();
+		}
+	}
+
+	// =========================================================================
 	// Storage & Presets
 	// =========================================================================
 
@@ -205,16 +283,20 @@ public final class CustomThemeManager {
 	public static Palette getActiveCustomPalette(boolean auto) {
 		MainActivityPrefs prefs = MainActivityPrefs.get();
 		PreferenceStore.Pref<my.app.utils.function.Supplier<String>> key =
-				(auto && MainActivityPrefs.CUSTOM_THEME_ACTIVE_AA != null && prefs.hasPref(MainActivityPrefs.CUSTOM_THEME_ACTIVE_AA))
+				(auto && MainActivityPrefs.CUSTOM_THEME_ACTIVE_AA != null)
 						? MainActivityPrefs.CUSTOM_THEME_ACTIVE_AA
 						: MainActivityPrefs.CUSTOM_THEME_ACTIVE;
 		String raw = prefs.getStringPref(key);
-		if (raw == null || raw.isEmpty()) return Palette.createDefault();
+		if (raw == null || raw.isEmpty()) {
+			Context appCtx = PermataApplication.get();
+			int seedTheme = auto ? MainActivityPrefs.THEME_DARK : MainActivityPrefs.THEME_CLASSIC;
+			return (appCtx != null) ? extractBuiltInPalette(appCtx, seedTheme) : Palette.createFallback();
+		}
 		try {
 			return Palette.fromJson(new JSONObject(raw));
 		} catch (Exception ex) {
-			Log.w(ex, "Invalid active custom theme JSON, falling back to default");
-			return Palette.createDefault();
+			Log.w(ex, "Invalid active custom theme JSON, falling back");
+			return Palette.createFallback();
 		}
 	}
 
@@ -423,16 +505,6 @@ public final class CustomThemeManager {
 		}
 	}
 
-	public static void applyCarWindowIfCustom(@NonNull Context ctx, @Nullable Window w) {
-		Palette p = resolveEffectiveCustomPalette(true);
-		if (p == null || w == null) return;
-		try {
-			w.setBackgroundDrawable(new ColorDrawable(p.windowBg));
-		} catch (Exception ex) {
-			Log.w(ex, "CustomThemeManager: Failed to apply custom CarWindow background");
-		}
-	}
-
 	private static void styleBarContainer(@Nullable View bar,
 										  @ColorInt int bg,
 										  @ColorInt int textColor,
@@ -479,7 +551,6 @@ public final class CustomThemeManager {
 		} else if (v instanceof TextView tv) {
 			tv.setTextColor(textColor);
 		} else if (v instanceof ImageView iv) {
-			// Avoid tinting album/video thumbnails in content lists that don't already use a tint/vector
 			if (!isContentArea || iv.getImageTintList() != null) {
 				iv.setImageTintList(ColorStateList.valueOf(iconTint));
 			}
@@ -524,7 +595,6 @@ public final class CustomThemeManager {
 		container.setPadding(pad, pad, pad, pad);
 		scroll.addView(container);
 
-		// Live preview bar + Hex EditText (Phone/Non-Car allows direct hex entry)
 		LinearLayout previewRow = new LinearLayout(ctx);
 		previewRow.setOrientation(LinearLayout.HORIZONTAL);
 		previewRow.setGravity(Gravity.CENTER_VERTICAL);
@@ -584,7 +654,7 @@ public final class CustomThemeManager {
 		DialogBuilder db = delegate.createDialogBuilder(ctx);
 		db.setTitle(title);
 		db.setView(scroll);
-		db.setPositiveButton(android.R.string.ok, ( dlg, which) -> {
+		db.setPositiveButton(android.R.string.ok, (dlg, which) -> {
 			String typed = hexInput.getText() != null ? hexInput.getText().toString().trim() : "";
 			if (!typed.isEmpty()) {
 				if (!typed.startsWith("#")) typed = "#" + typed;
