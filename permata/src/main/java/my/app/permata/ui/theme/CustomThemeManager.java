@@ -11,6 +11,7 @@ import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
 import android.graphics.RadialGradient;
+import android.graphics.RectF;
 import android.graphics.Shader;
 import android.graphics.SweepGradient;
 import android.graphics.Typeface;
@@ -26,6 +27,7 @@ import android.text.Editable;
 import android.text.InputFilter;
 import android.text.TextWatcher;
 import android.util.DisplayMetrics;
+import android.util.SparseArray;
 import android.view.ContextThemeWrapper;
 import android.view.Gravity;
 import android.view.MotionEvent;
@@ -69,8 +71,10 @@ import org.json.JSONObject;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Random;
 import java.util.Set;
 import java.util.WeakHashMap;
@@ -82,22 +86,46 @@ import my.app.permata.ui.activity.MainActivityPrefs;
 import my.app.permata.ui.view.VideoView;
 import my.app.utils.function.IntConsumer;
 import my.app.utils.log.Log;
+import my.app.utils.pref.PreferenceSet;
 import my.app.utils.pref.PreferenceStore;
 import my.app.utils.ui.UiUtils;
 import my.app.utils.ui.view.DialogBuilder;
 
 public final class CustomThemeManager {
 
+	// Zone 1: Main Screen (Window)
 	public static final int SLOT_WINDOW_BG = 0;
-	public static final int SLOT_PRIMARY_BARS = 1;
-	public static final int SLOT_SURFACE_MENU = 2;
-	public static final int SLOT_ACCENT = 3;
-	public static final int SLOT_TEXT_PRIMARY = 4;
-	public static final int SLOT_TEXT_SECONDARY = 5;
-	public static final int SLOT_ICON_TINT = 6;
+	public static final int SLOT_LIST_TEXT = 1;
+	public static final int SLOT_LIST_SUBTITLE = 2;
+	public static final int SLOT_LIST_ICONS = 3;
+
+	// Zone 2: Top & Navigation Bars
+	public static final int SLOT_BARS_BG = 4;
+	public static final int SLOT_BARS_TEXT = 5;
+	public static final int SLOT_BARS_ICONS = 6;
+
+	// Zone 3: Playback Control Panel
+	public static final int SLOT_CONTROL_BG = 7;
+	public static final int SLOT_CONTROL_TEXT = 8;
+	public static final int SLOT_CONTROL_ICONS = 9;
+
+	// Zone 4: Menus & Dialogs
+	public static final int SLOT_MENU_BG = 10;
+	public static final int SLOT_MENU_TEXT = 11;
+	public static final int SLOT_MENU_ICONS = 12;
+
+	// Zone 5: Interactive Accent
+	public static final int SLOT_ACCENT = 13;
 
 	private static final int GRID_COLS = 10;
 	private static final int GRID_ROWS = 10;
+
+	private enum Zone {
+		BARS,
+		CONTROL_PANEL,
+		CONTENT,
+		MENU
+	}
 
 	public static final class BuiltInThemeInfo {
 		public final int themeId;
@@ -185,48 +213,78 @@ public final class CustomThemeManager {
 
 	public static final class Palette {
 		public String name;
+		// Zone 1: Window
 		@ColorInt public int windowBg;
+		@ColorInt public int listText;
+		@ColorInt public int listSubtitle;
+		@ColorInt public int listIcons;
+		// Zone 2: Top & Nav Bars
 		@ColorInt public int primaryBars;
+		@ColorInt public int barsText;
+		@ColorInt public int barsIcons;
+		// Zone 3: Playback Control Panel
+		@ColorInt public int controlPanelBg;
+		@ColorInt public int controlPanelText;
+		@ColorInt public int controlPanelIcons;
+		// Zone 4: Menus & Dialogs
 		@ColorInt public int surfaceMenu;
+		@ColorInt public int menuText;
+		@ColorInt public int menuIcons;
+		// Zone 5: Interactive Accent
 		@ColorInt public int accent;
-		@ColorInt public int textPrimary;
-		@ColorInt public int textSecondary;
-		@ColorInt public int iconTint;
 
 		public Palette(String name,
 					   @ColorInt int windowBg,
+					   @ColorInt int listText,
+					   @ColorInt int listSubtitle,
+					   @ColorInt int listIcons,
 					   @ColorInt int primaryBars,
+					   @ColorInt int barsText,
+					   @ColorInt int barsIcons,
+					   @ColorInt int controlPanelBg,
+					   @ColorInt int controlPanelText,
+					   @ColorInt int controlPanelIcons,
 					   @ColorInt int surfaceMenu,
-					   @ColorInt int accent,
-					   @ColorInt int textPrimary,
-					   @ColorInt int textSecondary,
-					   @ColorInt int iconTint) {
+					   @ColorInt int menuText,
+					   @ColorInt int menuIcons,
+					   @ColorInt int accent) {
 			this.name = (name == null || name.trim().isEmpty()) ? "Custom" : name.trim();
 			this.windowBg = windowBg;
+			this.listText = listText;
+			this.listSubtitle = listSubtitle;
+			this.listIcons = listIcons;
 			this.primaryBars = primaryBars;
+			this.barsText = barsText;
+			this.barsIcons = barsIcons;
+			this.controlPanelBg = controlPanelBg;
+			this.controlPanelText = controlPanelText;
+			this.controlPanelIcons = controlPanelIcons;
 			this.surfaceMenu = surfaceMenu;
+			this.menuText = menuText;
+			this.menuIcons = menuIcons;
 			this.accent = accent;
-			this.textPrimary = textPrimary;
-			this.textSecondary = textSecondary;
-			this.iconTint = iconTint;
 		}
 
 		public static Palette createFallback() {
 			return new Palette(
 					"Custom",
-					0xFF121212,
-					0xFF1F1B24,
-					0xFF25202B,
-					0xFFBB86FC,
-					0xFFFFFFFF,
-					0xFFE0E0E0,
-					0xFFFFFFFF
+					0xFF121212, 0xFFE0E0E0, 0xFFA0A0A0, 0xFFE0E0E0,
+					0xFF1F1B24, 0xFFFFFFFF, 0xFFFFFFFF,
+					0xFF1F1B24, 0xFFFFFFFF, 0xFFFFFFFF,
+					0xFF25202B, 0xFFE0E0E0, 0xFFE0E0E0,
+					0xFFBB86FC
 			);
 		}
 
 		public Palette copy() {
-			return new Palette(name, windowBg, primaryBars, surfaceMenu, accent,
-					textPrimary, textSecondary, iconTint);
+			return new Palette(
+					name,
+					windowBg, listText, listSubtitle, listIcons,
+					primaryBars, barsText, barsIcons,
+					controlPanelBg, controlPanelText, controlPanelIcons,
+					surfaceMenu, menuText, menuIcons,
+					accent
+			);
 		}
 
 		public boolean isLightBackground() {
@@ -237,12 +295,19 @@ public final class CustomThemeManager {
 		public int getSlot(int slot) {
 			return switch (slot) {
 				case SLOT_WINDOW_BG -> windowBg;
-				case SLOT_PRIMARY_BARS -> primaryBars;
-				case SLOT_SURFACE_MENU -> surfaceMenu;
+				case SLOT_LIST_TEXT -> listText;
+				case SLOT_LIST_SUBTITLE -> listSubtitle;
+				case SLOT_LIST_ICONS -> listIcons;
+				case SLOT_BARS_BG -> primaryBars;
+				case SLOT_BARS_TEXT -> barsText;
+				case SLOT_BARS_ICONS -> barsIcons;
+				case SLOT_CONTROL_BG -> controlPanelBg;
+				case SLOT_CONTROL_TEXT -> controlPanelText;
+				case SLOT_CONTROL_ICONS -> controlPanelIcons;
+				case SLOT_MENU_BG -> surfaceMenu;
+				case SLOT_MENU_TEXT -> menuText;
+				case SLOT_MENU_ICONS -> menuIcons;
 				case SLOT_ACCENT -> accent;
-				case SLOT_TEXT_PRIMARY -> textPrimary;
-				case SLOT_TEXT_SECONDARY -> textSecondary;
-				case SLOT_ICON_TINT -> iconTint;
 				default -> primaryBars;
 			};
 		}
@@ -250,12 +315,19 @@ public final class CustomThemeManager {
 		public void setSlot(int slot, @ColorInt int color) {
 			switch (slot) {
 				case SLOT_WINDOW_BG -> windowBg = color;
-				case SLOT_PRIMARY_BARS -> primaryBars = color;
-				case SLOT_SURFACE_MENU -> surfaceMenu = color;
+				case SLOT_LIST_TEXT -> listText = color;
+				case SLOT_LIST_SUBTITLE -> listSubtitle = color;
+				case SLOT_LIST_ICONS -> listIcons = color;
+				case SLOT_BARS_BG -> primaryBars = color;
+				case SLOT_BARS_TEXT -> barsText = color;
+				case SLOT_BARS_ICONS -> barsIcons = color;
+				case SLOT_CONTROL_BG -> controlPanelBg = color;
+				case SLOT_CONTROL_TEXT -> controlPanelText = color;
+				case SLOT_CONTROL_ICONS -> controlPanelIcons = color;
+				case SLOT_MENU_BG -> surfaceMenu = color;
+				case SLOT_MENU_TEXT -> menuText = color;
+				case SLOT_MENU_ICONS -> menuIcons = color;
 				case SLOT_ACCENT -> accent = color;
-				case SLOT_TEXT_PRIMARY -> textPrimary = color;
-				case SLOT_TEXT_SECONDARY -> textSecondary = color;
-				case SLOT_ICON_TINT -> iconTint = color;
 			}
 		}
 
@@ -264,12 +336,19 @@ public final class CustomThemeManager {
 			try {
 				o.put("name", name);
 				o.put("windowBg", windowBg);
+				o.put("listText", listText);
+				o.put("listSubtitle", listSubtitle);
+				o.put("listIcons", listIcons);
 				o.put("primaryBars", primaryBars);
+				o.put("barsText", barsText);
+				o.put("barsIcons", barsIcons);
+				o.put("controlPanelBg", controlPanelBg);
+				o.put("controlPanelText", controlPanelText);
+				o.put("controlPanelIcons", controlPanelIcons);
 				o.put("surfaceMenu", surfaceMenu);
+				o.put("menuText", menuText);
+				o.put("menuIcons", menuIcons);
 				o.put("accent", accent);
-				o.put("textPrimary", textPrimary);
-				o.put("textSecondary", textSecondary);
-				o.put("iconTint", iconTint);
 			} catch (Exception ex) {
 				Log.e(ex, "Failed to serialize custom theme palette");
 			}
@@ -280,15 +359,35 @@ public final class CustomThemeManager {
 		public static Palette fromJson(@Nullable JSONObject o) {
 			Palette def = createFallback();
 			if (o == null) return def;
+
+			int winBg = o.optInt("windowBg", def.windowBg);
+			int barsBg = o.optInt("primaryBars", def.primaryBars);
+			int menuBg = o.optInt("surfaceMenu", def.surfaceMenu);
+			int acc = o.optInt("accent", def.accent);
+
+			// Seamless auto-migration from legacy 7-slot keys (textPrimary, textSecondary, iconTint)
+			int bText = o.has("barsText") ? o.optInt("barsText", def.barsText) : o.optInt("textPrimary", def.barsText);
+			int bIcons = o.has("barsIcons") ? o.optInt("barsIcons", def.barsIcons) : o.optInt("iconTint", def.barsIcons);
+			int lText = o.has("listText") ? o.optInt("listText", def.listText) : o.optInt("textSecondary", def.listText);
+			int lSub = o.has("listSubtitle")
+					? o.optInt("listSubtitle", def.listSubtitle)
+					: ColorUtils.blendARGB(winBg, lText, 0.70f);
+			int lIcons = o.has("listIcons") ? o.optInt("listIcons", def.listIcons) : o.optInt("iconTint", bIcons);
+
+			int ctrlBg = o.optInt("controlPanelBg", barsBg);
+			int ctrlText = o.optInt("controlPanelText", bText);
+			int ctrlIcons = o.optInt("controlPanelIcons", bIcons);
+
+			int mText = o.optInt("menuText", lText);
+			int mIcons = o.optInt("menuIcons", lIcons);
+
 			return new Palette(
 					o.optString("name", def.name),
-					o.optInt("windowBg", def.windowBg),
-					o.optInt("primaryBars", def.primaryBars),
-					o.optInt("surfaceMenu", def.surfaceMenu),
-					o.optInt("accent", def.accent),
-					o.optInt("textPrimary", def.textPrimary),
-					o.optInt("textSecondary", def.textSecondary),
-					o.optInt("iconTint", def.iconTint)
+					winBg, lText, lSub, lIcons,
+					barsBg, bText, bIcons,
+					ctrlBg, ctrlText, ctrlIcons,
+					menuBg, mText, mIcons,
+					acc
 			);
 		}
 	}
@@ -362,12 +461,23 @@ public final class CustomThemeManager {
 			int primaryBars = resolveAttrColor(themed, androidx.appcompat.R.attr.colorPrimary, 0xFF1F1B24);
 			int surfaceMenu = resolveAttrColor(themed, com.google.android.material.R.attr.colorSurface, primaryBars);
 			int accent = resolveAttrColor(themed, androidx.appcompat.R.attr.colorAccent, 0xFFBB86FC);
-			int textPrimary = resolveAttrColor(themed, android.R.attr.textColorPrimary, Color.WHITE);
-			int textSecondary = resolveAttrColor(themed, android.R.attr.textColorSecondary, 0xFFE0E0E0);
-			int iconTint = resolveAttrColor(themed, com.google.android.material.R.attr.colorOnPrimary, textPrimary);
+			int barsText = resolveAttrColor(themed, android.R.attr.textColorPrimary, Color.WHITE);
+			int barsIcons = resolveAttrColor(themed, com.google.android.material.R.attr.colorOnPrimary, barsText);
+			int listText = resolveAttrColor(themed, android.R.attr.textColorSecondary, 0xFFE0E0E0);
+			int listSubtitle = ColorUtils.blendARGB(windowBg, listText, 0.70f);
+			int onSurface = resolveAttrColor(themed, com.google.android.material.R.attr.colorOnSurface, listText);
+			int listIcons = onSurface;
+			int menuText = onSurface;
+			int menuIcons = onSurface;
 
-			return new Palette(label, windowBg, primaryBars, surfaceMenu, accent,
-					textPrimary, textSecondary, iconTint);
+			return new Palette(
+					label,
+					windowBg, listText, listSubtitle, listIcons,
+					primaryBars, barsText, barsIcons,
+					primaryBars, barsText, barsIcons,
+					surfaceMenu, menuText, menuIcons,
+					accent
+			);
 		} catch (Exception ex) {
 			Log.w(ex, "Failed extracting built-in theme style, using fallback");
 			return Palette.createFallback();
@@ -547,7 +657,7 @@ public final class CustomThemeManager {
 	}
 
 	// =========================================================================
-	// Runtime View, Window, Overlay & RecyclerView Styler
+	// Runtime View, Window, Overlay & RecyclerView Zone Styler
 	// =========================================================================
 
 	public static void applyIfCustom(@NonNull MainActivityDelegate delegate) {
@@ -597,21 +707,17 @@ public final class CustomThemeManager {
 
 			View loadingBar = delegate.findViewById(R.id.content_loading_progress);
 			if (loadingBar != null) {
-				tintChildrenRecursive(delegate, loadingBar, p.textSecondary, p.iconTint, p.accent, true, false);
+				tintZoneRecursive(delegate, loadingBar, p, Zone.CONTENT);
 			}
-
-			styleBarContainer(delegate, delegate.getToolBar(), p);
-			styleBarContainer(delegate, delegate.getNavBar(), p);
-			styleBarContainer(delegate, delegate.getControlPanel(), p);
 
 			View fb = delegate.getFloatingButton();
 			if (fb != null) {
 				fb.setBackgroundTintList(ColorStateList.valueOf(p.primaryBars));
 				if (fb instanceof FloatingActionButton fab) {
-					fab.setSupportImageTintList(ColorStateList.valueOf(p.iconTint));
+					fab.setSupportImageTintList(ColorStateList.valueOf(p.barsIcons));
 					fab.setRippleColor(ColorStateList.valueOf(p.accent));
 				} else if (fb instanceof ImageView iv) {
-					iv.setImageTintList(ColorStateList.valueOf(p.iconTint));
+					iv.setImageTintList(ColorStateList.valueOf(p.barsIcons));
 				}
 			}
 
@@ -623,53 +729,62 @@ public final class CustomThemeManager {
 
 	private static void applyDynamicLayers(@NonNull MainActivityDelegate delegate, @NonNull Palette p) {
 		try {
-			styleBarContainer(delegate, delegate.getToolBar(), p);
-			styleBarContainer(delegate, delegate.getNavBar(), p);
-			styleBarContainer(delegate, delegate.getControlPanel(), p);
+			styleBarsZone(delegate, delegate.getToolBar(), p);
+			styleBarsZone(delegate, delegate.getNavBar(), p);
+			styleControlPanelZone(delegate, delegate.getControlPanel(), p);
 
 			View frame = delegate.findViewById(R.id.frame_layout);
 			if (frame != null) {
-				styleContentHierarchy(delegate, frame, p);
+				styleContentZone(delegate, frame, p);
 			}
 
 			View contextMenu = delegate.findViewById(R.id.context_menu);
 			if (contextMenu != null && contextMenu.getVisibility() == View.VISIBLE) {
-				styleMenuOverlay(delegate, contextMenu, p);
+				styleMenuZone(delegate, contextMenu, p);
 			}
 			View toolMenu = delegate.findViewById(R.id.tool_menu);
 			if (toolMenu != null && toolMenu.getVisibility() == View.VISIBLE) {
-				styleMenuOverlay(delegate, toolMenu, p);
+				styleMenuZone(delegate, toolMenu, p);
 			}
 		} catch (Exception ex) {
 			Log.w(ex, "CustomThemeManager: Failed applying dynamic layers");
 		}
 	}
 
-	private static void styleBarContainer(@NonNull MainActivityDelegate delegate,
-										  @Nullable View bar,
-										  @NonNull Palette p) {
+	private static void styleBarsZone(@NonNull MainActivityDelegate delegate,
+									  @Nullable View bar,
+									  @NonNull Palette p) {
 		if (bar == null) return;
 		bar.setBackgroundColor(p.primaryBars);
 		styleOpaqueChildSurfaces(bar, p.primaryBars, false);
-		tintChildrenRecursive(delegate, bar, p.textPrimary, p.iconTint, p.accent, false, false);
+		tintZoneRecursive(delegate, bar, p, Zone.BARS);
 	}
 
-	private static void styleMenuOverlay(@NonNull MainActivityDelegate delegate,
-										 @NonNull View menuView,
-										 @NonNull Palette p) {
-		styleOpaqueChildSurfaces(menuView, p.surfaceMenu, true);
-		tintChildrenRecursive(delegate, menuView, p.textSecondary, p.iconTint, p.accent, true, true);
-	}
-
-	private static void styleContentHierarchy(@NonNull MainActivityDelegate delegate,
-											  @NonNull View root,
+	private static void styleControlPanelZone(@NonNull MainActivityDelegate delegate,
+											  @Nullable View panel,
 											  @NonNull Palette p) {
+		if (panel == null) return;
+		panel.setBackgroundColor(p.controlPanelBg);
+		styleOpaqueChildSurfaces(panel, p.controlPanelBg, false);
+		tintZoneRecursive(delegate, panel, p, Zone.CONTROL_PANEL);
+	}
+
+	private static void styleMenuZone(@NonNull MainActivityDelegate delegate,
+									  @NonNull View menuView,
+									  @NonNull Palette p) {
+		styleOpaqueChildSurfaces(menuView, p.surfaceMenu, true);
+		tintZoneRecursive(delegate, menuView, p, Zone.MENU);
+	}
+
+	private static void styleContentZone(@NonNull MainActivityDelegate delegate,
+										 @NonNull View root,
+										 @NonNull Palette p) {
 		if (root instanceof ViewGroup vg) {
 			for (int i = 0; i < vg.getChildCount(); i++) {
 				styleContentCardsRecursive(vg.getChildAt(i), p);
 			}
 		}
-		tintChildrenRecursive(delegate, root, p.textSecondary, p.iconTint, p.accent, true, false);
+		tintZoneRecursive(delegate, root, p, Zone.CONTENT);
 	}
 
 	private static void styleContentCardsRecursive(@NonNull View v, @NonNull Palette p) {
@@ -716,17 +831,14 @@ public final class CustomThemeManager {
 
 	private static void hookRecyclerView(@NonNull MainActivityDelegate delegate,
 										 @NonNull RecyclerView rv,
-										 boolean isContentArea,
-										 boolean isMenuOverlay) {
+										 @NonNull Zone zone) {
 		if (!HOOKED_RECYCLERS.add(rv)) return;
 		rv.addOnChildAttachStateChangeListener(new RecyclerView.OnChildAttachStateChangeListener() {
 			@Override
 			public void onChildViewAttachedToWindow(@NonNull View child) {
 				Palette active = resolveEffectiveCustomPalette(delegate.isCarActivity());
 				if (active == null) return;
-				int textColor = isContentArea ? active.textSecondary : active.textPrimary;
-				tintChildrenRecursive(delegate, child, textColor, active.iconTint, active.accent,
-						isContentArea, isMenuOverlay);
+				tintZoneRecursive(delegate, child, active, zone);
 			}
 
 			@Override
@@ -735,14 +847,50 @@ public final class CustomThemeManager {
 		});
 	}
 
-	private static void tintChildrenRecursive(@NonNull MainActivityDelegate delegate,
-											  @NonNull View v,
-											  @ColorInt int textColor,
-											  @ColorInt int iconTint,
-											  @ColorInt int accent,
-											  boolean isContentArea,
-											  boolean isMenuOverlay) {
+	private static void tintZoneRecursive(@NonNull MainActivityDelegate delegate,
+										  @NonNull View v,
+										  @NonNull Palette p,
+										  @NonNull Zone zone) {
 		if (isProtectedView(v)) return;
+
+		int textColor;
+		int subtitleColor;
+		int iconTint;
+		boolean isContentArea;
+		boolean isMenuOverlay;
+
+		switch (zone) {
+			case BARS -> {
+				textColor = p.barsText;
+				subtitleColor = ColorUtils.blendARGB(p.primaryBars, p.barsText, 0.72f);
+				iconTint = p.barsIcons;
+				isContentArea = false;
+				isMenuOverlay = false;
+			}
+			case CONTROL_PANEL -> {
+				textColor = p.controlPanelText;
+				subtitleColor = ColorUtils.blendARGB(p.controlPanelBg, p.controlPanelText, 0.72f);
+				iconTint = p.controlPanelIcons;
+				isContentArea = false;
+				isMenuOverlay = false;
+			}
+			case MENU -> {
+				textColor = p.menuText;
+				subtitleColor = ColorUtils.blendARGB(p.surfaceMenu, p.menuText, 0.72f);
+				iconTint = p.menuIcons;
+				isContentArea = true;
+				isMenuOverlay = true;
+			}
+			default -> {
+				textColor = p.listText;
+				subtitleColor = p.listSubtitle;
+				iconTint = p.listIcons;
+				isContentArea = true;
+				isMenuOverlay = false;
+			}
+		}
+
+		int accent = p.accent;
 
 		if (v instanceof SeekBar sb) {
 			sb.setThumbTintList(ColorStateList.valueOf(accent));
@@ -781,13 +929,13 @@ public final class CustomThemeManager {
 			cb.setTextColor(textColor);
 		} else if (v instanceof EditText et) {
 			et.setTextColor(textColor);
-			et.setHintTextColor(ColorUtils.setAlphaComponent(textColor, 150));
+			et.setHintTextColor(subtitleColor);
 			ViewCompat.setBackgroundTintList(et, ColorStateList.valueOf(accent));
 		} else if (v instanceof Button btn) {
 			btn.setTextColor(isMenuOverlay ? accent : textColor);
 			tintCompoundDrawables(btn, iconTint);
 		} else if (v instanceof TextView tv) {
-			tv.setTextColor(textColor);
+			tv.setTextColor(isSubtitleTextView(tv) ? subtitleColor : textColor);
 			tintCompoundDrawables(tv, iconTint);
 		} else if (v instanceof ImageView iv) {
 			if (shouldTintImageView(iv, isContentArea)) {
@@ -796,20 +944,49 @@ public final class CustomThemeManager {
 		}
 
 		if (v instanceof RecyclerView rv) {
-			hookRecyclerView(delegate, rv, isContentArea, isMenuOverlay);
+			hookRecyclerView(delegate, rv, zone);
 			for (int i = 0; i < rv.getChildCount(); i++) {
-				tintChildrenRecursive(delegate, rv.getChildAt(i), textColor, iconTint, accent,
-						isContentArea, isMenuOverlay);
+				tintZoneRecursive(delegate, rv.getChildAt(i), p, zone);
 			}
 			return;
 		}
 
 		if (v instanceof ViewGroup vg) {
 			for (int i = 0; i < vg.getChildCount(); i++) {
-				tintChildrenRecursive(delegate, vg.getChildAt(i), textColor, iconTint, accent,
-						isContentArea, isMenuOverlay);
+				tintZoneRecursive(delegate, vg.getChildAt(i), p, zone);
 			}
 		}
+	}
+
+	private static boolean isSubtitleTextView(@NonNull TextView tv) {
+		int id = tv.getId();
+		if (id == android.R.id.summary || id == android.R.id.text2) {
+			return true;
+		}
+		if (id != View.NO_ID) {
+			try {
+				String entry = tv.getResources().getResourceEntryName(id).toLowerCase(Locale.US);
+				if (entry.contains("sub") || entry.contains("summary") || entry.contains("desc")
+						|| entry.contains("detail") || entry.contains("secondary") || entry.contains("info")
+						|| entry.contains("duration") || entry.contains("artist") || entry.contains("album")
+						|| entry.contains("hint")) {
+					return true;
+				}
+			} catch (Exception ignored) {
+			}
+		}
+		if (tv.getParent() instanceof ViewGroup parent) {
+			float mySize = tv.getTextSize();
+			for (int i = 0; i < parent.getChildCount(); i++) {
+				View sibling = parent.getChildAt(i);
+				if (sibling != tv && sibling instanceof TextView stv && !(sibling instanceof Button)) {
+					if (stv.getVisibility() == View.VISIBLE && stv.getTextSize() > mySize + 1.5f) {
+						return true;
+					}
+				}
+			}
+		}
+		return false;
 	}
 
 	private static boolean isProtectedView(@NonNull View v) {
@@ -856,7 +1033,7 @@ public final class CustomThemeManager {
 	}
 
 	// =========================================================================
-	// Color Picker Dialog: Live 7-Element Sample Template + 10x10 (100+1) Swatches + Color Wheel
+	// Color Picker Dialog: Live 14-Element Sample Template + 10x10 Swatches + Color Wheel
 	// =========================================================================
 
 	@NonNull
@@ -897,7 +1074,7 @@ public final class CustomThemeManager {
 		scroll.addView(container);
 
 		// -----------------------------------------------------------------
-		// 1. LIVE SAMPLE TEMPLATE (Pinpoints exact active slot with callout badges)
+		// 1. LIVE 14-ELEMENT SAMPLE TEMPLATE
 		// -----------------------------------------------------------------
 		SampleTemplateView sampleTemplate = new SampleTemplateView(ctx, previewPalette, editingSlot, title);
 		LinearLayout.LayoutParams tplLp = new LinearLayout.LayoutParams(
@@ -913,7 +1090,6 @@ public final class CustomThemeManager {
 		palettePanel.setOrientation(LinearLayout.VERTICAL);
 		container.addView(palettePanel);
 
-		// Big "+1" Selected Preview Box + Hex Input
 		LinearLayout previewRow = new LinearLayout(ctx);
 		previewRow.setOrientation(LinearLayout.HORIZONTAL);
 		previewRow.setGravity(Gravity.CENTER_VERTICAL);
@@ -941,7 +1117,6 @@ public final class CustomThemeManager {
 		previewRow.addView(hexInput);
 		palettePanel.addView(previewRow);
 
-		// Swatches Header Row + Reset 100 Defaults Button
 		LinearLayout swatchHeaderRow = new LinearLayout(ctx);
 		swatchHeaderRow.setOrientation(LinearLayout.HORIZONTAL);
 		swatchHeaderRow.setGravity(Gravity.CENTER_VERTICAL);
@@ -961,7 +1136,6 @@ public final class CustomThemeManager {
 		swatchHeaderRow.addView(resetBtn);
 		palettePanel.addView(swatchHeaderRow);
 
-		// Responsive 10x10 Square Grid (Zero horizontal scroll, guaranteed 1:1 square tiles)
 		LinearLayout gridContainer = new LinearLayout(ctx);
 		gridContainer.setOrientation(LinearLayout.VERTICAL);
 		gridContainer.setLayoutParams(new LinearLayout.LayoutParams(
@@ -969,7 +1143,7 @@ public final class CustomThemeManager {
 		palettePanel.addView(gridContainer);
 
 		// -----------------------------------------------------------------
-		// 3. IN-PLACE FULL SPECTRUM COLOR WHEEL PANEL (Hidden until swatch/preview tapped)
+		// 3. IN-PLACE FULL SPECTRUM COLOR WHEEL PANEL
 		// -----------------------------------------------------------------
 		LinearLayout wheelPanel = new LinearLayout(ctx);
 		wheelPanel.setOrientation(LinearLayout.VERTICAL);
@@ -997,7 +1171,6 @@ public final class CustomThemeManager {
 		colorWheel.setLayoutParams(cwLp);
 		wheelPanel.addView(colorWheel);
 
-		// Brightness (Value) slider row
 		LinearLayout brightRow = new LinearLayout(ctx);
 		brightRow.setOrientation(LinearLayout.HORIZONTAL);
 		brightRow.setGravity(Gravity.CENTER_VERTICAL);
@@ -1028,7 +1201,6 @@ public final class CustomThemeManager {
 		brightRow.addView(lightLabel);
 		wheelPanel.addView(brightRow);
 
-		// Live Wheel Color Preview + Hex
 		LinearLayout wheelPreviewRow = new LinearLayout(ctx);
 		wheelPreviewRow.setOrientation(LinearLayout.HORIZONTAL);
 		wheelPreviewRow.setGravity(Gravity.CENTER);
@@ -1050,7 +1222,6 @@ public final class CustomThemeManager {
 		wheelPreviewRow.addView(wheelHexText);
 		wheelPanel.addView(wheelPreviewRow);
 
-		// Wheel Action Buttons (Back to Swatches / Apply Color)
 		LinearLayout wheelBtnRow = new LinearLayout(ctx);
 		wheelBtnRow.setOrientation(LinearLayout.HORIZONTAL);
 		wheelBtnRow.setGravity(Gravity.CENTER);
@@ -1135,7 +1306,6 @@ public final class CustomThemeManager {
 			wheelPanel.setVisibility(View.VISIBLE);
 		};
 
-		// Populate 10x10 = 100 responsive square swatches
 		for (int row = 0; row < GRID_ROWS; row++) {
 			LinearLayout rowLayout = new LinearLayout(ctx);
 			rowLayout.setOrientation(LinearLayout.HORIZONTAL);
@@ -1166,24 +1336,20 @@ public final class CustomThemeManager {
 			gridContainer.addView(rowLayout);
 		}
 
-		// Big "+1" Preview Box also opens Full Spectrum Color Wheel
 		bigPreviewBox.setOnClickListener(v -> openWheelForTarget.accept(-1));
 
-		// Reset 100 Swatches to Default Curated Palette
 		resetBtn.setOnClickListener(v -> {
 			int[] restored = resetCustomSwatches();
 			System.arraycopy(restored, 0, swatches, 0, Math.min(restored.length, swatches.length));
 			refreshSwatchGrid.run();
 		});
 
-		// Wheel Back (cancel wheel edit & restore preview)
 		wheelBackBtn.setOnClickListener(v -> {
 			wheelPanel.setVisibility(View.GONE);
 			palettePanel.setVisibility(View.VISIBLE);
 			applyPreviewColor.accept(colorBeforeWheel[0]);
 		});
 
-		// Wheel Apply (persist customized swatch if editing 0..99, and apply color)
 		wheelApplyBtn.setOnClickListener(v -> {
 			int chosen = wheelWorkingColor[0];
 			int idx = editingSwatchIdx[0];
@@ -1196,7 +1362,6 @@ public final class CustomThemeManager {
 			applyPreviewColor.accept(chosen);
 		});
 
-		// Live Hex Typing
 		hexInput.addTextChangedListener(new TextWatcher() {
 			@Override public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
 			@Override public void onTextChanged(CharSequence s, int start, int before, int count) {}
@@ -1298,39 +1463,44 @@ public final class CustomThemeManager {
 	}
 
 	// =========================================================================
-	// Live Mini-App Sample Template with Pinpoint Callout Badges & Affects Guide
+	// Live Mini-App Sample Template for All 14 Logical Elements
 	// =========================================================================
 
 	private static final class SampleTemplateView extends LinearLayout {
 		private final int highlightSlot;
 		private final LinearLayout screenBox;
+		// Zone 2: Top & Nav Bars
 		private final LinearLayout topBar;
 		private final ImageView topIcon;
 		private final TextView topTitle;
 		private final TextView topFocusBadge;
 		private final ImageView topMenuIcon;
+		// Zone 1: Window & List
 		private final TextView bgFocusBadge;
-		private final LinearLayout listTrackRow;
 		private final ImageView listIcon;
 		private final TextView listText;
+		private final TextView listSubText;
 		private final TextView listFocusBadge;
+		// Zone 5: Accent
 		private final LinearLayout accentRow;
-		private final LinearLayout progressTrack;
 		private final View progressFill;
 		private final View progressThumb;
 		private final LinearLayout miniSwitchTrack;
 		private final View miniSwitchKnob;
 		private final TextView accentFocusBadge;
+		// Zone 4: Menus & Dialogs
 		private final LinearLayout menuCard;
 		private final TextView menuFocusBadge;
 		private final ImageView menuIcon;
 		private final TextView menuText;
+		// Zone 3: Control Panel
+		private final View bottomAccentBar;
 		private final LinearLayout bottomBar;
 		private final ImageView playIcon;
 		private final TextView nowPlayingText;
+		private final ImageView nextIcon;
 		private final TextView bottomFocusBadge;
-		private final View bottomAccentBar;
-		private final TextView affectsGuide;
+
 		private final List<TextView> activeBadges = new ArrayList<>();
 		@Nullable private AnimatorSet pulseAnim;
 
@@ -1346,9 +1516,9 @@ public final class CustomThemeManager {
 			int dp2 = UiUtils.toIntPx(ctx, 2);
 			int dp4 = UiUtils.toIntPx(ctx, 4);
 			int dp6 = UiUtils.toIntPx(ctx, 6);
-			int iconPx = UiUtils.toIntPx(ctx, 16);
+			int iconPx = UiUtils.toIntPx(ctx, 15);
 
-			// --- Header Bar: "IN FOCUS: [Slot Name]" ---
+			// --- Header Bar: "★ FOCUS  [Slot Name]" ---
 			LinearLayout headerRow = new LinearLayout(ctx);
 			headerRow.setTag("keep_own_color");
 			headerRow.setOrientation(HORIZONTAL);
@@ -1370,14 +1540,14 @@ public final class CustomThemeManager {
 			headerRow.addView(headerTitle);
 			addView(headerRow, hdrLp);
 
-			// --- Outer Mini App Screen (Window Background) ---
+			// --- Outer Mini App Screen (Zone 1: Window Background) ---
 			screenBox = new LinearLayout(ctx);
 			screenBox.setTag("keep_own_color");
 			screenBox.setOrientation(VERTICAL);
 			screenBox.setPadding(dp4, dp4, dp4, dp4);
 			addView(screenBox, new LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
-			// --- 1. Top ToolBar (Bars & Control Panel + Primary Text + Icon Tint) ---
+			// --- Zone 2: Top ToolBar ---
 			topBar = new LinearLayout(ctx);
 			topBar.setTag("keep_own_color");
 			topBar.setOrientation(HORIZONTAL);
@@ -1389,20 +1559,21 @@ public final class CustomThemeManager {
 
 			topTitle = new TextView(ctx);
 			topTitle.setTag("keep_own_color");
-			topTitle.setText("ToolBar Title");
-			topTitle.setTextSize(11f);
+			topTitle.setText("Top & Nav Bar");
+			topTitle.setTextSize(10.5f);
 			topTitle.setTypeface(null, Typeface.BOLD);
 			topTitle.setPadding(dp4, dp2, dp4, dp2);
 			LayoutParams ttLp = new LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
 			ttLp.leftMargin = dp4;
 			topBar.addView(topTitle, ttLp);
 
-			topFocusBadge = makeFocusBadge(ctx,
-					highlightSlot == SLOT_PRIMARY_BARS ? "★ BARS"
-							: (highlightSlot == SLOT_TEXT_PRIMARY ? "★ BAR TEXT" : "★ ICONS"),
-					highlightSlot == SLOT_PRIMARY_BARS
-							|| highlightSlot == SLOT_TEXT_PRIMARY
-							|| highlightSlot == SLOT_ICON_TINT);
+			String topBadgeText = switch (highlightSlot) {
+				case SLOT_BARS_BG -> "★ BARS BG";
+				case SLOT_BARS_TEXT -> "★ BAR TEXT";
+				case SLOT_BARS_ICONS -> "★ BAR ICONS";
+				default -> "";
+			};
+			topFocusBadge = makeFocusBadge(ctx, topBadgeText, !topBadgeText.isEmpty());
 			LayoutParams tfbLp = new LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
 			tfbLp.rightMargin = dp4;
 			topBar.addView(topFocusBadge, tfbLp);
@@ -1411,28 +1582,26 @@ public final class CustomThemeManager {
 			topBar.addView(topMenuIcon);
 			screenBox.addView(topBar, new LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
-			// --- Open Window Background Callout Strip (Visible when editing Window BG) ---
 			bgFocusBadge = makeFocusBadge(ctx, "★ WINDOW BACKGROUND", highlightSlot == SLOT_WINDOW_BG);
 			LayoutParams bgbLp = new LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
 			bgbLp.gravity = Gravity.CENTER_HORIZONTAL;
 			bgbLp.topMargin = dp4;
 			screenBox.addView(bgFocusBadge, bgbLp);
 
-			// --- 2. Middle Content Area (Window BG + Lists + Accent + Menu Card) ---
+			// --- Zone 1 (List) + Zone 5 (Accent) + Zone 4 (Menu Card) ---
 			LinearLayout contentRow = new LinearLayout(ctx);
 			contentRow.setTag("keep_own_color");
 			contentRow.setOrientation(HORIZONTAL);
 			contentRow.setGravity(Gravity.CENTER_VERTICAL);
 			contentRow.setPadding(dp6, dp6, dp6, dp6);
 
-			// Left Column: Track list row + Accent SeekBar & Mini Switch
 			LinearLayout leftCol = new LinearLayout(ctx);
 			leftCol.setTag("keep_own_color");
 			leftCol.setOrientation(VERTICAL);
-			LayoutParams leftLp = new LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.2f);
+			LayoutParams leftLp = new LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.25f);
 			leftLp.rightMargin = dp6;
 
-			listTrackRow = new LinearLayout(ctx);
+			LinearLayout listTrackRow = new LinearLayout(ctx);
 			listTrackRow.setTag("keep_own_color");
 			listTrackRow.setOrientation(HORIZONTAL);
 			listTrackRow.setGravity(Gravity.CENTER_VERTICAL);
@@ -1440,20 +1609,40 @@ public final class CustomThemeManager {
 			listIcon = makeMiniIcon(ctx, android.R.drawable.ic_media_next, iconPx);
 			listTrackRow.addView(listIcon);
 
+			LinearLayout listTextStack = new LinearLayout(ctx);
+			listTextStack.setTag("keep_own_color");
+			listTextStack.setOrientation(VERTICAL);
+			listTextStack.setPadding(dp4, 0, dp2, 0);
+
 			listText = new TextView(ctx);
 			listText.setTag("keep_own_color");
-			listText.setText("Track / Settings");
+			listText.setText("List Title");
 			listText.setTextSize(10f);
-			listText.setPadding(dp4, dp2, dp4, dp2);
-			listTrackRow.addView(listText);
+			listText.setTypeface(null, Typeface.BOLD);
+			listText.setPadding(dp2, dp2, dp2, 0);
+			listTextStack.addView(listText);
+
+			listSubText = new TextView(ctx);
+			listSubText.setTag("keep_own_color");
+			listSubText.setText("Subtitle • 3:42");
+			listSubText.setTextSize(8.5f);
+			listSubText.setPadding(dp2, 0, dp2, dp2);
+			listTextStack.addView(listSubText);
+
+			listTrackRow.addView(listTextStack);
 			leftCol.addView(listTrackRow);
 
-			listFocusBadge = makeFocusBadge(ctx, "★ LIST & MENU TEXT", highlightSlot == SLOT_TEXT_SECONDARY);
+			String listBadgeText = switch (highlightSlot) {
+				case SLOT_LIST_TEXT -> "★ LIST TITLE";
+				case SLOT_LIST_SUBTITLE -> "★ SUBTITLES";
+				case SLOT_LIST_ICONS -> "★ LIST ICONS";
+				default -> "";
+			};
+			listFocusBadge = makeFocusBadge(ctx, listBadgeText, !listBadgeText.isEmpty());
 			LayoutParams lfbLp = new LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
 			lfbLp.topMargin = dp2;
 			leftCol.addView(listFocusBadge, lfbLp);
 
-			// Accent Row: SeekBar + Thumb + Mini Toggle Switch
 			accentRow = new LinearLayout(ctx);
 			accentRow.setTag("keep_own_color");
 			accentRow.setOrientation(HORIZONTAL);
@@ -1462,7 +1651,7 @@ public final class CustomThemeManager {
 			LayoutParams arLp = new LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
 			arLp.topMargin = dp4;
 
-			progressTrack = new LinearLayout(ctx);
+			LinearLayout progressTrack = new LinearLayout(ctx);
 			progressTrack.setTag("keep_own_color");
 			progressTrack.setOrientation(HORIZONTAL);
 			progressTrack.setGravity(Gravity.CENTER_VERTICAL);
@@ -1484,7 +1673,6 @@ public final class CustomThemeManager {
 			progressTrack.addView(progressRest, new LayoutParams(0, UiUtils.toIntPx(ctx, 4), 0.38f));
 			accentRow.addView(progressTrack, ptLp);
 
-			// Mini ON Toggle Switch
 			miniSwitchTrack = new LinearLayout(ctx);
 			miniSwitchTrack.setTag("keep_own_color");
 			miniSwitchTrack.setOrientation(HORIZONTAL);
@@ -1498,21 +1686,27 @@ public final class CustomThemeManager {
 
 			leftCol.addView(accentRow, arLp);
 
-			accentFocusBadge = makeFocusBadge(ctx, "★ ACCENT & PROGRESS", highlightSlot == SLOT_ACCENT);
+			accentFocusBadge = makeFocusBadge(ctx, "★ ACCENT", highlightSlot == SLOT_ACCENT);
 			LayoutParams afbLp = new LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
 			afbLp.topMargin = dp2;
 			leftCol.addView(accentFocusBadge, afbLp);
 
 			contentRow.addView(leftCol, leftLp);
 
-			// Right Column: Floating Menu / Dialog Card
+			// Right Column: Zone 4 (Menu / Dialog Card)
 			menuCard = new LinearLayout(ctx);
 			menuCard.setTag("keep_own_color");
 			menuCard.setOrientation(VERTICAL);
 			menuCard.setGravity(Gravity.CENTER_VERTICAL);
 			menuCard.setPadding(dp6, dp6, dp6, dp6);
 
-			menuFocusBadge = makeFocusBadge(ctx, "★ MENU / DIALOG", highlightSlot == SLOT_SURFACE_MENU);
+			String menuBadgeText = switch (highlightSlot) {
+				case SLOT_MENU_BG -> "★ MENU BG";
+				case SLOT_MENU_TEXT -> "★ MENU TEXT";
+				case SLOT_MENU_ICONS -> "★ MENU ICONS";
+				default -> "";
+			};
+			menuFocusBadge = makeFocusBadge(ctx, menuBadgeText, !menuBadgeText.isEmpty());
 			LayoutParams mfbLp = new LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
 			mfbLp.bottomMargin = dp2;
 			menuCard.addView(menuFocusBadge, mfbLp);
@@ -1528,15 +1722,15 @@ public final class CustomThemeManager {
 			menuText = new TextView(ctx);
 			menuText.setTag("keep_own_color");
 			menuText.setText("Popup Menu");
-			menuText.setTextSize(10f);
-			menuText.setPadding(dp4, dp2, dp4, dp2);
+			menuText.setTextSize(9.5f);
+			menuText.setPadding(dp4, dp2, dp2, dp2);
 			menuInnerRow.addView(menuText);
 			menuCard.addView(menuInnerRow);
 
 			contentRow.addView(menuCard, new LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 0.85f));
 			screenBox.addView(contentRow, new LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
-			// --- 3. Bottom Accent Strip + Control Panel ---
+			// --- Zone 3: Playback Control Panel ---
 			bottomAccentBar = new View(ctx);
 			bottomAccentBar.setTag("keep_own_color");
 			screenBox.addView(bottomAccentBar, new LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, UiUtils.toIntPx(ctx, 3)));
@@ -1560,15 +1754,24 @@ public final class CustomThemeManager {
 			npLp.leftMargin = dp4;
 			bottomBar.addView(nowPlayingText, npLp);
 
-			bottomFocusBadge = makeFocusBadge(ctx,
-					highlightSlot == SLOT_PRIMARY_BARS ? "★ CONTROL BAR" : "★ BAR TEXT",
-					highlightSlot == SLOT_PRIMARY_BARS || highlightSlot == SLOT_TEXT_PRIMARY);
-			bottomBar.addView(bottomFocusBadge);
+			String ctrlBadgeText = switch (highlightSlot) {
+				case SLOT_CONTROL_BG -> "★ CONTROL BG";
+				case SLOT_CONTROL_TEXT -> "★ CONTROL TEXT";
+				case SLOT_CONTROL_ICONS -> "★ CONTROL ICONS";
+				default -> "";
+			};
+			bottomFocusBadge = makeFocusBadge(ctx, ctrlBadgeText, !ctrlBadgeText.isEmpty());
+			LayoutParams bfbLp = new LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+			bfbLp.rightMargin = dp4;
+			bottomBar.addView(bottomFocusBadge, bfbLp);
+
+			nextIcon = makeMiniIcon(ctx, android.R.drawable.ic_media_ff, iconPx);
+			bottomBar.addView(nextIcon);
 
 			screenBox.addView(bottomBar, new LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
-			// --- 4. Plain-English "Affects:" Guide Strip below the Mini Screen ---
-			affectsGuide = new TextView(ctx);
+			// --- Plain-English "Affects:" Guide Strip ---
+			TextView affectsGuide = new TextView(ctx);
 			affectsGuide.setTag("keep_own_color");
 			affectsGuide.setText(getAffectsGuide(highlightSlot));
 			affectsGuide.setTextSize(11f);
@@ -1579,7 +1782,6 @@ public final class CustomThemeManager {
 			agLp.topMargin = dp4;
 			addView(affectsGuide, agLp);
 
-			// Collect active badges for gentle pulsing attention cue
 			TextView[] allBadges = new TextView[]{
 					topFocusBadge, bgFocusBadge, listFocusBadge, accentFocusBadge, menuFocusBadge, bottomFocusBadge
 			};
@@ -1631,13 +1833,20 @@ public final class CustomThemeManager {
 		@NonNull
 		private static String getAffectsGuide(int slot) {
 			return switch (slot) {
-				case SLOT_WINDOW_BG -> "Affects: Main app screen backdrop behind folders, playlists & settings.";
-				case SLOT_PRIMARY_BARS -> "Affects: Top ToolBar, Side/Bottom NavBar, Control Panel & Floating Button.";
-				case SLOT_SURFACE_MENU -> "Affects: Pop-up context menus, option dialogs & card panels.";
-				case SLOT_ACCENT -> "Affects: SeekBar progress, loading bar, active switches & dialog action buttons.";
-				case SLOT_TEXT_PRIMARY -> "Affects: Screen titles & track names displayed inside the Top & Bottom Bars.";
-				case SLOT_TEXT_SECONDARY -> "Affects: Folder/song lists, Settings rows & popup menu labels.";
-				case SLOT_ICON_TINT -> "Affects: Navigation, ToolBar, playback controls & menu vector icons.";
+				case SLOT_WINDOW_BG -> "Affects: Main screen backdrop behind Folders, Playlists, Favorites & Settings.";
+				case SLOT_LIST_TEXT -> "Affects: Primary song/folder titles & Settings row names on the main screen.";
+				case SLOT_LIST_SUBTITLE -> "Affects: Secondary descriptions, track durations/artists, hex codes & input hints.";
+				case SLOT_LIST_ICONS -> "Affects: Folder, track, settings & unchecked toggle icons on the main screen.";
+				case SLOT_BARS_BG -> "Affects: Top ToolBar, Side/Bottom NavBar, Floating Button & Phone system bars.";
+				case SLOT_BARS_TEXT -> "Affects: Page titles & labels displayed on the Top ToolBar & NavBar.";
+				case SLOT_BARS_ICONS -> "Affects: Back, menu, navigation & Floating Button icons on Top/Nav Bars.";
+				case SLOT_CONTROL_BG -> "Affects: Playback Control Panel deck background.";
+				case SLOT_CONTROL_TEXT -> "Affects: Track title, artist & playback time displayed inside Control Panel.";
+				case SLOT_CONTROL_ICONS -> "Affects: Play/Pause, Skip, Rewind & player control icons on Control Panel.";
+				case SLOT_MENU_BG -> "Affects: Pop-up context menus, option dialogs & floating card surfaces.";
+				case SLOT_MENU_TEXT -> "Affects: Menu item labels & dialog text inside popups.";
+				case SLOT_MENU_ICONS -> "Affects: Action & option vector icons inside pop-up menus & dialogs.";
+				case SLOT_ACCENT -> "Affects: SeekBar progress, loading bar, active switches, checkboxes & dialog buttons.";
 				default -> "Affects: Selected interface theme element.";
 			};
 		}
@@ -1679,29 +1888,63 @@ public final class CustomThemeManager {
 			int hiCyan = 0xFF00E5FF;
 			int hiRed = 0xFFFF1744;
 
-			// 1. Window Background
 			int bgHi = pickHighlight(p.windowBg, hiCyan, hiRed);
+			int barHi = pickHighlight(p.primaryBars, hiCyan, hiRed);
+			int ctrlHi = pickHighlight(p.controlPanelBg, hiCyan, hiRed);
+			int menuHi = pickHighlight(p.surfaceMenu, hiCyan, hiRed);
+
+			// Zone 1: Window
 			screenBox.setBackground(makeBox(p.windowBg, 10f,
 					highlightSlot == SLOT_WINDOW_BG ? bgHi : 0x88888888,
 					highlightSlot == SLOT_WINDOW_BG ? 7 : 2));
 			styleBadge(bgFocusBadge, p.windowBg);
 
-			// 2. Bars & Control Panel
-			int barHi = pickHighlight(p.primaryBars, hiCyan, hiRed);
-			int barStroke = highlightSlot == SLOT_PRIMARY_BARS ? 6 : 0;
-			topBar.setBackground(makeBox(p.primaryBars, 6f, highlightSlot == SLOT_PRIMARY_BARS ? barHi : Color.TRANSPARENT, barStroke));
-			bottomBar.setBackground(makeBox(p.primaryBars, 6f, highlightSlot == SLOT_PRIMARY_BARS ? barHi : Color.TRANSPARENT, barStroke));
-			styleBadge(topFocusBadge, p.primaryBars);
-			styleBadge(bottomFocusBadge, p.primaryBars);
+			listText.setTextColor(p.listText);
+			listText.setBackground(highlightSlot == SLOT_LIST_TEXT
+					? makeBox(Color.TRANSPARENT, 5f, bgHi, 4) : null);
 
-			// 3. Menus & Dialogs
-			int menuHi = pickHighlight(p.surfaceMenu, hiCyan, hiRed);
+			listSubText.setTextColor(p.listSubtitle);
+			listSubText.setBackground(highlightSlot == SLOT_LIST_SUBTITLE
+					? makeBox(Color.TRANSPARENT, 5f, bgHi, 4) : null);
+
+			applyIconStyle(listIcon, ColorStateList.valueOf(p.listIcons), highlightSlot == SLOT_LIST_ICONS, bgHi);
+			styleBadge(listFocusBadge, p.windowBg);
+
+			// Zone 2: Top & Nav Bars
+			topBar.setBackground(makeBox(p.primaryBars, 6f,
+					highlightSlot == SLOT_BARS_BG ? barHi : Color.TRANSPARENT,
+					highlightSlot == SLOT_BARS_BG ? 6 : 0));
+			topTitle.setTextColor(p.barsText);
+			topTitle.setBackground(highlightSlot == SLOT_BARS_TEXT
+					? makeBox(Color.TRANSPARENT, 5f, barHi, 4) : null);
+			ColorStateList barIconCsl = ColorStateList.valueOf(p.barsIcons);
+			applyIconStyle(topIcon, barIconCsl, highlightSlot == SLOT_BARS_ICONS, barHi);
+			applyIconStyle(topMenuIcon, barIconCsl, highlightSlot == SLOT_BARS_ICONS, barHi);
+			styleBadge(topFocusBadge, p.primaryBars);
+
+			// Zone 3: Playback Control Panel
+			bottomBar.setBackground(makeBox(p.controlPanelBg, 6f,
+					highlightSlot == SLOT_CONTROL_BG ? ctrlHi : Color.TRANSPARENT,
+					highlightSlot == SLOT_CONTROL_BG ? 6 : 0));
+			nowPlayingText.setTextColor(p.controlPanelText);
+			nowPlayingText.setBackground(highlightSlot == SLOT_CONTROL_TEXT
+					? makeBox(Color.TRANSPARENT, 5f, ctrlHi, 4) : null);
+			ColorStateList ctrlIconCsl = ColorStateList.valueOf(p.controlPanelIcons);
+			applyIconStyle(playIcon, ctrlIconCsl, highlightSlot == SLOT_CONTROL_ICONS, ctrlHi);
+			applyIconStyle(nextIcon, ctrlIconCsl, highlightSlot == SLOT_CONTROL_ICONS, ctrlHi);
+			styleBadge(bottomFocusBadge, p.controlPanelBg);
+
+			// Zone 4: Menus & Dialogs
 			menuCard.setBackground(makeBox(p.surfaceMenu, 8f,
-					highlightSlot == SLOT_SURFACE_MENU ? menuHi : 0x55888888,
-					highlightSlot == SLOT_SURFACE_MENU ? 6 : 2));
+					highlightSlot == SLOT_MENU_BG ? menuHi : 0x55888888,
+					highlightSlot == SLOT_MENU_BG ? 6 : 2));
+			menuText.setTextColor(p.menuText);
+			menuText.setBackground(highlightSlot == SLOT_MENU_TEXT
+					? makeBox(Color.TRANSPARENT, 5f, menuHi, 4) : null);
+			applyIconStyle(menuIcon, ColorStateList.valueOf(p.menuIcons), highlightSlot == SLOT_MENU_ICONS, menuHi);
 			styleBadge(menuFocusBadge, p.surfaceMenu);
 
-			// 4. Accent & Progress (SeekBar + Thumb + Mini Switch + Bottom Divider)
+			// Zone 5: Accent
 			progressFill.setBackgroundColor(p.accent);
 			bottomAccentBar.setBackgroundColor(p.accent);
 			progressThumb.setBackground(makeCircle(p.accent));
@@ -1711,31 +1954,6 @@ public final class CustomThemeManager {
 					highlightSlot == SLOT_ACCENT ? bgHi : Color.TRANSPARENT,
 					highlightSlot == SLOT_ACCENT ? 5 : 0));
 			styleBadge(accentFocusBadge, p.windowBg);
-
-			// 5. Primary Text (Bars)
-			topTitle.setTextColor(p.textPrimary);
-			nowPlayingText.setTextColor(p.textPrimary);
-			topTitle.setBackground(highlightSlot == SLOT_TEXT_PRIMARY
-					? makeBox(Color.TRANSPARENT, 5f, barHi, 4) : null);
-			nowPlayingText.setBackground(highlightSlot == SLOT_TEXT_PRIMARY
-					? makeBox(Color.TRANSPARENT, 5f, barHi, 4) : null);
-
-			// 6. Secondary Text (Lists & Menus)
-			listText.setTextColor(p.textSecondary);
-			menuText.setTextColor(p.textSecondary);
-			listText.setBackground(highlightSlot == SLOT_TEXT_SECONDARY
-					? makeBox(Color.TRANSPARENT, 5f, bgHi, 4) : null);
-			menuText.setBackground(highlightSlot == SLOT_TEXT_SECONDARY
-					? makeBox(Color.TRANSPARENT, 5f, menuHi, 4) : null);
-			styleBadge(listFocusBadge, p.windowBg);
-
-			// 7. Icon Tint
-			ColorStateList iconCsl = ColorStateList.valueOf(p.iconTint);
-			applyIconStyle(topIcon, iconCsl, highlightSlot == SLOT_ICON_TINT, barHi);
-			applyIconStyle(topMenuIcon, iconCsl, highlightSlot == SLOT_ICON_TINT, barHi);
-			applyIconStyle(listIcon, iconCsl, highlightSlot == SLOT_ICON_TINT, bgHi);
-			applyIconStyle(menuIcon, iconCsl, highlightSlot == SLOT_ICON_TINT, menuHi);
-			applyIconStyle(playIcon, iconCsl, highlightSlot == SLOT_ICON_TINT, barHi);
 		}
 
 		private static void applyIconStyle(@NonNull ImageView iv,
@@ -1894,6 +2112,163 @@ public final class CustomThemeManager {
 			invalidate();
 			if (listener != null) {
 				listener.accept(Color.HSVToColor(hsv));
+			}
+		}
+	}
+
+	// =========================================================================
+	// Settings Row Trailing Color Swatch Overlay (Zones & Individual Slots)
+	// =========================================================================
+
+	public static final class SwatchItemDecoration extends RecyclerView.ItemDecoration {
+		private static final class RowSpec {
+			final boolean isAutoPrefs;
+			final int[] slots;
+
+			RowSpec(boolean isAutoPrefs, int[] slots) {
+				this.isAutoPrefs = isAutoPrefs;
+				this.slots = slots;
+			}
+		}
+
+		private final Map<PreferenceSet, SparseArray<RowSpec>> registry = new IdentityHashMap<>();
+		@Nullable private PreferenceSet activeSet;
+
+		private final Paint capsuleFillPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+		private final Paint capsuleStrokePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+		private final Paint chipFillPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+		private final Paint chipOuterBorderPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+		private final Paint chipInnerBorderPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+		private final RectF tempRect = new RectF();
+
+		private final float edgeMargin;
+		private final float singleChipW;
+		private final float singleChipH;
+		private final float multiChipSize;
+		private final float chipGap;
+		private final float chipRadius;
+		private final float capsulePadH;
+		private final float capsulePadV;
+		private final float capsuleRadius;
+
+		public SwatchItemDecoration(@NonNull Context ctx) {
+			edgeMargin = UiUtils.toIntPx(ctx, 14);
+			singleChipW = UiUtils.toIntPx(ctx, 34);
+			singleChipH = UiUtils.toIntPx(ctx, 22);
+			multiChipSize = UiUtils.toIntPx(ctx, 18);
+			chipGap = UiUtils.toIntPx(ctx, 4);
+			chipRadius = UiUtils.toIntPx(ctx, 5);
+			capsulePadH = UiUtils.toIntPx(ctx, 5);
+			capsulePadV = UiUtils.toIntPx(ctx, 4);
+			capsuleRadius = UiUtils.toIntPx(ctx, 9);
+
+			capsuleFillPaint.setStyle(Paint.Style.FILL);
+			capsuleFillPaint.setColor(0x55000000);
+
+			capsuleStrokePaint.setStyle(Paint.Style.STROKE);
+			capsuleStrokePaint.setStrokeWidth(Math.max(1f, UiUtils.toIntPx(ctx, 1)));
+			capsuleStrokePaint.setColor(0x44FFFFFF);
+
+			chipFillPaint.setStyle(Paint.Style.FILL);
+
+			chipOuterBorderPaint.setStyle(Paint.Style.STROKE);
+			chipOuterBorderPaint.setStrokeWidth(Math.max(1.5f, UiUtils.toIntPx(ctx, 1) * 1.4f));
+
+			chipInnerBorderPaint.setStyle(Paint.Style.STROKE);
+			chipInnerBorderPaint.setStrokeWidth(Math.max(1f, UiUtils.toIntPx(ctx, 1)));
+		}
+
+		public void setActiveSet(@Nullable PreferenceSet set) {
+			this.activeSet = set;
+		}
+
+		public void clearSet(@NonNull PreferenceSet set) {
+			SparseArray<RowSpec> rows = registry.get(set);
+			if (rows != null) rows.clear();
+		}
+
+		public void registerRow(@NonNull PreferenceSet set,
+								int position,
+								boolean isAutoPrefs,
+								@NonNull int[] slots) {
+			SparseArray<RowSpec> rows = registry.get(set);
+			if (rows == null) {
+				rows = new SparseArray<>();
+				registry.put(set, rows);
+			}
+			rows.put(position, new RowSpec(isAutoPrefs, slots));
+		}
+
+		@Override
+		public void onDrawOver(@NonNull Canvas c,
+							   @NonNull RecyclerView parent,
+							   @NonNull RecyclerView.State state) {
+			if (activeSet == null) return;
+			SparseArray<RowSpec> rows = registry.get(activeSet);
+			if (rows == null || rows.size() == 0) return;
+
+			Palette phonePalette = null;
+			Palette autoPalette = null;
+			boolean isRtl = parent.getLayoutDirection() == View.LAYOUT_DIRECTION_RTL;
+
+			for (int i = 0; i < parent.getChildCount(); i++) {
+				View child = parent.getChildAt(i);
+				int pos = parent.getChildAdapterPosition(child);
+				if (pos == RecyclerView.NO_POSITION) continue;
+
+				RowSpec spec = rows.get(pos);
+				if (spec == null || spec.slots.length == 0) continue;
+
+				Palette palette;
+				if (spec.isAutoPrefs) {
+					if (autoPalette == null) autoPalette = getActiveCustomPalette(true);
+					palette = autoPalette;
+				} else {
+					if (phonePalette == null) phonePalette = getActiveCustomPalette(false);
+					palette = phonePalette;
+				}
+
+				int count = spec.slots.length;
+				boolean single = (count == 1);
+				float chipW = single ? singleChipW : multiChipSize;
+				float chipH = single ? singleChipH : multiChipSize;
+				float totalChipsW = count * chipW + (count - 1) * chipGap;
+
+				float centerY = (child.getTop() + child.getBottom()) / 2f;
+				float startX = isRtl
+						? (child.getLeft() + edgeMargin)
+						: (child.getRight() - edgeMargin - totalChipsW);
+
+				// Subtle capsule backdrop behind multi-swatch Zone strips
+				if (!single) {
+					tempRect.set(
+							startX - capsulePadH,
+							centerY - (chipH / 2f) - capsulePadV,
+							startX + totalChipsW + capsulePadH,
+							centerY + (chipH / 2f) + capsulePadV
+					);
+					c.drawRoundRect(tempRect, capsuleRadius, capsuleRadius, capsuleFillPaint);
+					c.drawRoundRect(tempRect, capsuleRadius, capsuleRadius, capsuleStrokePaint);
+				}
+
+				float topY = centerY - (chipH / 2f);
+				for (int s = 0; s < count; s++) {
+					int color = palette.getSlot(spec.slots[s]);
+					float x = startX + s * (chipW + chipGap);
+
+					tempRect.set(x, topY, x + chipW, topY + chipH);
+					chipFillPaint.setColor(color);
+					c.drawRoundRect(tempRect, chipRadius, chipRadius, chipFillPaint);
+
+					// Dual-contrast border so pure black and pure white chips are always crisp
+					boolean lightChip = ColorUtils.calculateLuminance(color) > 0.5;
+					chipOuterBorderPaint.setColor(lightChip ? 0xAA000000 : 0xDDFFFFFF);
+					chipInnerBorderPaint.setColor(lightChip ? 0x66FFFFFF : 0x66000000);
+					c.drawRoundRect(tempRect, chipRadius, chipRadius, chipOuterBorderPaint);
+					tempRect.inset(1.5f, 1.5f);
+					c.drawRoundRect(tempRect, Math.max(2f, chipRadius - 1.5f),
+							Math.max(2f, chipRadius - 1.5f), chipInnerBorderPaint);
+				}
 			}
 		}
 	}
