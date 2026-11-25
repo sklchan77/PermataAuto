@@ -1,5 +1,9 @@
 package my.app.permata.ui.theme;
 
+import android.animation.Animator;
+import android.animation.AnimatorSet;
+import android.animation.ObjectAnimator;
+import android.animation.ValueAnimator;
 import android.content.Context;
 import android.content.res.ColorStateList;
 import android.content.res.TypedArray;
@@ -301,7 +305,6 @@ public final class CustomThemeManager {
 			if (raw == null || raw.isEmpty()) return defaults;
 			JSONArray arr = new JSONArray(raw);
 			if (arr.length() != defaults.length) {
-				// Clean migration when upgrading from older 36-swatch array to 10x10 (100)
 				return defaults;
 			}
 			for (int i = 0; i < defaults.length; i++) {
@@ -894,19 +897,9 @@ public final class CustomThemeManager {
 		scroll.addView(container);
 
 		// -----------------------------------------------------------------
-		// 1. LIVE SAMPLE TEMPLATE (Always visible above both Swatches & Wheel)
+		// 1. LIVE SAMPLE TEMPLATE (Pinpoints exact active slot with callout badges)
 		// -----------------------------------------------------------------
-		TextView editingCaption = new TextView(ctx);
-		editingCaption.setText(ctx.getString(R.string.custom_theme_preview_editing, title));
-		editingCaption.setTextSize(12f);
-		editingCaption.setTypeface(null, Typeface.BOLD);
-		LinearLayout.LayoutParams capLp = new LinearLayout.LayoutParams(
-				ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-		capLp.bottomMargin = UiUtils.toIntPx(ctx, 6);
-		editingCaption.setLayoutParams(capLp);
-		container.addView(editingCaption);
-
-		SampleTemplateView sampleTemplate = new SampleTemplateView(ctx, previewPalette, editingSlot);
+		SampleTemplateView sampleTemplate = new SampleTemplateView(ctx, previewPalette, editingSlot, title);
 		LinearLayout.LayoutParams tplLp = new LinearLayout.LayoutParams(
 				ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
 		tplLp.bottomMargin = pad;
@@ -1305,7 +1298,7 @@ public final class CustomThemeManager {
 	}
 
 	// =========================================================================
-	// Live Mini-App Sample Template Showing All 7 Theme Elements
+	// Live Mini-App Sample Template with Pinpoint Callout Badges & Affects Guide
 	// =========================================================================
 
 	private static final class SampleTemplateView extends LinearLayout {
@@ -1314,21 +1307,37 @@ public final class CustomThemeManager {
 		private final LinearLayout topBar;
 		private final ImageView topIcon;
 		private final TextView topTitle;
+		private final TextView topFocusBadge;
 		private final ImageView topMenuIcon;
+		private final TextView bgFocusBadge;
 		private final LinearLayout listTrackRow;
 		private final ImageView listIcon;
 		private final TextView listText;
+		private final TextView listFocusBadge;
+		private final LinearLayout accentRow;
 		private final LinearLayout progressTrack;
 		private final View progressFill;
+		private final View progressThumb;
+		private final LinearLayout miniSwitchTrack;
+		private final View miniSwitchKnob;
+		private final TextView accentFocusBadge;
 		private final LinearLayout menuCard;
+		private final TextView menuFocusBadge;
 		private final ImageView menuIcon;
 		private final TextView menuText;
 		private final LinearLayout bottomBar;
 		private final ImageView playIcon;
 		private final TextView nowPlayingText;
+		private final TextView bottomFocusBadge;
 		private final View bottomAccentBar;
+		private final TextView affectsGuide;
+		private final List<TextView> activeBadges = new ArrayList<>();
+		@Nullable private AnimatorSet pulseAnim;
 
-		SampleTemplateView(@NonNull Context ctx, @NonNull Palette palette, int highlightSlot) {
+		SampleTemplateView(@NonNull Context ctx,
+						   @NonNull Palette palette,
+						   int highlightSlot,
+						   @NonNull CharSequence slotTitle) {
 			super(ctx);
 			this.highlightSlot = highlightSlot;
 			setTag("keep_own_color");
@@ -1339,12 +1348,36 @@ public final class CustomThemeManager {
 			int dp6 = UiUtils.toIntPx(ctx, 6);
 			int iconPx = UiUtils.toIntPx(ctx, 16);
 
+			// --- Header Bar: "IN FOCUS: [Slot Name]" ---
+			LinearLayout headerRow = new LinearLayout(ctx);
+			headerRow.setTag("keep_own_color");
+			headerRow.setOrientation(HORIZONTAL);
+			headerRow.setGravity(Gravity.CENTER_VERTICAL);
+			LayoutParams hdrLp = new LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+			hdrLp.bottomMargin = dp4;
+
+			TextView headerPill = makeFocusBadge(ctx, "★ FOCUS", true);
+			headerPill.setBackground(makeBox(0xFF00E5FF, UiUtils.toIntPx(ctx, 10), Color.TRANSPARENT, 0));
+			headerPill.setTextColor(Color.BLACK);
+			headerRow.addView(headerPill);
+
+			TextView headerTitle = new TextView(ctx);
+			headerTitle.setTag("keep_own_color");
+			headerTitle.setText("  " + slotTitle);
+			headerTitle.setTextSize(12.5f);
+			headerTitle.setTypeface(null, Typeface.BOLD);
+			headerTitle.setTextColor(0xFF00E5FF);
+			headerRow.addView(headerTitle);
+			addView(headerRow, hdrLp);
+
+			// --- Outer Mini App Screen (Window Background) ---
 			screenBox = new LinearLayout(ctx);
 			screenBox.setTag("keep_own_color");
 			screenBox.setOrientation(VERTICAL);
-			screenBox.setPadding(dp2, dp2, dp2, dp2);
+			screenBox.setPadding(dp4, dp4, dp4, dp4);
 			addView(screenBox, new LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
+			// --- 1. Top ToolBar (Bars & Control Panel + Primary Text + Icon Tint) ---
 			topBar = new LinearLayout(ctx);
 			topBar.setTag("keep_own_color");
 			topBar.setOrientation(HORIZONTAL);
@@ -1356,28 +1389,47 @@ public final class CustomThemeManager {
 
 			topTitle = new TextView(ctx);
 			topTitle.setTag("keep_own_color");
-			topTitle.setText("PermataAuto (Bar Text)");
+			topTitle.setText("ToolBar Title");
 			topTitle.setTextSize(11f);
 			topTitle.setTypeface(null, Typeface.BOLD);
 			topTitle.setPadding(dp4, dp2, dp4, dp2);
-			LinearLayout.LayoutParams ttLp = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
+			LayoutParams ttLp = new LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
 			ttLp.leftMargin = dp4;
 			topBar.addView(topTitle, ttLp);
+
+			topFocusBadge = makeFocusBadge(ctx,
+					highlightSlot == SLOT_PRIMARY_BARS ? "★ BARS"
+							: (highlightSlot == SLOT_TEXT_PRIMARY ? "★ BAR TEXT" : "★ ICONS"),
+					highlightSlot == SLOT_PRIMARY_BARS
+							|| highlightSlot == SLOT_TEXT_PRIMARY
+							|| highlightSlot == SLOT_ICON_TINT);
+			LayoutParams tfbLp = new LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+			tfbLp.rightMargin = dp4;
+			topBar.addView(topFocusBadge, tfbLp);
 
 			topMenuIcon = makeMiniIcon(ctx, android.R.drawable.ic_menu_more, iconPx);
 			topBar.addView(topMenuIcon);
 			screenBox.addView(topBar, new LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
+			// --- Open Window Background Callout Strip (Visible when editing Window BG) ---
+			bgFocusBadge = makeFocusBadge(ctx, "★ WINDOW BACKGROUND", highlightSlot == SLOT_WINDOW_BG);
+			LayoutParams bgbLp = new LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+			bgbLp.gravity = Gravity.CENTER_HORIZONTAL;
+			bgbLp.topMargin = dp4;
+			screenBox.addView(bgFocusBadge, bgbLp);
+
+			// --- 2. Middle Content Area (Window BG + Lists + Accent + Menu Card) ---
 			LinearLayout contentRow = new LinearLayout(ctx);
 			contentRow.setTag("keep_own_color");
 			contentRow.setOrientation(HORIZONTAL);
 			contentRow.setGravity(Gravity.CENTER_VERTICAL);
 			contentRow.setPadding(dp6, dp6, dp6, dp6);
 
+			// Left Column: Track list row + Accent SeekBar & Mini Switch
 			LinearLayout leftCol = new LinearLayout(ctx);
 			leftCol.setTag("keep_own_color");
 			leftCol.setOrientation(VERTICAL);
-			LinearLayout.LayoutParams leftLp = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.15f);
+			LayoutParams leftLp = new LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.2f);
 			leftLp.rightMargin = dp6;
 
 			listTrackRow = new LinearLayout(ctx);
@@ -1390,50 +1442,101 @@ public final class CustomThemeManager {
 
 			listText = new TextView(ctx);
 			listText.setTag("keep_own_color");
-			listText.setText("Track List (Secondary)");
+			listText.setText("Track / Settings");
 			listText.setTextSize(10f);
 			listText.setPadding(dp4, dp2, dp4, dp2);
 			listTrackRow.addView(listText);
 			leftCol.addView(listTrackRow);
 
+			listFocusBadge = makeFocusBadge(ctx, "★ LIST & MENU TEXT", highlightSlot == SLOT_TEXT_SECONDARY);
+			LayoutParams lfbLp = new LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+			lfbLp.topMargin = dp2;
+			leftCol.addView(listFocusBadge, lfbLp);
+
+			// Accent Row: SeekBar + Thumb + Mini Toggle Switch
+			accentRow = new LinearLayout(ctx);
+			accentRow.setTag("keep_own_color");
+			accentRow.setOrientation(HORIZONTAL);
+			accentRow.setGravity(Gravity.CENTER_VERTICAL);
+			accentRow.setPadding(dp2, dp2, dp2, dp2);
+			LayoutParams arLp = new LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+			arLp.topMargin = dp4;
+
 			progressTrack = new LinearLayout(ctx);
 			progressTrack.setTag("keep_own_color");
 			progressTrack.setOrientation(HORIZONTAL);
-			progressTrack.setPadding(dp2, dp2, dp2, dp2);
-			LinearLayout.LayoutParams ptLp = new LinearLayout.LayoutParams(
-					ViewGroup.LayoutParams.MATCH_PARENT, UiUtils.toIntPx(ctx, 10));
-			ptLp.topMargin = dp4;
+			progressTrack.setGravity(Gravity.CENTER_VERTICAL);
+			LayoutParams ptLp = new LayoutParams(0, UiUtils.toIntPx(ctx, 12), 1f);
+			ptLp.rightMargin = dp6;
 
 			progressFill = new View(ctx);
 			progressFill.setTag("keep_own_color");
-			progressTrack.addView(progressFill, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 0.65f));
+			progressTrack.addView(progressFill, new LayoutParams(0, UiUtils.toIntPx(ctx, 4), 0.62f));
+
+			progressThumb = new View(ctx);
+			progressThumb.setTag("keep_own_color");
+			int thumbPx = UiUtils.toIntPx(ctx, 10);
+			progressTrack.addView(progressThumb, new LayoutParams(thumbPx, thumbPx));
+
 			View progressRest = new View(ctx);
 			progressRest.setTag("keep_own_color");
-			progressRest.setBackgroundColor(0x44888888);
-			progressTrack.addView(progressRest, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 0.35f));
-			leftCol.addView(progressTrack, ptLp);
+			progressRest.setBackgroundColor(0x55888888);
+			progressTrack.addView(progressRest, new LayoutParams(0, UiUtils.toIntPx(ctx, 4), 0.38f));
+			accentRow.addView(progressTrack, ptLp);
+
+			// Mini ON Toggle Switch
+			miniSwitchTrack = new LinearLayout(ctx);
+			miniSwitchTrack.setTag("keep_own_color");
+			miniSwitchTrack.setOrientation(HORIZONTAL);
+			miniSwitchTrack.setGravity(Gravity.END | Gravity.CENTER_VERTICAL);
+			miniSwitchTrack.setPadding(dp2, dp2, dp2, dp2);
+			miniSwitchKnob = new View(ctx);
+			miniSwitchKnob.setTag("keep_own_color");
+			int knobPx = UiUtils.toIntPx(ctx, 10);
+			miniSwitchTrack.addView(miniSwitchKnob, new LayoutParams(knobPx, knobPx));
+			accentRow.addView(miniSwitchTrack, new LayoutParams(UiUtils.toIntPx(ctx, 24), UiUtils.toIntPx(ctx, 14)));
+
+			leftCol.addView(accentRow, arLp);
+
+			accentFocusBadge = makeFocusBadge(ctx, "★ ACCENT & PROGRESS", highlightSlot == SLOT_ACCENT);
+			LayoutParams afbLp = new LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+			afbLp.topMargin = dp2;
+			leftCol.addView(accentFocusBadge, afbLp);
 
 			contentRow.addView(leftCol, leftLp);
 
+			// Right Column: Floating Menu / Dialog Card
 			menuCard = new LinearLayout(ctx);
 			menuCard.setTag("keep_own_color");
-			menuCard.setOrientation(HORIZONTAL);
+			menuCard.setOrientation(VERTICAL);
 			menuCard.setGravity(Gravity.CENTER_VERTICAL);
 			menuCard.setPadding(dp6, dp6, dp6, dp6);
 
+			menuFocusBadge = makeFocusBadge(ctx, "★ MENU / DIALOG", highlightSlot == SLOT_SURFACE_MENU);
+			LayoutParams mfbLp = new LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+			mfbLp.bottomMargin = dp2;
+			menuCard.addView(menuFocusBadge, mfbLp);
+
+			LinearLayout menuInnerRow = new LinearLayout(ctx);
+			menuInnerRow.setTag("keep_own_color");
+			menuInnerRow.setOrientation(HORIZONTAL);
+			menuInnerRow.setGravity(Gravity.CENTER_VERTICAL);
+
 			menuIcon = makeMiniIcon(ctx, android.R.drawable.ic_menu_info_details, iconPx);
-			menuCard.addView(menuIcon);
+			menuInnerRow.addView(menuIcon);
 
 			menuText = new TextView(ctx);
 			menuText.setTag("keep_own_color");
-			menuText.setText("Menu / Dialog");
+			menuText.setText("Popup Menu");
 			menuText.setTextSize(10f);
 			menuText.setPadding(dp4, dp2, dp4, dp2);
-			menuCard.addView(menuText);
+			menuInnerRow.addView(menuText);
+			menuCard.addView(menuInnerRow);
 
-			contentRow.addView(menuCard, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 0.85f));
+			contentRow.addView(menuCard, new LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 0.85f));
 			screenBox.addView(contentRow, new LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
+			// --- 3. Bottom Accent Strip + Control Panel ---
 			bottomAccentBar = new View(ctx);
 			bottomAccentBar.setTag("keep_own_color");
 			screenBox.addView(bottomAccentBar, new LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, UiUtils.toIntPx(ctx, 3)));
@@ -1449,15 +1552,108 @@ public final class CustomThemeManager {
 
 			nowPlayingText = new TextView(ctx);
 			nowPlayingText.setTag("keep_own_color");
-			nowPlayingText.setText("Control Panel (Primary Text)");
+			nowPlayingText.setText("Control Panel");
 			nowPlayingText.setTextSize(10f);
+			nowPlayingText.setTypeface(null, Typeface.BOLD);
 			nowPlayingText.setPadding(dp4, dp2, dp4, dp2);
-			LinearLayout.LayoutParams npLp = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
+			LayoutParams npLp = new LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
 			npLp.leftMargin = dp4;
 			bottomBar.addView(nowPlayingText, npLp);
+
+			bottomFocusBadge = makeFocusBadge(ctx,
+					highlightSlot == SLOT_PRIMARY_BARS ? "★ CONTROL BAR" : "★ BAR TEXT",
+					highlightSlot == SLOT_PRIMARY_BARS || highlightSlot == SLOT_TEXT_PRIMARY);
+			bottomBar.addView(bottomFocusBadge);
+
 			screenBox.addView(bottomBar, new LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
+			// --- 4. Plain-English "Affects:" Guide Strip below the Mini Screen ---
+			affectsGuide = new TextView(ctx);
+			affectsGuide.setTag("keep_own_color");
+			affectsGuide.setText(getAffectsGuide(highlightSlot));
+			affectsGuide.setTextSize(11f);
+			affectsGuide.setPadding(dp6, dp4, dp6, dp4);
+			affectsGuide.setTextColor(0xFFCFD8DC);
+			affectsGuide.setBackground(makeBox(0xFF1E272E, UiUtils.toIntPx(ctx, 6), 0x4400E5FF, 2));
+			LayoutParams agLp = new LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+			agLp.topMargin = dp4;
+			addView(affectsGuide, agLp);
+
+			// Collect active badges for gentle pulsing attention cue
+			TextView[] allBadges = new TextView[]{
+					topFocusBadge, bgFocusBadge, listFocusBadge, accentFocusBadge, menuFocusBadge, bottomFocusBadge
+			};
+			for (TextView b : allBadges) {
+				if (b.getVisibility() == VISIBLE) activeBadges.add(b);
+			}
+
 			update(palette);
+		}
+
+		@Override
+		protected void onAttachedToWindow() {
+			super.onAttachedToWindow();
+			startBadgePulse();
+		}
+
+		@Override
+		protected void onDetachedFromWindow() {
+			stopBadgePulse();
+			super.onDetachedFromWindow();
+		}
+
+		private void startBadgePulse() {
+			stopBadgePulse();
+			if (activeBadges.isEmpty()) return;
+			List<Animator> anims = new ArrayList<>(activeBadges.size());
+			for (TextView b : activeBadges) {
+				ObjectAnimator oa = ObjectAnimator.ofFloat(b, View.ALPHA, 1f, 0.45f);
+				oa.setDuration(650);
+				oa.setRepeatCount(ValueAnimator.INFINITE);
+				oa.setRepeatMode(ValueAnimator.REVERSE);
+				anims.add(oa);
+			}
+			pulseAnim = new AnimatorSet();
+			pulseAnim.playTogether(anims);
+			pulseAnim.start();
+		}
+
+		private void stopBadgePulse() {
+			if (pulseAnim != null) {
+				pulseAnim.cancel();
+				pulseAnim = null;
+			}
+			for (TextView b : activeBadges) {
+				b.setAlpha(1f);
+			}
+		}
+
+		@NonNull
+		private static String getAffectsGuide(int slot) {
+			return switch (slot) {
+				case SLOT_WINDOW_BG -> "Affects: Main app screen backdrop behind folders, playlists & settings.";
+				case SLOT_PRIMARY_BARS -> "Affects: Top ToolBar, Side/Bottom NavBar, Control Panel & Floating Button.";
+				case SLOT_SURFACE_MENU -> "Affects: Pop-up context menus, option dialogs & card panels.";
+				case SLOT_ACCENT -> "Affects: SeekBar progress, loading bar, active switches & dialog action buttons.";
+				case SLOT_TEXT_PRIMARY -> "Affects: Screen titles & track names displayed inside the Top & Bottom Bars.";
+				case SLOT_TEXT_SECONDARY -> "Affects: Folder/song lists, Settings rows & popup menu labels.";
+				case SLOT_ICON_TINT -> "Affects: Navigation, ToolBar, playback controls & menu vector icons.";
+				default -> "Affects: Selected interface theme element.";
+			};
+		}
+
+		@NonNull
+		private static TextView makeFocusBadge(@NonNull Context ctx, @NonNull String label, boolean visible) {
+			TextView tv = new TextView(ctx);
+			tv.setTag("keep_own_color");
+			tv.setText(label);
+			tv.setTextSize(8.5f);
+			tv.setTypeface(null, Typeface.BOLD);
+			int hPad = UiUtils.toIntPx(ctx, 5);
+			int vPad = UiUtils.toIntPx(ctx, 1);
+			tv.setPadding(hPad, vPad, hPad, vPad);
+			tv.setVisibility(visible ? VISIBLE : GONE);
+			return tv;
 		}
 
 		private static ImageView makeMiniIcon(@NonNull Context ctx, int drawableRes, int sizePx) {
@@ -1467,63 +1663,100 @@ public final class CustomThemeManager {
 			iv.setScaleType(ImageView.ScaleType.FIT_CENTER);
 			int pad = UiUtils.toIntPx(ctx, 2);
 			iv.setPadding(pad, pad, pad, pad);
-			iv.setLayoutParams(new LinearLayout.LayoutParams(sizePx + pad * 2, sizePx + pad * 2));
+			iv.setLayoutParams(new LayoutParams(sizePx + pad * 2, sizePx + pad * 2));
 			return iv;
 		}
 
+		private static void styleBadge(@NonNull TextView badge, @ColorInt int bgColor) {
+			if (badge.getVisibility() != VISIBLE) return;
+			int hi = pickHighlight(bgColor, 0xFF00E5FF, 0xFFFF1744);
+			int txt = ColorUtils.calculateLuminance(hi) > 0.45 ? Color.BLACK : Color.WHITE;
+			badge.setBackground(makeBox(hi, 14f, Color.TRANSPARENT, 0));
+			badge.setTextColor(txt);
+		}
+
 		void update(@NonNull Palette p) {
-			int hiColor = 0xFF00E5FF;
-			int hiAlt = 0xFFFF1744;
+			int hiCyan = 0xFF00E5FF;
+			int hiRed = 0xFFFF1744;
 
+			// 1. Window Background
+			int bgHi = pickHighlight(p.windowBg, hiCyan, hiRed);
 			screenBox.setBackground(makeBox(p.windowBg, 10f,
-					highlightSlot == SLOT_WINDOW_BG ? pickHighlight(p.windowBg, hiColor, hiAlt) : 0x88888888,
-					highlightSlot == SLOT_WINDOW_BG ? 6 : 2));
+					highlightSlot == SLOT_WINDOW_BG ? bgHi : 0x88888888,
+					highlightSlot == SLOT_WINDOW_BG ? 7 : 2));
+			styleBadge(bgFocusBadge, p.windowBg);
 
-			int barBorder = highlightSlot == SLOT_PRIMARY_BARS ? pickHighlight(p.primaryBars, hiColor, hiAlt) : Color.TRANSPARENT;
-			int barStroke = highlightSlot == SLOT_PRIMARY_BARS ? 5 : 0;
-			topBar.setBackground(makeBox(p.primaryBars, 6f, barBorder, barStroke));
-			bottomBar.setBackground(makeBox(p.primaryBars, 6f, barBorder, barStroke));
+			// 2. Bars & Control Panel
+			int barHi = pickHighlight(p.primaryBars, hiCyan, hiRed);
+			int barStroke = highlightSlot == SLOT_PRIMARY_BARS ? 6 : 0;
+			topBar.setBackground(makeBox(p.primaryBars, 6f, highlightSlot == SLOT_PRIMARY_BARS ? barHi : Color.TRANSPARENT, barStroke));
+			bottomBar.setBackground(makeBox(p.primaryBars, 6f, highlightSlot == SLOT_PRIMARY_BARS ? barHi : Color.TRANSPARENT, barStroke));
+			styleBadge(topFocusBadge, p.primaryBars);
+			styleBadge(bottomFocusBadge, p.primaryBars);
 
+			// 3. Menus & Dialogs
+			int menuHi = pickHighlight(p.surfaceMenu, hiCyan, hiRed);
 			menuCard.setBackground(makeBox(p.surfaceMenu, 8f,
-					highlightSlot == SLOT_SURFACE_MENU ? pickHighlight(p.surfaceMenu, hiColor, hiAlt) : 0x55888888,
-					highlightSlot == SLOT_SURFACE_MENU ? 5 : 2));
+					highlightSlot == SLOT_SURFACE_MENU ? menuHi : 0x55888888,
+					highlightSlot == SLOT_SURFACE_MENU ? 6 : 2));
+			styleBadge(menuFocusBadge, p.surfaceMenu);
 
+			// 4. Accent & Progress (SeekBar + Thumb + Mini Switch + Bottom Divider)
 			progressFill.setBackgroundColor(p.accent);
 			bottomAccentBar.setBackgroundColor(p.accent);
-			progressTrack.setBackground(makeBox(Color.TRANSPARENT, 4f,
-					highlightSlot == SLOT_ACCENT ? pickHighlight(p.windowBg, hiColor, hiAlt) : Color.TRANSPARENT,
-					highlightSlot == SLOT_ACCENT ? 4 : 0));
+			progressThumb.setBackground(makeCircle(p.accent));
+			miniSwitchTrack.setBackground(makeBox(ColorUtils.setAlphaComponent(p.accent, 140), 20f, Color.TRANSPARENT, 0));
+			miniSwitchKnob.setBackground(makeCircle(p.accent));
+			accentRow.setBackground(makeBox(Color.TRANSPARENT, 6f,
+					highlightSlot == SLOT_ACCENT ? bgHi : Color.TRANSPARENT,
+					highlightSlot == SLOT_ACCENT ? 5 : 0));
+			styleBadge(accentFocusBadge, p.windowBg);
 
+			// 5. Primary Text (Bars)
 			topTitle.setTextColor(p.textPrimary);
 			nowPlayingText.setTextColor(p.textPrimary);
-			Drawable primaryTextHi = highlightSlot == SLOT_TEXT_PRIMARY
-					? makeBox(Color.TRANSPARENT, 4f, pickHighlight(p.primaryBars, hiColor, hiAlt), 3)
-					: null;
-			topTitle.setBackground(primaryTextHi);
-			nowPlayingText.setBackground(primaryTextHi != null ? primaryTextHi.getConstantState().newDrawable() : null);
+			topTitle.setBackground(highlightSlot == SLOT_TEXT_PRIMARY
+					? makeBox(Color.TRANSPARENT, 5f, barHi, 4) : null);
+			nowPlayingText.setBackground(highlightSlot == SLOT_TEXT_PRIMARY
+					? makeBox(Color.TRANSPARENT, 5f, barHi, 4) : null);
 
+			// 6. Secondary Text (Lists & Menus)
 			listText.setTextColor(p.textSecondary);
 			menuText.setTextColor(p.textSecondary);
 			listText.setBackground(highlightSlot == SLOT_TEXT_SECONDARY
-					? makeBox(Color.TRANSPARENT, 4f, pickHighlight(p.windowBg, hiColor, hiAlt), 3)
-					: null);
+					? makeBox(Color.TRANSPARENT, 5f, bgHi, 4) : null);
 			menuText.setBackground(highlightSlot == SLOT_TEXT_SECONDARY
-					? makeBox(Color.TRANSPARENT, 4f, pickHighlight(p.surfaceMenu, hiColor, hiAlt), 3)
-					: null);
+					? makeBox(Color.TRANSPARENT, 5f, menuHi, 4) : null);
+			styleBadge(listFocusBadge, p.windowBg);
 
+			// 7. Icon Tint
 			ColorStateList iconCsl = ColorStateList.valueOf(p.iconTint);
-			ImageView[] icons = new ImageView[]{topIcon, topMenuIcon, listIcon, menuIcon, playIcon};
-			for (ImageView iv : icons) {
-				iv.setImageTintList(iconCsl);
-				iv.setBackground(highlightSlot == SLOT_ICON_TINT
-						? makeBox(Color.TRANSPARENT, 6f, pickHighlight(p.primaryBars, hiColor, hiAlt), 3)
-						: null);
-			}
+			applyIconStyle(topIcon, iconCsl, highlightSlot == SLOT_ICON_TINT, barHi);
+			applyIconStyle(topMenuIcon, iconCsl, highlightSlot == SLOT_ICON_TINT, barHi);
+			applyIconStyle(listIcon, iconCsl, highlightSlot == SLOT_ICON_TINT, bgHi);
+			applyIconStyle(menuIcon, iconCsl, highlightSlot == SLOT_ICON_TINT, menuHi);
+			applyIconStyle(playIcon, iconCsl, highlightSlot == SLOT_ICON_TINT, barHi);
+		}
+
+		private static void applyIconStyle(@NonNull ImageView iv,
+										   @NonNull ColorStateList tint,
+										   boolean focused,
+										   @ColorInt int ringColor) {
+			iv.setImageTintList(tint);
+			iv.setBackground(focused ? makeBox(Color.TRANSPARENT, 99f, ringColor, 4) : null);
 		}
 
 		@ColorInt
 		private static int pickHighlight(@ColorInt int bg, @ColorInt int primaryHi, @ColorInt int altHi) {
-			return ColorUtils.calculateContrast(primaryHi, bg) >= 2.5 ? primaryHi : altHi;
+			return ColorUtils.calculateContrast(primaryHi, bg) >= 2.8 ? primaryHi : altHi;
+		}
+
+		@NonNull
+		private static GradientDrawable makeCircle(@ColorInt int fill) {
+			GradientDrawable gd = new GradientDrawable();
+			gd.setShape(GradientDrawable.OVAL);
+			gd.setColor(fill);
+			return gd;
 		}
 
 		@NonNull
