@@ -778,33 +778,32 @@ public class SettingsFragment extends MainActivityFragment
 											 PreferenceSet parentSet,
 											 boolean isAutoPrefs,
 											 Pref<IntSupplier> themePref) {
-		ChangeableCondition isCustomSelected =
-				PrefCondition.create(a.getPrefs(), themePref, v -> v == MainActivityPrefs.THEME_CUSTOM);
-
 		PreferenceSet customSet = parentSet.subSet(o -> {
 			o.title = R.string.custom_theme_customize;
 			o.subtitle = R.string.custom_theme_customize_sub;
-			o.visibility = isCustomSelected;
 		});
 
-		customSet.configure(s -> buildCustomThemeItems(a, s, isAutoPrefs));
+		customSet.configure(s -> buildCustomThemeItems(a, s, isAutoPrefs, themePref));
 	}
 
-	private void buildCustomThemeItems(MainActivityDelegate a, PreferenceSet s, boolean isAutoPrefs) {
+	private void buildCustomThemeItems(MainActivityDelegate a,
+									   PreferenceSet s,
+									   boolean isAutoPrefs,
+									   Pref<IntSupplier> themePref) {
 		CustomThemeManager.Palette current = CustomThemeManager.getActiveCustomPalette(isAutoPrefs);
 
 		// 1. Load Base Built-In Theme or User Preset (Option A)
 		s.addButton(o -> {
 			o.title = R.string.custom_theme_load_preset;
 			o.csubtitle = current.name;
-			o.onClick = () -> showLoadPresetMenu(a, s, isAutoPrefs);
+			o.onClick = () -> showLoadPresetMenu(a, s, isAutoPrefs, themePref);
 		});
 
 		// 2. Save Current Custom Palette as Named Preset
 		s.addButton(o -> {
 			o.title = R.string.custom_theme_save_preset;
 			o.subtitle = R.string.custom_theme_save_preset_sub;
-			o.onClick = () -> promptSaveCustomPreset(a, s, isAutoPrefs);
+			o.onClick = () -> promptSaveCustomPreset(a, s, isAutoPrefs, themePref);
 		});
 
 		// 3. Delete Saved User Preset (only shown when at least 1 saved preset exists)
@@ -812,30 +811,37 @@ public class SettingsFragment extends MainActivityFragment
 		if (!savedPresets.isEmpty()) {
 			s.addButton(o -> {
 				o.title = R.string.custom_theme_delete_preset;
-				o.onClick = () -> showDeletePresetMenu(a, s, isAutoPrefs, savedPresets);
+				o.onClick = () -> showDeletePresetMenu(a, s, isAutoPrefs, themePref, savedPresets);
 			});
 		}
 
 		// 4. Individual Element Color Slots
-		addColorSlotButton(a, s, isAutoPrefs, current,
+		addColorSlotButton(a, s, isAutoPrefs, themePref, current,
 				CustomThemeManager.SLOT_WINDOW_BG, R.string.custom_theme_slot_bg);
-		addColorSlotButton(a, s, isAutoPrefs, current,
+		addColorSlotButton(a, s, isAutoPrefs, themePref, current,
 				CustomThemeManager.SLOT_PRIMARY_BARS, R.string.custom_theme_slot_bars);
-		addColorSlotButton(a, s, isAutoPrefs, current,
+		addColorSlotButton(a, s, isAutoPrefs, themePref, current,
 				CustomThemeManager.SLOT_SURFACE_MENU, R.string.custom_theme_slot_surface);
-		addColorSlotButton(a, s, isAutoPrefs, current,
+		addColorSlotButton(a, s, isAutoPrefs, themePref, current,
 				CustomThemeManager.SLOT_ACCENT, R.string.custom_theme_slot_accent);
-		addColorSlotButton(a, s, isAutoPrefs, current,
+		addColorSlotButton(a, s, isAutoPrefs, themePref, current,
 				CustomThemeManager.SLOT_TEXT_PRIMARY, R.string.custom_theme_slot_text_primary);
-		addColorSlotButton(a, s, isAutoPrefs, current,
+		addColorSlotButton(a, s, isAutoPrefs, themePref, current,
 				CustomThemeManager.SLOT_TEXT_SECONDARY, R.string.custom_theme_slot_text_secondary);
-		addColorSlotButton(a, s, isAutoPrefs, current,
+		addColorSlotButton(a, s, isAutoPrefs, themePref, current,
 				CustomThemeManager.SLOT_ICON_TINT, R.string.custom_theme_slot_icons);
+	}
+
+	private void ensureCustomThemeActive(MainActivityDelegate a, Pref<IntSupplier> themePref) {
+		if (a.getPrefs().getIntPref(themePref) != MainActivityPrefs.THEME_CUSTOM) {
+			a.getPrefs().applyIntPref(themePref, MainActivityPrefs.THEME_CUSTOM);
+		}
 	}
 
 	private void addColorSlotButton(MainActivityDelegate a,
 									PreferenceSet s,
 									boolean isAutoPrefs,
+									Pref<IntSupplier> themePref,
 									CustomThemeManager.Palette current,
 									int slot,
 									@StringRes int titleRes) {
@@ -849,13 +855,17 @@ public class SettingsFragment extends MainActivityFragment
 				CustomThemeManager.showColorPickerDialog(a, dialogTitle, latest.getSlot(slot), pickedColor -> {
 					latest.setSlot(slot, pickedColor);
 					CustomThemeManager.saveActiveCustomPalette(isAutoPrefs, latest);
-					refreshCustomThemeSubmenu(s, isAutoPrefs);
+					ensureCustomThemeActive(a, themePref);
+					refreshCustomThemeSubmenu(s, isAutoPrefs, themePref);
 				});
 			};
 		});
 	}
 
-	private void showLoadPresetMenu(MainActivityDelegate a, PreferenceSet s, boolean isAutoPrefs) {
+	private void showLoadPresetMenu(MainActivityDelegate a,
+									PreferenceSet s,
+									boolean isAutoPrefs,
+									Pref<IntSupplier> themePref) {
 		Context ctx = a.getContext();
 		List<CustomThemeManager.BuiltInThemeInfo> builtIns = CustomThemeManager.BUILT_IN_THEMES;
 		List<CustomThemeManager.Palette> userPresets = CustomThemeManager.getSavedPresets();
@@ -870,7 +880,8 @@ public class SettingsFragment extends MainActivityFragment
 				b.addItem(UiUtils.getArrayItemId(itemIdx++), label).setHandler(item -> {
 					CustomThemeManager.Palette extracted = CustomThemeManager.extractBuiltInPalette(ctx, info.themeId);
 					CustomThemeManager.saveActiveCustomPalette(isAutoPrefs, extracted);
-					refreshCustomThemeSubmenu(s, isAutoPrefs);
+					ensureCustomThemeActive(a, themePref);
+					refreshCustomThemeSubmenu(s, isAutoPrefs, themePref);
 					return true;
 				});
 			}
@@ -879,14 +890,18 @@ public class SettingsFragment extends MainActivityFragment
 			for (CustomThemeManager.Palette preset : userPresets) {
 				b.addItem(UiUtils.getArrayItemId(itemIdx++), preset.name).setHandler(item -> {
 					CustomThemeManager.saveActiveCustomPalette(isAutoPrefs, preset.copy());
-					refreshCustomThemeSubmenu(s, isAutoPrefs);
+					ensureCustomThemeActive(a, themePref);
+					refreshCustomThemeSubmenu(s, isAutoPrefs, themePref);
 					return true;
 				});
 			}
 		});
 	}
 
-	private void promptSaveCustomPreset(MainActivityDelegate a, PreferenceSet s, boolean isAutoPrefs) {
+	private void promptSaveCustomPreset(MainActivityDelegate a,
+										PreferenceSet s,
+										boolean isAutoPrefs,
+										Pref<IntSupplier> themePref) {
 		CustomThemeManager.Palette active = CustomThemeManager.getActiveCustomPalette(isAutoPrefs);
 		UiUtils.queryText(a.getContext(), R.string.custom_theme_preset_name, 0, active.name)
 				.onSuccess(name -> {
@@ -894,7 +909,8 @@ public class SettingsFragment extends MainActivityFragment
 					active.name = name.trim();
 					CustomThemeManager.savePreset(active);
 					CustomThemeManager.saveActiveCustomPalette(isAutoPrefs, active);
-					refreshCustomThemeSubmenu(s, isAutoPrefs);
+					ensureCustomThemeActive(a, themePref);
+					refreshCustomThemeSubmenu(s, isAutoPrefs, themePref);
 					UiUtils.showInfo(a.getContext(),
 							a.getContext().getString(R.string.custom_theme_preset_saved, active.name));
 				});
@@ -903,6 +919,7 @@ public class SettingsFragment extends MainActivityFragment
 	private void showDeletePresetMenu(MainActivityDelegate a,
 									  PreferenceSet s,
 									  boolean isAutoPrefs,
+									  Pref<IntSupplier> themePref,
 									  List<CustomThemeManager.Palette> savedPresets) {
 		a.getContextMenu().show(b -> {
 			b.setTitle(R.string.custom_theme_delete_preset);
@@ -910,16 +927,18 @@ public class SettingsFragment extends MainActivityFragment
 				String presetName = savedPresets.get(i).name;
 				b.addItem(UiUtils.getArrayItemId(i), presetName).setHandler(item -> {
 					CustomThemeManager.deletePreset(presetName);
-					refreshCustomThemeSubmenu(s, isAutoPrefs);
+					refreshCustomThemeSubmenu(s, isAutoPrefs, themePref);
 					return true;
 				});
 			}
 		});
 	}
 
-	private void refreshCustomThemeSubmenu(PreferenceSet s, boolean isAutoPrefs) {
+	private void refreshCustomThemeSubmenu(PreferenceSet s,
+										   boolean isAutoPrefs,
+										   Pref<IntSupplier> themePref) {
 		MainActivityDelegate.getActivityDelegate(requireContext()).onSuccess(a -> {
-			s.configure(sub -> buildCustomThemeItems(a, sub, isAutoPrefs));
+			s.configure(sub -> buildCustomThemeItems(a, sub, isAutoPrefs, themePref));
 			if (adapter != null && adapter.getPreferenceSet() == s) {
 				adapter.setPreferenceSet(s);
 			}
