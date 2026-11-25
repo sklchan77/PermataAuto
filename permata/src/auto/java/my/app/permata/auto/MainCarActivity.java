@@ -57,12 +57,12 @@ import java.util.Locale;
 
 import my.app.permata.PermataApplication;
 import my.app.permata.R;
-import my.app.permata.action.KeyEventHandler;
 import my.app.permata.media.service.PermataMediaServiceConnection;
 import my.app.permata.ui.activity.MainActivity;
+import my.app.permata.ui.activity.MainActivityDelegate;
 import my.app.permata.ui.activity.MainActivityPrefs;
 import my.app.permata.ui.activity.PermataActivity;
-import my.app.permata.ui.activity.MainActivityDelegate;
+import my.app.permata.ui.theme.CustomThemeManager;
 import my.app.permata.ui.view.MediaItemListView;
 import my.app.permata.ui.view.VideoView;
 import my.app.utils.async.FutureSupplier;
@@ -79,7 +79,7 @@ import my.app.utils.ui.menu.OverlayMenu;
  */
 public class MainCarActivity extends CarActivity implements PermataActivity {
 	public static MainCarActivity activeInstance;
-	
+
 	static PermataMediaServiceConnection service;
 	@SuppressWarnings("unchecked")
 	@NonNull
@@ -130,9 +130,15 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 		try {
 			Window w = getWindow();
 			if (w != null) {
-				TypedArray ta = getTheme().obtainStyledAttributes(new int[]{android.R.attr.colorBackground});
-				int bgColor = ta.getColor(0, Color.BLACK);
-				ta.recycle();
+				CustomThemeManager.Palette custom = CustomThemeManager.resolveEffectiveCustomPalette(true);
+				int bgColor;
+				if (custom != null) {
+					bgColor = custom.windowBg;
+				} else {
+					TypedArray ta = getTheme().obtainStyledAttributes(new int[]{android.R.attr.colorBackground});
+					bgColor = ta.getColor(0, Color.BLACK);
+					ta.recycle();
+				}
 				w.setBackgroundDrawable(new ColorDrawable(bgColor));
 			}
 		} catch (Exception ex) {
@@ -205,7 +211,7 @@ public class MainCarActivity extends CarActivity implements PermataActivity {
 		activeInstance = this;
 		Log.i("[CAR][LIFECYCLE] MainCarActivity.onResume");
 		getActivityDelegate().onSuccess(MainActivityDelegate::onActivityResume);
-		
+
 		try {
 			Intent focusIntent = new Intent(this, my.app.permata.media.service.PermataMediaService.class);
 			focusIntent.setAction(my.app.permata.media.service.PermataMediaService.ACTION_HIJACK_FOCUS);
