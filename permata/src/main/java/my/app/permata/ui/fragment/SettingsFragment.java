@@ -94,8 +94,64 @@ import my.app.utils.vfs.local.LocalFileSystem;
  */
 public class SettingsFragment extends MainActivityFragment
 		implements MainActivityListener, PreferenceStore.Listener {
+
+	private static final int[] SUMMARY_SLOTS = new int[]{
+			CustomThemeManager.SLOT_WINDOW_BG,
+			CustomThemeManager.SLOT_BARS_BG,
+			CustomThemeManager.SLOT_CONTROL_BG,
+			CustomThemeManager.SLOT_MENU_BG,
+			CustomThemeManager.SLOT_ACCENT
+	};
+
+	private static final int[] ZONE_WINDOW_SLOTS = new int[]{
+			CustomThemeManager.SLOT_WINDOW_BG,
+			CustomThemeManager.SLOT_LIST_TEXT,
+			CustomThemeManager.SLOT_LIST_SUBTITLE,
+			CustomThemeManager.SLOT_LIST_ICONS
+	};
+	private static final int[] ZONE_WINDOW_TITLES = new int[]{
+			R.string.custom_theme_slot_window_bg,
+			R.string.custom_theme_slot_list_text,
+			R.string.custom_theme_slot_list_subtitle,
+			R.string.custom_theme_slot_list_icons
+	};
+
+	private static final int[] ZONE_BARS_SLOTS = new int[]{
+			CustomThemeManager.SLOT_BARS_BG,
+			CustomThemeManager.SLOT_BARS_TEXT,
+			CustomThemeManager.SLOT_BARS_ICONS
+	};
+	private static final int[] ZONE_BARS_TITLES = new int[]{
+			R.string.custom_theme_slot_bars_bg,
+			R.string.custom_theme_slot_bars_text,
+			R.string.custom_theme_slot_bars_icons
+	};
+
+	private static final int[] ZONE_CONTROL_SLOTS = new int[]{
+			CustomThemeManager.SLOT_CONTROL_BG,
+			CustomThemeManager.SLOT_CONTROL_TEXT,
+			CustomThemeManager.SLOT_CONTROL_ICONS
+	};
+	private static final int[] ZONE_CONTROL_TITLES = new int[]{
+			R.string.custom_theme_slot_control_bg,
+			R.string.custom_theme_slot_control_text,
+			R.string.custom_theme_slot_control_icons
+	};
+
+	private static final int[] ZONE_MENU_SLOTS = new int[]{
+			CustomThemeManager.SLOT_MENU_BG,
+			CustomThemeManager.SLOT_MENU_TEXT,
+			CustomThemeManager.SLOT_MENU_ICONS
+	};
+	private static final int[] ZONE_MENU_TITLES = new int[]{
+			R.string.custom_theme_slot_menu_bg,
+			R.string.custom_theme_slot_menu_text,
+			R.string.custom_theme_slot_menu_icons
+	};
+
 	private PreferenceViewAdapter adapter;
 	private RecyclerView listView;
+	private CustomThemeManager.SwatchItemDecoration swatchDecoration;
 
 	@Override
 	public int getFragmentId() {
@@ -130,6 +186,7 @@ public class SettingsFragment extends MainActivityFragment
 	public void onViewCreated(@NonNull View view, @Nullable Bundle state) {
 		super.onViewCreated(view, state);
 		MainActivityDelegate.getActivityDelegate(requireContext()).onSuccess(a -> {
+			swatchDecoration = new CustomThemeManager.SwatchItemDecoration(requireContext());
 			adapter = createAdapter(a);
 			a.addBroadcastListener(this);
 			a.getPrefs().addBroadcastListener(this);
@@ -137,7 +194,9 @@ public class SettingsFragment extends MainActivityFragment
 			listView = view.findViewById(my.app.utils.R.id.prefs_list_view);
 			listView.setHasFixedSize(true);
 			listView.setLayoutManager(new LinearLayoutManager(getContext()));
+			listView.addItemDecoration(swatchDecoration);
 			listView.setAdapter(adapter);
+			swatchDecoration.setActiveSet(adapter.getPreferenceSet());
 
 			if (state != null) {
 				PreferenceSet p = adapter.getPreferenceSet().find(state.getInt("id", ID_NULL));
@@ -157,9 +216,13 @@ public class SettingsFragment extends MainActivityFragment
 		a.getPrefs().removeBroadcastListener(this);
 		PermataApplication.get().getAddonManager()
 				.removeBroadcastListeners(l -> l instanceof AddonPrefsBuilder);
+		if (listView != null && swatchDecoration != null) {
+			listView.removeItemDecoration(swatchDecoration);
+		}
 		if (adapter != null) adapter.onDestroy();
 		adapter = null;
 		listView = null;
+		swatchDecoration = null;
 	}
 
 	@Override
@@ -172,6 +235,9 @@ public class SettingsFragment extends MainActivityFragment
 		MainActivityDelegate.getActivityDelegate(requireContext()).onSuccess(a -> {
 			if (adapter == null) return;
 			if (MainActivityPrefs.hasTextIconSizePref(a, prefs)) adapter.setSize(a.getTextIconSize());
+			if (MainActivityPrefs.hasThemePref(a, prefs) && listView != null) {
+				listView.invalidateItemDecorations();
+			}
 		});
 	}
 
@@ -307,14 +373,16 @@ public class SettingsFragment extends MainActivityFragment
 		if (BuildConfig.AUTO && a.isCarActivityNotMirror()) {
 			addAAInterface(a, sub1);
 		} else {
+			int phoneInterfaceStartIdx = 0;
 			if (BuildConfig.AUTO) {
 				addAAInterface(a, sub1.subSet(o -> o.title = R.string.interface_prefs_aa));
+				phoneInterfaceStartIdx = 1;
 			}
-			addInterface(a, sub1, false, MainActivityPrefs.THEME_MAIN, MainActivityPrefs.HIDE_BARS,
-					MainActivityPrefs.FULLSCREEN, MainActivityPrefs.SHOW_PG_UP_DOWN, null,
-					MainActivityPrefs.NAV_BAR_POS, MainActivityPrefs.NAV_BAR_SIZE,
-					MainActivityPrefs.TOOL_BAR_SIZE, MainActivityPrefs.CONTROL_PANEL_SIZE,
-					MainActivityPrefs.TEXT_ICON_SIZE);
+			addInterface(a, sub1, false, phoneInterfaceStartIdx, MainActivityPrefs.THEME_MAIN,
+					MainActivityPrefs.HIDE_BARS, MainActivityPrefs.FULLSCREEN,
+					MainActivityPrefs.SHOW_PG_UP_DOWN, null, MainActivityPrefs.NAV_BAR_POS,
+					MainActivityPrefs.NAV_BAR_SIZE, MainActivityPrefs.TOOL_BAR_SIZE,
+					MainActivityPrefs.CONTROL_PANEL_SIZE, MainActivityPrefs.TEXT_ICON_SIZE);
 		}
 
 		sub1.addBooleanPref(o -> {
@@ -667,6 +735,8 @@ public class SettingsFragment extends MainActivityFragment
 			@Override
 			public void setPreferenceSet(PreferenceSet set) {
 				super.setPreferenceSet(set);
+				if (swatchDecoration != null) swatchDecoration.setActiveSet(set);
+				if (listView != null) listView.invalidateItemDecorations();
 				a.fireBroadcastEvent(FRAGMENT_CONTENT_CHANGED);
 			}
 		};
@@ -674,7 +744,7 @@ public class SettingsFragment extends MainActivityFragment
 
 	private void addAAInterface(MainActivityDelegate a, PreferenceSet ps) {
 		if (BuildConfig.AUTO) {
-			addInterface(a, ps, true, MainActivityPrefs.THEME_AA, MainActivityPrefs.HIDE_BARS_AA,
+			addInterface(a, ps, true, 0, MainActivityPrefs.THEME_AA, MainActivityPrefs.HIDE_BARS_AA,
 					MainActivityPrefs.FULLSCREEN_AA, MainActivityPrefs.SHOW_PG_UP_DOWN_AA,
 					MainActivityPrefs.USE_DPAD_CURSOR, MainActivityPrefs.NAV_BAR_POS_AA,
 					MainActivityPrefs.NAV_BAR_SIZE_AA, MainActivityPrefs.TOOL_BAR_SIZE_AA,
@@ -683,6 +753,7 @@ public class SettingsFragment extends MainActivityFragment
 	}
 
 	private void addInterface(MainActivityDelegate a, PreferenceSet ps, boolean isAutoPrefs,
+														int startIndex,
 														Pref<IntSupplier> theme,
 														Pref<BooleanSupplier> hideBars, Pref<BooleanSupplier> fullScreen,
 														Pref<BooleanSupplier> pgUpDown, Pref<BooleanSupplier> dpadCursor,
@@ -708,7 +779,7 @@ public class SettingsFragment extends MainActivityFragment
 			};
 		});
 
-		addCustomThemeEditorSubmenu(a, ps, isAutoPrefs, theme);
+		addCustomThemeEditorSubmenu(a, ps, startIndex + 1, isAutoPrefs, theme);
 
 		ps.addBooleanPref(o -> {
 			o.store = a.getPrefs();
@@ -778,8 +849,12 @@ public class SettingsFragment extends MainActivityFragment
 
 	private void addCustomThemeEditorSubmenu(MainActivityDelegate a,
 											 PreferenceSet parentSet,
+											 int parentRowIdx,
 											 boolean isAutoPrefs,
 											 Pref<IntSupplier> themePref) {
+		if (swatchDecoration != null) {
+			swatchDecoration.registerRow(parentSet, parentRowIdx, isAutoPrefs, SUMMARY_SLOTS);
+		}
 		PreferenceSet customSet = parentSet.subSet(o -> {
 			o.title = R.string.custom_theme_customize;
 			o.subtitle = R.string.custom_theme_customize_sub;
@@ -792,14 +867,22 @@ public class SettingsFragment extends MainActivityFragment
 									   PreferenceSet s,
 									   boolean isAutoPrefs,
 									   Pref<IntSupplier> themePref) {
+		if (swatchDecoration != null) {
+			swatchDecoration.clearSet(s);
+		}
 		CustomThemeManager.Palette current = CustomThemeManager.getActiveCustomPalette(isAutoPrefs);
+		int rowIdx = 0;
 
-		// 1. Load Base Built-In Theme or User Preset (Option A)
+		// 1. Load Base Built-In Theme or User Preset (with active 5-color strip preview)
+		if (swatchDecoration != null) {
+			swatchDecoration.registerRow(s, rowIdx, isAutoPrefs, SUMMARY_SLOTS);
+		}
 		s.addButton(o -> {
 			o.title = R.string.custom_theme_load_preset;
 			o.csubtitle = current.name;
 			o.onClick = () -> showLoadPresetMenu(a, s, isAutoPrefs, themePref);
 		});
+		rowIdx++;
 
 		// 2. Save Current Custom Palette as Named Preset
 		s.addButton(o -> {
@@ -807,6 +890,7 @@ public class SettingsFragment extends MainActivityFragment
 			o.subtitle = R.string.custom_theme_save_preset_sub;
 			o.onClick = () -> promptSaveCustomPreset(a, s, isAutoPrefs, themePref);
 		});
+		rowIdx++;
 
 		// 3. Delete Saved User Preset (only shown when at least 1 saved preset exists)
 		List<CustomThemeManager.Palette> savedPresets = CustomThemeManager.getSavedPresets();
@@ -815,23 +899,73 @@ public class SettingsFragment extends MainActivityFragment
 				o.title = R.string.custom_theme_delete_preset;
 				o.onClick = () -> showDeletePresetMenu(a, s, isAutoPrefs, themePref, savedPresets);
 			});
+			rowIdx++;
 		}
 
-		// 4. Individual Element Color Slots
+		// 4. Five Logical Theme Zones (each Zone row displays all of its slot color chips)
+		addZoneSubmenu(a, s, rowIdx++, isAutoPrefs, themePref,
+				R.string.custom_theme_zone_window, R.string.custom_theme_zone_window_sub,
+				ZONE_WINDOW_SLOTS, ZONE_WINDOW_TITLES);
+
+		addZoneSubmenu(a, s, rowIdx++, isAutoPrefs, themePref,
+				R.string.custom_theme_zone_bars, R.string.custom_theme_zone_bars_sub,
+				ZONE_BARS_SLOTS, ZONE_BARS_TITLES);
+
+		addZoneSubmenu(a, s, rowIdx++, isAutoPrefs, themePref,
+				R.string.custom_theme_zone_control, R.string.custom_theme_zone_control_sub,
+				ZONE_CONTROL_SLOTS, ZONE_CONTROL_TITLES);
+
+		addZoneSubmenu(a, s, rowIdx++, isAutoPrefs, themePref,
+				R.string.custom_theme_zone_menus, R.string.custom_theme_zone_menus_sub,
+				ZONE_MENU_SLOTS, ZONE_MENU_TITLES);
+
+		// Zone 5: Single Accent Slot directly accessible with color chip + hex
+		if (swatchDecoration != null) {
+			swatchDecoration.registerRow(s, rowIdx, isAutoPrefs, new int[]{CustomThemeManager.SLOT_ACCENT});
+		}
 		addColorSlotButton(a, s, isAutoPrefs, themePref, current,
-				CustomThemeManager.SLOT_WINDOW_BG, R.string.custom_theme_slot_bg);
-		addColorSlotButton(a, s, isAutoPrefs, themePref, current,
-				CustomThemeManager.SLOT_PRIMARY_BARS, R.string.custom_theme_slot_bars);
-		addColorSlotButton(a, s, isAutoPrefs, themePref, current,
-				CustomThemeManager.SLOT_SURFACE_MENU, R.string.custom_theme_slot_surface);
-		addColorSlotButton(a, s, isAutoPrefs, themePref, current,
-				CustomThemeManager.SLOT_ACCENT, R.string.custom_theme_slot_accent);
-		addColorSlotButton(a, s, isAutoPrefs, themePref, current,
-				CustomThemeManager.SLOT_TEXT_PRIMARY, R.string.custom_theme_slot_text_primary);
-		addColorSlotButton(a, s, isAutoPrefs, themePref, current,
-				CustomThemeManager.SLOT_TEXT_SECONDARY, R.string.custom_theme_slot_text_secondary);
-		addColorSlotButton(a, s, isAutoPrefs, themePref, current,
-				CustomThemeManager.SLOT_ICON_TINT, R.string.custom_theme_slot_icons);
+				CustomThemeManager.SLOT_ACCENT, R.string.custom_theme_slot_accent,
+				sub -> buildCustomThemeItems(a, sub, isAutoPrefs, themePref));
+	}
+
+	private void addZoneSubmenu(MainActivityDelegate a,
+								PreferenceSet parentSet,
+								int parentRowIdx,
+								boolean isAutoPrefs,
+								Pref<IntSupplier> themePref,
+								@StringRes int zoneTitleRes,
+								@StringRes int zoneSubtitleRes,
+								int[] slotIds,
+								@StringRes int[] slotTitleRes) {
+		if (swatchDecoration != null) {
+			swatchDecoration.registerRow(parentSet, parentRowIdx, isAutoPrefs, slotIds);
+		}
+		PreferenceSet zoneSet = parentSet.subSet(o -> {
+			o.title = zoneTitleRes;
+			o.subtitle = zoneSubtitleRes;
+		});
+		zoneSet.configure(sub -> buildZoneSlotItems(a, sub, isAutoPrefs, themePref, slotIds, slotTitleRes));
+	}
+
+	private void buildZoneSlotItems(MainActivityDelegate a,
+									PreferenceSet s,
+									boolean isAutoPrefs,
+									Pref<IntSupplier> themePref,
+									int[] slotIds,
+									@StringRes int[] slotTitleRes) {
+		if (swatchDecoration != null) {
+			swatchDecoration.clearSet(s);
+		}
+		CustomThemeManager.Palette current = CustomThemeManager.getActiveCustomPalette(isAutoPrefs);
+		for (int i = 0; i < slotIds.length; i++) {
+			int slot = slotIds[i];
+			int titleRes = slotTitleRes[i];
+			if (swatchDecoration != null) {
+				swatchDecoration.registerRow(s, i, isAutoPrefs, new int[]{slot});
+			}
+			addColorSlotButton(a, s, isAutoPrefs, themePref, current, slot, titleRes,
+					sub -> buildZoneSlotItems(a, sub, isAutoPrefs, themePref, slotIds, slotTitleRes));
+		}
 	}
 
 	private void ensureCustomThemeActive(MainActivityDelegate a, Pref<IntSupplier> themePref) {
@@ -846,7 +980,8 @@ public class SettingsFragment extends MainActivityFragment
 									Pref<IntSupplier> themePref,
 									CustomThemeManager.Palette current,
 									int slot,
-									@StringRes int titleRes) {
+									@StringRes int titleRes,
+									Consumer<PreferenceSet> rebuilder) {
 		int slotColor = current.getSlot(slot);
 		s.addButton(o -> {
 			o.title = titleRes;
@@ -858,7 +993,7 @@ public class SettingsFragment extends MainActivityFragment
 					latest.setSlot(slot, pickedColor);
 					CustomThemeManager.saveActiveCustomPalette(isAutoPrefs, latest);
 					ensureCustomThemeActive(a, themePref);
-					refreshCustomThemeSubmenu(a, s, isAutoPrefs, themePref);
+					refreshSubmenuInPlace(a, s, rebuilder);
 				});
 			};
 		});
@@ -876,24 +1011,22 @@ public class SettingsFragment extends MainActivityFragment
 			b.setTitle(R.string.custom_theme_load_preset);
 			int itemIdx = 0;
 
-			// List all 6 Built-in XML themes first so users can copy & tweak any built-in profile
 			for (CustomThemeManager.BuiltInThemeInfo info : builtIns) {
 				String label = ctx.getString(R.string.custom_theme_builtin_prefix, ctx.getString(info.nameRes));
 				b.addItem(UiUtils.getArrayItemId(itemIdx++), label).setHandler(item -> {
 					CustomThemeManager.Palette extracted = CustomThemeManager.extractBuiltInPalette(ctx, info.themeId);
 					CustomThemeManager.saveActiveCustomPalette(isAutoPrefs, extracted);
 					ensureCustomThemeActive(a, themePref);
-					refreshCustomThemeSubmenu(a, s, isAutoPrefs, themePref);
+					refreshSubmenuInPlace(a, s, sub -> buildCustomThemeItems(a, sub, isAutoPrefs, themePref));
 					return true;
 				});
 			}
 
-			// List user-saved custom presets
 			for (CustomThemeManager.Palette preset : userPresets) {
 				b.addItem(UiUtils.getArrayItemId(itemIdx++), preset.name).setHandler(item -> {
 					CustomThemeManager.saveActiveCustomPalette(isAutoPrefs, preset.copy());
 					ensureCustomThemeActive(a, themePref);
-					refreshCustomThemeSubmenu(a, s, isAutoPrefs, themePref);
+					refreshSubmenuInPlace(a, s, sub -> buildCustomThemeItems(a, sub, isAutoPrefs, themePref));
 					return true;
 				});
 			}
@@ -912,7 +1045,7 @@ public class SettingsFragment extends MainActivityFragment
 					CustomThemeManager.savePreset(active);
 					CustomThemeManager.saveActiveCustomPalette(isAutoPrefs, active);
 					ensureCustomThemeActive(a, themePref);
-					refreshCustomThemeSubmenu(a, s, isAutoPrefs, themePref);
+					refreshSubmenuInPlace(a, s, sub -> buildCustomThemeItems(a, sub, isAutoPrefs, themePref));
 					UiUtils.showInfo(a.getContext(),
 							a.getContext().getString(R.string.custom_theme_preset_saved, active.name));
 				});
@@ -929,17 +1062,16 @@ public class SettingsFragment extends MainActivityFragment
 				String presetName = savedPresets.get(i).name;
 				b.addItem(UiUtils.getArrayItemId(i), presetName).setHandler(item -> {
 					CustomThemeManager.deletePreset(presetName);
-					refreshCustomThemeSubmenu(a, s, isAutoPrefs, themePref);
+					refreshSubmenuInPlace(a, s, sub -> buildCustomThemeItems(a, sub, isAutoPrefs, themePref));
 					return true;
 				});
 			}
 		});
 	}
 
-	private void refreshCustomThemeSubmenu(MainActivityDelegate a,
-										   PreferenceSet s,
-										   boolean isAutoPrefs,
-										   Pref<IntSupplier> themePref) {
+	private void refreshSubmenuInPlace(MainActivityDelegate a,
+									   PreferenceSet s,
+									   Consumer<PreferenceSet> rebuilder) {
 		int firstPos = RecyclerView.NO_POSITION;
 		int firstOffset = 0;
 		LinearLayoutManager lm = (listView != null && listView.getLayoutManager() instanceof LinearLayoutManager m)
@@ -950,7 +1082,7 @@ public class SettingsFragment extends MainActivityFragment
 			if (firstChild != null) firstOffset = firstChild.getTop() - listView.getPaddingTop();
 		}
 
-		s.configure(sub -> buildCustomThemeItems(a, sub, isAutoPrefs, themePref));
+		s.configure(rebuilder);
 		if (adapter != null && adapter.getPreferenceSet() == s) {
 			adapter.setPreferenceSet(s);
 			if (lm != null && firstPos != RecyclerView.NO_POSITION) {
@@ -960,7 +1092,10 @@ public class SettingsFragment extends MainActivityFragment
 			}
 		}
 		if (listView != null) {
-			listView.post(() -> CustomThemeManager.applyIfCustom(a));
+			listView.post(() -> {
+				if (listView != null) listView.invalidateItemDecorations();
+				CustomThemeManager.applyIfCustom(a);
+			});
 		} else {
 			CustomThemeManager.applyIfCustom(a);
 		}
