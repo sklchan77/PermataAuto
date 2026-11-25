@@ -56,7 +56,7 @@
     <string name="theme_purple">Purple</string>
     <string name="theme_classic">Classic</string>
 
-<!-- Custom Theme & Startup Randomizer -->
+    <!-- Custom Theme & Startup Randomizer -->
     <string name="theme_custom">Custom</string>
     <string name="theme_random">Random (On Startup)</string>
     <string name="custom_theme_customize">Customize Theme</string>
@@ -68,15 +68,35 @@
     <string name="custom_theme_delete_preset">Delete Saved Preset</string>
     <string name="custom_theme_preset_name">Preset Name</string>
     <string name="custom_theme_preset_saved">Saved theme preset: %1$s</string>
-    <string name="custom_theme_slot_bg">Window Background</string>
-    <string name="custom_theme_slot_bars">Bars &amp; Control Panel</string>
-    <string name="custom_theme_slot_surface">Menus &amp; Dialogs</string>
-    <string name="custom_theme_slot_accent">Accent &amp; Progress</string>
-    <string name="custom_theme_slot_text_primary">Primary Text (Bars)</string>
-    <string name="custom_theme_slot_text_secondary">Secondary Text (Lists &amp; Menus)</string>
-    <string name="custom_theme_slot_icons">Icon Tint</string>
-<string name="custom_theme_preview_editing">Editing: %1$s (highlighted below)</string>
-<string name="custom_theme_swatches_hint">100 Swatches (Tap any to open Color Wheel)</string>
+
+    <!-- Custom Theme Zones -->
+    <string name="custom_theme_zone_window">Main Screen (Window)</string>
+    <string name="custom_theme_zone_window_sub">BG • Title • Subtitle • Icons</string>
+    <string name="custom_theme_zone_bars">Top &amp; Navigation Bars</string>
+    <string name="custom_theme_zone_bars_sub">BG • Text • Icons</string>
+    <string name="custom_theme_zone_control">Playback Control Panel</string>
+    <string name="custom_theme_zone_control_sub">BG • Text • Icons</string>
+    <string name="custom_theme_zone_menus">Menus &amp; Dialogs</string>
+    <string name="custom_theme_zone_menus_sub">BG • Text • Icons</string>
+
+    <!-- 14 Logical Theme Element Slots -->
+    <string name="custom_theme_slot_window_bg">Window: Background</string>
+    <string name="custom_theme_slot_list_text">Window: List Title Text</string>
+    <string name="custom_theme_slot_list_subtitle">Window: Subtitle &amp; Hint Text</string>
+    <string name="custom_theme_slot_list_icons">Window: List Icons</string>
+    <string name="custom_theme_slot_bars_bg">Top &amp; Nav Bars: Background</string>
+    <string name="custom_theme_slot_bars_text">Top &amp; Nav Bars: Text</string>
+    <string name="custom_theme_slot_bars_icons">Top &amp; Nav Bars: Icons</string>
+    <string name="custom_theme_slot_control_bg">Control Panel: Background</string>
+    <string name="custom_theme_slot_control_text">Control Panel: Text</string>
+    <string name="custom_theme_slot_control_icons">Control Panel: Icons</string>
+    <string name="custom_theme_slot_menu_bg">Menus &amp; Dialogs: Background</string>
+    <string name="custom_theme_slot_menu_text">Menus &amp; Dialogs: Text</string>
+    <string name="custom_theme_slot_menu_icons">Menus &amp; Dialogs: Icons</string>
+    <string name="custom_theme_slot_accent">Accent: Progress, Switches &amp; Buttons</string>
+
+    <!-- Color Picker & 10x10 Swatches -->
+    <string name="custom_theme_swatches_hint">100 Swatches (Tap any to open Color Wheel)</string>
     <string name="custom_theme_reset_swatches">Reset 100</string>
     <string name="custom_theme_wheel_apply">Apply Color</string>
     <string name="custom_theme_wheel_back">Back to Swatches</string>
