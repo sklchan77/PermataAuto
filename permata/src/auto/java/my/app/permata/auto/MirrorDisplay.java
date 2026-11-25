@@ -69,6 +69,9 @@ public class MirrorDisplay {
 	private static final int ANCHOR_FLAGS = FLAG_NOT_FOCUSABLE | FLAG_NOT_TOUCHABLE | FLAG_KEEP_SCREEN_ON | FLAG_DISMISS_KEYGUARD | FLAG_SHOW_WHEN_LOCKED | FLAG_ALT_FOCUSABLE_IM;
 	private static final int MAX_VD_LONG_EDGE = 1920;
 
+	static final int EDGE_FLAG_FS_STREAM = 0x1000;
+	static final int EDGE_FLAG_FS_ANCHORED = 0x2000;
+
 	private static final String PREFS_NAME = "permata_mirror_prefs";
 	private static final String KEY_FILL_FS = "fill_mode_fs";
 	private static final String KEY_FILL_ACTIVITY = "fill_mode_activity";
@@ -367,28 +370,19 @@ public class MirrorDisplay {
 		}
 	}
 
-	private static float clampCoord(float value, float min, float max) {
-		return Math.max(min, Math.min(max, value));
-	}
+	// =========================================================================
+	// Original Split-Screen Mirroring Input Pipeline (100% Untouched)
+	// =========================================================================
 
 	public void tap(float x, float y) {
 		lastInjectedTouchTime = uptimeMillis();
 		var m = metrics();
 		if (m == null) return;
 
-		final float rawX = (x - m.x) * m.scale;
-		final float rawY = (y - m.y) * m.scale;
-		// Ignore stray taps deep inside letterbox bars while clamping near-edge overlay taps
-		if (rawX < -80f || rawX > m.dw + 80f || rawY < -80f || rawY > m.dh + 80f) {
-			return;
-		}
-		final float tx = clampCoord(rawX, 1f, m.dw - 2f);
-		final float ty = clampCoord(rawY, 1f, m.dh - 2f);
-
 		touchExecutor.execute(() -> {
 			var d = dispatcher();
 			if (d != null) {
-				d.tap(tx, ty);
+				d.tap((x - m.x) * m.scale, (y - m.y) * m.scale);
 			}
 		});
 	}
@@ -398,13 +392,10 @@ public class MirrorDisplay {
 		var m = metrics();
 		if (m == null) return;
 
-		final float sx = clampCoord((x - m.x) * m.scale, 1f, m.dw - 2f);
-		final float sy = clampCoord((y - m.y) * m.scale, 1f, m.dh - 2f);
-
 		touchExecutor.execute(() -> {
 			var d = dispatcher();
 			if (d != null) {
-				d.scale(sx, sy, zoomIn ? scaleDiff : -scaleDiff);
+				d.scale((x - m.x) * m.scale, (y - m.y) * m.scale, zoomIn ? scaleDiff : -scaleDiff);
 			}
 		});
 	}
@@ -435,8 +426,8 @@ public class MirrorDisplay {
 					reusableProps[i].id = 10 + i;
 					reusableProps[i].toolType = MotionEvent.TOOL_TYPE_FINGER;
 
-					reusableCoords[i].x = clampCoord((reusableCoords[i].x - m.x) * m.scale, 1f, m.dw - 2f);
-					reusableCoords[i].y = clampCoord((reusableCoords[i].y - m.y) * m.scale, 1f, m.dh - 2f);
+					reusableCoords[i].x = (reusableCoords[i].x - m.x) * m.scale;
+					reusableCoords[i].y = (reusableCoords[i].y - m.y) * m.scale;
 
 					if (reusableCoords[i].pressure <= 0.01f) reusableCoords[i].pressure = 1.0f;
 					if (reusableCoords[i].size <= 0.01f) reusableCoords[i].size = 1.0f;
@@ -481,13 +472,103 @@ public class MirrorDisplay {
 				reusableProps[0].toolType = MotionEvent.TOOL_TYPE_FINGER;
 
 				reusableCoords[0].clear();
-				reusableCoords[0].x = clampCoord((x - m.x) * m.scale, 1f, m.dw - 2f);
-				reusableCoords[0].y = clampCoord((y - m.y) * m.scale, 1f, m.dh - 2f);
+
+				reusableCoords[0].x = (x - m.x) * m.scale;
+				reusableCoords[0].y = (y - m.y) * m.scale;
+
 				reusableCoords[0].pressure = 1.0f;
 				reusableCoords[0].size = 1.0f;
 
 				clonedEvent = MotionEvent.obtain(downTime, eventTime, action, 1, reusableProps, reusableCoords,
 						0, 0, 1.0f, 1.0f, 0, 0, InputDevice.SOURCE_TOUCHSCREEN, 0);
+
+			} catch (Exception ex) {}
+		}
+
+		if (clonedEvent != null) {
+			final MotionEvent finalEvent = clonedEvent;
+			try {
+				touchExecutor.execute(() -> {
+					try {
+						EventDispatcher d = dispatcher();
+						if (d != null) d.motionEvent(finalEvent);
+					} catch (Exception ex) {}
+				});
+			} catch (Exception rejectedException) {}
+		}
+
+		return true;
+	}
+
+	// =========================================================================
+	// Isolated Full-Screen Mirroring (MirrorServiceFS) Input Pipeline
+	// =========================================================================
+
+	private static float clampCoord(float value, float min, float max) {
+		return Math.max(min, Math.min(max, value));
+	}
+
+	public void tapFS(float x, float y) {
+		lastInjectedTouchTime = uptimeMillis();
+		var m = metrics();
+		if (m == null) return;
+
+		final float rawX = (x - m.x) * m.scale;
+		final float rawY = (y - m.y) * m.scale;
+		if (rawX < -80f || rawX > m.dw + 80f || rawY < -80f || rawY > m.dh + 80f) {
+			return;
+		}
+		final float tx = clampCoord(rawX, 1f, m.dw - 2f);
+		final float ty = clampCoord(rawY, 1f, m.dh - 2f);
+
+		touchExecutor.execute(() -> {
+			var d = dispatcher();
+			if (d != null) {
+				d.tap(tx, ty);
+			}
+		});
+	}
+
+	public void scaleFS(float x, float y, boolean zoomIn) {
+		lastInjectedTouchTime = uptimeMillis();
+		var m = metrics();
+		if (m == null) return;
+
+		final float sx = clampCoord((x - m.x) * m.scale, 1f, m.dw - 2f);
+		final float sy = clampCoord((y - m.y) * m.scale, 1f, m.dh - 2f);
+
+		touchExecutor.execute(() -> {
+			var d = dispatcher();
+			if (d != null) {
+				d.scale(sx, sy, zoomIn ? scaleDiff : -scaleDiff);
+			}
+		});
+	}
+
+	public boolean motionEventFS(long downTime, long eventTime, int action, float x, float y, boolean isAnchoredDrag) {
+		lastInjectedTouchTime = uptimeMillis();
+
+		MotionEvent clonedEvent = null;
+
+		synchronized (touchLock) {
+			try {
+				var m = metrics();
+				if (m == null) return false;
+
+				reusableProps[0].clear();
+				reusableProps[0].id = 10;
+				reusableProps[0].toolType = MotionEvent.TOOL_TYPE_FINGER;
+
+				reusableCoords[0].clear();
+				reusableCoords[0].x = clampCoord((x - m.x) * m.scale, 1f, m.dw - 2f);
+				reusableCoords[0].y = clampCoord((y - m.y) * m.scale, 1f, m.dh - 2f);
+				reusableCoords[0].pressure = 1.0f;
+				reusableCoords[0].size = 1.0f;
+
+				int edgeFlags = EDGE_FLAG_FS_STREAM | (isAnchoredDrag ? EDGE_FLAG_FS_ANCHORED : 0);
+
+				clonedEvent = MotionEvent.obtain(downTime, eventTime, action, 1, reusableProps, reusableCoords,
+						0, 0, 1.0f, 1.0f, 0, edgeFlags, InputDevice.SOURCE_TOUCHSCREEN, 0);
 
 			} catch (Exception ex) {}
 		}
@@ -890,9 +971,9 @@ public class MirrorDisplay {
 
 		boolean fill = isActiveFillMode();
 		if (currentMetrics != null &&
-			currentMetrics.fillMode == fill &&
-			currentMetrics.sw == sw && currentMetrics.sh == sh &&
-			currentMetrics.dw == dw && currentMetrics.dh == dh) {
+				currentMetrics.fillMode == fill &&
+				currentMetrics.sw == sw && currentMetrics.sh == sh &&
+				currentMetrics.dw == dw && currentMetrics.dh == dh) {
 			return currentMetrics;
 		}
 
