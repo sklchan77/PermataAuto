@@ -25,6 +25,8 @@ import androidx.car.app.model.Template;
 import androidx.car.app.navigation.model.NavigationTemplate;
 import androidx.car.app.validation.HostValidator;
 
+import java.util.Locale;
+
 import my.app.permata.PermataApplication;
 import my.app.permata.R;
 import my.app.utils.concurrent.HandlerExecutor;
@@ -99,9 +101,17 @@ public class MirrorServiceFS extends CarAppService {
 	}
 
 	private final class MirrorScreen extends Screen implements SurfaceCallback {
-		private static final long TAP_THEN_DRAG_WINDOW_MS = 300L; // Standard human double-tap speed
-		private static final long SCALE_DRAG_WINDOW_MS = 250L;    // Anchor window when AA fires onScale before onScroll
-		private static final long SCROLL_LIFT_DELAY_MS = 400L;
+		// Stage 1: Cancel tap & drag directly if finger moves within 380ms (prevents opening collapsed bubbles)
+		private static final long TAP_HOLD_INTERCEPT_MS = 380L;
+		// Stage 2: Keep tap / drag-end coordinate armed for 2.5s so floating window titlebars grab reliably
+		private static final long RECENT_ANCHOR_TTL_MS = 2500L;
+		// Stage 3: Keep QuickScale (double-tap-hold) coordinate armed for 3.0s without clicking or zooming
+		private static final long SCALE_ANCHOR_TTL_MS = 3000L;
+		private static final long SCALE_SETTLE_MS = 260L;
+		private static final float MIN_PINCH_DELTA = 0.12f;
+
+		private static final long SCROLL_LIFT_CENTER_MS = 340L;
+		private static final long SCROLL_LIFT_ANCHORED_MS = 480L;
 
 		private final HandlerExecutor handler = PermataApplication.get().getHandler();
 		private float scrollStartX;
@@ -112,16 +122,22 @@ public class MirrorServiceFS extends CarAppService {
 		private long scrollMoveTime;
 		private Cancellable scrollUp;
 
-		// [TAP-THEN-DRAG] 300ms hold window state (onClick -> onScroll)
+		// Stage 1: Pending pre-tap intercept state
 		private Cancellable pendingTap;
 		private float pendingTapX;
 		private float pendingTapY;
 
-		// [SCALE-TO-DRAG] 250ms hold window state (onScale -> onScroll when AA intercepts double-tap-drag)
+		// Stage 2 & 3: Persistent post-tap / QuickScale / chained-drag anchor state
+		private float anchorX = -1f;
+		private float anchorY = -1f;
+		private long anchorExpiryTime = 0L;
+		private String anchorKind = "CENTER";
+
+		// QuickScale vs Two-Finger Pinch discriminator state
 		private Cancellable pendingScale;
-		private float pendingScaleX;
-		private float pendingScaleY;
-		private boolean pendingScaleZoomIn;
+		private float scaleBurstStartX;
+		private float scaleBurstStartY;
+		private float scaleBurstCumulative = 1.0f;
 
 		private boolean isAnchoredDrag = false;
 
@@ -146,6 +162,7 @@ public class MirrorServiceFS extends CarAppService {
 
 			scrollStartX = localSc.getWidth() / 2f;
 			scrollStartY = localSc.getHeight() / 2f;
+			clearAnchor();
 			invalidate();
 		}
 
@@ -154,10 +171,12 @@ public class MirrorServiceFS extends CarAppService {
 			Log.i("[MIRROR_FS][SURFACE] onSurfaceDestroyed | size=" + localSc.getWidth() + "x" + localSc.getHeight());
 			cancelPendingTap();
 			cancelPendingScale();
+			clearAnchor();
 			if (scrollUp != null) {
 				scrollUp.cancel();
 				scrollUp = null;
 			}
+			isAnchoredDrag = false;
 			AccessibilityEventDispatcherService.abortActiveGesture();
 			if (md != null) {
 				md.releaseSurface(localSc);
@@ -171,14 +190,16 @@ public class MirrorServiceFS extends CarAppService {
 			if (scrollUp != null) {
 				scrollUp.cancel();
 				scrollUp = null;
+				isAnchoredDrag = false;
 				AccessibilityEventDispatcherService.abortActiveGesture();
 			}
 
-			// Normal human double-tap (down-up-down-up within 300ms): flush both taps transparently to OS
+			// Fast human double-tap: flush both taps and arm anchor at second tap
 			if (pendingTap != null) {
 				float firstX = pendingTapX;
 				float firstY = pendingTapY;
 				cancelPendingTap();
+				armAnchor(x, y, RECENT_ANCHOR_TTL_MS, "DOUBLE_TAP");
 				Log.i("[MIRROR_FS][INPUT] Fast Double-Tap Flush | first=(" + (int) firstX + "," + (int) firstY
 						+ "), second=(" + (int) x + "," + (int) y + ")");
 				var mDisp = md();
@@ -194,60 +215,73 @@ public class MirrorServiceFS extends CarAppService {
 			pendingTap = handler.schedule(() -> {
 				if (pendingTap == null) return;
 				pendingTap = null;
-				Log.i("[MIRROR_FS][INPUT] Full-Screen Tap | x=" + (int) pendingTapX + ", y=" + (int) pendingTapY);
+				armAnchor(pendingTapX, pendingTapY, RECENT_ANCHOR_TTL_MS, "RECENT_TAP");
+				Log.i("[MIRROR_FS][INPUT] Full-Screen Tap | x=" + (int) pendingTapX + ", y=" + (int) pendingTapY
+						+ " (anchor armed " + RECENT_ANCHOR_TTL_MS + "ms)");
 				var mDisp = md();
 				if (mDisp != null) mDisp.tap(pendingTapX, pendingTapY);
-			}, TAP_THEN_DRAG_WINDOW_MS);
+			}, TAP_HOLD_INTERCEPT_MS);
 		}
 
 		@Override
 		public void onScroll(float distanceX, float distanceY) {
 			var mDisp = md();
-			if (mDisp == null || MirrorServiceFS.sc == null) return;
+			SurfaceContainer curSc = MirrorServiceFS.sc;
+			if (mDisp == null || curSc == null) return;
 
-			var time = uptimeMillis();
+			long time = uptimeMillis();
 			scrollMoveTime = time;
 
 			if (scrollUp == null) {
-				String anchorSource = "CENTER";
+				String anchorSource;
 				if (pendingTap != null) {
 					cancelPendingTap();
 					scrollStartX = pendingTapX;
 					scrollStartY = pendingTapY;
 					isAnchoredDrag = true;
-					anchorSource = "TAP";
+					anchorSource = "TAP_HOLD";
 				} else if (pendingScale != null) {
 					cancelPendingScale();
-					scrollStartX = pendingScaleX;
-					scrollStartY = pendingScaleY;
+					scrollStartX = scaleBurstStartX;
+					scrollStartY = scaleBurstStartY;
 					isAnchoredDrag = true;
-					anchorSource = "SCALE_FOCUS";
+					anchorSource = "SCALE_IMMEDIATE";
+				} else if (time <= anchorExpiryTime && anchorX >= 0f && anchorY >= 0f) {
+					scrollStartX = anchorX;
+					scrollStartY = anchorY;
+					isAnchoredDrag = true;
+					anchorSource = anchorKind;
 				} else {
-					scrollStartX = MirrorServiceFS.sc.getWidth() / 2f;
-					scrollStartY = MirrorServiceFS.sc.getHeight() / 2f;
+					scrollStartX = curSc.getWidth() / 2f;
+					scrollStartY = curSc.getHeight() / 2f;
 					isAnchoredDrag = false;
+					anchorSource = "CENTER";
 				}
 
-				scrollX = scrollStartX;
-				scrollY = scrollStartY;
+				clearAnchor();
+				scrollX = clamp(scrollStartX, 0f, curSc.getWidth());
+				scrollY = clamp(scrollStartY, 0f, curSc.getHeight());
 				Log.i("[MIRROR_FS][INPUT] Full-Screen Drag Started | anchored=" + isAnchoredDrag
 						+ ", source=" + anchorSource
 						+ ", startX=" + (int) scrollX + ", startY=" + (int) scrollY);
 
+				AccessibilityEventDispatcherService.setNextDragAnchored(isAnchoredDrag);
 				if (!mDisp.motionEvent(time, time, ACTION_DOWN, scrollX, scrollY)) {
+					AccessibilityEventDispatcherService.setNextDragAnchored(false);
+					isAnchoredDrag = false;
 					return;
 				}
 				scrollDownTime = time;
-				scheduleScrollUp(SCROLL_LIFT_DELAY_MS);
+				scheduleScrollUp(isAnchoredDrag ? SCROLL_LIFT_ANCHORED_MS : SCROLL_LIFT_CENTER_MS);
 			}
 
-			scrollX -= distanceX;
-			scrollY -= distanceY;
+			scrollX = clamp(scrollX - distanceX, 0f, curSc.getWidth());
+			scrollY = clamp(scrollY - distanceY, 0f, curSc.getHeight());
 			mDisp.motionEvent(scrollDownTime, time, ACTION_MOVE, scrollX, scrollY);
 
 			if (scrollUp != null) {
 				scrollUp.cancel();
-				scheduleScrollUp(SCROLL_LIFT_DELAY_MS);
+				scheduleScrollUp(isAnchoredDrag ? SCROLL_LIFT_ANCHORED_MS : SCROLL_LIFT_CENTER_MS);
 			}
 		}
 
@@ -255,18 +289,27 @@ public class MirrorServiceFS extends CarAppService {
 			scrollUp = handler.schedule(() -> {
 				if (scrollUp == null) return;
 				var mDisp = md();
-				if (mDisp == null) return;
+				if (mDisp == null) {
+					scrollUp = null;
+					isAnchoredDrag = false;
+					return;
+				}
 
-				var time = uptimeMillis();
-				var end = scrollMoveTime + delay;
+				long time = uptimeMillis();
+				long end = scrollMoveTime + delay;
 				if (end > time) {
 					scheduleScrollUp(end - time);
 				} else {
 					scrollUp = null;
-					mDisp.motionEvent(scrollDownTime, time, ACTION_UP, scrollX, scrollY);
-					Log.i("[MIRROR_FS][INPUT] Full-Screen Drag Ended | anchored=" + isAnchoredDrag
-							+ ", endX=" + (int) scrollX + ", endY=" + (int) scrollY);
+					boolean wasAnchored = isAnchoredDrag;
 					isAnchoredDrag = false;
+					mDisp.motionEvent(scrollDownTime, time, ACTION_UP, scrollX, scrollY);
+					if (wasAnchored) {
+						// Allow immediate follow-up drag from the new parked position
+						armAnchor(scrollX, scrollY, RECENT_ANCHOR_TTL_MS, "CHAINED_DRAG");
+					}
+					Log.i("[MIRROR_FS][INPUT] Full-Screen Drag Ended | anchored=" + wasAnchored
+							+ ", endX=" + (int) scrollX + ", endY=" + (int) scrollY);
 				}
 			}, delay);
 		}
@@ -274,22 +317,57 @@ public class MirrorServiceFS extends CarAppService {
 		@Override
 		public void onScale(float focusX, float focusY, float scaleFactor) {
 			cancelPendingTap();
-			cancelPendingScale();
 			if (scrollUp != null) return;
 
-			pendingScaleX = focusX;
-			pendingScaleY = focusY;
-			pendingScaleZoomIn = scaleFactor > 1f;
+			if (pendingScale == null) {
+				scaleBurstStartX = focusX;
+				scaleBurstStartY = focusY;
+				scaleBurstCumulative = scaleFactor;
+			} else {
+				pendingScale.cancel();
+				scaleBurstCumulative *= scaleFactor;
+			}
+
+			// Pre-arm silent anchor immediately so an instant swipe grabs the bubble without clicking it
+			armAnchor(scaleBurstStartX, scaleBurstStartY, SCALE_ANCHOR_TTL_MS, "SCALE_ANCHOR");
+
 			pendingScale = handler.schedule(() -> {
 				if (pendingScale == null) return;
 				pendingScale = null;
-				Log.i("[MIRROR_FS][INPUT] Full-Screen Scale | focusX=" + (int) pendingScaleX
-						+ ", focusY=" + (int) pendingScaleY + ", zoomIn=" + pendingScaleZoomIn);
-				scrollStartX = pendingScaleX;
-				scrollStartY = pendingScaleY;
-				var mDisp = md();
-				if (mDisp != null) mDisp.scale(pendingScaleX, pendingScaleY, pendingScaleZoomIn);
-			}, SCALE_DRAG_WINDOW_MS);
+				float delta = Math.abs(scaleBurstCumulative - 1.0f);
+				if (delta >= MIN_PINCH_DELTA) {
+					clearAnchor();
+					boolean zoomIn = scaleBurstCumulative > 1.0f;
+					Log.i(String.format(Locale.US,
+							"[MIRROR_FS][INPUT] Full-Screen Scale | focusX=%d, focusY=%d, factor=%.2f, zoomIn=%b",
+							(int) scaleBurstStartX, (int) scaleBurstStartY, scaleBurstCumulative, zoomIn));
+					var mDisp = md();
+					if (mDisp != null) mDisp.scale(scaleBurstStartX, scaleBurstStartY, zoomIn);
+				} else {
+					armAnchor(scaleBurstStartX, scaleBurstStartY, SCALE_ANCHOR_TTL_MS, "SCALE_ANCHOR");
+					Log.i(String.format(Locale.US,
+							"[MIRROR_FS][INPUT] Silent Drag-Anchor Armed | x=%d, y=%d (QuickScale delta=%.3f)",
+							(int) scaleBurstStartX, (int) scaleBurstStartY, delta));
+				}
+			}, SCALE_SETTLE_MS);
+		}
+
+		private void armAnchor(float x, float y, long ttlMs, @NonNull String kind) {
+			anchorX = x;
+			anchorY = y;
+			anchorExpiryTime = uptimeMillis() + ttlMs;
+			anchorKind = kind;
+		}
+
+		private void clearAnchor() {
+			anchorX = -1f;
+			anchorY = -1f;
+			anchorExpiryTime = 0L;
+			anchorKind = "CENTER";
+		}
+
+		private float clamp(float val, float min, float max) {
+			return Math.max(min, Math.min(max, val));
 		}
 
 		private void cancelPendingTap() {
@@ -325,7 +403,6 @@ public class MirrorServiceFS extends CarAppService {
 							new CarIcon.Builder(createWithResource(getCarContext(), R.drawable.shutdown)).setTint(CarColor.DEFAULT).build())
 					.setOnClickListener(MirrorActivity::onExitButtonClick).build();
 
-			// [FIT/FILL] Standalone FS state: shows fullscreen (Fill) in Fit mode, fullscreen_exit (Fit) in Fill mode
 			int fitFillIconRes = MirrorDisplay.isFillMode(true) ? R.drawable.fullscreen_exit : R.drawable.fullscreen;
 			var fitFillButton = new Action.Builder().setIcon(
 							new CarIcon.Builder(createWithResource(getCarContext(), fitFillIconRes))
@@ -339,12 +416,10 @@ public class MirrorServiceFS extends CarAppService {
 			return new NavigationTemplate.Builder()
 					.setPanModeListener(isPanningMode ->
 							Log.i("[MIRROR_FS][INPUT] Pan Mode Toggled | isPanningMode=" + isPanningMode))
-					// 1. Interactive Floating Tools (Fit/Fill toggle + Pan)
 					.setMapActionStrip(new ActionStrip.Builder()
 							.addAction(fitFillButton)
 							.addAction(Action.PAN)
 							.build())
-					// 2. Primary Navigation Bar (Original 4 buttons remain untouched)
 					.setActionStrip(new ActionStrip.Builder()
 							.addAction(homeButton)
 							.addAction(recentButton)
