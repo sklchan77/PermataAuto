@@ -88,7 +88,7 @@ public class MirrorDisplay {
 	private static volatile boolean fillPrefsLoaded = false;
 	private static volatile boolean isFillModeFS = false;
 	private static volatile boolean isFillModeActivity = false;
-	private static int originalAccelState = -1; // [SURGERY] Track original accelerometer state
+	private static int originalAccelState = -1;
 
 	private volatile long lastInjectedTouchTime = 0;
 	private final Object touchLock = new Object();
@@ -367,15 +367,28 @@ public class MirrorDisplay {
 		}
 	}
 
+	private static float clampCoord(float value, float min, float max) {
+		return Math.max(min, Math.min(max, value));
+	}
+
 	public void tap(float x, float y) {
 		lastInjectedTouchTime = uptimeMillis();
 		var m = metrics();
 		if (m == null) return;
 
+		final float rawX = (x - m.x) * m.scale;
+		final float rawY = (y - m.y) * m.scale;
+		// Ignore stray taps deep inside black letterbox bars, while clamping near-edge overlay taps
+		if (rawX < -80f || rawX > m.dw + 80f || rawY < -80f || rawY > m.dh + 80f) {
+			return;
+		}
+		final float tx = clampCoord(rawX, 1f, m.dw - 2f);
+		final float ty = clampCoord(rawY, 1f, m.dh - 2f);
+
 		touchExecutor.execute(() -> {
 			var d = dispatcher();
 			if (d != null) {
-				d.tap((x - m.x) * m.scale, (y - m.y) * m.scale);
+				d.tap(tx, ty);
 			}
 		});
 	}
@@ -385,10 +398,13 @@ public class MirrorDisplay {
 		var m = metrics();
 		if (m == null) return;
 
+		final float sx = clampCoord((x - m.x) * m.scale, 1f, m.dw - 2f);
+		final float sy = clampCoord((y - m.y) * m.scale, 1f, m.dh - 2f);
+
 		touchExecutor.execute(() -> {
 			var d = dispatcher();
 			if (d != null) {
-				d.scale((x - m.x) * m.scale, (y - m.y) * m.scale, zoomIn ? scaleDiff : -scaleDiff);
+				d.scale(sx, sy, zoomIn ? scaleDiff : -scaleDiff);
 			}
 		});
 	}
@@ -419,8 +435,8 @@ public class MirrorDisplay {
 					reusableProps[i].id = 10 + i;
 					reusableProps[i].toolType = MotionEvent.TOOL_TYPE_FINGER;
 
-					reusableCoords[i].x = (reusableCoords[i].x - m.x) * m.scale;
-					reusableCoords[i].y = (reusableCoords[i].y - m.y) * m.scale;
+					reusableCoords[i].x = clampCoord((reusableCoords[i].x - m.x) * m.scale, 1f, m.dw - 2f);
+					reusableCoords[i].y = clampCoord((reusableCoords[i].y - m.y) * m.scale, 1f, m.dh - 2f);
 
 					if (reusableCoords[i].pressure <= 0.01f) reusableCoords[i].pressure = 1.0f;
 					if (reusableCoords[i].size <= 0.01f) reusableCoords[i].size = 1.0f;
@@ -465,10 +481,8 @@ public class MirrorDisplay {
 				reusableProps[0].toolType = MotionEvent.TOOL_TYPE_FINGER;
 
 				reusableCoords[0].clear();
-
-				reusableCoords[0].x = (x - m.x) * m.scale;
-				reusableCoords[0].y = (y - m.y) * m.scale;
-
+				reusableCoords[0].x = clampCoord((x - m.x) * m.scale, 1f, m.dw - 2f);
+				reusableCoords[0].y = clampCoord((y - m.y) * m.scale, 1f, m.dh - 2f);
 				reusableCoords[0].pressure = 1.0f;
 				reusableCoords[0].size = 1.0f;
 
@@ -846,7 +860,6 @@ public class MirrorDisplay {
 		}, 3000);
 	}
 
-	// [GL SAFE] Do not call surface.lockCanvas() on EGL-owned surfaces; CPU producer permanently blocks EGL reconnects.
 	private void drawMsg(@StringRes int msg) {
 		Log.i("[MIRROR][UI_MSG] " + PermataApplication.get().getString(msg));
 	}
@@ -974,7 +987,7 @@ public class MirrorDisplay {
 		final float dh;
 		final boolean fillMode;
 
-		Metrics(float dw, float dh, float sw, float sh, boolean fillMode) {
+		Metrics(float dw, float dh, swValCheck(sw), float sh, boolean fillMode) {
 			this.sw = sw;
 			this.sh = sh;
 			this.dw = dw;
@@ -986,24 +999,20 @@ public class MirrorDisplay {
 
 			if (fillMode) {
 				if (scaleW >= scaleH) {
-					// Phone is wider than car: match height, crop left/right overhang (x <= 0)
 					this.scale = scaleH;
 					this.y = 0f;
 					this.x = (sw - (dw / this.scale)) / 2f;
 				} else {
-					// Phone is taller than car: match width, crop top/bottom overhang (y <= 0)
 					this.scale = scaleW;
 					this.x = 0f;
 					this.y = (sh - (dh / this.scale)) / 2f;
 				}
 			} else {
 				if (scaleW >= scaleH) {
-					// Fit: match width, letterbox top/bottom (y >= 0)
 					this.scale = scaleW;
 					this.x = 0f;
 					this.y = (sh - (dh / this.scale)) / 2f;
 				} else {
-					// Fit: match height, pillarbox left/right (x >= 0)
 					this.scale = scaleH;
 					this.y = 0f;
 					this.x = (sw - (dw / this.scale)) / 2f;
