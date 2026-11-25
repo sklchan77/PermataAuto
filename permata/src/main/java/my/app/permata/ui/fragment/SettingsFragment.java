@@ -68,6 +68,7 @@ import my.app.permata.media.pref.PlaybackControlPrefs;
 import my.app.permata.ui.activity.MainActivityDelegate;
 import my.app.permata.ui.activity.MainActivityListener;
 import my.app.permata.ui.activity.MainActivityPrefs;
+import my.app.permata.ui.theme.CustomThemeManager;
 import my.app.permata.util.Utils;
 import my.app.utils.app.App;
 import my.app.utils.collection.CollectionUtils;
@@ -307,7 +308,7 @@ public class SettingsFragment extends MainActivityFragment
 			if (BuildConfig.AUTO) {
 				addAAInterface(a, sub1.subSet(o -> o.title = R.string.interface_prefs_aa));
 			}
-			addInterface(a, sub1, MainActivityPrefs.THEME_MAIN, MainActivityPrefs.HIDE_BARS,
+			addInterface(a, sub1, false, MainActivityPrefs.THEME_MAIN, MainActivityPrefs.HIDE_BARS,
 					MainActivityPrefs.FULLSCREEN, MainActivityPrefs.SHOW_PG_UP_DOWN, null,
 					MainActivityPrefs.NAV_BAR_POS, MainActivityPrefs.NAV_BAR_SIZE,
 					MainActivityPrefs.TOOL_BAR_SIZE, MainActivityPrefs.CONTROL_PANEL_SIZE,
@@ -671,7 +672,7 @@ public class SettingsFragment extends MainActivityFragment
 
 	private void addAAInterface(MainActivityDelegate a, PreferenceSet ps) {
 		if (BuildConfig.AUTO) {
-			addInterface(a, ps, MainActivityPrefs.THEME_AA, MainActivityPrefs.HIDE_BARS_AA,
+			addInterface(a, ps, true, MainActivityPrefs.THEME_AA, MainActivityPrefs.HIDE_BARS_AA,
 					MainActivityPrefs.FULLSCREEN_AA, MainActivityPrefs.SHOW_PG_UP_DOWN_AA,
 					MainActivityPrefs.USE_DPAD_CURSOR, MainActivityPrefs.NAV_BAR_POS_AA,
 					MainActivityPrefs.NAV_BAR_SIZE_AA, MainActivityPrefs.TOOL_BAR_SIZE_AA,
@@ -679,7 +680,8 @@ public class SettingsFragment extends MainActivityFragment
 		}
 	}
 
-	private void addInterface(MainActivityDelegate a, PreferenceSet ps, Pref<IntSupplier> theme,
+	private void addInterface(MainActivityDelegate a, PreferenceSet ps, boolean isAutoPrefs,
+														Pref<IntSupplier> theme,
 														Pref<BooleanSupplier> hideBars, Pref<BooleanSupplier> fullScreen,
 														Pref<BooleanSupplier> pgUpDown, Pref<BooleanSupplier> dpadCursor,
 														Pref<IntSupplier> nbPos, Pref<DoubleSupplier> nbSize,
@@ -691,10 +693,21 @@ public class SettingsFragment extends MainActivityFragment
 			o.title = R.string.theme;
 			o.subtitle = R.string.theme_sub;
 			o.formatSubtitle = true;
-			o.values = new int[]{R.string.theme_dark, R.string.theme_light, R.string.theme_system,
-					R.string.theme_black, R.string.theme_star_wars, R.string.theme_purple,
-					R.string.theme_classic};
+			o.values = new int[]{
+					R.string.theme_dark,
+					R.string.theme_light,
+					R.string.theme_system,
+					R.string.theme_black,
+					R.string.theme_star_wars,
+					R.string.theme_purple,
+					R.string.theme_classic,
+					R.string.theme_custom,
+					R.string.theme_random
+			};
 		});
+
+		addCustomThemeEditorSubmenu(a, ps, isAutoPrefs, theme);
+
 		ps.addBooleanPref(o -> {
 			o.store = a.getPrefs();
 			o.pref = hideBars;
@@ -758,6 +771,159 @@ public class SettingsFragment extends MainActivityFragment
 			o.scale = 0.05f;
 			o.seekMin = 10;
 			o.seekMax = 40;
+		});
+	}
+
+	private void addCustomThemeEditorSubmenu(MainActivityDelegate a,
+											 PreferenceSet parentSet,
+											 boolean isAutoPrefs,
+											 Pref<IntSupplier> themePref) {
+		ChangeableCondition isCustomSelected =
+				PrefCondition.create(a.getPrefs(), themePref, v -> v == MainActivityPrefs.THEME_CUSTOM);
+
+		PreferenceSet customSet = parentSet.subSet(o -> {
+			o.title = R.string.custom_theme_customize;
+			o.subtitle = R.string.custom_theme_customize_sub;
+			o.visibility = isCustomSelected;
+		});
+
+		customSet.configure(s -> buildCustomThemeItems(a, s, isAutoPrefs));
+	}
+
+	private void buildCustomThemeItems(MainActivityDelegate a, PreferenceSet s, boolean isAutoPrefs) {
+		Context ctx = a.getContext();
+		CustomThemeManager.Palette current = CustomThemeManager.getActiveCustomPalette(isAutoPrefs);
+
+		// 1. Load Base Built-In Theme or User Preset (Option A)
+		s.addButton(o -> {
+			o.title = R.string.custom_theme_load_preset;
+			o.csubtitle = current.name;
+			o.onClick = () -> showLoadPresetMenu(a, s, isAutoPrefs);
+		});
+
+		// 2. Save Current Custom Palette as Named Preset
+		s.addButton(o -> {
+			o.title = R.string.custom_theme_save_preset;
+			o.subtitle = R.string.custom_theme_save_preset_sub;
+			o.onClick = () -> promptSaveCustomPreset(a, s, isAutoPrefs);
+		});
+
+		// 3. Delete Saved User Preset (only shown when at least 1 saved preset exists)
+		List<CustomThemeManager.Palette> savedPresets = CustomThemeManager.getSavedPresets();
+		if (!savedPresets.isEmpty()) {
+			s.addButton(o -> {
+				o.title = R.string.custom_theme_delete_preset;
+				o.onClick = () -> showDeletePresetMenu(a, s, savedPresets);
+			});
+		}
+
+		// 4. Individual Element Color Slots
+		addColorSlotButton(a, s, isAutoPrefs, current,
+				CustomThemeManager.SLOT_WINDOW_BG, R.string.custom_theme_slot_bg);
+		addColorSlotButton(a, s, isAutoPrefs, current,
+				CustomThemeManager.SLOT_PRIMARY_BARS, R.string.custom_theme_slot_bars);
+		addColorSlotButton(a, s, isAutoPrefs, current,
+				CustomThemeManager.SLOT_SURFACE_MENU, R.string.custom_theme_slot_surface);
+		addColorSlotButton(a, s, isAutoPrefs, current,
+				CustomThemeManager.SLOT_ACCENT, R.string.custom_theme_slot_accent);
+		addColorSlotButton(a, s, isAutoPrefs, current,
+				CustomThemeManager.SLOT_TEXT_PRIMARY, R.string.custom_theme_slot_text_primary);
+		addColorSlotButton(a, s, isAutoPrefs, current,
+				CustomThemeManager.SLOT_TEXT_SECONDARY, R.string.custom_theme_slot_text_secondary);
+		addColorSlotButton(a, s, isAutoPrefs, current,
+				CustomThemeManager.SLOT_ICON_TINT, R.string.custom_theme_slot_icons);
+	}
+
+	private void addColorSlotButton(MainActivityDelegate a,
+									PreferenceSet s,
+									boolean isAutoPrefs,
+									CustomThemeManager.Palette current,
+									int slot,
+									@StringRes int titleRes) {
+		int slotColor = current.getSlot(slot);
+		s.addButton(o -> {
+			o.title = titleRes;
+			o.csubtitle = CustomThemeManager.toHex(slotColor);
+			o.onClick = () -> {
+				CustomThemeManager.Palette latest = CustomThemeManager.getActiveCustomPalette(isAutoPrefs);
+				String dialogTitle = a.getContext().getString(titleRes);
+				CustomThemeManager.showColorPickerDialog(a, dialogTitle, latest.getSlot(slot), pickedColor -> {
+					latest.setSlot(slot, pickedColor);
+					CustomThemeManager.saveActiveCustomPalette(isAutoPrefs, latest);
+					refreshCustomThemeSubmenu(s, isAutoPrefs);
+				});
+			};
+		});
+	}
+
+	private void showLoadPresetMenu(MainActivityDelegate a, PreferenceSet s, boolean isAutoPrefs) {
+		Context ctx = a.getContext();
+		List<CustomThemeManager.BuiltInThemeInfo> builtIns = CustomThemeManager.BUILT_IN_THEMES;
+		List<CustomThemeManager.Palette> userPresets = CustomThemeManager.getSavedPresets();
+
+		a.getContextMenu().show(b -> {
+			b.setTitle(R.string.custom_theme_load_preset);
+			int itemIdx = 0;
+
+			// List all 6 Built-in XML themes first so users can copy & tweak any built-in profile
+			for (CustomThemeManager.BuiltInThemeInfo info : builtIns) {
+				String label = ctx.getString(R.string.custom_theme_builtin_prefix, ctx.getString(info.nameRes));
+				b.addItem(UiUtils.getArrayItemId(itemIdx++), label).setHandler(item -> {
+					CustomThemeManager.Palette extracted = CustomThemeManager.extractBuiltInPalette(ctx, info.themeId);
+					CustomThemeManager.saveActiveCustomPalette(isAutoPrefs, extracted);
+					refreshCustomThemeSubmenu(s, isAutoPrefs);
+					return true;
+				});
+			}
+
+			// List user-saved custom presets
+			for (CustomThemeManager.Palette preset : userPresets) {
+				b.addItem(UiUtils.getArrayItemId(itemIdx++), preset.name).setHandler(item -> {
+					CustomThemeManager.saveActiveCustomPalette(isAutoPrefs, preset.copy());
+					refreshCustomThemeSubmenu(s, isAutoPrefs);
+					return true;
+				});
+			}
+		});
+	}
+
+	private void promptSaveCustomPreset(MainActivityDelegate a, PreferenceSet s, boolean isAutoPrefs) {
+		CustomThemeManager.Palette active = CustomThemeManager.getActiveCustomPalette(isAutoPrefs);
+		UiUtils.queryText(a.getContext(), R.string.custom_theme_preset_name, 0, active.name)
+				.onSuccess(name -> {
+					if (name == null || name.trim().isEmpty()) return;
+					active.name = name.trim();
+					CustomThemeManager.savePreset(active);
+					CustomThemeManager.saveActiveCustomPalette(isAutoPrefs, active);
+					refreshCustomThemeSubmenu(s, isAutoPrefs);
+					UiUtils.showInfo(a.getContext(),
+							a.getContext().getString(R.string.custom_theme_preset_saved, active.name));
+				});
+	}
+
+	private void showDeletePresetMenu(MainActivityDelegate a,
+									  PreferenceSet s,
+									  List<CustomThemeManager.Palette> savedPresets) {
+		a.getContextMenu().show(b -> {
+			b.setTitle(R.string.custom_theme_delete_preset);
+			for (int i = 0; i < savedPresets.size(); i++) {
+				String presetName = savedPresets.get(i).name;
+				b.addItem(UiUtils.getArrayItemId(i), presetName).setHandler(item -> {
+					CustomThemeManager.deletePreset(presetName);
+					s.configure(sub -> buildCustomThemeItems(a, sub, s == null));
+					if (adapter != null) adapter.setPreferenceSet(s);
+					return true;
+				});
+			}
+		});
+	}
+
+	private void refreshCustomThemeSubmenu(PreferenceSet s, boolean isAutoPrefs) {
+		MainActivityDelegate.getActivityDelegate(requireContext()).onSuccess(a -> {
+			s.configure(sub -> buildCustomThemeItems(a, sub, isAutoPrefs));
+			if (adapter != null && adapter.getPreferenceSet() == s) {
+				adapter.setPreferenceSet(s);
+			}
 		});
 	}
 
