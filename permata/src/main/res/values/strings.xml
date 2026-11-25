@@ -75,10 +75,9 @@
     <string name="custom_theme_slot_text_primary">Primary Text (Bars)</string>
     <string name="custom_theme_slot_text_secondary">Secondary Text (Lists &amp; Menus)</string>
     <string name="custom_theme_slot_icons">Icon Tint</string>
-
 <string name="custom_theme_preview_editing">Editing: %1$s (highlighted below)</string>
-    <string name="custom_theme_swatches_hint">36 Swatches (Tap any to open Color Wheel)</string>
-    <string name="custom_theme_reset_swatches">Reset 36</string>
+<string name="custom_theme_swatches_hint">100 Swatches (Tap any to open Color Wheel)</string>
+    <string name="custom_theme_reset_swatches">Reset 100</string>
     <string name="custom_theme_wheel_apply">Apply Color</string>
     <string name="custom_theme_wheel_back">Back to Swatches</string>
 
