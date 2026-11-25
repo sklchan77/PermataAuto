@@ -23,12 +23,15 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.graphics.Path;
+import android.graphics.Point;
+import android.hardware.display.DisplayManager;
 import android.media.AudioManager;
 import android.os.Build.VERSION;
 import android.os.Build.VERSION_CODES;
 import android.os.Handler;
 import android.os.Looper;
 import android.provider.Settings;
+import android.view.Display;
 import android.view.MotionEvent;
 import android.view.accessibility.AccessibilityEvent;
 import android.view.accessibility.AccessibilityNodeInfo;
@@ -55,7 +58,6 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
     private static volatile String lastActivePackage = null;
     public static volatile boolean isInjectingBack = false;
 
-    // [WATCHDOG] Memory Debounce state (Merged from File B)
     private static long lastActiveBtTime = 0;
 
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
@@ -65,34 +67,41 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
     private GestureDescription.Builder gb;
     private Pointer[] pointers = new Pointer[]{new Pointer()};
 
-    // === [UNIVERSAL SCROLLABLE NATIVE APPS (TOP-2 WINDOW PRIORITY)] ===
+    // Scrollable feed apps prioritized during top-window lookup
     private static final Set<String> SCROLLER_APPS = new HashSet<>(Arrays.asList(
-            "com.ss.android.ugc.trill",      // TikTok Asia
-            "com.zhiliaoapp.musically",      // TikTok Global
-            "com.ss.android.ugc.aweme",      // Douyin
-            "com.ss.android.ugc.aweme.lite", // Douyin Lite
-            "com.instagram.android",         // Instagram Reels
-            "com.instagram.barcelona",       // Threads
-            "com.facebook.katana",           // Facebook Reels
-            "com.facebook.lite",             // Facebook Lite
-            "com.google.android.youtube",    // YouTube Shorts
-            "com.xingin.xhs",                // Xiaohongshu (RedNote)
-            "com.smile.gifmaker",            // Kuaishou
-            "com.kuaishou.nebula",           // Kuaishou Express
-            "com.kwai.video",                // Kwai
-            "tv.danmaku.bili",               // Bilibili
-            "com.reddit.frontpage",          // Reddit
-            "com.snapchat.android",          // Snapchat Spotlight
-            "com.twitter.android"            // X (Twitter)
+            "com.ss.android.ugc.trill",
+            "com.zhiliaoapp.musically",
+            "com.ss.android.ugc.aweme",
+            "com.ss.android.ugc.aweme.lite",
+            "com.instagram.android",
+            "com.instagram.barcelona",
+            "com.facebook.katana",
+            "com.facebook.lite",
+            "com.google.android.youtube",
+            "com.xingin.xhs",
+            "com.smile.gifmaker",
+            "com.kuaishou.nebula",
+            "com.kwai.video",
+            "tv.danmaku.bili",
+            "com.reddit.frontpage",
+            "com.snapchat.android",
+            "com.twitter.android"
     ));
 
-    // === [4-LAYER SAFE FUSE: SERIALIZED DRAG ENGINE] ===
-    private static final long DRAG_IDLE_TIMEOUT_MS = 800L;
-    private static final long DRAG_INITIAL_HOLD_MS = 35L;
-    private static final long DRAG_SEGMENT_MS = 30L;
-    private static final long DRAG_LIFT_MS = 20L;
+    // Serialized continuous stroke engine for single-finger scrolling and overlay dragging
+    private static final long DRAG_IDLE_TIMEOUT_MS = 1500L;
+    private static final long DRAG_CENTER_HOLD_MS = 35L;
+    private static final long DRAG_ANCHORED_HOLD_MS = 95L;
+    private static final long DRAG_MIN_SEGMENT_MS = 32L;
+    private static final long DRAG_MAX_SEGMENT_MS = 110L;
+    private static final long DRAG_CENTER_LIFT_MS = 25L;
+    private static final long DRAG_ANCHORED_SETTLE_LIFT_MS = 65L;
+
+    private static volatile boolean nextDragAnchored = false;
+    private boolean activeMultiTouch = false;
 
     private long dragSessionId = 0L;
+    private boolean currentDragAnchored = false;
     private boolean isDragDispatching = false;
     private StrokeDescription activeDragStroke = null;
     private float lastDragX;
@@ -102,12 +111,15 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
     private float pendingMoveY;
     private boolean pendingUp = false;
 
+    public static void setNextDragAnchored(boolean anchored) {
+        nextDragAnchored = anchored;
+    }
+
     private final Runnable dragIdleWatchdog = () -> {
         if (VERSION.SDK_INT >= VERSION_CODES.O) {
-            forceLiftActiveDrag("IDLE_TIMEOUT_800MS");
+            forceLiftActiveDrag("IDLE_TIMEOUT_1500MS");
         }
     };
-    // ====================================================
 
     private final BroadcastReceiver commandReceiver = new BroadcastReceiver() {
         @Override
@@ -154,7 +166,6 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
             }
             if (appWindows.isEmpty()) return null;
 
-            // Sort highest Z-order (topmost) first
             appWindows.sort((a, b) -> Integer.compare(b.getLayer(), a.getLayer()));
 
             String topPkg = null;
@@ -171,7 +182,6 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
                 }
                 if (pkg == null || isIgnoredOverlay(pkg) || isCurrentImePackage(pkg)) continue;
 
-                // If Permata itself is the topmost app window, keep control in Permata
                 if (checked == 0 && pkg.equals(getPackageName())) {
                     return pkg;
                 }
@@ -223,8 +233,6 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
             if (md != null) {
                 long now = android.os.SystemClock.uptimeMillis();
 
-                // SURGICAL FIX: Inject the 1x1 focus-clearing tap directly into the Virtual Display.
-                // This protects your landscape orientation but makes it physically impossible to wake the phone.
                 try {
                     md.motionEvent(now, now, android.view.MotionEvent.ACTION_DOWN, 1f, 1f);
                     md.motionEvent(now, now + 10, android.view.MotionEvent.ACTION_UP, 1f, 1f);
@@ -255,7 +263,6 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
             }
         }
 
-        // If not in mirroring mode, or if Virtual Display fails, fall back to global Accessibility tap
         dispatchTap(1f, 1f);
 
         isInjectingBack = true;
@@ -341,11 +348,28 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
 
     static boolean dispatchMotionEvent(MotionEvent e) {
         var ds = instance;
-        if ((VERSION.SDK_INT < VERSION_CODES.O) || (ds == null)) return false;
+        if ((VERSION.SDK_INT < VERSION_CODES.O) || (ds == null) || (e == null)) return false;
 
-        var pointers = ds.pointers;
         var cnt = e.getPointerCount();
         var action = e.getActionMasked();
+
+        // Route single-finger touch streams into the serialized main-thread StrokeDescription engine
+        if (cnt == 1 && !ds.activeMultiTouch
+                && (action == ACTION_DOWN || action == ACTION_MOVE || action == ACTION_UP || action == ACTION_CANCEL)) {
+            return dispatchMotionEvent(e.getDownTime(), e.getEventTime(), action, e.getX(0), e.getY(0));
+        }
+
+        if (cnt > 1 || action == ACTION_POINTER_DOWN) {
+            if (!ds.activeMultiTouch) {
+                ds.activeMultiTouch = true;
+                abortActiveGesture();
+            }
+        }
+        if (action == ACTION_UP || action == ACTION_CANCEL) {
+            ds.activeMultiTouch = false;
+        }
+
+        var pointers = ds.pointers;
         boolean completePrev;
 
         if ((cnt > 1) && (action == ACTION_MOVE)) {
@@ -380,11 +404,9 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
         }
 
         for (; idx < cnt; idx++) {
-            var x = e.getX(idx);
-            var y = e.getY(idx);
-            if ((x < 0f) || (y < 0f)) continue;
+            float[] pt = ds.clampToDisplay(e.getX(idx), e.getY(idx));
             var p = pointers[idx];
-            if (!ds.buildGesture(p, downTime, eventTime, action, x, y, completePrev)) return false;
+            if (!ds.buildGesture(p, downTime, eventTime, action, pt[0], pt[1], completePrev)) return false;
         }
 
         return (ds.gb == null) || ds.dispatch();
@@ -393,7 +415,6 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
     static boolean dispatchMotionEvent(long downTime, long eventTime, int action, float x, float y) {
         var ds = instance;
         if ((VERSION.SDK_INT < VERSION_CODES.O) || (ds == null)) return false;
-        if ((x < 0f) || (y < 0f)) return true;
 
         if (Looper.myLooper() == Looper.getMainLooper()) {
             return ds.handleSerializedDragEvent(action, x, y);
@@ -403,24 +424,66 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
         }
     }
 
+    private float[] clampToDisplay(float x, float y) {
+        float maxW = 1920f;
+        float maxH = 1080f;
+        try {
+            DisplayManager dm = (DisplayManager) getSystemService(Context.DISPLAY_SERVICE);
+            Display d = (dm != null) ? dm.getDisplay(DEFAULT_DISPLAY) : null;
+            if (d != null) {
+                Point realSize = new Point();
+                d.getRealSize(realSize);
+                if (realSize.x > 2 && realSize.y > 2) {
+                    maxW = realSize.x;
+                    maxH = realSize.y;
+                }
+            }
+            PermataApplication app = PermataApplication.get();
+            if (app != null && app.isMirroringMode()) {
+                boolean land = app.isMirroringLandscape();
+                if (land && maxW < maxH) {
+                    float tmp = maxW;
+                    maxW = maxH;
+                    maxH = tmp;
+                } else if (!land && maxW > maxH) {
+                    float tmp = maxW;
+                    maxW = maxH;
+                    maxH = tmp;
+                }
+            }
+        } catch (Exception ignored) {}
+        return new float[]{
+                Math.max(1f, Math.min(maxW - 2f, x)),
+                Math.max(1f, Math.min(maxH - 2f, y))
+        };
+    }
+
     @RequiresApi(api = VERSION_CODES.O)
-    private boolean handleSerializedDragEvent(int action, float x, float y) {
+    private boolean handleSerializedDragEvent(int action, float rawX, float rawY) {
+        float[] pt = clampToDisplay(rawX, rawY);
+        float x = pt[0];
+        float y = pt[1];
+
         switch (action) {
             case ACTION_DOWN -> {
                 if (activeDragStroke != null) {
                     forceLiftActiveDrag("PREEMPTED_BY_NEW_DOWN");
                 }
                 final long sessionId = ++dragSessionId;
+                currentDragAnchored = nextDragAnchored;
+                nextDragAnchored = false;
+
                 lastDragX = x;
                 lastDragY = y;
                 hasPendingMove = false;
                 pendingUp = false;
                 isDragDispatching = true;
 
+                long holdMs = currentDragAnchored ? DRAG_ANCHORED_HOLD_MS : DRAG_CENTER_HOLD_MS;
                 Path p = new Path();
                 p.moveTo(x, y);
                 p.lineTo(x, y);
-                StrokeDescription initial = new StrokeDescription(p, 0L, DRAG_INITIAL_HOLD_MS, true);
+                StrokeDescription initial = new StrokeDescription(p, 0L, holdMs, true);
                 activeDragStroke = initial;
                 resetDragWatchdog();
 
@@ -437,6 +500,7 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
                             @Override
                             public void onCancelled(GestureDescription gestureDescription) {
                                 if (sessionId != dragSessionId) return;
+                                Log.w("[MIRROR][DRAG] Initial stroke cancelled | anchored=" + currentDragAnchored);
                                 resetDragState();
                             }
                         },
@@ -478,25 +542,20 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
     private void pumpNextDragSegment(final long sessionId) {
         if (sessionId != dragSessionId || activeDragStroke == null || isDragDispatching) return;
 
-        if (pendingUp) {
-            mainHandler.removeCallbacks(dragIdleWatchdog);
-            Path p = new Path();
-            p.moveTo(lastDragX, lastDragY);
-            p.lineTo(pendingMoveX, pendingMoveY);
-            StrokeDescription lift = activeDragStroke.continueStroke(p, 0L, DRAG_LIFT_MS, false);
-            resetDragState();
-            try {
-                dispatchGesture(new GestureDescription.Builder().addStroke(lift).build(), null, null);
-            } catch (Exception ignored) {}
-            return;
-        }
+        float dist = (float) Math.hypot(pendingMoveX - lastDragX, pendingMoveY - lastDragY);
 
-        if (hasPendingMove) {
+        // Complete pending travel before lifting so floating bubbles/windows park instead of flinging
+        if (hasPendingMove && dist > 1.5f) {
             hasPendingMove = false;
             Path p = new Path();
             p.moveTo(lastDragX, lastDragY);
             p.lineTo(pendingMoveX, pendingMoveY);
-            StrokeDescription next = activeDragStroke.continueStroke(p, 0L, DRAG_SEGMENT_MS, true);
+
+            long segMs = currentDragAnchored
+                    ? Math.max(45L, Math.min(DRAG_MAX_SEGMENT_MS, Math.round(dist * 0.28f)))
+                    : DRAG_MIN_SEGMENT_MS;
+
+            StrokeDescription next = activeDragStroke.continueStroke(p, 0L, segMs, true);
             lastDragX = pendingMoveX;
             lastDragY = pendingMoveY;
             activeDragStroke = next;
@@ -516,6 +575,7 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
                         @Override
                         public void onCancelled(GestureDescription gestureDescription) {
                             if (sessionId != dragSessionId) return;
+                            Log.w("[MIRROR][DRAG] Move stroke cancelled | anchored=" + currentDragAnchored);
                             resetDragState();
                         }
                     },
@@ -524,6 +584,22 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
             if (!ok) {
                 resetDragState();
             }
+            return;
+        }
+
+        if (pendingUp) {
+            hasPendingMove = false;
+            mainHandler.removeCallbacks(dragIdleWatchdog);
+            Path p = new Path();
+            p.moveTo(lastDragX, lastDragY);
+            p.lineTo(pendingMoveX, pendingMoveY);
+
+            long liftMs = currentDragAnchored ? DRAG_ANCHORED_SETTLE_LIFT_MS : DRAG_CENTER_LIFT_MS;
+            StrokeDescription lift = activeDragStroke.continueStroke(p, 0L, liftMs, false);
+            resetDragState();
+            try {
+                dispatchGesture(new GestureDescription.Builder().addStroke(lift).build(), null, null);
+            } catch (Exception ignored) {}
         }
     }
 
@@ -542,7 +618,7 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
                 Path p = new Path();
                 p.moveTo(x, y);
                 p.lineTo(x, y);
-                StrokeDescription lift = stroke.continueStroke(p, 0L, DRAG_LIFT_MS, false);
+                StrokeDescription lift = stroke.continueStroke(p, 0L, DRAG_CENTER_LIFT_MS, false);
                 dispatchGesture(new GestureDescription.Builder().addStroke(lift).build(), null, null);
             } catch (Exception ignored) {}
         }
@@ -556,6 +632,7 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
     private void resetDragState() {
         mainHandler.removeCallbacks(dragIdleWatchdog);
         activeDragStroke = null;
+        currentDragAnchored = false;
         isDragDispatching = false;
         hasPendingMove = false;
         pendingUp = false;
@@ -674,21 +751,18 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
         CharSequence cls = event.getClassName();
         String className = (cls != null) ? cls.toString() : null;
 
-        // 2-LAYER UNIVERSAL OVERLAY FILTER: Ignore transient windows, active IME, AA host, system overlays, and car mirroring hosts
         if (!isTransientWindow(className) && !isIgnoredOverlay(pkgName)
                 && !isCurrentImePackage(pkgName) && !isMirroringHostWindow(pkgName, className)) {
             lastActivePackage = pkgName;
 
-            // === [WATCHDOG GOD-MODE: NATIVE APP HIJACKING] (Merged from File B) ===
             if (isStubbornNativeApp(pkgName) && isCarSessionActive()) {
-                Log.w("[WATCHDOG_TELEMETRY] Stubborn App Detected: " + pkgName + ". Firing Aggressive Reclaim!");
+                Log.w("[WATCHDOG_TELEMETRY] Foreground media app detected: " + pkgName + ". Requesting audio session sync.");
                 Intent reclaimIntent = new Intent(this, my.app.permata.media.service.PermataMediaService.class);
                 reclaimIntent.setAction("my.app.permata.action.AGGRESSIVE_RECLAIM");
                 try {
                     startService(reclaimIntent);
                 } catch (Exception ignored) {}
             }
-            // =======================================================================
         }
 
         if (isConsentGranted && clickOnButton == null) return;
@@ -715,35 +789,20 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
         }
     }
 
-    // === [UNIVERSAL OVERLAY & LAUNCHER FILTER] ===
+    // System UI, keyboard, launcher, and popup package filter
     private static final String[] IGNORE_PKG_KEYWORDS = {
-            // Android Auto Host, Permissions & Voice Assistants
             "gearhead", "permissioncontroller", "packageinstaller",
             "googlequicksearchbox", "bixby", "keymapper",
-
-            // Core System, UI & Keyboards
             "systemui", "inputmethod", "launcher", "gboard", "swiftkey", "honeyboard",
-
-            // Biometrics, Lock & Keyguard (The Intermittent Blocker Fix)
             "biometrics", "keyguard", "lockscreen", "faceid", "fingerprint",
-
-            // Overlays, Dimmers, Rotation Control & Always On Displays
             "alwaysondisplay", "aod", "overlay", "screenfilter", "bluelight",
             "twilight", "lux", "smartface", "hidenotch",
             "rotationcontrol", "snowlife01",
-
-            // Edge Panels & Gesture Navigation
             "edgepanel", "edge", "sidegesture", "gestural", "threebutton",
-
-            // IM, Social & Phone Popups (The Message Interruption Fix)
             "whatsapp", "telegram", "messenger", "discord", "wechat", "line",
             "viber", "sms", "mms", "messaging", "dialer", "incallui", "truecaller",
-
-            // Productivity, Email & Calendar Popups (The Scheduling Interruption Fix)
             "com.google.android.gm", "gmail", "email", "outlook", "mail", "calendar", "reminder",
             "tasks", "todo", "keep", "alarm", "clock", "notes",
-
-            // OEM Specific Sledgehammers
             "miui", "xiaomi", "coloros", "oplus", "nexuslauncher", "trebuchet"
     };
 
@@ -751,8 +810,6 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
         if (pkgName == null || !pkgName.equals(getPackageName())) return false;
         if (!PermataApplication.get().isMirroringMode()) return false;
         if (className == null) return true;
-        // Allow MainCarActivity, LauncherActivity, and MainActivity to update activePkg normally,
-        // but block MirrorActivity / MirrorServiceFS / ToolBar overlays from overwriting the mirrored phone app.
         return !className.contains("MainCarActivity")
                 && !className.contains("LauncherActivity")
                 && !className.contains("MainActivity");
@@ -786,13 +843,11 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
         }
         return false;
     }
-    // ===============================================
 
-    // === [WATCHDOG HELPER PROTOCOLS] (Merged from File B) ===
     private static final Set<String> STUBBORN_APPS = new HashSet<>(Arrays.asList(
-            "com.zhiliaoapp.musically", // TikTok Global
-            "com.ss.android.ugc.trill", // TikTok Asia
-            "com.instagram.android"     // Instagram
+            "com.zhiliaoapp.musically",
+            "com.ss.android.ugc.trill",
+            "com.instagram.android"
     ));
 
     private boolean isStubbornNativeApp(String pkg) {
@@ -813,16 +868,8 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
             }
         } catch (Exception ignored) {}
 
-        // The Widened Check (Grace Period):
-        // If the OS BT API blips and returns false, we trust our memory for up to 30 seconds.
-        // This keeps the Watchdog alive during mid-drive drops without triggering the Couch Problem.
-        if (System.currentTimeMillis() - lastActiveBtTime < 30000) {
-            return true;
-        }
-
-        return false;
+        return System.currentTimeMillis() - lastActiveBtTime < 30000;
     }
-    // ========================================================
 
     private void checkAndClickMediaProjectionConsent(AccessibilityNodeInfo root, String pkgName) {
         if (isConsentGranted) return;
