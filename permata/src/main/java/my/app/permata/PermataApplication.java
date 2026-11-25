@@ -127,7 +127,7 @@ public class PermataApplication extends NetSplitCompatApp {
 	@Override
 	protected void attachBaseContext(Context ctx) {
 		var ps = SharedPreferenceStore.create(ctx.getSharedPreferences("permata", MODE_PRIVATE));
-		if (ps.hasPref(LOCALE)) {
+		if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU && ps.hasPref(LOCALE)) {
 			var loc = MainActivityPrefs.Lang.get(ps.getIntPref(LOCALE)).locale;
 			ctx = applyLocale(ctx, loc);
 		} else {
