@@ -110,6 +110,27 @@ public class MainActivity extends SplitCompatActivityBase
 	}
 
 	@SuppressWarnings("deprecation")
+	private void reapplySavedLocale() {
+		PreferenceStore ps = PermataApplication.get().getPreferenceStore();
+		if (!ps.hasPref(MainActivityPrefs.LOCALE)) return;
+		Locale target = MainActivityPrefs.Lang.get(ps.getIntPref(MainActivityPrefs.LOCALE)).locale;
+		if (target == null) return;
+
+		Locale.setDefault(target);
+		for (Resources res : new Resources[]{getResources(), PermataApplication.get().getResources()}) {
+			Configuration cfg = new Configuration(res.getConfiguration());
+			if (SDK_INT >= Build.VERSION_CODES.N) {
+				LocaleList list = new LocaleList(target);
+				LocaleList.setDefault(list);
+				cfg.setLocales(list);
+			} else {
+				cfg.setLocale(target);
+			}
+			cfg.setLayoutDirection(target);
+			res.updateConfiguration(cfg, res.getDisplayMetrics());
+		}
+	}
+
 	@Override
 	protected void onCreate(Bundle savedInstanceState) {
 		Log.i("[PHONE][LIFECYCLE] MainActivity.onCreate | state="
@@ -126,27 +147,13 @@ public class MainActivity extends SplitCompatActivityBase
 			}
 		});
 		super.onCreate(savedInstanceState);
+		reapplySavedLocale();
+	}
 
-		// Re-apply locale after super.onCreate() to counter Chromium WebView resetting
-		// the Activity Resources configuration when WebBrowserFragment is restored.
-		PreferenceStore ps = PermataApplication.get().getPreferenceStore();
-		if (ps.hasPref(MainActivityPrefs.LOCALE)) {
-			Locale target = MainActivityPrefs.Lang.get(ps.getIntPref(MainActivityPrefs.LOCALE)).locale;
-			if (target != null) {
-				Locale.setDefault(target);
-				Resources res = getResources();
-				Configuration cfg = new Configuration(res.getConfiguration());
-				if (SDK_INT >= Build.VERSION_CODES.N) {
-					LocaleList list = new LocaleList(target);
-					LocaleList.setDefault(list);
-					cfg.setLocales(list);
-				} else {
-					cfg.setLocale(target);
-				}
-				cfg.setLayoutDirection(target);
-				res.updateConfiguration(cfg, res.getDisplayMetrics());
-			}
-		}
+	@Override
+	protected void onStart() {
+		super.onStart();
+		reapplySavedLocale();
 	}
 
 	@Override
