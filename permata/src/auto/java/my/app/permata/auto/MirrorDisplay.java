@@ -378,7 +378,7 @@ public class MirrorDisplay {
 
 		final float rawX = (x - m.x) * m.scale;
 		final float rawY = (y - m.y) * m.scale;
-		// Ignore stray taps deep inside black letterbox bars, while clamping near-edge overlay taps
+		// Ignore stray taps deep inside letterbox bars while clamping near-edge overlay taps
 		if (rawX < -80f || rawX > m.dw + 80f || rawY < -80f || rawY > m.dh + 80f) {
 			return;
 		}
@@ -987,7 +987,7 @@ public class MirrorDisplay {
 		final float dh;
 		final boolean fillMode;
 
-		Metrics(float dw, float dh, swValCheck(sw), float sh, boolean fillMode) {
+		Metrics(float dw, float dh, float sw, float sh, boolean fillMode) {
 			this.sw = sw;
 			this.sh = sh;
 			this.dw = dw;
