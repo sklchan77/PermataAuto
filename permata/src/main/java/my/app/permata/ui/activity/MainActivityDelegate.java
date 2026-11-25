@@ -20,7 +20,12 @@ import static my.app.permata.action.KeyEventHandler.handleKeyEvent;
 import static my.app.permata.ui.activity.MainActivityPrefs.BRIGHTNESS;
 import static my.app.permata.ui.activity.MainActivityPrefs.CHANGE_BRIGHTNESS;
 import static my.app.permata.ui.activity.MainActivityPrefs.CLOCK_POS;
+import static my.app.permata.ui.activity.MainActivityPrefs.CUSTOM_THEME_ACTIVE;
+import static my.app.permata.ui.activity.MainActivityPrefs.CUSTOM_THEME_ACTIVE_AA;
 import static my.app.permata.ui.activity.MainActivityPrefs.LOCALE;
+import static my.app.permata.ui.activity.MainActivityPrefs.THEME_AA;
+import static my.app.permata.ui.activity.MainActivityPrefs.THEME_MAIN;
+import static my.app.permata.ui.activity.MainActivityPrefs.THEME_RANDOM;
 import static my.app.permata.ui.activity.MainActivityPrefs.VOICE_CONTROL_SUBST;
 import static my.app.permata.ui.activity.MainActivityPrefs.VOICE_CONTROl_ENABLED;
 import static my.app.permata.ui.activity.MainActivityPrefs.VOICE_CONTROl_FB;
@@ -119,6 +124,7 @@ import my.app.permata.ui.fragment.NavBarMediator;
 import my.app.permata.ui.fragment.PlaylistsFragment;
 import my.app.permata.ui.fragment.SettingsFragment;
 import my.app.permata.ui.fragment.SubtitlesFragment;
+import my.app.permata.ui.theme.CustomThemeManager;
 import my.app.permata.ui.view.BodyLayout;
 import my.app.permata.ui.view.ControlPanelView;
 import my.app.permata.ui.view.VideoView;
@@ -408,6 +414,7 @@ public class MainActivityDelegate extends ActivityDelegate
 	public void onActivityResume() {
 		super.onActivityResume();
 		checkMirroringMode(true);
+		CustomThemeManager.applyIfCustom(this);
 		for (PermataAddon addon : AddonManager.get().getAddons()) {
 			if (addon instanceof PermataActivityAddon)
 				((PermataActivityAddon) addon).onActivityResume(this);
@@ -483,7 +490,8 @@ public class MainActivityDelegate extends ActivityDelegate
 
 	@StyleRes
 	public static int getThemeRes(Context ctx, boolean auto) {
-		return switch (Prefs.instance.getThemePref(auto)) {
+		int effectiveTheme = CustomThemeManager.resolveEffectiveThemeId(auto);
+		return switch (effectiveTheme) {
 			case MainActivityPrefs.THEME_LIGHT -> R.style.AppTheme_Light;
 			case MainActivityPrefs.THEME_SYSTEM -> {
 				if ((ctx.getResources().getConfiguration().uiMode & Configuration.UI_MODE_NIGHT_MASK) ==
@@ -495,6 +503,10 @@ public class MainActivityDelegate extends ActivityDelegate
 			case MainActivityPrefs.THEME_STAR_WARS -> R.style.AppTheme_BlackStarWars;
 			case MainActivityPrefs.THEME_PURPLE -> R.style.AppTheme_Purple;
 			case MainActivityPrefs.THEME_CLASSIC -> R.style.AppTheme_Classic;
+			case MainActivityPrefs.THEME_CUSTOM -> {
+				CustomThemeManager.Palette p = CustomThemeManager.resolveEffectiveCustomPalette(auto);
+				yield (p != null) ? CustomThemeManager.getBaseStyleForCustom(p) : R.style.AppTheme_Dark;
+			}
 			default -> R.style.AppTheme_Dark;
 		};
 	}
@@ -757,7 +769,9 @@ public class MainActivityDelegate extends ActivityDelegate
 			Log.i(sessionTag() + "[DECISION] Page Switch from Fullscreen Video | action=SWITCH_BODY_TO_BOTH");
 			b.setMode(BodyLayout.Mode.BOTH);
 		}
-		return super.showFragment(id, input);
+		ActivityFragment frag = super.showFragment(id, input);
+		post(() -> CustomThemeManager.applyIfCustom(this));
+		return frag;
 	}
 
 	protected ActivityFragment createFragment(int id) {
@@ -1049,6 +1063,7 @@ public class MainActivityDelegate extends ActivityDelegate
 		floatingButton = a.findViewById(R.id.floating_button);
 		floatingButton.setScale(getPrefs().getTextIconSizePref(this));
 		controlPanel.bind(getMediaServiceBinder());
+		CustomThemeManager.applyIfCustom(this);
 
 		if (VERSION.SDK_INT >= VERSION_CODES.VANILLA_ICE_CREAM && !a.isCarActivity()) {
 			ViewCompat.setOnApplyWindowInsetsListener(toolBar, (v, insets) -> {
@@ -1095,7 +1110,21 @@ public class MainActivityDelegate extends ActivityDelegate
 	@Override
 	public void onPreferenceChanged(PreferenceStore store, List<PreferenceStore.Pref<?>> prefs) {
 		if (MainActivityPrefs.hasThemePref(this, prefs)) {
-			recreate();
+			boolean auto = isCarActivity();
+			if (prefs.contains(THEME_MAIN) && getPrefs().getIntPref(THEME_MAIN) == THEME_RANDOM) {
+				CustomThemeManager.rerollRandomTheme(false);
+			}
+			if (AUTO && prefs.contains(THEME_AA) && getPrefs().getIntPref(THEME_AA) == THEME_RANDOM) {
+				CustomThemeManager.rerollRandomTheme(true);
+			}
+			boolean onlyCustomPaletteEdited = !prefs.contains(THEME_MAIN) && !prefs.contains(THEME_AA)
+					&& (prefs.contains(CUSTOM_THEME_ACTIVE)
+					|| (CUSTOM_THEME_ACTIVE_AA != null && prefs.contains(CUSTOM_THEME_ACTIVE_AA)));
+			if (onlyCustomPaletteEdited && auto) {
+				CustomThemeManager.applyIfCustom(this);
+			} else {
+				recreate();
+			}
 		} else if (MainActivityPrefs.hasNavBarPosPref(this, prefs)) {
 			recreate();
 		} else if (MainActivityPrefs.hasTextIconSizePref(this, prefs)) {
