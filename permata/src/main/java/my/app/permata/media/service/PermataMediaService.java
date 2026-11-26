@@ -25,8 +25,10 @@ import android.content.res.Resources;
 import android.graphics.Bitmap;
 import android.graphics.Color;
 import android.media.AudioAttributes;
-import android.media.AudioFormat;
+import android.media.AudioDeviceCallback;
+import android.media.AudioDeviceInfo;
 import android.media.AudioFocusRequest;
+import android.media.AudioFormat;
 import android.media.AudioManager;
 import android.media.AudioTrack;
 import android.os.Binder;
@@ -45,6 +47,7 @@ import android.support.v4.media.session.PlaybackStateCompat;
 
 import androidx.annotation.DrawableRes;
 import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 import androidx.appcompat.content.res.AppCompatResources;
 import androidx.core.app.ActivityCompat;
 import androidx.core.app.NotificationCompat;
@@ -68,6 +71,7 @@ import my.app.permata.R;
 import my.app.permata.addon.AddonManager;
 import my.app.permata.addon.PermataAddon;
 import my.app.permata.addon.PermataMediaServiceAddon;
+import my.app.permata.auto.AccessibilityEventDispatcherService;
 import my.app.permata.auto.MirrorDisplay;
 import my.app.permata.media.lib.DefaultMediaLib;
 import my.app.permata.media.lib.MediaLib;
@@ -89,6 +93,7 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 
 	public static final String INTENT_ATTR_NOTIF_COLOR = "my.app.permata.notif.color";
 	public static final String DEFAULT_NOTIF_COLOR = "#3D2562";
+	private static final String ANCHOR_METADATA_TITLE = "IHU Web Mode Active";
 	private static final String CONTENT_STYLE_SUPPORTED = "android.media.browse.CONTENT_STYLE_SUPPORTED";
 	private static final String CONTENT_STYLE_PLAYABLE_HINT = "android.media.browse.CONTENT_STYLE_PLAYABLE_HINT";
 	private static final String CONTENT_STYLE_BROWSABLE_HINT = "android.media.browse.CONTENT_STYLE_BROWSABLE_HINT";
@@ -106,6 +111,8 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 	private static final int NOTIF_ID = 1;
 	private static final String NOTIF_CHANNEL_ID = "Permata";
 	private static final long AGGRESSIVE_RECLAIM_COOLDOWN_MS = 2500L;
+	private static final long AGGRESSIVE_DUCK_HOLD_MS = 1500L;
+	private static final long POST_DUCK_SETTLE_DELAY_MS = 350L;
 
 	private DefaultMediaLib lib;
 	private MediaSessionCompat session;
@@ -137,10 +144,13 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 	private AudioManager.OnAudioFocusChangeListener focusChangeListener;
 	private AudioFocusRequest audioFocusRequestOreo;
 
-	// === [ABSOLUTE ZERO TIMERS] ===
+	// === [ABSOLUTE ZERO TIMERS & BT SINK MONITOR] ===
 	private final Handler lifecycleHandler = new Handler(Looper.getMainLooper());
 	private volatile boolean hasEstablishedSession = false;
+	private boolean isHardwareDropCountdownActive = false;
+	private boolean lastKnownBtSinkState = false;
 	private BroadcastReceiver disconnectReceiver;
+	@Nullable private AudioDeviceCallback btSinkMonitorCallback;
 
 	private final Runnable manualSwipeRunnable = () -> {
 		Log.w(sessionTag() + "[DECISION] Absolute Zero 6s Manual Swipe Timeout | action=NUCLEAR_TEARDOWN");
@@ -148,15 +158,77 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 	};
 
 	private final Runnable hardwareDropRunnable = () -> {
+		isHardwareDropCountdownActive = false;
 		Log.w(sessionTag() + "[DECISION] Absolute Zero 10s Hardware Drop Timeout | action=NUCLEAR_TEARDOWN");
 		executeNuclearTeardown();
 	};
-	// ======================================
+
+	private final Runnable becomingNoisyRecheckRunnable = () -> {
+		if (!isTeardownActive) {
+			evaluateConnectionState();
+		}
+	};
+
+	private final Runnable postDuckSettleRunnable = () -> {
+		if (isTeardownActive || session == null) return;
+		if (!isCarOrBluetoothActive() || isCallOrRingtoneActive()) return;
+		if (!AccessibilityEventDispatcherService.isStubbornAppStrictlyVisible()) return;
+		if (!isWebAnchorMetadataActive()) return;
+		if (audioHardwareExecutor == null || audioHardwareExecutor.isShutdown()) return;
+
+		try {
+			audioHardwareExecutor.execute(() -> {
+				if (isTeardownActive) return;
+				startSilentAudioAnchorInternal();
+				lifecycleHandler.post(() -> {
+					if (isTeardownActive || session == null) return;
+					if (!isCarOrBluetoothActive() || isCallOrRingtoneActive()) return;
+					if (!AccessibilityEventDispatcherService.isStubbornAppStrictlyVisible()) return;
+					if (!isWebAnchorMetadataActive()) return;
+					session.setActive(true);
+					updatePlaybackState(STATE_PLAYING);
+					Log.i(sessionTag() + "[AUDIO] Aggressive Reclaim Settle | action=POST_DUCK_SILENT_REANCHOR");
+				});
+			});
+		} catch (Exception ignored) {}
+	};
+	// ================================================
+
+	private void clearTeardownTimers() {
+		isHardwareDropCountdownActive = false;
+		lifecycleHandler.removeCallbacks(manualSwipeRunnable);
+		lifecycleHandler.removeCallbacks(hardwareDropRunnable);
+		lifecycleHandler.removeCallbacks(becomingNoisyRecheckRunnable);
+	}
 
 	private boolean isBluetoothA2dpActive() {
 		try {
 			AudioManager am = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
-			return am != null && am.isBluetoothA2dpOn();
+			return am != null && (AccessibilityEventDispatcherService.hasActiveBluetoothMediaSink(am)
+					|| am.isBluetoothA2dpOn());
+		} catch (Exception ignored) {
+			return false;
+		}
+	}
+
+	private boolean isCallOrRingtoneActive() {
+		try {
+			AudioManager am = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
+			return AccessibilityEventDispatcherService.isCallOrRingtoneActive(am);
+		} catch (Exception ignored) {
+			return false;
+		}
+	}
+
+	private boolean isWebAnchorMetadataActive() {
+		if (session == null) return false;
+		try {
+			MediaControllerCompat controller = session.getController();
+			if (controller == null) return false;
+			MediaMetadataCompat meta = controller.getMetadata();
+			if (meta == null) return false;
+			String title = meta.getString(MediaMetadataCompat.METADATA_KEY_TITLE);
+			return ANCHOR_METADATA_TITLE.equals(title);
 		} catch (Exception ignored) {
 			return false;
 		}
@@ -187,6 +259,7 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 	@Override
 	public void onCreate() {
 		super.onCreate();
+		isCarOrBluetoothActive();
 		Log.i(sessionTag() + "[LIFECYCLE] PermataMediaService.onCreate | " + connectionSnapshot());
 		Context ctx = this;
 		audioHardwareExecutor = Executors.newSingleThreadExecutor();
@@ -227,6 +300,10 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 					String tag = isBtEvent ? "[BT]" : sessionTag();
 					Log.i(tag + "[LIFECYCLE] OS Connection Broadcast | action=" + action + ", " + connectionSnapshot());
 					evaluateConnectionState();
+					if (AudioManager.ACTION_AUDIO_BECOMING_NOISY.equals(action)) {
+						lifecycleHandler.removeCallbacks(becomingNoisyRecheckRunnable);
+						lifecycleHandler.postDelayed(becomingNoisyRecheckRunnable, 450L);
+					}
 				}
 			}
 		};
@@ -241,12 +318,44 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 		} else {
 			registerReceiver(disconnectReceiver, disconnectFilter);
 		}
+
+		if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+			try {
+				AudioManager am = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
+				if (am != null) {
+					lastKnownBtSinkState = isBluetoothA2dpActive();
+					btSinkMonitorCallback = new AudioDeviceCallback() {
+						@Override
+						public void onAudioDevicesAdded(AudioDeviceInfo[] addedDevices) {
+							boolean btNow = isBluetoothA2dpActive();
+							if (btNow != lastKnownBtSinkState) {
+								lastKnownBtSinkState = btNow;
+								Log.i("[BT][LIFECYCLE] Audio Sink Connected | " + connectionSnapshot());
+								evaluateConnectionState();
+							}
+						}
+
+						@Override
+						public void onAudioDevicesRemoved(AudioDeviceInfo[] removedDevices) {
+							boolean btNow = isBluetoothA2dpActive();
+							if (btNow != lastKnownBtSinkState) {
+								lastKnownBtSinkState = btNow;
+								Log.i("[BT][LIFECYCLE] Audio Sink Disconnected | " + connectionSnapshot());
+								evaluateConnectionState();
+							}
+						}
+					};
+					am.registerAudioDeviceCallback(btSinkMonitorCallback, lifecycleHandler);
+				}
+			} catch (Exception ignored) {}
+		}
 	}
 
 	// [ABSOLUTE ZERO] Evaluates if the phone has an active link to the car
 	private boolean isCarOrBluetoothActive() {
 		boolean active = false;
-		if (PermataApplication.get().isMirroringMode() || PermataApplication.get().isConnectedToAuto()) {
+		PermataApplication app = PermataApplication.get();
+		if (app != null && (app.isMirroringMode() || app.isConnectedToAuto())) {
 			active = true;
 		} else if (isBluetoothA2dpActive()) {
 			active = true;
@@ -261,11 +370,11 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 		if (isCarOrBluetoothActive()) {
 			Log.i(sessionTag() + "[DECISION] Connection Active | " + connectionSnapshot()
 					+ " -> action=CANCEL_TEARDOWN_TIMERS");
-			lifecycleHandler.removeCallbacks(manualSwipeRunnable);
-			lifecycleHandler.removeCallbacks(hardwareDropRunnable);
+			clearTeardownTimers();
 		} else {
 			// Only trigger the 10-second hardware drop if a session was actually established first
-			if (hasEstablishedSession) {
+			if (hasEstablishedSession && !isHardwareDropCountdownActive) {
+				isHardwareDropCountdownActive = true;
 				Log.w("[BT][DECISION] Hardware/BT Session Lost | " + connectionSnapshot()
 						+ " -> action=START_10S_ABSOLUTE_ZERO_COUNTDOWN");
 				lifecycleHandler.removeCallbacks(manualSwipeRunnable);
@@ -279,6 +388,8 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 	private void executeNuclearTeardown() {
 		if (isTeardownActive) return;
 		isTeardownActive = true;
+		lifecycleHandler.removeCallbacks(postDuckSettleRunnable);
+		lifecycleHandler.removeCallbacks(becomingNoisyRecheckRunnable);
 		Log.w(sessionTag() + "[LIFECYCLE] Nuclear Teardown Executing | " + connectionSnapshot());
 
 		// 1. Force restore physical phone attributes (Brightness, Orientation, Overlays)
@@ -327,8 +438,18 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 	public void onDestroy() {
 		Log.i(sessionTag() + "[LIFECYCLE] PermataMediaService.onDestroy | " + connectionSnapshot());
 		isForYouBrowseSession = false;
-		lifecycleHandler.removeCallbacks(manualSwipeRunnable);
-		lifecycleHandler.removeCallbacks(hardwareDropRunnable);
+		clearTeardownTimers();
+		lifecycleHandler.removeCallbacks(postDuckSettleRunnable);
+
+		if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && btSinkMonitorCallback != null) {
+			try {
+				AudioManager am = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
+				if (am != null) {
+					am.unregisterAudioDeviceCallback(btSinkMonitorCallback);
+				}
+			} catch (Exception ignored) {}
+			btSinkMonitorCallback = null;
+		}
 
 		if (disconnectReceiver != null) {
 			try { unregisterReceiver(disconnectReceiver); } catch (Exception ignored) {}
@@ -373,8 +494,7 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 
 		Log.w("[SVC][DECISION] onTaskRemoved | " + connectionSnapshot()
 				+ " -> action=START_6S_ABSOLUTE_ZERO_COUNTDOWN");
-		lifecycleHandler.removeCallbacks(manualSwipeRunnable);
-		lifecycleHandler.removeCallbacks(hardwareDropRunnable);
+		clearTeardownTimers();
 		lifecycleHandler.postDelayed(manualSwipeRunnable, 6_000);
 	}
 
@@ -384,11 +504,11 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 			String action = intent.getAction();
 
 			if (ACTION_HIJACK_FOCUS.equals(action)) {
+				isCarOrBluetoothActive();
 				Log.i(sessionTag() + "[LIFECYCLE] onStartCommand | action=HIJACK_FOCUS, " + connectionSnapshot());
 				// Cancel Absolute Zero shutdown and revive session if focus is requested again
 				isTeardownActive = false;
-				lifecycleHandler.removeCallbacks(manualSwipeRunnable);
-				lifecycleHandler.removeCallbacks(hardwareDropRunnable);
+				clearTeardownTimers();
 				hijackCarAudioAndSteering();
 			} else if (!isTeardownActive) {
 				if (ACTION_FORCE_SHUTDOWN.equals(action)) {
@@ -409,16 +529,23 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 						updatePlaybackState(STATE_PLAYING);
 					}
 				} else if (ACTION_AGGRESSIVE_RECLAIM.equals(action)) {
-					Log.i(sessionTag() + "[AUDIO] onStartCommand | action=AGGRESSIVE_RECLAIM");
-					if (session != null) {
-						session.setMetadata(new MediaMetadataCompat.Builder()
-								.putString(MediaMetadataCompat.METADATA_KEY_TITLE, "IHU Web Mode Active")
-								.putString(MediaMetadataCompat.METADATA_KEY_ARTIST, "Permata")
-								.build());
-						session.setActive(true);
-						updatePlaybackState(STATE_PLAYING);
+					if (isCallOrRingtoneActive()) {
+						Log.i(sessionTag() + "[DECISION] Aggressive Reclaim Blocked | reason=CALL_OR_RINGTONE_ACTIVE");
+					} else {
+						if (isCarOrBluetoothActive()) {
+							clearTeardownTimers();
+						}
+						Log.i(sessionTag() + "[AUDIO] onStartCommand | action=AGGRESSIVE_RECLAIM");
+						if (session != null) {
+							session.setMetadata(new MediaMetadataCompat.Builder()
+									.putString(MediaMetadataCompat.METADATA_KEY_TITLE, ANCHOR_METADATA_TITLE)
+									.putString(MediaMetadataCompat.METADATA_KEY_ARTIST, "Permata")
+									.build());
+							session.setActive(true);
+							updatePlaybackState(STATE_PLAYING);
+						}
+						forceAggressiveReclaim();
 					}
-					forceAggressiveReclaim();
 				} else if (ACTION_WEB_MEDIA_PLAYING.equals(action)) {
 					onWebMediaPlaying();
 				} else if (ACTION_WEB_MEDIA_PAUSED.equals(action)) {
@@ -448,13 +575,24 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 
 		long now = SystemClock.uptimeMillis();
 		long prev = lastAggressiveReclaimTime.get();
-		if (now - prev < AGGRESSIVE_RECLAIM_COOLDOWN_MS) {
-			Log.i(sessionTag() + "[AUDIO] Aggressive Reclaim Skipped | reason=COOLDOWN_ACTIVE(" + (now - prev) + "ms)");
+		long elapsed = now - prev;
+		if (elapsed < AGGRESSIVE_RECLAIM_COOLDOWN_MS) {
+			Log.i(sessionTag() + "[AUDIO] Aggressive Reclaim Skipped | reason=COOLDOWN_ACTIVE(" + elapsed + "ms)");
+			if (elapsed >= 600L) {
+				long settleDelay = Math.max(
+						POST_DUCK_SETTLE_DELAY_MS,
+						(AGGRESSIVE_DUCK_HOLD_MS - elapsed) + POST_DUCK_SETTLE_DELAY_MS
+				);
+				lifecycleHandler.removeCallbacks(postDuckSettleRunnable);
+				lifecycleHandler.postDelayed(postDuckSettleRunnable, settleDelay);
+			}
 			return;
 		}
 		if (!lastAggressiveReclaimTime.compareAndSet(prev, now)) {
 			return;
 		}
+
+		lifecycleHandler.removeCallbacks(postDuckSettleRunnable);
 
 		try {
 			audioHardwareExecutor.execute(() -> {
@@ -488,7 +626,7 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 						startSilentAudioAnchorInternal();
 
 						final AudioFocusRequest finalDuckReq = duckRequest;
-						new Handler(Looper.getMainLooper()).postDelayed(() -> {
+						lifecycleHandler.postDelayed(() -> {
 							try {
 								if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && finalDuckReq != null) {
 									audioManager.abandonAudioFocusRequest(finalDuckReq);
@@ -497,8 +635,12 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 									audioManager.abandonAudioFocus(pulseListener);
 								}
 								Log.i(sessionTag() + "[AUDIO] Aggressive Reclaim Complete | action=FOCUS_RELEASED");
+								if (!isTeardownActive) {
+									lifecycleHandler.removeCallbacks(postDuckSettleRunnable);
+									lifecycleHandler.postDelayed(postDuckSettleRunnable, POST_DUCK_SETTLE_DELAY_MS);
+								}
 							} catch (Exception ignored) {}
-						}, 1500);
+						}, AGGRESSIVE_DUCK_HOLD_MS);
 					}
 				} catch (Exception e) {
 					Log.e(e, "Aggressive reclaim failed.");
@@ -513,13 +655,15 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 		if (isTeardownActive) return;
 
 		boolean isCarNotMirroring = PermataApplication.get().isConnectedToAuto() && !PermataApplication.get().isMirroringMode();
-		String activePkg = my.app.permata.auto.AccessibilityEventDispatcherService.getLastActivePackage();
+		String activePkg = AccessibilityEventDispatcherService.getLastActivePackage();
 		boolean isPermataOrAA = isCarNotMirroring || (activePkg != null && (activePkg.startsWith("my.app.permata") || activePkg.equals("com.google.android.projection.gearhead")));
 
 		if (!isPermataOrAA) {
 			Log.i(sessionTag() + "[DECISION] WebMedia PLAY Blocked | activePkg=" + activePkg);
 			return;
 		}
+
+		lifecycleHandler.removeCallbacks(postDuckSettleRunnable);
 
 		if (PermataApplication.get().isMirroringMode() && PermataApplication.get().isConnectedToAuto()) {
 			MirrorDisplay.shutdownForCarMedia();
@@ -545,7 +689,7 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 		if (isTeardownActive) return;
 
 		boolean isCarNotMirroring = PermataApplication.get().isConnectedToAuto() && !PermataApplication.get().isMirroringMode();
-		String activePkg = my.app.permata.auto.AccessibilityEventDispatcherService.getLastActivePackage();
+		String activePkg = AccessibilityEventDispatcherService.getLastActivePackage();
 		boolean isPermataOrAA = isCarNotMirroring || (activePkg != null && (activePkg.startsWith("my.app.permata") || activePkg.equals("com.google.android.projection.gearhead")));
 
 		if (!isPermataOrAA) {
@@ -566,7 +710,7 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 
 		if (session != null) {
 			session.setMetadata(new MediaMetadataCompat.Builder()
-					.putString(MediaMetadataCompat.METADATA_KEY_TITLE, "IHU Web Mode Active")
+					.putString(MediaMetadataCompat.METADATA_KEY_TITLE, ANCHOR_METADATA_TITLE)
 					.putString(MediaMetadataCompat.METADATA_KEY_ARTIST, "Permata")
 					.build());
 			session.setActive(true);
@@ -721,8 +865,7 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 		} else if (ACTION_MEDIA_SERVICE.equals(action)) {
 			isForYouBrowseSession = false;
 			isTeardownActive = false;
-			lifecycleHandler.removeCallbacks(manualSwipeRunnable);
-			lifecycleHandler.removeCallbacks(hardwareDropRunnable);
+			clearTeardownTimers();
 			Log.i(sessionTag() + "[LIFECYCLE] PermataMediaService.onBind | action=" + action + ", teardownTimersCleared=true");
 		} else {
 			Log.i(sessionTag() + "[LIFECYCLE] PermataMediaService.onBind | action=" + action);
@@ -745,8 +888,7 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 		if (ACTION_MEDIA_SERVICE.equals(action)) {
 			isForYouBrowseSession = false;
 			isTeardownActive = false;
-			lifecycleHandler.removeCallbacks(manualSwipeRunnable);
-			lifecycleHandler.removeCallbacks(hardwareDropRunnable);
+			clearTeardownTimers();
 			Log.i(sessionTag() + "[LIFECYCLE] PermataMediaService.onRebind | action=" + action + ", teardownTimersCleared=true");
 		}
 	}
