@@ -125,8 +125,13 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
     private boolean wasBtMediaSinkConnected = false;
     @Nullable private AudioDeviceCallback btAudioDeviceCallback;
 
+    private static boolean isCarUiWithoutMirroring() {
+        PermataApplication app = PermataApplication.get();
+        return app != null && app.isConnectedToAuto() && !app.isMirroringMode();
+    }
+
     private final Runnable deferredReclaimCheckRunnable = () -> {
-        if (!isCarSessionActive()) return;
+        if (!isCarSessionActive() || isCarUiWithoutMirroring()) return;
         String visibleStubbornPkg = resolveStrictlyVisibleStubbornApp();
         if (visibleStubbornPkg != null) {
             lastActivePackage = visibleStubbornPkg;
@@ -140,7 +145,7 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
         @Override
         public void onReceive(Context context, Intent intent) {
             if (intent != null && Intent.ACTION_USER_PRESENT.equals(intent.getAction())) {
-                if (isCarSessionActive()) {
+                if (isCarSessionActive() && !isCarUiWithoutMirroring()) {
                     mainHandler.removeCallbacks(deferredReclaimCheckRunnable);
                     mainHandler.postDelayed(deferredReclaimCheckRunnable, 250L);
                 }
@@ -205,7 +210,6 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
                     }
                 }
             }
-            // Fallback for older HALs
             return am.isBluetoothA2dpOn();
         } catch (Exception ignored) {
             return false;
@@ -287,16 +291,21 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
     }
 
     /**
-     * Strict 5-gate check used ONLY for BT/Unlock/Post-Duck reclaim safety:
-     * 1. Screen must be interactive (unless mirroring)
-     * 2. Keyguard must be unlocked
-     * 3. No active phone/VoIP call or ringtone
-     * 4. Live window stack on DEFAULT_DISPLAY must contain a stubborn app
-     * 5. No fullscreen non-stubborn app (Launcher, WhatsApp, Facebook, Permata, etc.) may occlude it
+     * Strict 6-gate check used ONLY for BT/Unlock/Post-Duck reclaim safety:
+     * 1. Not in Android Auto MainCarActivity mode (auto && !mirror)
+     * 2. Screen must be interactive (unless mirroring)
+     * 3. Keyguard must be unlocked
+     * 4. No active phone/VoIP call or ringtone
+     * 5. Live window stack on DEFAULT_DISPLAY must contain a stubborn app
+     * 6. No fullscreen non-stubborn app (Launcher, WhatsApp, Facebook, Permata, etc.) may occlude it
      */
     @Nullable
     private String resolveStrictlyVisibleStubbornApp() {
         try {
+            if (isCarUiWithoutMirroring()) {
+                return null;
+            }
+
             PermataApplication app = PermataApplication.get();
             boolean mirroring = app != null && app.isMirroringMode();
 
@@ -363,7 +372,6 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
 
                 w.getBoundsInScreen(bounds);
                 if (fullW > 0 && fullH > 0 && bounds.width() >= fullW && bounds.height() >= fullH) {
-                    // A fullscreen non-stubborn app (Launcher, Facebook, WhatsApp, Permata, etc.) is occluding the screen
                     return null;
                 }
 
@@ -487,7 +495,10 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
                 new GestureResultCallback() {
                     @Override
                     public void onCancelled(GestureDescription gestureDescription) {
-                        Log.w("[NATIVE_SWIPE] OS cancelled injected swipe gesture | dir=" + dirLabel);
+                        PermataApplication app = PermataApplication.get();
+                        if (app == null || !app.isMirroringMode()) {
+                            Log.w("[NATIVE_SWIPE] OS cancelled injected swipe gesture | dir=" + dirLabel);
+                        }
                     }
                 },
                 ds.mainHandler
@@ -943,8 +954,10 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
                             if (connectedNow && !wasBtMediaSinkConnected) {
                                 wasBtMediaSinkConnected = true;
                                 lastActiveBtTime = System.currentTimeMillis();
-                                mainHandler.removeCallbacks(deferredReclaimCheckRunnable);
-                                mainHandler.postDelayed(deferredReclaimCheckRunnable, 400L);
+                                if (!isCarUiWithoutMirroring()) {
+                                    mainHandler.removeCallbacks(deferredReclaimCheckRunnable);
+                                    mainHandler.postDelayed(deferredReclaimCheckRunnable, 400L);
+                                }
                             }
                         }
 
@@ -1013,7 +1026,8 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
             lastActivePackage = pkgName;
 
             AudioManager am = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
-            if (isStubbornNativeApp(pkgName) && isCarSessionActive() && !isCallOrRingtoneActive(am)) {
+            if (isStubbornNativeApp(pkgName) && isCarSessionActive()
+                    && !isCarUiWithoutMirroring() && !isCallOrRingtoneActive(am)) {
                 Log.w("[WATCHDOG_TELEMETRY] Stubborn App Detected: " + pkgName + ". Firing Aggressive Reclaim!");
                 fireAggressiveReclaimIntent();
             }
