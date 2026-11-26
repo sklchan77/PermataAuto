@@ -6,8 +6,10 @@ import static android.os.Build.VERSION;
 import static android.os.Build.VERSION_CODES;
 import static android.view.MotionEvent.ACTION_UP;
 import static androidx.webkit.WebViewFeature.ALGORITHMIC_DARKENING;
+import static androidx.webkit.WebViewFeature.DOCUMENT_START_SCRIPT;
 import static androidx.webkit.WebViewFeature.FORCE_DARK;
 import static androidx.webkit.WebViewFeature.FORCE_DARK_STRATEGY;
+import static androidx.webkit.WebViewFeature.USER_AGENT_METADATA;
 import static java.util.Objects.requireNonNull;
 import static my.app.permata.addon.web.PermataJsInterface.JS_EDIT;
 import static my.app.permata.addon.web.PermataJsInterface.JS_EVENT;
@@ -30,9 +32,14 @@ import android.widget.TextView;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
+import androidx.webkit.ScriptHandler;
+import androidx.webkit.UserAgentMetadata;
 import androidx.webkit.WebSettingsCompat;
+import androidx.webkit.WebViewCompat;
 import androidx.webkit.WebViewFeature;
 
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -56,11 +63,16 @@ import my.app.utils.ui.view.ToolBarView;
 public class PermataWebView extends WebView
 		implements TextChangedListener, TextView.OnEditorActionListener, PreferenceStore.Listener,
 		MainActivityListener {
+	private static final Pattern CHROME_VER_PATTERN = Pattern.compile("Chrome/(([0-9]+)\\.[0-9.]+)");
 	private final boolean isCar;
 	private WebBrowserAddon addon;
 	private PermataWebClient webClient;
 	private PermataChromeClient chrome;
 	private boolean keyNavigation;
+	private UserAgentMetadata defaultUaMetadata;
+	private boolean defaultUaMetadataCaptured;
+	private boolean uaMetadataModified;
+	private ScriptHandler uaScriptHandler;
 
 	public PermataWebView(Context context) {
 		this(context, null);
@@ -154,6 +166,7 @@ public class PermataWebView extends WebView
 		try {
 			Log.d("Setting User-Agent to " + ua);
 			s.setUserAgentString(ua);
+			syncClientIdentityWithUa(s, ua);
 		} catch (Exception ex) {
 			Log.e(ex, "Invalid User-Agent: ", ua);
 			String msg = ex.getLocalizedMessage();
@@ -162,6 +175,187 @@ public class PermataWebView extends WebView
 		}
 
 		if (reload) reload();
+	}
+
+	private void captureDefaultUaMetadata(WebSettings s) {
+		if (defaultUaMetadataCaptured || (getClass() != PermataWebView.class)) return;
+		defaultUaMetadataCaptured = true;
+		if (WebViewFeature.isFeatureSupported(USER_AGENT_METADATA)) {
+			try {
+				defaultUaMetadata = WebSettingsCompat.getUserAgentMetadata(s);
+			} catch (Throwable ex) {
+				Log.w(ex, "Failed to snapshot default UserAgentMetadata");
+			}
+		}
+	}
+
+	private void removeUaScript() {
+		if (uaScriptHandler != null) {
+			if (WebViewFeature.isFeatureSupported(DOCUMENT_START_SCRIPT)) {
+				try {
+					uaScriptHandler.remove();
+				} catch (Throwable ex) {
+					Log.w(ex, "Failed to remove UA document-start script");
+				}
+			}
+			uaScriptHandler = null;
+		}
+	}
+
+	private void syncClientIdentityWithUa(WebSettings s, String ua) {
+		removeUaScript();
+
+		// 1. Mobile / Android UA: restore factory Client Hints if previously modified and inject zero JS
+		if (ua == null || ua.contains("Android") || ua.contains("iPhone") || ua.contains("iPad")) {
+			if (uaMetadataModified && defaultUaMetadata != null &&
+					WebViewFeature.isFeatureSupported(USER_AGENT_METADATA)) {
+				try {
+					WebSettingsCompat.setUserAgentMetadata(s, defaultUaMetadata);
+					uaMetadataModified = false;
+				} catch (Throwable ex) {
+					Log.w(ex, "Failed to restore default UserAgentMetadata");
+				}
+			}
+			return;
+		}
+
+		captureDefaultUaMetadata(s);
+
+		// 2. Auto-detect Desktop OS profile from resolved UA (supports manual custom UAs)
+		String chPlatform;
+		String chPlatformVersion;
+		String chArch = (ua.contains("aarch64") || ua.contains("arm64")) ? "arm" : "x86";
+		String navPlatform;
+
+		if (ua.contains("Windows")) {
+			chPlatform = "Windows";
+			chPlatformVersion = "15.0.0";
+			navPlatform = "Win32";
+		} else if (ua.contains("Macintosh") || ua.contains("Mac OS X")) {
+			chPlatform = "macOS";
+			chPlatformVersion = "14.5.0";
+			navPlatform = "MacIntel";
+		} else if (ua.contains("CrOS")) {
+			chPlatform = "Chrome OS";
+			chPlatformVersion = "14541.0.0";
+			navPlatform = "arm".equals(chArch) ? "Linux aarch64" : "Linux x86_64";
+		} else {
+			// Matches Permata's default Desktop UA: X11; Linux x86_64
+			chPlatform = "Linux";
+			chPlatformVersion = "6.5.0";
+			navPlatform = "arm".equals(chArch) ? "Linux aarch64" : "Linux x86_64";
+		}
+
+		// 3. Sync Sec-CH-UA* HTTP headers & navigator.userAgentData
+		if (WebViewFeature.isFeatureSupported(USER_AGENT_METADATA)) {
+			try {
+				Matcher cm = CHROME_VER_PATTERN.matcher(ua);
+				if (cm.find()) {
+					String fullVer = requireNonNull(cm.group(1));
+					String majorVer = requireNonNull(cm.group(2));
+
+					UserAgentMetadata metadata = new UserAgentMetadata.Builder()
+							.setBrandVersionList(buildDesktopBrands(majorVer, fullVer))
+							.setFullVersion(fullVer)
+							.setPlatform(chPlatform)
+							.setPlatformVersion(chPlatformVersion)
+							.setArchitecture(chArch)
+							.setBitness(64)
+							.setMobile(false)
+							.setModel("")
+							.setWow64(false)
+							.build();
+					WebSettingsCompat.setUserAgentMetadata(s, metadata);
+					uaMetadataModified = true;
+				} else if (defaultUaMetadata != null) {
+					UserAgentMetadata metadata = new UserAgentMetadata.Builder(defaultUaMetadata)
+							.setPlatform(chPlatform)
+							.setPlatformVersion(chPlatformVersion)
+							.setArchitecture(chArch)
+							.setBitness(64)
+							.setMobile(false)
+							.setModel("")
+							.setWow64(false)
+							.build();
+					WebSettingsCompat.setUserAgentMetadata(s, metadata);
+					uaMetadataModified = true;
+				}
+			} catch (Throwable ex) {
+				Log.w(ex, "Failed to apply desktop UserAgentMetadata");
+			}
+		}
+
+		// 4. Override Navigator.prototype.platform & vendor at document-start (before site JS runs)
+		if (WebViewFeature.isFeatureSupported(DOCUMENT_START_SCRIPT)) {
+			String navVendor = ua.contains("Firefox/") ? ""
+					: (ua.contains("Safari/") && !ua.contains("Chrome/")) ? "Apple Computer, Inc."
+					: "Google Inc.";
+
+			String script = "(function(){" +
+					"try{" +
+					"Object.defineProperty(Navigator.prototype,'platform',{get:function(){return '" + navPlatform + "';},configurable:true});" +
+					"Object.defineProperty(Navigator.prototype,'vendor',{get:function(){return '" + navVendor + "';},configurable:true});" +
+					"}catch(e){}" +
+					"})();";
+			try {
+				uaScriptHandler = WebViewCompat.addDocumentStartJavaScript(
+						this, script, Collections.singleton("*"));
+			} catch (Throwable ex) {
+				Log.w(ex, "Failed to register document-start navigator override");
+			}
+		}
+	}
+
+	private List<UserAgentMetadata.BrandVersion> buildDesktopBrands(String majorVer, String fullVer) {
+		List<UserAgentMetadata.BrandVersion> result = new ArrayList<>(3);
+		boolean hasChrome = false;
+		boolean hasChromium = false;
+
+		if (defaultUaMetadata != null) {
+			for (UserAgentMetadata.BrandVersion bv : defaultUaMetadata.getBrandVersionList()) {
+				String brand = bv.getBrand();
+				if (brand.contains("WebView")) {
+					result.add(new UserAgentMetadata.BrandVersion.Builder()
+							.setBrand("Google Chrome")
+							.setMajorVersion(majorVer)
+							.setFullVersion(fullVer)
+							.build());
+					hasChrome = true;
+				} else if ("Chromium".equalsIgnoreCase(brand)) {
+					result.add(new UserAgentMetadata.BrandVersion.Builder()
+							.setBrand("Chromium")
+							.setMajorVersion(majorVer)
+							.setFullVersion(fullVer)
+							.build());
+					hasChromium = true;
+				} else {
+					result.add(bv);
+				}
+			}
+		}
+
+		if (result.isEmpty()) {
+			result.add(new UserAgentMetadata.BrandVersion.Builder()
+					.setBrand("Not(A:Brand")
+					.setMajorVersion("99")
+					.setFullVersion("99.0.0.0")
+					.build());
+		}
+		if (!hasChromium) {
+			result.add(new UserAgentMetadata.BrandVersion.Builder()
+					.setBrand("Chromium")
+					.setMajorVersion(majorVer)
+					.setFullVersion(fullVer)
+					.build());
+		}
+		if (!hasChrome) {
+			result.add(new UserAgentMetadata.BrandVersion.Builder()
+					.setBrand("Google Chrome")
+					.setMajorVersion(majorVer)
+					.setFullVersion(fullVer)
+					.build());
+		}
+		return result;
 	}
 
 	@SuppressWarnings("deprecation")
@@ -416,6 +610,12 @@ public class PermataWebView extends WebView
 		}
 
 		return super.onInterceptTouchEvent(ev);
+	}
+
+	@Override
+	public void destroy() {
+		removeUaScript();
+		super.destroy();
 	}
 
 	private FutureSupplier<MainActivityDelegate> getActivity() {
