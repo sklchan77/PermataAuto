@@ -17,6 +17,8 @@ import android.content.ContentResolver;
 import android.content.Context;
 import android.media.AudioManager;
 import android.net.Uri;
+import android.os.Handler;
+import android.os.Looper;
 import android.os.ParcelFileDescriptor;
 import android.view.SurfaceView;
 import android.view.ViewGroup;
@@ -35,20 +37,22 @@ import java.io.Closeable;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import my.app.permata.BuildConfig;
 import my.app.permata.media.engine.AudioEffects;
 import my.app.permata.media.engine.AudioStreamInfo;
 import my.app.permata.media.engine.MediaEngine;
 import my.app.permata.media.engine.MediaEngineBase;
-import my.app.permata.media.engine.SubtitleStreamInfo;
 import my.app.permata.media.engine.MediaEngineException;
+import my.app.permata.media.engine.SubtitleStreamInfo;
 import my.app.permata.media.lib.MediaLib.PlayableItem;
 import my.app.permata.media.pref.MediaPrefs;
 import my.app.permata.media.pref.PlayableItemPrefs;
 import my.app.permata.ui.activity.MainActivityDelegate;
 import my.app.permata.ui.view.VideoView;
-import my.app.utils.app.App;
 import my.app.utils.async.FutureSupplier;
 import my.app.utils.collection.CollectionUtils;
 import my.app.utils.io.IoUtils;
@@ -57,22 +61,31 @@ import my.app.utils.log.Log;
 /**
  * Enterprise-Grade Robust LibVLC Execution Engine for Permata Auto.
  * Section 1: Core Definitions & Context-Aware Initialisation.
- * Fully optimized with thread-safe dynamic channel switching profile synchronization.
- * 
+ * Fully optimized with thread-safe dynamic channel switching profile synchronization
+ * and non-blocking off-main-thread native LibVLC teardown.
+ *
  * @author sklchan77
  */
-public class VlcEngine extends MediaEngineBase 
+public class VlcEngine extends MediaEngineBase
 		implements MediaPlayer.EventListener, IVLCVout.OnNewVideoLayoutListener {
+
+	private static final Handler MAIN_HANDLER = new Handler(Looper.getMainLooper());
+	private static final ExecutorService VLC_RELEASE_EXECUTOR = Executors.newSingleThreadExecutor(r -> {
+		Thread t = new Thread(r, "Permata-VlcRelease");
+		t.setDaemon(true);
+		return t;
+	});
 
 	private final VlcEngineProvider provider;
 	private final LibVLC vlc;
-	private final MediaPlayer player;
+	@Nullable private MediaPlayer player;
 	@Nullable private final AudioEffects effects;
-	
+
 	private final Object engineLock = new Object();
 	@NonNull private Source source = Source.NULL;
 	private long pendingPosition = -1;
-	private VideoView videoView;
+	@Nullable private VideoView videoView;
+	private boolean closed = false;
 
 	public VlcEngine(@NonNull VlcEngineProvider provider, @NonNull Listener listener) {
 		super(listener);
@@ -83,8 +96,73 @@ public class VlcEngine extends MediaEngineBase
 
 		int sessionId = provider.getAudioSessionId();
 		Context appCtx = vlc.getAppContext().getApplicationContext();
-		
+
 		this.effects = (sessionId != AudioManager.ERROR) ? AudioEffects.create(appCtx, 0, sessionId) : null;
+	}
+
+	@Nullable
+	private MediaPlayer ensurePlayerLocked() {
+		if (closed) return null;
+		if (player == null) {
+			MediaPlayer mp = new MediaPlayer(vlc);
+			mp.setEventListener(this);
+			player = mp;
+			if (videoView != null && Looper.myLooper() == Looper.getMainLooper()) {
+				IVLCVout out = mp.getVLCVout();
+				out.setVideoView(videoView.getVideoSurface());
+				out.setSubtitlesView(videoView.getSubtitleSurface());
+				out.attachViews(this);
+				setSurfaceSize(videoView);
+			}
+		}
+		return player;
+	}
+
+	private static void retireAsync(@Nullable MediaPlayer retiredPlayer, @Nullable Source retiredSource) {
+		if (retiredPlayer == null && (retiredSource == null || retiredSource == Source.NULL)) {
+			return;
+		}
+		if (retiredPlayer != null) {
+			try {
+				retiredPlayer.setEventListener(null);
+			} catch (Throwable ignored) {}
+
+			if (Looper.myLooper() == Looper.getMainLooper()) {
+				try {
+					retiredPlayer.getVLCVout().detachViews();
+				} catch (Throwable ignored) {}
+				VLC_RELEASE_EXECUTOR.execute(() -> releaseNativeResources(retiredPlayer, retiredSource));
+			} else {
+				MAIN_HANDLER.post(() -> {
+					try {
+						retiredPlayer.getVLCVout().detachViews();
+					} catch (Throwable ignored) {}
+					VLC_RELEASE_EXECUTOR.execute(() -> releaseNativeResources(retiredPlayer, retiredSource));
+				});
+			}
+		} else {
+			VLC_RELEASE_EXECUTOR.execute(() -> releaseNativeResources(null, retiredSource));
+		}
+	}
+
+	private static void releaseNativeResources(@Nullable MediaPlayer retiredPlayer, @Nullable Source retiredSource) {
+		if (retiredPlayer != null) {
+			try {
+				retiredPlayer.stop();
+			} catch (Throwable ex) {
+				Log.w(ex, "VlcEngine: Exception during async MediaPlayer.stop()");
+			}
+			try {
+				retiredPlayer.release();
+			} catch (Throwable ex) {
+				Log.w(ex, "VlcEngine: Exception during async MediaPlayer.release()");
+			}
+		}
+		if (retiredSource != null && retiredSource != Source.NULL) {
+			try {
+				retiredSource.close();
+			} catch (Throwable ignored) {}
+		}
 	}
 
 	@Override
@@ -94,11 +172,15 @@ public class VlcEngine extends MediaEngineBase
 
 	@Override
 	public void prepare(@NonNull PlayableItem sourceItem) {
+		final Source prevSource;
 		synchronized (engineLock) {
+			if (closed) return;
 			stopped(false);
-			this.source.close();
+			prevSource = this.source;
 			this.source = Source.NULL;
+			ensurePlayerLocked();
 		}
+		retireAsync(null, prevSource);
 
 		Media media = null;
 		ParcelFileDescriptor fd = null;
@@ -122,7 +204,7 @@ public class VlcEngine extends MediaEngineBase
 			}
 
 			media.addOption(":input-fast-seek");
-			
+
 			switch (sourceItem.getPrefs().getHwAccelPref()) {
 				case HW_ACCEL_DECODING -> {
 					media.setHWDecoderEnabled(true, true);
@@ -135,6 +217,10 @@ public class VlcEngine extends MediaEngineBase
 
 			final PendingSource pending = new PendingSource(sourceItem, media, fd);
 			synchronized (engineLock) {
+				if (closed) {
+					retireAsync(null, pending);
+					return;
+				}
 				this.source = pending;
 			}
 
@@ -153,23 +239,35 @@ public class VlcEngine extends MediaEngineBase
 		} catch (Throwable ex) {
 			IoUtils.close(fd);
 			if (media != null) {
+				media.setEventListener(null);
 				media.release();
 			}
+			final Source stale;
 			synchronized (engineLock) {
 				if (this.source == Source.NULL) {
 					this.source = new Source(sourceItem, null);
+					stale = null;
 				} else {
-					this.source.close();
+					stale = this.source;
+					this.source = new Source(sourceItem, null);
 				}
 			}
+			retireAsync(null, stale);
 			Optional.ofNullable(listener).ifPresent(l -> l.onEngineError(this, ex));
 		}
 	}
 
 	private void prepared(@NonNull PendingSource pendingSource) {
+		final MediaPlayer mp;
 		synchronized (engineLock) {
-			if (pendingSource != this.source) {
-				pendingSource.close();
+			if (closed || pendingSource != this.source) {
+				retireAsync(null, pendingSource);
+				return;
+			}
+			mp = ensurePlayerLocked();
+			if (mp == null) {
+				this.source = Source.NULL;
+				retireAsync(null, pendingSource);
 				return;
 			}
 			this.source = pendingSource.prepare();
@@ -178,45 +276,53 @@ public class VlcEngine extends MediaEngineBase
 
 		IMedia media = pendingSource.getMedia();
 		long off = pendingSource.getItem().getOffset();
-		player.setMedia(media);
+		mp.setMedia(media);
 		pendingSource.release();
 
-		// --- NEW: Dynamic Per-File Channel Profile Sync Sequence ---
+		// --- Dynamic Per-File Channel Profile Sync Sequence ---
 		if (effects != null) {
 			String channelIdentifier = "vlc_file_" + pendingSource.getItem().getLocation().hashCode();
 			effects.loadAndApplyPersistedSettingsForChannel(vlc.getAppContext(), channelIdentifier);
 		}
-		// -----------------------------------------------------------
+		// ------------------------------------------------------
 
 		if (off > 0) {
-			player.setTime(off);
+			mp.setTime(off);
 		}
 		Optional.ofNullable(listener).ifPresent(l -> l.onEnginePrepared(this));
 	}
+
 	@Override
 	public void start() {
 		synchronized (engineLock) {
-			player.play();
+			if (player != null) {
+				player.play();
+			}
 		}
 	}
 
 	@Override
 	public void stop() {
+		final MediaPlayer retiredPlayer;
+		final Source retiredSource;
 		synchronized (engineLock) {
 			stopped(false);
 			pendingPosition = -1;
-			player.stop();
-			player.detachViews();
-			source.close();
-			source = Source.NULL;
+			retiredPlayer = this.player;
+			this.player = null;
+			retiredSource = this.source;
+			this.source = Source.NULL;
 		}
+		retireAsync(retiredPlayer, retiredSource);
 	}
 
 	@Override
 	public void pause() {
 		synchronized (engineLock) {
 			stopped(true);
-			player.pause();
+			if (player != null) {
+				player.pause();
+			}
 		}
 	}
 
@@ -235,7 +341,7 @@ public class VlcEngine extends MediaEngineBase
 				return completed(0L);
 			}
 			long dur = source.getDuration();
-			if (dur <= 0) {
+			if (dur <= 0 && player != null) {
 				dur = player.getLength();
 				if (dur > 0) {
 					source.setDuration(dur);
@@ -244,15 +350,20 @@ public class VlcEngine extends MediaEngineBase
 					return completed(0L);
 				}
 			}
-			return completed(dur);
+			return completed(Math.max(dur, 0L));
 		}
 	}
 
 	@NonNull
 	@Override
 	public FutureSupplier<Long> getPosition() {
-		long pos = pos();
-		syncSub(pos, player.getRate(), false);
+		final long pos;
+		final float rate;
+		synchronized (engineLock) {
+			pos = pos();
+			rate = (player != null) ? player.getRate() : 1.0f;
+		}
+		syncSub(pos, rate, false);
 		return completed(pos);
 	}
 
@@ -268,7 +379,9 @@ public class VlcEngine extends MediaEngineBase
 			if (src == Source.NULL || !src.isSeekable()) {
 				return 0L;
 			}
-			long current = (pendingPosition == -1) ? player.getTime() : pendingPosition;
+			long current = (pendingPosition == -1)
+					? ((player != null) ? player.getTime() : 0L)
+					: pendingPosition;
 			return Math.max(current - src.getItem().getOffset(), 0L);
 		}
 	}
@@ -280,7 +393,7 @@ public class VlcEngine extends MediaEngineBase
 			if (src == Source.NULL) return;
 
 			long pos = src.getItem().getOffset() + position;
-			if (isPlaying() || isPaused()) {
+			if ((isPlaying() || isPaused()) && player != null) {
 				player.setTime(pos);
 				syncSub(position, player.getRate(), true);
 			} else {
@@ -292,31 +405,45 @@ public class VlcEngine extends MediaEngineBase
 	@NonNull
 	@Override
 	public FutureSupplier<Float> getSpeed() {
-		return completed(player.getRate());
+		synchronized (engineLock) {
+			return completed((player != null) ? player.getRate() : 1.0f);
+		}
 	}
 
 	@Override
 	public void setSpeed(float speed) {
 		synchronized (engineLock) {
-			player.setRate(speed);
+			if (player != null) {
+				player.setRate(speed);
+			}
 			syncSub(pos(), speed, true);
 		}
 	}
 
 	@Override
 	public void mute(Context ctx) {
-		player.setVolume(0);
+		synchronized (engineLock) {
+			if (player != null) {
+				player.setVolume(0);
+			}
+		}
 	}
 
 	@Override
 	public void unmute(Context ctx) {
-		player.setVolume(100);
+		synchronized (engineLock) {
+			if (player != null) {
+				player.setVolume(100);
+			}
+		}
 	}
+
 	@Override
 	public void setVideoView(@Nullable VideoView view) {
 		synchronized (engineLock) {
 			super.setVideoView(view);
 			this.videoView = view;
+			if (player == null) return;
 			IVLCVout out = player.getVLCVout();
 			out.detachViews();
 
@@ -333,10 +460,10 @@ public class VlcEngine extends MediaEngineBase
 	public float getVideoWidth() {
 		synchronized (engineLock) {
 			float w = source.getVideoWidth();
-			if ((int) w == 0) {
+			if ((int) w == 0 && player != null) {
 				MediaPlayer.TrackDescription[] tracks = player.getVideoTracks();
 				if (tracks != null && tracks.length > 0) {
-					return tracks[0].id; // Safe array subscript lookup
+					return tracks[0].id;
 				}
 			}
 			return w;
@@ -347,10 +474,10 @@ public class VlcEngine extends MediaEngineBase
 	public float getVideoHeight() {
 		synchronized (engineLock) {
 			float h = source.getVideoHeight();
-			if ((int) h == 0) {
+			if ((int) h == 0 && player != null) {
 				MediaPlayer.TrackDescription[] tracks = player.getVideoTracks();
 				if (tracks != null && tracks.length > 0) {
-					return tracks[0].id; // Safe array subscript lookup
+					return tracks[0].id;
 				}
 			}
 			return h;
@@ -367,7 +494,7 @@ public class VlcEngine extends MediaEngineBase
 	@Override
 	public List<AudioStreamInfo> getAudioStreamInfo() {
 		synchronized (engineLock) {
-			if (source == Source.NULL) return emptyList();
+			if (source == Source.NULL || player == null) return emptyList();
 			MediaPlayer.TrackDescription[] tracks = player.getAudioTracks();
 			if (tracks == null || tracks.length == 0) return emptyList();
 
@@ -394,6 +521,7 @@ public class VlcEngine extends MediaEngineBase
 	@Override
 	public AudioStreamInfo getCurrentAudioStreamInfo() {
 		synchronized (engineLock) {
+			if (player == null) return null;
 			int id = player.getAudioTrack();
 			return CollectionUtils.find(getAudioStreamInfo(), s -> s.getId() == id);
 		}
@@ -402,14 +530,15 @@ public class VlcEngine extends MediaEngineBase
 	@Override
 	public void setCurrentAudioStream(@Nullable AudioStreamInfo info) {
 		synchronized (engineLock) {
+			if (player == null) return;
 			player.setAudioTrack(info != null ? (int) info.getId() : -1);
 
-			// --- NEW: Audio Stream Track Switch Presets Migration Loop ---
+			// --- Audio Stream Track Switch Presets Migration Loop ---
 			if (info != null && effects != null && source != Source.NULL) {
 				String streamTrackIdentifier = "vlc_file_" + source.getItem().getLocation().hashCode() + "_track_" + info.getId();
 				effects.loadAndApplyPersistedSettingsForChannel(vlc.getAppContext(), streamTrackIdentifier);
 			}
-			// -----------------------------------------------------------
+			// --------------------------------------------------------
 		}
 	}
 
@@ -420,18 +549,25 @@ public class VlcEngine extends MediaEngineBase
 
 	@Override
 	public int getAudioDelay() {
-		return (int) (player.getAudioDelay() / 1000);
+		synchronized (engineLock) {
+			return (player != null) ? (int) (player.getAudioDelay() / 1000) : 0;
+		}
 	}
 
 	@Override
 	public void setAudioDelay(int milliseconds) {
-		player.setAudioDelay(milliseconds * 1000L);
+		synchronized (engineLock) {
+			if (player != null) {
+				player.setAudioDelay(milliseconds * 1000L);
+			}
+		}
 	}
 
 	@Override
 	public boolean isSubtitlesSupported() {
 		synchronized (engineLock) {
 			if (super.isSubtitlesSupported()) return true;
+			if (player == null) return false;
 			MediaPlayer.TrackDescription[] tracks = player.getSpuTracks();
 			return tracks != null && tracks.length > 0;
 		}
@@ -441,14 +577,19 @@ public class VlcEngine extends MediaEngineBase
 	@Override
 	public FutureSupplier<List<SubtitleStreamInfo>> getSubtitleStreamInfo() {
 		synchronized (engineLock) {
-			if (source == Source.NULL) return completedEmptyList();
+			if (source == Source.NULL || player == null) return completedEmptyList();
 		}
 
 		return super.getSubtitleStreamInfo().map(subFiles -> {
-			MediaPlayer.TrackDescription[] tracks = player.getSpuTracks();
+			final MediaPlayer mp;
+			synchronized (engineLock) {
+				if (source == Source.NULL || player == null) return subFiles;
+				mp = player;
+			}
+			MediaPlayer.TrackDescription[] tracks = mp.getSpuTracks();
 			if (tracks == null || tracks.length == 0) return subFiles;
 
-			IMedia m = player.getMedia();
+			IMedia m = mp.getMedia();
 			if (m == null) return subFiles;
 
 			try {
@@ -474,13 +615,19 @@ public class VlcEngine extends MediaEngineBase
 		SubtitleStreamInfo currentSuper = super.getCurrentSubtitleStreamInfo();
 		if (currentSuper != null) return currentSuper;
 
-		IMedia m = player.getMedia();
+		final MediaPlayer mp;
+		synchronized (engineLock) {
+			mp = player;
+		}
+		if (mp == null) return null;
+
+		IMedia m = mp.getMedia();
 		if (m == null) return null;
 
 		try {
-			int id = player.getSpuTrack();
+			int id = mp.getSpuTrack();
 			if (id == -1) return null;
-			MediaPlayer.TrackDescription[] tracks = player.getSpuTracks();
+			MediaPlayer.TrackDescription[] tracks = mp.getSpuTracks();
 			if (tracks == null || tracks.length == 0) return null;
 
 			for (MediaPlayer.TrackDescription td : tracks) {
@@ -500,13 +647,13 @@ public class VlcEngine extends MediaEngineBase
 	public void setCurrentSubtitleStream(@Nullable SubtitleStreamInfo info) {
 		synchronized (engineLock) {
 			if (info == null) {
-				player.setSpuTrack(-1);
+				if (player != null) player.setSpuTrack(-1);
 				super.setCurrentSubtitleStream(null);
 			} else if (info.getFiles().isEmpty()) {
-				player.setSpuTrack((int) info.getId());
+				if (player != null) player.setSpuTrack((int) info.getId());
 				super.setCurrentSubtitleStream(null);
 			} else {
-				player.setSpuTrack(-1);
+				if (player != null) player.setSpuTrack(-1);
 				super.setCurrentSubtitleStream(info);
 			}
 		}
@@ -515,20 +662,42 @@ public class VlcEngine extends MediaEngineBase
 	@Override
 	public void setSubtitleDelay(int milliseconds) {
 		super.setSubtitleDelay(milliseconds);
-		player.setSpuDelay(milliseconds * 1000L);
+		synchronized (engineLock) {
+			if (player != null) {
+				player.setSpuDelay(milliseconds * 1000L);
+			}
+		}
 	}
 
 	@Override
 	public void close() {
+		final MediaPlayer retiredPlayer;
+		final Source retiredSource;
 		synchronized (engineLock) {
-			stop();
+			closed = true;
+			stopped(false);
+			pendingPosition = -1;
+			this.videoView = null;
+			retiredPlayer = this.player;
+			this.player = null;
+			retiredSource = this.source;
+			this.source = Source.NULL;
 			super.close();
-			player.release();
-			Optional.ofNullable(effects).ifPresent(AudioEffects::release);
 		}
+		retireAsync(retiredPlayer, retiredSource);
+		Optional.ofNullable(effects).ifPresent(AudioEffects::release);
 	}
+
 	@Override
 	public void onEvent(@NonNull MediaPlayer.Event event) {
+		final MediaPlayer mp;
+		synchronized (engineLock) {
+			mp = this.player;
+			if (closed || mp == null || this.source == Source.NULL) {
+				return;
+			}
+		}
+
 		switch (event.type) {
 			case MediaPlayer.Event.Buffering -> {
 				float percent = event.getBuffering();
@@ -540,6 +709,7 @@ public class VlcEngine extends MediaEngineBase
 			}
 			case MediaPlayer.Event.Playing -> {
 				synchronized (engineLock) {
+					if (closed || this.player == null) return;
 					if (this.source instanceof VideoSource vs) {
 						PlayableItemPrefs prefs = vs.getItem().getPrefs();
 						MediaEngine.selectMediaStream(
@@ -552,23 +722,27 @@ public class VlcEngine extends MediaEngineBase
 
 						if (BuildConfig.AUTO && (videoView != null)) {
 							MainActivityDelegate.getActivityDelegate(videoView.getContext()).onSuccess(a -> {
-								int delay = prefs.getAudioDelayPref(a.isCarActivity());
-								if (delay != 0) player.setAudioDelay(delay * 1000L);
+								synchronized (engineLock) {
+									if (this.player != null) {
+										int delay = prefs.getAudioDelayPref(a.isCarActivity());
+										if (delay != 0) this.player.setAudioDelay(delay * 1000L);
+									}
+								}
 							});
 						} else {
 							int delay = prefs.getAudioDelayPref(false);
-							if (delay != 0) player.setAudioDelay(delay * 1000L);
+							if (delay != 0) this.player.setAudioDelay(delay * 1000L);
 						}
 					} else {
-						player.setAudioDelay(0);
+						this.player.setAudioDelay(0);
 					}
 
 					if (pendingPosition != -1) {
-						player.setTime(pendingPosition);
+						this.player.setTime(pendingPosition);
 						pendingPosition = -1;
 					}
 					if (!isPaused()) {
-						player.setSpuTrack(-1);
+						this.player.setSpuTrack(-1);
 					}
 					started();
 				}
@@ -577,13 +751,14 @@ public class VlcEngine extends MediaEngineBase
 			case MediaPlayer.Event.EndReached -> {
 				boolean isStreamUrl = false;
 				synchronized (engineLock) {
+					if (closed || this.player == null) return;
 					stopped(false);
 
-					// --- NEW: Reset Active Channel Profile Context on Media EndReached ---
+					// --- Reset Active Channel Profile Context on Media EndReached ---
 					if (effects != null) {
 						effects.resetToGlobalSettings(vlc.getAppContext());
 					}
-					// ---------------------------------------------------------------------
+					// ----------------------------------------------------------------
 
 					PlayableItem s = getSource();
 					if (s != null) {
@@ -597,8 +772,8 @@ public class VlcEngine extends MediaEngineBase
 				}
 
 				if (isStreamUrl) {
-					float pos = player.getTime();
-					float dur = player.getLength() * 0.9F;
+					float pos = mp.getTime();
+					float dur = mp.getLength() * 0.9F;
 					if (dur > 0 && pos < dur) {
 						Log.d("Position=", pos, "< duration=", dur);
 						Optional.ofNullable(listener).ifPresent(l -> l.onEngineError(this, new MediaEngineException("Failed to read stream")));
@@ -607,7 +782,7 @@ public class VlcEngine extends MediaEngineBase
 				}
 				Optional.ofNullable(listener).ifPresent(l -> l.onEngineEnded(this));
 			}
-			case MediaPlayer.Event.EncounteredError -> 
+			case MediaPlayer.Event.EncounteredError ->
 				Optional.ofNullable(listener).ifPresent(l -> l.onEngineError(this, new MediaEngineException("VLC Engine Intercepted Critical Playback Exception")));
 		}
 	}
@@ -615,7 +790,7 @@ public class VlcEngine extends MediaEngineBase
 	@Override
 	public void onNewVideoLayout(IVLCVout vlcVout, int width, int height, int visibleWidth, int visibleHeight, int sarNum, int sarDen) {
 		synchronized (engineLock) {
-			if (videoView == null || !(source instanceof VideoSource src)) return;
+			if (player == null || videoView == null || !(source instanceof VideoSource src)) return;
 			src.videoWidth = width;
 			src.videoHeight = height;
 			src.visibleVideoWidth = visibleWidth;
@@ -629,7 +804,7 @@ public class VlcEngine extends MediaEngineBase
 	@Override
 	public boolean setSurfaceSize(VideoView view) {
 		synchronized (engineLock) {
-			if (source instanceof VideoSource src) {
+			if (player != null && source instanceof VideoSource src) {
 				setSurfaceSize(view, src);
 				return true;
 			}
@@ -638,6 +813,7 @@ public class VlcEngine extends MediaEngineBase
 	}
 
 	private void setSurfaceSize(VideoView view, VideoSource src) {
+		if (player == null) return;
 		int sw = view.getWidth();
 		int sh = view.getHeight();
 		if (sw == 0 || sh == 0) return;
@@ -703,6 +879,7 @@ public class VlcEngine extends MediaEngineBase
 	}
 
 	private void setPlayerLayout(int surfaceW, int surfaceH, int scaleType) {
+		if (player == null) return;
 		switch (scaleType) {
 			case SCALE_BEST:
 			default:
@@ -743,6 +920,7 @@ public class VlcEngine extends MediaEngineBase
 		static final Source NULL = new Source(null, null);
 		private final PlayableItem item;
 		final ParcelFileDescriptor fd;
+		private final AtomicBoolean closed = new AtomicBoolean(false);
 
 		Source(PlayableItem item, ParcelFileDescriptor fd) {
 			this.item = item;
@@ -759,7 +937,8 @@ public class VlcEngine extends MediaEngineBase
 		@Override
 		@CallSuper
 		public void close() {
-			if (fd != null) {
+			if (this == NULL) return;
+			if (closed.compareAndSet(false, true) && fd != null) {
 				IoUtils.close(fd);
 			}
 		}
@@ -767,6 +946,7 @@ public class VlcEngine extends MediaEngineBase
 
 	private static class PendingSource extends Source {
 		private final Media media;
+		private final AtomicBoolean mediaReleased = new AtomicBoolean(false);
 
 		PendingSource(PlayableItem item, Media media, ParcelFileDescriptor fd) {
 			super(item, fd);
@@ -793,7 +973,8 @@ public class VlcEngine extends MediaEngineBase
 		}
 
 		void release() {
-			if (media != null) {
+			if (media != null && mediaReleased.compareAndSet(false, true)) {
+				media.setEventListener(null);
 				media.release();
 			}
 		}
