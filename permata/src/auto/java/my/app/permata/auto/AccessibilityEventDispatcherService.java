@@ -18,19 +18,25 @@ import static android.view.accessibility.AccessibilityWindowInfo.TYPE_INPUT_METH
 import android.accessibilityservice.AccessibilityService;
 import android.accessibilityservice.GestureDescription;
 import android.accessibilityservice.GestureDescription.StrokeDescription;
+import android.app.KeyguardManager;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.graphics.Path;
 import android.graphics.Point;
+import android.graphics.Rect;
 import android.hardware.display.DisplayManager;
+import android.media.AudioDeviceCallback;
+import android.media.AudioDeviceInfo;
 import android.media.AudioManager;
 import android.os.Build.VERSION;
 import android.os.Build.VERSION_CODES;
 import android.os.Handler;
 import android.os.Looper;
+import android.os.PowerManager;
 import android.provider.Settings;
+import android.util.DisplayMetrics;
 import android.view.Display;
 import android.view.MotionEvent;
 import android.view.accessibility.AccessibilityEvent;
@@ -87,6 +93,13 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
             "com.twitter.android"
     ));
 
+    private static final Set<String> STUBBORN_APPS = new HashSet<>(Arrays.asList(
+            "com.zhiliaoapp.musically",
+            "com.ss.android.ugc.trill",
+            "com.instagram.android",
+            "com.snapchat.android"
+    ));
+
     // Full-Screen Mirroring (MirrorServiceFS) serialized continuous drag engine
     private static final long DRAG_IDLE_TIMEOUT_MS = 1500L;
     private static final long DRAG_CENTER_HOLD_MS = 35L;
@@ -108,6 +121,32 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
     private float pendingMoveX;
     private float pendingMoveY;
     private boolean pendingUp = false;
+
+    private boolean wasBtMediaSinkConnected = false;
+    @Nullable private AudioDeviceCallback btAudioDeviceCallback;
+
+    private final Runnable deferredReclaimCheckRunnable = () -> {
+        if (!isCarSessionActive()) return;
+        String visibleStubbornPkg = resolveStrictlyVisibleStubbornApp();
+        if (visibleStubbornPkg != null) {
+            lastActivePackage = visibleStubbornPkg;
+            Log.w("[WATCHDOG_TELEMETRY] Active Stubborn App on BT/Unlock: "
+                    + visibleStubbornPkg + ". Firing Aggressive Reclaim!");
+            fireAggressiveReclaimIntent();
+        }
+    };
+
+    private final BroadcastReceiver userPresentReceiver = new BroadcastReceiver() {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            if (intent != null && Intent.ACTION_USER_PRESENT.equals(intent.getAction())) {
+                if (isCarSessionActive()) {
+                    mainHandler.removeCallbacks(deferredReclaimCheckRunnable);
+                    mainHandler.postDelayed(deferredReclaimCheckRunnable, 250L);
+                }
+            }
+        }
+    };
 
     public static void setNextDragAnchored(boolean anchored) {
         nextDragAnchored = anchored;
@@ -134,6 +173,58 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
 
     public static boolean isAvailable() {
         return instance != null;
+    }
+
+    public static boolean isStubbornAppStrictlyVisible() {
+        var ds = instance;
+        return ds != null && ds.resolveStrictlyVisibleStubbornApp() != null;
+    }
+
+    public static boolean isCallOrRingtoneActive(@Nullable AudioManager am) {
+        if (am == null) return false;
+        try {
+            int mode = am.getMode();
+            return mode == AudioManager.MODE_IN_CALL
+                    || mode == AudioManager.MODE_IN_COMMUNICATION
+                    || mode == AudioManager.MODE_RINGTONE;
+        } catch (Exception ignored) {
+            return false;
+        }
+    }
+
+    public static boolean hasActiveBluetoothMediaSink(@Nullable AudioManager am) {
+        if (am == null) return false;
+        try {
+            if (VERSION.SDK_INT >= VERSION_CODES.M) {
+                AudioDeviceInfo[] outputs = am.getDevices(AudioManager.GET_DEVICES_OUTPUTS);
+                if (outputs != null) {
+                    for (AudioDeviceInfo dev : outputs) {
+                        if (dev != null && isBtMediaSinkType(dev.getType())) {
+                            return true;
+                        }
+                    }
+                }
+            }
+            // Fallback for older HALs
+            return am.isBluetoothA2dpOn();
+        } catch (Exception ignored) {
+            return false;
+        }
+    }
+
+    private static boolean isBtMediaSinkType(int type) {
+        if (type == AudioDeviceInfo.TYPE_BLUETOOTH_A2DP) return true;
+        if (VERSION.SDK_INT >= VERSION_CODES.S) {
+            if (type == AudioDeviceInfo.TYPE_BLE_HEADSET || type == AudioDeviceInfo.TYPE_BLE_SPEAKER) {
+                return true;
+            }
+        }
+        if (VERSION.SDK_INT >= VERSION_CODES.TIRAMISU) {
+            if (type == AudioDeviceInfo.TYPE_BLE_BROADCAST) {
+                return true;
+            }
+        }
+        return false;
     }
 
     public static String getLastActivePackage() {
@@ -193,6 +284,105 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
         } catch (Exception ignored) {
             return null;
         }
+    }
+
+    /**
+     * Strict 5-gate check used ONLY for BT/Unlock/Post-Duck reclaim safety:
+     * 1. Screen must be interactive (unless mirroring)
+     * 2. Keyguard must be unlocked
+     * 3. No active phone/VoIP call or ringtone
+     * 4. Live window stack on DEFAULT_DISPLAY must contain a stubborn app
+     * 5. No fullscreen non-stubborn app (Launcher, WhatsApp, Facebook, Permata, etc.) may occlude it
+     */
+    @Nullable
+    private String resolveStrictlyVisibleStubbornApp() {
+        try {
+            PermataApplication app = PermataApplication.get();
+            boolean mirroring = app != null && app.isMirroringMode();
+
+            PowerManager pm = (PowerManager) getSystemService(Context.POWER_SERVICE);
+            if (!mirroring && pm != null && !pm.isInteractive()) {
+                return null;
+            }
+
+            KeyguardManager km = (KeyguardManager) getSystemService(Context.KEYGUARD_SERVICE);
+            if (km != null && km.isKeyguardLocked()) {
+                return null;
+            }
+
+            AudioManager am = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
+            if (isCallOrRingtoneActive(am)) {
+                return null;
+            }
+
+            List<AccessibilityWindowInfo> windows = getWindows();
+            if (windows == null || windows.isEmpty()) return null;
+
+            List<AccessibilityWindowInfo> appWindows = new ArrayList<>();
+            for (AccessibilityWindowInfo w : windows) {
+                if (w == null) continue;
+                if ((VERSION.SDK_INT >= VERSION_CODES.R) && (w.getDisplayId() != DEFAULT_DISPLAY)) continue;
+                if (w.getType() == TYPE_APPLICATION) {
+                    appWindows.add(w);
+                }
+            }
+            if (appWindows.isEmpty()) return null;
+
+            appWindows.sort((a, b) -> Integer.compare(b.getLayer(), a.getLayer()));
+
+            DisplayMetrics dm = getResources().getDisplayMetrics();
+            int fullW = (int) (dm.widthPixels * 0.85f);
+            int fullH = (int) (dm.heightPixels * 0.85f);
+            Rect bounds = new Rect();
+
+            int checkedApps = 0;
+            for (AccessibilityWindowInfo w : appWindows) {
+                AccessibilityNodeInfo root = w.getRoot();
+                if (root == null) continue;
+                String pkg = null;
+                try {
+                    CharSequence p = root.getPackageName();
+                    if (p != null) pkg = p.toString();
+                } finally {
+                    root.recycle();
+                }
+                if (pkg == null || "android".equals(pkg) || pkg.contains("systemui") || isCurrentImePackage(pkg)) {
+                    continue;
+                }
+                if (mirroring && pkg.equals(getPackageName())) {
+                    continue;
+                }
+
+                if (isStubbornNativeApp(pkg)) {
+                    w.getBoundsInScreen(bounds);
+                    if (bounds.width() > 0 && bounds.height() > 0) {
+                        return pkg;
+                    }
+                    continue;
+                }
+
+                w.getBoundsInScreen(bounds);
+                if (fullW > 0 && fullH > 0 && bounds.width() >= fullW && bounds.height() >= fullH) {
+                    // A fullscreen non-stubborn app (Launcher, Facebook, WhatsApp, Permata, etc.) is occluding the screen
+                    return null;
+                }
+
+                if (!isIgnoredOverlay(pkg) && ++checkedApps >= 2) {
+                    break;
+                }
+            }
+            return null;
+        } catch (Exception ignored) {
+            return null;
+        }
+    }
+
+    private void fireAggressiveReclaimIntent() {
+        Intent reclaimIntent = new Intent(this, my.app.permata.media.service.PermataMediaService.class);
+        reclaimIntent.setAction("my.app.permata.action.AGGRESSIVE_RECLAIM");
+        try {
+            startService(reclaimIntent);
+        } catch (Exception ignored) {}
     }
 
     public static void abortActiveGesture() {
@@ -275,7 +465,7 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
 
         try { MirrorDisplay.notifyInjectedTouch(); } catch (Exception ignored) {}
 
-        android.util.DisplayMetrics metrics = ds.getResources().getDisplayMetrics();
+        DisplayMetrics metrics = ds.getResources().getDisplayMetrics();
         float actionX = metrics.widthPixels * 0.50f;
         float centerY = metrics.heightPixels * 0.50f;
         float span = metrics.heightPixels * 0.20f;
@@ -291,7 +481,17 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
         GestureDescription.Builder gestureBuilder = new GestureDescription.Builder();
         gestureBuilder.addStroke(new StrokeDescription(swipePath, 0L, duration));
 
-        return ds.dispatchGesture(gestureBuilder.build(), null, null);
+        final String dirLabel = up ? "PREV" : "NEXT";
+        return ds.dispatchGesture(
+                gestureBuilder.build(),
+                new GestureResultCallback() {
+                    @Override
+                    public void onCancelled(GestureDescription gestureDescription) {
+                        Log.w("[NATIVE_SWIPE] OS cancelled injected swipe gesture | dir=" + dirLabel);
+                    }
+                },
+                ds.mainHandler
+        );
     }
 
     static boolean dispatchHome() {
@@ -722,6 +922,45 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
         } else {
             registerReceiver(commandReceiver, filter);
         }
+
+        IntentFilter unlockFilter = new IntentFilter(Intent.ACTION_USER_PRESENT);
+        if (VERSION.SDK_INT >= VERSION_CODES.TIRAMISU) {
+            registerReceiver(userPresentReceiver, unlockFilter, Context.RECEIVER_NOT_EXPORTED);
+        } else {
+            registerReceiver(userPresentReceiver, unlockFilter);
+        }
+
+        if (VERSION.SDK_INT >= VERSION_CODES.M) {
+            try {
+                AudioManager am = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
+                if (am != null) {
+                    wasBtMediaSinkConnected = hasActiveBluetoothMediaSink(am);
+                    btAudioDeviceCallback = new AudioDeviceCallback() {
+                        @Override
+                        public void onAudioDevicesAdded(AudioDeviceInfo[] addedDevices) {
+                            AudioManager mgr = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
+                            boolean connectedNow = hasActiveBluetoothMediaSink(mgr);
+                            if (connectedNow && !wasBtMediaSinkConnected) {
+                                wasBtMediaSinkConnected = true;
+                                lastActiveBtTime = System.currentTimeMillis();
+                                mainHandler.removeCallbacks(deferredReclaimCheckRunnable);
+                                mainHandler.postDelayed(deferredReclaimCheckRunnable, 400L);
+                            }
+                        }
+
+                        @Override
+                        public void onAudioDevicesRemoved(AudioDeviceInfo[] removedDevices) {
+                            AudioManager mgr = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
+                            wasBtMediaSinkConnected = hasActiveBluetoothMediaSink(mgr);
+                            if (!wasBtMediaSinkConnected) {
+                                mainHandler.removeCallbacks(deferredReclaimCheckRunnable);
+                            }
+                        }
+                    };
+                    am.registerAudioDeviceCallback(btAudioDeviceCallback, mainHandler);
+                }
+            } catch (Exception ignored) {}
+        }
     }
 
     @Override
@@ -729,12 +968,26 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
         if (VERSION.SDK_INT >= VERSION_CODES.O) {
             forceLiftActiveDrag("SERVICE_DESTROY");
         }
-        super.onDestroy();
-        instance = null;
-        isConsentGranted = false;
+        mainHandler.removeCallbacks(deferredReclaimCheckRunnable);
+        if (VERSION.SDK_INT >= VERSION_CODES.M && btAudioDeviceCallback != null) {
+            try {
+                AudioManager am = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
+                if (am != null) {
+                    am.unregisterAudioDeviceCallback(btAudioDeviceCallback);
+                }
+            } catch (Exception ignored) {}
+            btAudioDeviceCallback = null;
+        }
+        try {
+            unregisterReceiver(userPresentReceiver);
+        } catch (Exception ignored) {}
         try {
             unregisterReceiver(commandReceiver);
         } catch (Exception ignored) {}
+
+        super.onDestroy();
+        instance = null;
+        isConsentGranted = false;
     }
 
     @Override
@@ -759,13 +1012,10 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
                 && !isCurrentImePackage(pkgName) && !isMirroringHostWindow(pkgName, className)) {
             lastActivePackage = pkgName;
 
-            if (isStubbornNativeApp(pkgName) && isCarSessionActive()) {
+            AudioManager am = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
+            if (isStubbornNativeApp(pkgName) && isCarSessionActive() && !isCallOrRingtoneActive(am)) {
                 Log.w("[WATCHDOG_TELEMETRY] Stubborn App Detected: " + pkgName + ". Firing Aggressive Reclaim!");
-                Intent reclaimIntent = new Intent(this, my.app.permata.media.service.PermataMediaService.class);
-                reclaimIntent.setAction("my.app.permata.action.AGGRESSIVE_RECLAIM");
-                try {
-                    startService(reclaimIntent);
-                } catch (Exception ignored) {}
+                fireAggressiveReclaimIntent();
             }
         }
 
@@ -847,35 +1097,26 @@ public class AccessibilityEventDispatcherService extends AccessibilityService {
         return false;
     }
 
-    private static final Set<String> STUBBORN_APPS = new HashSet<>(Arrays.asList(
-            "com.zhiliaoapp.musically",
-            "com.ss.android.ugc.trill",
-            "com.instagram.android"
-    ));
-
-    private boolean isStubbornNativeApp(String pkg) {
-        return STUBBORN_APPS.contains(pkg);
+    private boolean isStubbornNativeApp(@Nullable String pkg) {
+        return pkg != null && STUBBORN_APPS.contains(pkg);
     }
 
     private boolean isCarSessionActive() {
-        if (PermataApplication.get().isConnectedToAuto() || PermataApplication.get().isMirroringMode()) {
+        PermataApplication app = PermataApplication.get();
+        if (app != null && (app.isConnectedToAuto() || app.isMirroringMode())) {
             lastActiveBtTime = System.currentTimeMillis();
             return true;
         }
 
         try {
             AudioManager am = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
-            if (am != null && (am.isBluetoothA2dpOn() || am.isBluetoothScoOn())) {
+            if (am != null && (hasActiveBluetoothMediaSink(am) || am.isBluetoothScoOn())) {
                 lastActiveBtTime = System.currentTimeMillis();
                 return true;
             }
         } catch (Exception ignored) {}
 
-        if (System.currentTimeMillis() - lastActiveBtTime < 30000) {
-            return true;
-        }
-
-        return false;
+        return (System.currentTimeMillis() - lastActiveBtTime) < 30000L;
     }
 
     private void checkAndClickMediaProjectionConsent(AccessibilityNodeInfo root, String pkgName) {
