@@ -45,6 +45,7 @@ import java.io.OutputStream;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Date;
+import java.util.EnumMap;
 import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -70,6 +71,7 @@ import my.app.permata.media.pref.PlaybackControlPrefs;
 import my.app.permata.ui.activity.MainActivityDelegate;
 import my.app.permata.ui.activity.MainActivityListener;
 import my.app.permata.ui.activity.MainActivityPrefs;
+import my.app.permata.ui.theme.CuratedThemeCatalog;
 import my.app.permata.ui.theme.CustomThemeManager;
 import my.app.permata.util.Utils;
 import my.app.utils.app.App;
@@ -783,7 +785,8 @@ public class SettingsFragment extends MainActivityFragment
 					R.string.theme_purple,
 					R.string.theme_classic,
 					R.string.theme_custom,
-					R.string.theme_random
+					R.string.theme_random,
+					R.string.theme_solar_term
 			};
 		});
 
@@ -883,7 +886,7 @@ public class SettingsFragment extends MainActivityFragment
 		CustomThemeManager.Palette current = CustomThemeManager.getActiveCustomPalette(isAutoPrefs);
 		int rowIdx = 0;
 
-		// 1. Load Base Built-In, Curated, or Saved Preset (submenu with 5-color preview chips)
+		// 1. Load Base Built-In, 100 Curated, or Saved Presets (category submenus with 5-color strips)
 		if (swatchDecoration != null) {
 			swatchDecoration.registerRow(s, rowIdx, isAutoPrefs, SUMMARY_SLOTS);
 		}
@@ -904,7 +907,7 @@ public class SettingsFragment extends MainActivityFragment
 		});
 		rowIdx++;
 
-		// 3. Delete Saved / Curated Preset (submenu with 5-color preview chips)
+		// 3. Delete Saved / Curated Preset (category submenus with 5-color strips)
 		List<CustomThemeManager.Palette> savedPresets = CustomThemeManager.getSavedPresets();
 		if (!savedPresets.isEmpty()) {
 			PreferenceSet deleteSet = s.subSet(o -> {
@@ -918,7 +921,7 @@ public class SettingsFragment extends MainActivityFragment
 			rowIdx++;
 		}
 
-		// 4. Restore 10 Curated Themes (non-destructive to user-saved presets)
+		// 4. Restore 100 Curated Themes (non-destructive to user-saved presets)
 		s.addButton(o -> {
 			o.title = R.string.custom_theme_restore_curated;
 			o.subtitle = R.string.custom_theme_restore_curated_sub;
@@ -964,38 +967,189 @@ public class SettingsFragment extends MainActivityFragment
 			swatchDecoration.clearSet(s);
 		}
 		Context ctx = a.getContext();
-		CustomThemeManager.Palette active = CustomThemeManager.getActiveCustomPalette(isAutoPrefs);
-		boolean isCustomSelected = a.getPrefs().getIntPref(themePref) == MainActivityPrefs.THEME_CUSTOM;
+		int selectedThemePref = a.getPrefs().getIntPref(themePref);
+		boolean isSolarMode = (selectedThemePref == MainActivityPrefs.THEME_SOLAR_TERM);
+		boolean isCustomSelected = (selectedThemePref == MainActivityPrefs.THEME_CUSTOM) || isSolarMode;
+		CustomThemeManager.Palette active = isSolarMode
+				? CustomThemeManager.resolveTodaySolarTermPalette(isAutoPrefs)
+				: CustomThemeManager.getActiveCustomPalette(isAutoPrefs);
+
 		List<CustomThemeManager.Palette> savedPresets = CustomThemeManager.getSavedPresets();
-		List<CustomThemeManager.BuiltInThemeInfo> builtIns = CustomThemeManager.BUILT_IN_THEMES;
+		List<CustomThemeManager.Palette> userOnly = new ArrayList<>();
+		Map<CuratedThemeCatalog.Category, List<CustomThemeManager.Palette>> byCategory =
+				new EnumMap<>(CuratedThemeCatalog.Category.class);
+		for (CuratedThemeCatalog.Category cat : CuratedThemeCatalog.Category.values()) {
+			byCategory.put(cat, new ArrayList<>());
+		}
+		for (CustomThemeManager.Palette p : savedPresets) {
+			CuratedThemeCatalog.Category cat = CuratedThemeCatalog.getCategoryForName(p.name);
+			if (cat != null) {
+				byCategory.get(cat).add(p);
+			} else {
+				userOnly.add(p);
+			}
+		}
+
 		int rowIdx = 0;
 
-		// Curated & User-Saved Presets first (with 5-color live preview chips)
-		for (CustomThemeManager.Palette preset : savedPresets) {
+		// 1. User's own custom-named presets (if any)
+		if (!userOnly.isEmpty()) {
+			addPresetCategorySubmenu(a, s, rowIdx++, R.string.custom_theme_cat_saved,
+					userOnly, isCustomSelected, active, isAutoPrefs, themePref);
+		}
+
+		// 2. The 8 Curated Categories (100 themes total)
+		for (CuratedThemeCatalog.Category cat : CuratedThemeCatalog.Category.values()) {
+			List<CustomThemeManager.Palette> items = byCategory.get(cat);
+			if (items == null || items.isEmpty()) continue;
+			addPresetCategorySubmenu(a, s, rowIdx++, cat.titleRes,
+					items, isCustomSelected, active, isAutoPrefs, themePref);
+		}
+
+		// 3. Built-In XML Themes submenu
+		List<CustomThemeManager.BuiltInThemeInfo> builtIns = CustomThemeManager.BUILT_IN_THEMES;
+		if (!builtIns.isEmpty()) {
+			boolean isStrictCustom = (selectedThemePref == MainActivityPrefs.THEME_CUSTOM);
+			CustomThemeManager.Palette preview = CustomThemeManager.extractBuiltInPalette(ctx, builtIns.get(0).themeId);
+			boolean containsActive = false;
+			for (CustomThemeManager.BuiltInThemeInfo info : builtIns) {
+				String baseName = ctx.getString(info.nameRes);
+				if (isStrictCustom && active.name.equalsIgnoreCase(baseName)) {
+					containsActive = true;
+					preview = active;
+					break;
+				}
+			}
+			if (swatchDecoration != null) {
+				swatchDecoration.registerFixedRow(s, rowIdx, preview.getPreviewStripColors());
+			}
+			String countSub = ctx.getString(R.string.custom_theme_cat_count, builtIns.size());
+			String finalSub = containsActive
+					? ctx.getString(R.string.custom_theme_preset_active) + " • " + countSub
+					: countSub;
+			PreferenceSet builtInSet = s.subSet(o -> {
+				o.title = R.string.custom_theme_cat_builtin;
+				o.csubtitle = finalSub;
+			});
+			Runnable rebuildBuiltIn = () -> builtInSet.configure(
+					sub -> buildBuiltInLoadItems(a, sub, isAutoPrefs, themePref));
+			onEnterRefresh.put(builtInSet, rebuildBuiltIn);
+			rebuildBuiltIn.run();
+		}
+	}
+
+	private void addPresetCategorySubmenu(MainActivityDelegate a,
+										  PreferenceSet parentSet,
+										  int parentRowIdx,
+										  @StringRes int categoryTitleRes,
+										  List<CustomThemeManager.Palette> items,
+										  boolean isCustomSelected,
+										  CustomThemeManager.Palette active,
+										  boolean isAutoPrefs,
+										  Pref<IntSupplier> themePref) {
+		Context ctx = a.getContext();
+		CustomThemeManager.Palette preview = items.get(0);
+		boolean containsActive = false;
+		for (CustomThemeManager.Palette p : items) {
+			if (isCustomSelected && active.name.equalsIgnoreCase(p.name)) {
+				containsActive = true;
+				preview = p;
+				break;
+			}
+		}
+		if (swatchDecoration != null) {
+			swatchDecoration.registerFixedRow(parentSet, parentRowIdx, preview.getPreviewStripColors());
+		}
+		String countSub = ctx.getString(R.string.custom_theme_cat_count, items.size());
+		String finalSub = containsActive
+				? ctx.getString(R.string.custom_theme_preset_active) + " • " + countSub
+				: countSub;
+
+		PreferenceSet catSet = parentSet.subSet(o -> {
+			o.title = categoryTitleRes;
+			o.csubtitle = finalSub;
+		});
+		Runnable rebuildCat = () -> catSet.configure(
+				sub -> buildCategoryPresetItems(a, sub, categoryTitleRes, isAutoPrefs, themePref));
+		onEnterRefresh.put(catSet, rebuildCat);
+		rebuildCat.run();
+	}
+
+	private void buildCategoryPresetItems(MainActivityDelegate a,
+										  PreferenceSet s,
+										  @StringRes int categoryTitleRes,
+										  boolean isAutoPrefs,
+										  Pref<IntSupplier> themePref) {
+		if (swatchDecoration != null) {
+			swatchDecoration.clearSet(s);
+		}
+		Context ctx = a.getContext();
+		int selectedThemePref = a.getPrefs().getIntPref(themePref);
+		boolean isSolarMode = (selectedThemePref == MainActivityPrefs.THEME_SOLAR_TERM);
+		boolean isCustomSelected = (selectedThemePref == MainActivityPrefs.THEME_CUSTOM) || isSolarMode;
+		CustomThemeManager.Palette active = isSolarMode
+				? CustomThemeManager.resolveTodaySolarTermPalette(isAutoPrefs)
+				: CustomThemeManager.getActiveCustomPalette(isAutoPrefs);
+		boolean isUserSavedCat = (categoryTitleRes == R.string.custom_theme_cat_saved);
+
+		List<CustomThemeManager.Palette> filtered = new ArrayList<>();
+		for (CustomThemeManager.Palette p : CustomThemeManager.getSavedPresets()) {
+			CuratedThemeCatalog.Category cat = CuratedThemeCatalog.getCategoryForName(p.name);
+			if (isUserSavedCat) {
+				if (cat == null) filtered.add(p);
+			} else if (cat != null && cat.titleRes == categoryTitleRes) {
+				filtered.add(p);
+			}
+		}
+
+		int rowIdx = 0;
+		for (CustomThemeManager.Palette preset : filtered) {
 			if (swatchDecoration != null) {
 				swatchDecoration.registerFixedRow(s, rowIdx, preset.getPreviewStripColors());
 			}
 			boolean isCurrent = isCustomSelected && active.name.equalsIgnoreCase(preset.name);
-			String tag = CustomThemeManager.isCuratedPresetName(preset.name)
-					? ctx.getString(R.string.custom_theme_preset_curated_tag)
-					: ctx.getString(R.string.custom_theme_preset_saved_tag);
-			String subText = isCurrent
-					? ctx.getString(R.string.custom_theme_preset_active) + " • " + tag
-					: tag;
+			boolean isTodaySolar = (categoryTitleRes == R.string.custom_theme_cat_solar_terms)
+					&& CuratedThemeCatalog.isCurrentSolarTermName(preset.name);
+			String tag = isUserSavedCat
+					? ctx.getString(R.string.custom_theme_preset_saved_tag)
+					: ctx.getString(R.string.custom_theme_preset_curated_tag);
+			StringBuilder subBuilder = new StringBuilder();
+			if (isCurrent) {
+				subBuilder.append(ctx.getString(R.string.custom_theme_preset_active)).append(" • ");
+			}
+			if (isTodaySolar) {
+				subBuilder.append(ctx.getString(R.string.custom_theme_solar_today)).append(" • ");
+			}
+			subBuilder.append(tag);
+			String subText = subBuilder.toString();
+
 			s.addButton(o -> {
 				o.ctitle = preset.name;
 				o.csubtitle = subText;
 				o.onClick = () -> {
 					CustomThemeManager.saveActiveCustomPalette(isAutoPrefs, preset.copy());
 					ensureCustomThemeActive(a, themePref);
-					refreshSubmenuInPlace(a, s, sub -> buildLoadPresetItems(a, sub, isAutoPrefs, themePref));
+					refreshSubmenuInPlace(a, s,
+							sub -> buildCategoryPresetItems(a, sub, categoryTitleRes, isAutoPrefs, themePref));
 				};
 			});
 			rowIdx++;
 		}
+	}
 
-		// Built-In XML Themes (with 5-color live preview chips)
-		for (CustomThemeManager.BuiltInThemeInfo info : builtIns) {
+	private void buildBuiltInLoadItems(MainActivityDelegate a,
+									   PreferenceSet s,
+									   boolean isAutoPrefs,
+									   Pref<IntSupplier> themePref) {
+		if (swatchDecoration != null) {
+			swatchDecoration.clearSet(s);
+		}
+		Context ctx = a.getContext();
+		CustomThemeManager.Palette active = CustomThemeManager.getActiveCustomPalette(isAutoPrefs);
+		boolean isCustomSelected = a.getPrefs().getIntPref(themePref) == MainActivityPrefs.THEME_CUSTOM;
+
+		int rowIdx = 0;
+		for (CustomThemeManager.BuiltInThemeInfo info : CustomThemeManager.BUILT_IN_THEMES) {
 			CustomThemeManager.Palette extracted = CustomThemeManager.extractBuiltInPalette(ctx, info.themeId);
 			if (swatchDecoration != null) {
 				swatchDecoration.registerFixedRow(s, rowIdx, extracted.getPreviewStripColors());
@@ -1013,7 +1167,7 @@ public class SettingsFragment extends MainActivityFragment
 				o.onClick = () -> {
 					CustomThemeManager.saveActiveCustomPalette(isAutoPrefs, extracted.copy());
 					ensureCustomThemeActive(a, themePref);
-					refreshSubmenuInPlace(a, s, sub -> buildLoadPresetItems(a, sub, isAutoPrefs, themePref));
+					refreshSubmenuInPlace(a, s, sub -> buildBuiltInLoadItems(a, sub, isAutoPrefs, themePref));
 				};
 			});
 			rowIdx++;
@@ -1028,28 +1182,108 @@ public class SettingsFragment extends MainActivityFragment
 		if (swatchDecoration != null) {
 			swatchDecoration.clearSet(s);
 		}
-		Context ctx = a.getContext();
 		List<CustomThemeManager.Palette> savedPresets = CustomThemeManager.getSavedPresets();
-		int rowIdx = 0;
+		List<CustomThemeManager.Palette> userOnly = new ArrayList<>();
+		Map<CuratedThemeCatalog.Category, List<CustomThemeManager.Palette>> byCategory =
+				new EnumMap<>(CuratedThemeCatalog.Category.class);
+		for (CuratedThemeCatalog.Category cat : CuratedThemeCatalog.Category.values()) {
+			byCategory.put(cat, new ArrayList<>());
+		}
+		for (CustomThemeManager.Palette p : savedPresets) {
+			CuratedThemeCatalog.Category cat = CuratedThemeCatalog.getCategoryForName(p.name);
+			if (cat != null) byCategory.get(cat).add(p);
+			else userOnly.add(p);
+		}
 
-		for (CustomThemeManager.Palette preset : savedPresets) {
+		int rowIdx = 0;
+		if (!userOnly.isEmpty()) {
+			addDeleteCategorySubmenu(a, s, parentSet, rowIdx++, R.string.custom_theme_cat_saved,
+					userOnly, isAutoPrefs, themePref);
+		}
+		for (CuratedThemeCatalog.Category cat : CuratedThemeCatalog.Category.values()) {
+			List<CustomThemeManager.Palette> items = byCategory.get(cat);
+			if (items == null || items.isEmpty()) continue;
+			addDeleteCategorySubmenu(a, s, parentSet, rowIdx++, cat.titleRes,
+					items, isAutoPrefs, themePref);
+		}
+	}
+
+	private void addDeleteCategorySubmenu(MainActivityDelegate a,
+										  PreferenceSet deleteRootSet,
+										  PreferenceSet customRootSet,
+										  int rowIdx,
+										  @StringRes int categoryTitleRes,
+										  List<CustomThemeManager.Palette> items,
+										  boolean isAutoPrefs,
+										  Pref<IntSupplier> themePref) {
+		Context ctx = a.getContext();
+		if (swatchDecoration != null) {
+			swatchDecoration.registerFixedRow(deleteRootSet, rowIdx, items.get(0).getPreviewStripColors());
+		}
+		PreferenceSet catSet = deleteRootSet.subSet(o -> {
+			o.title = categoryTitleRes;
+			o.csubtitle = ctx.getString(R.string.custom_theme_cat_count, items.size());
+		});
+		Runnable rebuildDelCat = () -> catSet.configure(
+				sub -> buildDeleteCategoryItems(a, sub, deleteRootSet, customRootSet, categoryTitleRes, isAutoPrefs, themePref));
+		onEnterRefresh.put(catSet, rebuildDelCat);
+		rebuildDelCat.run();
+	}
+
+	private void buildDeleteCategoryItems(MainActivityDelegate a,
+										  PreferenceSet s,
+										  PreferenceSet deleteRootSet,
+										  PreferenceSet customRootSet,
+										  @StringRes int categoryTitleRes,
+										  boolean isAutoPrefs,
+										  Pref<IntSupplier> themePref) {
+		if (swatchDecoration != null) {
+			swatchDecoration.clearSet(s);
+		}
+		Context ctx = a.getContext();
+		boolean isUserSavedCat = (categoryTitleRes == R.string.custom_theme_cat_saved);
+
+		List<CustomThemeManager.Palette> filtered = new ArrayList<>();
+		for (CustomThemeManager.Palette p : CustomThemeManager.getSavedPresets()) {
+			CuratedThemeCatalog.Category cat = CuratedThemeCatalog.getCategoryForName(p.name);
+			if (isUserSavedCat) {
+				if (cat == null) filtered.add(p);
+			} else if (cat != null && cat.titleRes == categoryTitleRes) {
+				filtered.add(p);
+			}
+		}
+
+		int rowIdx = 0;
+		for (CustomThemeManager.Palette preset : filtered) {
 			if (swatchDecoration != null) {
 				swatchDecoration.registerFixedRow(s, rowIdx, preset.getPreviewStripColors());
 			}
 			String presetName = preset.name;
-			String tag = CustomThemeManager.isCuratedPresetName(presetName)
-					? ctx.getString(R.string.custom_theme_preset_curated_tag)
-					: ctx.getString(R.string.custom_theme_preset_saved_tag);
+			String tag = isUserSavedCat
+					? ctx.getString(R.string.custom_theme_preset_saved_tag)
+					: ctx.getString(R.string.custom_theme_preset_curated_tag);
 			s.addButton(o -> {
 				o.ctitle = presetName;
 				o.csubtitle = tag;
 				o.onClick = () -> {
 					CustomThemeManager.deletePreset(presetName);
-					if (CustomThemeManager.getSavedPresets().isEmpty()) {
-						if (adapter != null) adapter.setPreferenceSet(parentSet);
+					boolean anyLeftInCat = false;
+					List<CustomThemeManager.Palette> remaining = CustomThemeManager.getSavedPresets();
+					for (CustomThemeManager.Palette p : remaining) {
+						CuratedThemeCatalog.Category c = CuratedThemeCatalog.getCategoryForName(p.name);
+						if ((isUserSavedCat && c == null)
+								|| (!isUserSavedCat && c != null && c.titleRes == categoryTitleRes)) {
+							anyLeftInCat = true;
+							break;
+						}
+					}
+					if (remaining.isEmpty()) {
+						if (adapter != null) adapter.setPreferenceSet(customRootSet);
+					} else if (!anyLeftInCat) {
+						if (adapter != null) adapter.setPreferenceSet(deleteRootSet);
 					} else {
-						refreshSubmenuInPlace(a, s,
-								sub -> buildDeletePresetItems(a, sub, parentSet, isAutoPrefs, themePref));
+						refreshSubmenuInPlace(a, s, sub -> buildDeleteCategoryItems(
+								a, sub, deleteRootSet, customRootSet, categoryTitleRes, isAutoPrefs, themePref));
 					}
 				};
 			});
@@ -1073,7 +1307,10 @@ public class SettingsFragment extends MainActivityFragment
 			o.title = zoneTitleRes;
 			o.subtitle = zoneSubtitleRes;
 		});
-		zoneSet.configure(sub -> buildZoneSlotItems(a, sub, isAutoPrefs, themePref, slotIds, slotTitleRes));
+		Runnable rebuildZone = () -> zoneSet.configure(
+				sub -> buildZoneSlotItems(a, sub, isAutoPrefs, themePref, slotIds, slotTitleRes));
+		onEnterRefresh.put(zoneSet, rebuildZone);
+		rebuildZone.run();
 	}
 
 	private void buildZoneSlotItems(MainActivityDelegate a,
