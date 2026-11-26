@@ -56,9 +56,10 @@
     <string name="theme_purple">Purple</string>
     <string name="theme_classic">Classic</string>
 
-    <!-- Custom Theme & Startup Randomizer -->
+    <!-- Custom Theme, Startup Randomizer & 24 Solar Terms -->
     <string name="theme_custom">Custom</string>
     <string name="theme_random">Random (On Startup)</string>
+    <string name="theme_solar_term">Auto: 24 Solar Terms (二十四节令)</string>
     <string name="custom_theme_customize">Customize Theme</string>
     <string name="custom_theme_customize_sub">Edit colors, copy built-in themes, or manage presets</string>
     <string name="custom_theme_load_preset">Load Base / Preset</string>
@@ -66,8 +67,30 @@
     <string name="custom_theme_save_preset">Save Custom Preset</string>
     <string name="custom_theme_save_preset_sub">Save current colors as a reusable theme</string>
     <string name="custom_theme_delete_preset">Delete Saved Preset</string>
+    <string name="custom_theme_delete_preset_sub">Remove a saved or curated theme preset</string>
     <string name="custom_theme_preset_name">Preset Name</string>
     <string name="custom_theme_preset_saved">Saved theme preset: %1$s</string>
+    <string name="custom_theme_restore_curated">Restore 100 Curated Themes</string>
+    <string name="custom_theme_restore_curated_sub">Restore all 100 curated themes without removing yours</string>
+    <string name="custom_theme_curated_restored">Restored 100 curated themes</string>
+    <string name="custom_theme_preset_active">Active</string>
+    <string name="custom_theme_solar_today">Today</string>
+    <string name="custom_theme_preset_builtin_tag">Built-in theme</string>
+    <string name="custom_theme_preset_curated_tag">Curated theme</string>
+    <string name="custom_theme_preset_saved_tag">Saved preset</string>
+
+    <!-- 100 Curated Theme Categories -->
+    <string name="custom_theme_cat_saved">My Saved Presets</string>
+    <string name="custom_theme_cat_builtin">Built-In Themes</string>
+    <string name="custom_theme_cat_classics">World Iconic Palettes</string>
+    <string name="custom_theme_cat_solar_terms">24 Solar Terms • 二十四节令</string>
+    <string name="custom_theme_cat_seasons">Four Seasons • 四季</string>
+    <string name="custom_theme_cat_festivals">World Festivals &amp; Holidays</string>
+    <string name="custom_theme_cat_automotive">Automotive &amp; Motorsport</string>
+    <string name="custom_theme_cat_gemstones">Permata Gemstones &amp; Luxury</string>
+    <string name="custom_theme_cat_nature">Nature, Cosmos &amp; Landmarks</string>
+    <string name="custom_theme_cat_studio">Studio, Vibes &amp; Daylight</string>
+    <string name="custom_theme_cat_count">%1$d themes</string>
 
     <!-- Custom Theme Zones -->
     <string name="custom_theme_zone_window">Main Screen (Window)</string>
@@ -100,14 +123,6 @@
     <string name="custom_theme_reset_swatches">Reset 100</string>
     <string name="custom_theme_wheel_apply">Apply Color</string>
     <string name="custom_theme_wheel_back">Back to Swatches</string>
-<string name="custom_theme_restore_curated">Restore Curated Themes</string>
-    <string name="custom_theme_restore_curated_sub">Restore the 10 curated presets without removing yours</string>
-    <string name="custom_theme_curated_restored">Restored 10 curated themes</string>
-    <string name="custom_theme_delete_preset_sub">Remove a saved or curated theme preset</string>
-    <string name="custom_theme_preset_active">Active</string>
-    <string name="custom_theme_preset_builtin_tag">Built-in theme</string>
-    <string name="custom_theme_preset_curated_tag">Curated theme</string>
-    <string name="custom_theme_preset_saved_tag">Saved preset</string>
 
     <string name="nav_bar_pos">Navigation bar position</string>
     <string name="nav_bar_pos_sub">Current position: %1$s</string>
