@@ -33,6 +33,7 @@ public interface MainActivityPrefs
 	int THEME_CLASSIC = 6;
 	int THEME_CUSTOM = 7;
 	int THEME_RANDOM = 8;
+	int THEME_SOLAR_TERM = 9;
 
 	int CLOCK_POS_NONE = 0;
 	int CLOCK_POS_LEFT = 1;
@@ -40,7 +41,7 @@ public interface MainActivityPrefs
 	int CLOCK_POS_CENTER = 3;
 
 	Pref<IntSupplier> THEME_MAIN = Pref.i("THEME_MAIN", THEME_CLASSIC);
-Pref<Supplier<String>> CUSTOM_THEME_ACTIVE = Pref.s("CUSTOM_THEME_ACTIVE", "");
+	Pref<Supplier<String>> CUSTOM_THEME_ACTIVE = Pref.s("CUSTOM_THEME_ACTIVE", "");
 	Pref<Supplier<String>> CUSTOM_THEME_PRESETS = Pref.s("CUSTOM_THEME_PRESETS", "");
 	Pref<Supplier<String>> CUSTOM_COLOR_SWATCHES = Pref.s("CUSTOM_COLOR_SWATCHES", "");
 
