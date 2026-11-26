@@ -77,6 +77,7 @@ import my.app.permata.media.lib.DefaultMediaLib;
 import my.app.permata.media.lib.MediaLib;
 import my.app.permata.media.lib.MediaLib.PlayableItem;
 import my.app.permata.media.pref.PlaybackControlPrefs;
+import my.app.permata.ui.activity.MainActivity;
 import my.app.permata.util.Utils;
 import my.app.utils.app.App;
 import my.app.utils.log.Log;
@@ -94,6 +95,8 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 	public static final String INTENT_ATTR_NOTIF_COLOR = "my.app.permata.notif.color";
 	public static final String DEFAULT_NOTIF_COLOR = "#3D2562";
 	private static final String ANCHOR_METADATA_TITLE = "IHU Web Mode Active";
+	private static final String ACTION_CAR_CONNECTION_UPDATED =
+			"androidx.car.app.connection.action.CAR_CONNECTION_UPDATED";
 	private static final String CONTENT_STYLE_SUPPORTED = "android.media.browse.CONTENT_STYLE_SUPPORTED";
 	private static final String CONTENT_STYLE_PLAYABLE_HINT = "android.media.browse.CONTENT_STYLE_PLAYABLE_HINT";
 	private static final String CONTENT_STYLE_BROWSABLE_HINT = "android.media.browse.CONTENT_STYLE_BROWSABLE_HINT";
@@ -169,6 +172,12 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 		}
 	};
 
+	private final Runnable unbindRecheckRunnable = () -> {
+		if (!isTeardownActive) {
+			evaluateConnectionState();
+		}
+	};
+
 	private final Runnable postDuckSettleRunnable = () -> {
 		if (isTeardownActive || session == null) return;
 		if (!isCarOrBluetoothActive() || isCallOrRingtoneActive()) return;
@@ -199,6 +208,7 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 		lifecycleHandler.removeCallbacks(manualSwipeRunnable);
 		lifecycleHandler.removeCallbacks(hardwareDropRunnable);
 		lifecycleHandler.removeCallbacks(becomingNoisyRecheckRunnable);
+		lifecycleHandler.removeCallbacks(unbindRecheckRunnable);
 	}
 
 	private boolean isBluetoothA2dpActive() {
@@ -238,6 +248,7 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 		var app = PermataApplication.get();
 		if (app != null && app.isMirroringMode()) return "[MIRROR]";
 		if (app != null && app.isConnectedToAuto()) return "[CAR]";
+		if (callback != null && callback.isCarConnected()) return "[CAR]";
 		if (isBluetoothA2dpActive()) return "[BT]";
 		if (isForYouBrowseSession) return "[FOR_YOU]";
 		return "[SVC]";
@@ -245,7 +256,8 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 
 	private String connectionSnapshot() {
 		var app = PermataApplication.get();
-		boolean auto = app != null && app.isConnectedToAuto();
+		boolean auto = (app != null && app.isConnectedToAuto())
+				|| (callback != null && callback.isCarConnected());
 		boolean mirror = app != null && app.isMirroringMode();
 		boolean bt = isBluetoothA2dpActive();
 		return "auto=" + auto + ", mirror=" + mirror + ", bt=" + bt;
@@ -289,17 +301,21 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 				((PermataMediaServiceAddon) a).onServiceCreate(callback);
 		}
 
-		// [ABSOLUTE ZERO] Register Global Disconnect & BT Monitor
+		// [ABSOLUTE ZERO] Register Global Disconnect & BT Monitor (RECEIVER_EXPORTED for Android Auto broadcasts)
 		disconnectReceiver = new BroadcastReceiver() {
 			@Override
 			public void onReceive(Context context, Intent intent) {
-				String action = intent.getAction();
+				String action = intent != null ? intent.getAction() : null;
 				if (action != null) {
 					boolean isBtEvent = android.bluetooth.BluetoothDevice.ACTION_ACL_CONNECTED.equals(action)
 							|| android.bluetooth.BluetoothDevice.ACTION_ACL_DISCONNECTED.equals(action);
 					String tag = isBtEvent ? "[BT]" : sessionTag();
 					Log.i(tag + "[LIFECYCLE] OS Connection Broadcast | action=" + action + ", " + connectionSnapshot());
-					evaluateConnectionState();
+					if (ACTION_CAR_CONNECTION_UPDATED.equals(action) && callback != null) {
+						callback.refreshCarConnection();
+					} else {
+						evaluateConnectionState();
+					}
 					if (AudioManager.ACTION_AUDIO_BECOMING_NOISY.equals(action)) {
 						lifecycleHandler.removeCallbacks(becomingNoisyRecheckRunnable);
 						lifecycleHandler.postDelayed(becomingNoisyRecheckRunnable, 450L);
@@ -311,13 +327,9 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 		disconnectFilter.addAction(AudioManager.ACTION_AUDIO_BECOMING_NOISY);
 		disconnectFilter.addAction(android.bluetooth.BluetoothDevice.ACTION_ACL_CONNECTED);
 		disconnectFilter.addAction(android.bluetooth.BluetoothDevice.ACTION_ACL_DISCONNECTED);
-		disconnectFilter.addAction("androidx.car.app.connection.action.CAR_CONNECTION_UPDATED");
+		disconnectFilter.addAction(ACTION_CAR_CONNECTION_UPDATED);
 
-		if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-			registerReceiver(disconnectReceiver, disconnectFilter, Context.RECEIVER_NOT_EXPORTED);
-		} else {
-			registerReceiver(disconnectReceiver, disconnectFilter);
-		}
+		ContextCompat.registerReceiver(this, disconnectReceiver, disconnectFilter, ContextCompat.RECEIVER_EXPORTED);
 
 		if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
 			try {
@@ -351,7 +363,22 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 		}
 	}
 
-	// [ABSOLUTE ZERO] Evaluates if the phone has an active link to the car
+	void onCarConnectionChanged(boolean connected) {
+		if (isTeardownActive) return;
+		if (connected) {
+			hasEstablishedSession = true;
+			if (isHardwareDropCountdownActive) {
+				Log.i("[CAR][DECISION] Car Connection Active | " + connectionSnapshot()
+						+ " -> action=CANCEL_TEARDOWN_TIMERS");
+			}
+			clearTeardownTimers();
+		} else if (hasEstablishedSession) {
+			lifecycleHandler.removeCallbacks(unbindRecheckRunnable);
+			lifecycleHandler.postDelayed(unbindRecheckRunnable, 500L);
+		}
+	}
+
+	// [ABSOLUTE ZERO] Evaluates if the phone has an active Car UI / Mirror / BT link
 	private boolean isCarOrBluetoothActive() {
 		boolean active = false;
 		PermataApplication app = PermataApplication.get();
@@ -367,15 +394,27 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 
 	// [ABSOLUTE ZERO] Triggers the 10-second death timer if the hardware connection drops
 	private void evaluateConnectionState() {
-		if (isCarOrBluetoothActive()) {
-			Log.i(sessionTag() + "[DECISION] Connection Active | " + connectionSnapshot()
-					+ " -> action=CANCEL_TEARDOWN_TIMERS");
+		boolean activeLink = isCarOrBluetoothActive() || (callback != null && callback.isCarConnected());
+		if (activeLink) {
+			hasEstablishedSession = true;
+			if (isHardwareDropCountdownActive) {
+				Log.i(sessionTag() + "[DECISION] Connection Active | " + connectionSnapshot()
+						+ " -> action=CANCEL_TEARDOWN_TIMERS");
+			}
 			clearTeardownTimers();
 		} else {
+			if (MainActivity.getActiveInstance() != null) {
+				clearTeardownTimers();
+				return;
+			}
+			if (callback != null && callback.isPlaying()) {
+				clearTeardownTimers();
+				return;
+			}
 			// Only trigger the 10-second hardware drop if a session was actually established first
 			if (hasEstablishedSession && !isHardwareDropCountdownActive) {
 				isHardwareDropCountdownActive = true;
-				Log.w("[BT][DECISION] Hardware/BT Session Lost | " + connectionSnapshot()
+				Log.w(sessionTag() + "[DECISION] Hardware/BT Session Lost | " + connectionSnapshot()
 						+ " -> action=START_10S_ABSOLUTE_ZERO_COUNTDOWN");
 				lifecycleHandler.removeCallbacks(manualSwipeRunnable);
 				lifecycleHandler.removeCallbacks(hardwareDropRunnable);
@@ -390,6 +429,7 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 		isTeardownActive = true;
 		lifecycleHandler.removeCallbacks(postDuckSettleRunnable);
 		lifecycleHandler.removeCallbacks(becomingNoisyRecheckRunnable);
+		lifecycleHandler.removeCallbacks(unbindRecheckRunnable);
 		Log.w(sessionTag() + "[LIFECYCLE] Nuclear Teardown Executing | " + connectionSnapshot());
 
 		// 1. Force restore physical phone attributes (Brightness, Orientation, Overlays)
@@ -397,7 +437,12 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 			MirrorDisplay.close();
 		} catch (Exception ignored) {}
 
-		// 2. Release Audio hardware hooks
+		// 2. Stop any active media engine non-blockingly & release Audio hardware hooks
+		if (callback != null) {
+			try {
+				callback.stopImmediate();
+			} catch (Exception ignored) {}
+		}
 		stopSilentAudioAnchor();
 		releaseAudioFocus();
 
@@ -425,7 +470,10 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 			stopService(new Intent(this, my.app.permata.auto.XposedEventDispatcherService.class));
 		} catch (Exception ignored) {}
 
-		// 5. Purge UI and Notifications
+		// 5. Purge Foreground State and Notifications
+		try {
+			stopForeground(true);
+		} catch (Exception ignored) {}
 		try {
 			NotificationManagerCompat.from(this).cancel(NOTIF_ID);
 		} catch (Exception ignored) {}
@@ -485,8 +533,9 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 	public void onTaskRemoved(Intent rootIntent) {
 		super.onTaskRemoved(rootIntent);
 
-		// If swiped away but still connected to car/BT, survive!
-		if (isCarOrBluetoothActive()) {
+		// If swiped away but still connected to car/BT or actively playing, survive!
+		if (isCarOrBluetoothActive()
+				|| (callback != null && (callback.isCarConnected() || callback.isPlaying()))) {
 			Log.i(sessionTag() + "[DECISION] onTaskRemoved | " + connectionSnapshot()
 					+ " -> action=PRESERVE_AUDIO_SESSION");
 			return;
@@ -505,6 +554,9 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 
 			if (ACTION_HIJACK_FOCUS.equals(action)) {
 				isCarOrBluetoothActive();
+				if (callback != null) {
+					callback.cancelPendingPrepare();
+				}
 				Log.i(sessionTag() + "[LIFECYCLE] onStartCommand | action=HIJACK_FOCUS, " + connectionSnapshot());
 				// Cancel Absolute Zero shutdown and revive session if focus is requested again
 				isTeardownActive = false;
@@ -512,7 +564,7 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 				hijackCarAudioAndSteering();
 			} else if (!isTeardownActive) {
 				if (ACTION_FORCE_SHUTDOWN.equals(action)) {
-					// Prevent accidental suicide if a BT session is still active
+					// Prevent accidental suicide if a Car UI / Mirror / BT session is still active
 					if (isCarOrBluetoothActive()) {
 						Log.i(sessionTag() + "[DECISION] FORCE_SHUTDOWN Blocked | " + connectionSnapshot()
 								+ " -> action=PRESERVE_CAR_BT_SESSION");
@@ -523,6 +575,9 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 					executeNuclearTeardown();
 					return START_NOT_STICKY;
 				} else if (ACTION_RECLAIM_SESSION.equals(action)) {
+					if (callback != null) {
+						callback.cancelPendingPrepare();
+					}
 					Log.i(sessionTag() + "[AUDIO] onStartCommand | action=RECLAIM_SESSION");
 					if (session != null) {
 						session.setActive(true);
@@ -532,6 +587,9 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 					if (isCallOrRingtoneActive()) {
 						Log.i(sessionTag() + "[DECISION] Aggressive Reclaim Blocked | reason=CALL_OR_RINGTONE_ACTIVE");
 					} else {
+						if (callback != null) {
+							callback.cancelPendingPrepare();
+						}
 						if (isCarOrBluetoothActive()) {
 							clearTeardownTimers();
 						}
@@ -663,6 +721,9 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 			return;
 		}
 
+		if (callback != null) {
+			callback.cancelPendingPrepare();
+		}
 		lifecycleHandler.removeCallbacks(postDuckSettleRunnable);
 
 		if (PermataApplication.get().isMirroringMode() && PermataApplication.get().isConnectedToAuto()) {
@@ -707,6 +768,10 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 	private void hijackCarAudioAndSteering() {
 		if (audioHardwareExecutor == null || audioHardwareExecutor.isShutdown()) return;
 		if (isTeardownActive) return;
+
+		if (callback != null) {
+			callback.cancelPendingPrepare();
+		}
 
 		if (session != null) {
 			session.setMetadata(new MediaMetadataCompat.Builder()
@@ -902,6 +967,10 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 			var poi = PermataApplication.get().getAddonManager().getAddon("poi");
 			if (poi != null) poi.stop();
 		}
+		if (ACTION_MEDIA_SERVICE.equals(action) && hasEstablishedSession && !isTeardownActive) {
+			lifecycleHandler.removeCallbacks(unbindRecheckRunnable);
+			lifecycleHandler.postDelayed(unbindRecheckRunnable, 500L);
+		}
 		return super.onUnbind(intent);
 	}
 
@@ -950,7 +1019,12 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 				if (isForYouBrowseSession) {
 					Log.i("[FOR_YOU][PLAYBACK] State Changed | state=" + st + ", action=STOP_FOREGROUND");
 				}
-				stopForeground(true);
+				try {
+					stopForeground(true);
+				} catch (Exception ignored) {}
+				try {
+					NotificationManagerCompat.from(this).cancel(NOTIF_ID);
+				} catch (Exception ignored) {}
 			}
 			case STATE_PAUSED -> {
 				if (isForYouBrowseSession) {
@@ -1087,9 +1161,21 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 		intentReceiver = new BroadcastReceiver() {
 			@Override
 			public void onReceive(Context context, Intent intent) {
-				if (intent != null && intent.getAction() != null && callback != null) {
-					if (isTeardownActive) return;
-					callback.onCustomAction(intent.getAction(), intent.getExtras());
+				if (intent == null || intent.getAction() == null || callback == null || isTeardownActive) {
+					return;
+				}
+				String action = intent.getAction();
+				switch (action) {
+					case INTENT_PLAY -> callback.onPlay();
+					case INTENT_PAUSE -> callback.onPause();
+					case INTENT_STOP -> callback.onStop();
+					case INTENT_PREV -> callback.onSkipToPrevious();
+					case INTENT_NEXT -> callback.onSkipToNext();
+					case INTENT_RW -> callback.onRewind();
+					case INTENT_FF -> callback.onFastForward();
+					case INTENT_FAVORITE_ADD -> callback.favoriteAddRemove(true);
+					case INTENT_FAVORITE_REMOVE -> callback.favoriteAddRemove(false);
+					default -> callback.onCustomAction(action, intent.getExtras());
 				}
 			}
 		};
@@ -1105,11 +1191,7 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 		filter.addAction(INTENT_FAVORITE_ADD);
 		filter.addAction(INTENT_FAVORITE_REMOVE);
 
-		if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-			registerReceiver(intentReceiver, filter, Context.RECEIVER_NOT_EXPORTED);
-		} else {
-			registerReceiver(intentReceiver, filter);
-		}
+		ContextCompat.registerReceiver(this, intentReceiver, filter, ContextCompat.RECEIVER_NOT_EXPORTED);
 	}
 
 	private PendingIntent pi(String action) {
