@@ -45,8 +45,10 @@ import java.io.OutputStream;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Date;
+import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.regex.Pattern;
 import java.util.zip.ZipInputStream;
 import java.util.zip.ZipOutputStream;
@@ -149,6 +151,7 @@ public class SettingsFragment extends MainActivityFragment
 			R.string.custom_theme_slot_menu_icons
 	};
 
+	private final Map<PreferenceSet, Runnable> onEnterRefresh = new IdentityHashMap<>();
 	private PreferenceViewAdapter adapter;
 	private RecyclerView listView;
 	private CustomThemeManager.SwatchItemDecoration swatchDecoration;
@@ -220,6 +223,7 @@ public class SettingsFragment extends MainActivityFragment
 			listView.removeItemDecoration(swatchDecoration);
 		}
 		if (adapter != null) adapter.onDestroy();
+		onEnterRefresh.clear();
 		adapter = null;
 		listView = null;
 		swatchDecoration = null;
@@ -441,7 +445,6 @@ public class SettingsFragment extends MainActivityFragment
 				o.formatSubtitle = true;
 			});
 		}
-
 
 		sub1 = set.subSet(o -> o.title = R.string.playback_settings);
 		sub1.addBooleanPref(o -> {
@@ -734,6 +737,11 @@ public class SettingsFragment extends MainActivityFragment
 		return new PreferenceViewAdapter(set) {
 			@Override
 			public void setPreferenceSet(PreferenceSet set) {
+				PreferenceSet prev = getPreferenceSet();
+				if (set != null && set != prev) {
+					Runnable refresh = onEnterRefresh.get(set);
+					if (refresh != null) refresh.run();
+				}
 				super.setPreferenceSet(set);
 				if (swatchDecoration != null) swatchDecoration.setActiveSet(set);
 				if (listView != null) listView.invalidateItemDecorations();
@@ -860,7 +868,9 @@ public class SettingsFragment extends MainActivityFragment
 			o.subtitle = R.string.custom_theme_customize_sub;
 		});
 
-		customSet.configure(s -> buildCustomThemeItems(a, s, isAutoPrefs, themePref));
+		Runnable rebuild = () -> customSet.configure(s -> buildCustomThemeItems(a, s, isAutoPrefs, themePref));
+		onEnterRefresh.put(customSet, rebuild);
+		rebuild.run();
 	}
 
 	private void buildCustomThemeItems(MainActivityDelegate a,
@@ -873,15 +883,17 @@ public class SettingsFragment extends MainActivityFragment
 		CustomThemeManager.Palette current = CustomThemeManager.getActiveCustomPalette(isAutoPrefs);
 		int rowIdx = 0;
 
-		// 1. Load Base Built-In Theme or User Preset (with active 5-color strip preview)
+		// 1. Load Base Built-In, Curated, or Saved Preset (submenu with 5-color preview chips)
 		if (swatchDecoration != null) {
 			swatchDecoration.registerRow(s, rowIdx, isAutoPrefs, SUMMARY_SLOTS);
 		}
-		s.addButton(o -> {
+		PreferenceSet loadSet = s.subSet(o -> {
 			o.title = R.string.custom_theme_load_preset;
 			o.csubtitle = current.name;
-			o.onClick = () -> showLoadPresetMenu(a, s, isAutoPrefs, themePref);
 		});
+		Runnable rebuildLoad = () -> loadSet.configure(sub -> buildLoadPresetItems(a, sub, isAutoPrefs, themePref));
+		onEnterRefresh.put(loadSet, rebuildLoad);
+		rebuildLoad.run();
 		rowIdx++;
 
 		// 2. Save Current Custom Palette as Named Preset
@@ -892,17 +904,33 @@ public class SettingsFragment extends MainActivityFragment
 		});
 		rowIdx++;
 
-		// 3. Delete Saved User Preset (only shown when at least 1 saved preset exists)
+		// 3. Delete Saved / Curated Preset (submenu with 5-color preview chips)
 		List<CustomThemeManager.Palette> savedPresets = CustomThemeManager.getSavedPresets();
 		if (!savedPresets.isEmpty()) {
-			s.addButton(o -> {
+			PreferenceSet deleteSet = s.subSet(o -> {
 				o.title = R.string.custom_theme_delete_preset;
-				o.onClick = () -> showDeletePresetMenu(a, s, isAutoPrefs, themePref, savedPresets);
+				o.subtitle = R.string.custom_theme_delete_preset_sub;
 			});
+			Runnable rebuildDelete = () -> deleteSet.configure(
+					sub -> buildDeletePresetItems(a, sub, s, isAutoPrefs, themePref));
+			onEnterRefresh.put(deleteSet, rebuildDelete);
+			rebuildDelete.run();
 			rowIdx++;
 		}
 
-		// 4. Five Logical Theme Zones (each Zone row displays all of its slot color chips)
+		// 4. Restore 10 Curated Themes (non-destructive to user-saved presets)
+		s.addButton(o -> {
+			o.title = R.string.custom_theme_restore_curated;
+			o.subtitle = R.string.custom_theme_restore_curated_sub;
+			o.onClick = () -> {
+				CustomThemeManager.restoreCuratedPresets();
+				refreshSubmenuInPlace(a, s, sub -> buildCustomThemeItems(a, sub, isAutoPrefs, themePref));
+				UiUtils.showInfo(a.getContext(), a.getContext().getString(R.string.custom_theme_curated_restored));
+			};
+		});
+		rowIdx++;
+
+		// 5. Five Logical Theme Zones (each Zone row displays all of its slot color chips)
 		addZoneSubmenu(a, s, rowIdx++, isAutoPrefs, themePref,
 				R.string.custom_theme_zone_window, R.string.custom_theme_zone_window_sub,
 				ZONE_WINDOW_SLOTS, ZONE_WINDOW_TITLES);
@@ -926,6 +954,107 @@ public class SettingsFragment extends MainActivityFragment
 		addColorSlotButton(a, s, isAutoPrefs, themePref, current,
 				CustomThemeManager.SLOT_ACCENT, R.string.custom_theme_slot_accent,
 				sub -> buildCustomThemeItems(a, sub, isAutoPrefs, themePref));
+	}
+
+	private void buildLoadPresetItems(MainActivityDelegate a,
+									  PreferenceSet s,
+									  boolean isAutoPrefs,
+									  Pref<IntSupplier> themePref) {
+		if (swatchDecoration != null) {
+			swatchDecoration.clearSet(s);
+		}
+		Context ctx = a.getContext();
+		CustomThemeManager.Palette active = CustomThemeManager.getActiveCustomPalette(isAutoPrefs);
+		boolean isCustomSelected = a.getPrefs().getIntPref(themePref) == MainActivityPrefs.THEME_CUSTOM;
+		List<CustomThemeManager.Palette> savedPresets = CustomThemeManager.getSavedPresets();
+		List<CustomThemeManager.BuiltInThemeInfo> builtIns = CustomThemeManager.BUILT_IN_THEMES;
+		int rowIdx = 0;
+
+		// Curated & User-Saved Presets first (with 5-color live preview chips)
+		for (CustomThemeManager.Palette preset : savedPresets) {
+			if (swatchDecoration != null) {
+				swatchDecoration.registerFixedRow(s, rowIdx, preset.getPreviewStripColors());
+			}
+			boolean isCurrent = isCustomSelected && active.name.equalsIgnoreCase(preset.name);
+			String tag = CustomThemeManager.isCuratedPresetName(preset.name)
+					? ctx.getString(R.string.custom_theme_preset_curated_tag)
+					: ctx.getString(R.string.custom_theme_preset_saved_tag);
+			String subText = isCurrent
+					? ctx.getString(R.string.custom_theme_preset_active) + " • " + tag
+					: tag;
+			s.addButton(o -> {
+				o.ctitle = preset.name;
+				o.csubtitle = subText;
+				o.onClick = () -> {
+					CustomThemeManager.saveActiveCustomPalette(isAutoPrefs, preset.copy());
+					ensureCustomThemeActive(a, themePref);
+					refreshSubmenuInPlace(a, s, sub -> buildLoadPresetItems(a, sub, isAutoPrefs, themePref));
+				};
+			});
+			rowIdx++;
+		}
+
+		// Built-In XML Themes (with 5-color live preview chips)
+		for (CustomThemeManager.BuiltInThemeInfo info : builtIns) {
+			CustomThemeManager.Palette extracted = CustomThemeManager.extractBuiltInPalette(ctx, info.themeId);
+			if (swatchDecoration != null) {
+				swatchDecoration.registerFixedRow(s, rowIdx, extracted.getPreviewStripColors());
+			}
+			String baseName = ctx.getString(info.nameRes);
+			String label = ctx.getString(R.string.custom_theme_builtin_prefix, baseName);
+			boolean isCurrent = isCustomSelected && active.name.equalsIgnoreCase(baseName);
+			String tag = ctx.getString(R.string.custom_theme_preset_builtin_tag);
+			String subText = isCurrent
+					? ctx.getString(R.string.custom_theme_preset_active) + " • " + tag
+					: tag;
+			s.addButton(o -> {
+				o.ctitle = label;
+				o.csubtitle = subText;
+				o.onClick = () -> {
+					CustomThemeManager.saveActiveCustomPalette(isAutoPrefs, extracted.copy());
+					ensureCustomThemeActive(a, themePref);
+					refreshSubmenuInPlace(a, s, sub -> buildLoadPresetItems(a, sub, isAutoPrefs, themePref));
+				};
+			});
+			rowIdx++;
+		}
+	}
+
+	private void buildDeletePresetItems(MainActivityDelegate a,
+										PreferenceSet s,
+										PreferenceSet parentSet,
+										boolean isAutoPrefs,
+										Pref<IntSupplier> themePref) {
+		if (swatchDecoration != null) {
+			swatchDecoration.clearSet(s);
+		}
+		Context ctx = a.getContext();
+		List<CustomThemeManager.Palette> savedPresets = CustomThemeManager.getSavedPresets();
+		int rowIdx = 0;
+
+		for (CustomThemeManager.Palette preset : savedPresets) {
+			if (swatchDecoration != null) {
+				swatchDecoration.registerFixedRow(s, rowIdx, preset.getPreviewStripColors());
+			}
+			String presetName = preset.name;
+			String tag = CustomThemeManager.isCuratedPresetName(presetName)
+					? ctx.getString(R.string.custom_theme_preset_curated_tag)
+					: ctx.getString(R.string.custom_theme_preset_saved_tag);
+			s.addButton(o -> {
+				o.ctitle = presetName;
+				o.csubtitle = tag;
+				o.onClick = () -> {
+					CustomThemeManager.deletePreset(presetName);
+					if (CustomThemeManager.getSavedPresets().isEmpty()) {
+						if (adapter != null) adapter.setPreferenceSet(parentSet);
+					} else {
+						refreshSubmenuInPlace(a, s,
+								sub -> buildDeletePresetItems(a, sub, parentSet, isAutoPrefs, themePref));
+					}
+				};
+			});
+			rowIdx++;
+		}
 	}
 
 	private void addZoneSubmenu(MainActivityDelegate a,
@@ -999,40 +1128,6 @@ public class SettingsFragment extends MainActivityFragment
 		});
 	}
 
-	private void showLoadPresetMenu(MainActivityDelegate a,
-									PreferenceSet s,
-									boolean isAutoPrefs,
-									Pref<IntSupplier> themePref) {
-		Context ctx = a.getContext();
-		List<CustomThemeManager.BuiltInThemeInfo> builtIns = CustomThemeManager.BUILT_IN_THEMES;
-		List<CustomThemeManager.Palette> userPresets = CustomThemeManager.getSavedPresets();
-
-		a.getContextMenu().show(b -> {
-			b.setTitle(R.string.custom_theme_load_preset);
-			int itemIdx = 0;
-
-			for (CustomThemeManager.BuiltInThemeInfo info : builtIns) {
-				String label = ctx.getString(R.string.custom_theme_builtin_prefix, ctx.getString(info.nameRes));
-				b.addItem(UiUtils.getArrayItemId(itemIdx++), label).setHandler(item -> {
-					CustomThemeManager.Palette extracted = CustomThemeManager.extractBuiltInPalette(ctx, info.themeId);
-					CustomThemeManager.saveActiveCustomPalette(isAutoPrefs, extracted);
-					ensureCustomThemeActive(a, themePref);
-					refreshSubmenuInPlace(a, s, sub -> buildCustomThemeItems(a, sub, isAutoPrefs, themePref));
-					return true;
-				});
-			}
-
-			for (CustomThemeManager.Palette preset : userPresets) {
-				b.addItem(UiUtils.getArrayItemId(itemIdx++), preset.name).setHandler(item -> {
-					CustomThemeManager.saveActiveCustomPalette(isAutoPrefs, preset.copy());
-					ensureCustomThemeActive(a, themePref);
-					refreshSubmenuInPlace(a, s, sub -> buildCustomThemeItems(a, sub, isAutoPrefs, themePref));
-					return true;
-				});
-			}
-		});
-	}
-
 	private void promptSaveCustomPreset(MainActivityDelegate a,
 										PreferenceSet s,
 										boolean isAutoPrefs,
@@ -1049,24 +1144,6 @@ public class SettingsFragment extends MainActivityFragment
 					UiUtils.showInfo(a.getContext(),
 							a.getContext().getString(R.string.custom_theme_preset_saved, active.name));
 				});
-	}
-
-	private void showDeletePresetMenu(MainActivityDelegate a,
-									  PreferenceSet s,
-									  boolean isAutoPrefs,
-									  Pref<IntSupplier> themePref,
-									  List<CustomThemeManager.Palette> savedPresets) {
-		a.getContextMenu().show(b -> {
-			b.setTitle(R.string.custom_theme_delete_preset);
-			for (int i = 0; i < savedPresets.size(); i++) {
-				String presetName = savedPresets.get(i).name;
-				b.addItem(UiUtils.getArrayItemId(i), presetName).setHandler(item -> {
-					CustomThemeManager.deletePreset(presetName);
-					refreshSubmenuInPlace(a, s, sub -> buildCustomThemeItems(a, sub, isAutoPrefs, themePref));
-					return true;
-				});
-			}
-		});
 	}
 
 	private void refreshSubmenuInPlace(MainActivityDelegate a,
