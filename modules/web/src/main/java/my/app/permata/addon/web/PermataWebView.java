@@ -113,6 +113,7 @@ public class PermataWebView extends WebView
 		addon.getPreferenceStore().addBroadcastListener(this);
 		getActivity().onSuccess(a -> a.addBroadcastListener(this));
 
+		captureDefaultUaMetadata(s);
 		setDesktopMode(addon, false);
 		setForceDark(addon, false);
 	}
