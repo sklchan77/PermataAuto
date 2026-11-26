@@ -127,7 +127,7 @@ public final class CustomThemeManager {
 	private static final int GRID_ROWS = 10;
 
 	private static final String THEME_META_PREFS = "permata_custom_theme_meta";
-	private static final String KEY_CURATED_V1_SEEDED = "curated_presets_v1_seeded";
+	private static final String KEY_CURATED_V2_SEEDED = "curated_presets_v2_100_seeded";
 	private static volatile boolean curatedSeedChecked = false;
 
 	private enum Zone {
@@ -166,100 +166,6 @@ public final class CustomThemeManager {
 			MainActivityPrefs.THEME_PURPLE,
 			MainActivityPrefs.THEME_CLASSIC
 	};
-
-	// 10 globally renowned, automotive-tuned 14-slot theme presets
-	private static final List<Palette> CURATED_PRESETS = List.of(
-			// 1. Nord
-			new Palette(
-					"Nordic Aurora",
-					0xFF242933, 0xFFECEFF4, 0xFF9BA8BF, 0xFF88C0D0,
-					0xFF2E3440, 0xFFECEFF4, 0xFF88C0D0,
-					0xFF3B4252, 0xFFECEFF4, 0xFF8FBCBB,
-					0xFF333A48, 0xFFE5E9F0, 0xFF81A1C1,
-					0xFF88C0D0
-			),
-			// 2. Tokyo Night
-			new Palette(
-					"Tokyo Midnight",
-					0xFF16161E, 0xFFC0CAF5, 0xFF7882A8, 0xFF7AA2F7,
-					0xFF1F2335, 0xFFE0E6FF, 0xFF7DCFFF,
-					0xFF24283B, 0xFFE0E6FF, 0xFFBB9AF7,
-					0xFF292E42, 0xFFC0CAF5, 0xFF7DCFFF,
-					0xFF7AA2F7
-			),
-			// 3. Catppuccin Mocha
-			new Palette(
-					"Velvet Mocha",
-					0xFF181825, 0xFFCDD6F4, 0xFF9399B2, 0xFFCBA6F7,
-					0xFF1E1E2E, 0xFFCDD6F4, 0xFF89B4FA,
-					0xFF262637, 0xFFF5E0DC, 0xFFF5C2E7,
-					0xFF313244, 0xFFCDD6F4, 0xFF94E2D5,
-					0xFFCBA6F7
-			),
-			// 4. Kanagawa
-			new Palette(
-					"Kanagawa Wave",
-					0xFF16161D, 0xFFDCD7BA, 0xFF9A9682, 0xFF7E9CD8,
-					0xFF1F1F28, 0xFFDCD7BA, 0xFFE6C384,
-					0xFF252535, 0xFFDCD7BA, 0xFF7FB4CA,
-					0xFF2A2A37, 0xFFDCD7BA, 0xFFE6C384,
-					0xFFE6C384
-			),
-			// 5. Dracula
-			new Palette(
-					"Dracula Nocturne",
-					0xFF1E1F29, 0xFFF8F8F2, 0xFF95A2C9, 0xFFBD93F9,
-					0xFF282A36, 0xFFF8F8F2, 0xFF8BE9FD,
-					0xFF343746, 0xFFF8F8F2, 0xFFFF79C6,
-					0xFF383A4B, 0xFFF8F8F2, 0xFF50FA7B,
-					0xFFBD93F9
-			),
-			// 6. Rosé Pine
-			new Palette(
-					"Rosé Pine Dusk",
-					0xFF191724, 0xFFE0DEF4, 0xFF908CAA, 0xFFEBBCBA,
-					0xFF1F1D2E, 0xFFE0DEF4, 0xFFF6C177,
-					0xFF26233A, 0xFFE0DEF4, 0xFFC4A7E7,
-					0xFF2A273F, 0xFFE0DEF4, 0xFF9CCFD8,
-					0xFFEBBCBA
-			),
-			// 7. Gruvbox Dark
-			new Palette(
-					"Gruvbox Amber",
-					0xFF1D2021, 0xFFEBDBB2, 0xFFA89984, 0xFFFABD2F,
-					0xFF282828, 0xFFFBF1C7, 0xFFFE8019,
-					0xFF32302F, 0xFFFBF1C7, 0xFFFABD2F,
-					0xFF3C3836, 0xFFEBDBB2, 0xFF8EC07C,
-					0xFFFE8019
-			),
-			// 8. Solarized Dark
-			new Palette(
-					"Solarized Abyss",
-					0xFF00212B, 0xFFEEE8D5, 0xFF839496, 0xFF2AA198,
-					0xFF002B36, 0xFFFDF6E3, 0xFF268BD2,
-					0xFF073642, 0xFFFDF6E3, 0xFFB58900,
-					0xFF06323D, 0xFFEEE8D5, 0xFF2AA198,
-					0xFF2AA198
-			),
-			// 9. Monokai Pro
-			new Palette(
-					"Monokai Carbon",
-					0xFF221F22, 0xFFFCFCFA, 0xFF939293, 0xFF78DCE8,
-					0xFF2D2A2E, 0xFFFCFCFA, 0xFFFFD866,
-					0xFF38353A, 0xFFFCFCFA, 0xFFFF6188,
-					0xFF403E41, 0xFFFCFCFA, 0xFFA9DC76,
-					0xFFFFD866
-			),
-			// 10. Everforest Dark
-			new Palette(
-					"Everforest Pine",
-					0xFF232A2E, 0xFFD3C6AA, 0xFF9DA9A0, 0xFFA7C080,
-					0xFF2D353B, 0xFFE5DCC5, 0xFF83C092,
-					0xFF343F44, 0xFFE5DCC5, 0xFFDBBC7F,
-					0xFF3D484D, 0xFFD3C6AA, 0xFFA7C080,
-					0xFFA7C080
-			)
-	);
 
 	// 10x10 (100) curated greatest, latest & iconic colors
 	private static final int[] DEFAULT_PALETTE_COLORS = new int[]{
@@ -313,6 +219,12 @@ public final class CustomThemeManager {
 	private static Palette sessionRandomCustomMain;
 	private static Integer sessionRandomThemeAa;
 	private static Palette sessionRandomCustomAa;
+
+	private static int cachedSolarTermIndex = -1;
+	private static String cachedSolarPresetsRaw;
+	private static Palette cachedSolarTermPalette;
+	private static int lastLoggedSolarIndexMain = -1;
+	private static int lastLoggedSolarIndexAa = -1;
 
 	private CustomThemeManager() {
 	}
@@ -605,24 +517,16 @@ public final class CustomThemeManager {
 	}
 
 	// =========================================================================
-	// Storage, Curated Presets & User Presets
+	// Storage, 100 Curated Presets & User Presets
 	// =========================================================================
 
 	@NonNull
 	public static List<Palette> getCuratedPresets() {
-		List<Palette> copies = new ArrayList<>(CURATED_PRESETS.size());
-		for (Palette p : CURATED_PRESETS) {
-			copies.add(p.copy());
-		}
-		return copies;
+		return CuratedThemeCatalog.getAllPalettes();
 	}
 
 	public static boolean isCuratedPresetName(@Nullable String name) {
-		if (name == null) return false;
-		for (Palette p : CURATED_PRESETS) {
-			if (p.name.equalsIgnoreCase(name)) return true;
-		}
-		return false;
+		return CuratedThemeCatalog.isCuratedName(name);
 	}
 
 	private static synchronized void ensureCuratedPresetsSeeded() {
@@ -632,10 +536,10 @@ public final class CustomThemeManager {
 
 		try {
 			SharedPreferences meta = appCtx.getSharedPreferences(THEME_META_PREFS, Context.MODE_PRIVATE);
-			if (!meta.getBoolean(KEY_CURATED_V1_SEEDED, false)) {
+			if (!meta.getBoolean(KEY_CURATED_V2_SEEDED, false)) {
 				List<Palette> merged = new ArrayList<>(readRawSavedPresets());
 				boolean changed = false;
-				for (Palette curated : CURATED_PRESETS) {
+				for (Palette curated : CuratedThemeCatalog.getAllPalettes()) {
 					boolean exists = false;
 					for (Palette existing : merged) {
 						if (existing.name.equalsIgnoreCase(curated.name)) {
@@ -644,34 +548,34 @@ public final class CustomThemeManager {
 						}
 					}
 					if (!exists) {
-						merged.add(curated.copy());
+						merged.add(curated);
 						changed = true;
 					}
 				}
 				if (changed) {
 					persistPresetList(merged);
 				}
-				meta.edit().putBoolean(KEY_CURATED_V1_SEEDED, true).apply();
+				meta.edit().putBoolean(KEY_CURATED_V2_SEEDED, true).apply();
 			}
 			curatedSeedChecked = true;
 		} catch (Exception ex) {
-			Log.w(ex, "Failed seeding curated custom theme presets");
+			Log.w(ex, "Failed seeding 100 curated custom theme presets");
 		}
 	}
 
 	public static synchronized void restoreCuratedPresets() {
 		List<Palette> existing = new ArrayList<>(readRawSavedPresets());
-		for (Palette curated : CURATED_PRESETS) {
+		for (Palette curated : CuratedThemeCatalog.getAllPalettes()) {
 			boolean replaced = false;
 			for (int i = 0; i < existing.size(); i++) {
 				if (existing.get(i).name.equalsIgnoreCase(curated.name)) {
-					existing.set(i, curated.copy());
+					existing.set(i, curated);
 					replaced = true;
 					break;
 				}
 			}
 			if (!replaced) {
-				existing.add(curated.copy());
+				existing.add(curated);
 			}
 		}
 		persistPresetList(existing);
@@ -680,7 +584,7 @@ public final class CustomThemeManager {
 		if (appCtx != null) {
 			appCtx.getSharedPreferences(THEME_META_PREFS, Context.MODE_PRIVATE)
 					.edit()
-					.putBoolean(KEY_CURATED_V1_SEEDED, true)
+					.putBoolean(KEY_CURATED_V2_SEEDED, true)
 					.apply();
 		}
 		curatedSeedChecked = true;
@@ -769,7 +673,7 @@ public final class CustomThemeManager {
 	}
 
 	// =========================================================================
-	// Randomizer & Theme Resolution
+	// Randomizer, 24 Solar Terms Auto-Theme & Theme Resolution
 	// =========================================================================
 
 	public static synchronized void ensureSessionRandomSelected(boolean auto) {
@@ -823,6 +727,9 @@ public final class CustomThemeManager {
 			ensureSessionRandomSelected(auto);
 			return auto ? sessionRandomThemeAa : sessionRandomThemeMain;
 		}
+		if (prefTheme == MainActivityPrefs.THEME_SOLAR_TERM) {
+			return MainActivityPrefs.THEME_CUSTOM;
+		}
 		return prefTheme;
 	}
 
@@ -831,6 +738,9 @@ public final class CustomThemeManager {
 		int prefTheme = MainActivityPrefs.get().getThemePref(auto);
 		if (prefTheme == MainActivityPrefs.THEME_CUSTOM) {
 			return getActiveCustomPalette(auto);
+		}
+		if (prefTheme == MainActivityPrefs.THEME_SOLAR_TERM) {
+			return resolveTodaySolarTermPalette(auto);
 		}
 		if (prefTheme == MainActivityPrefs.THEME_RANDOM) {
 			ensureSessionRandomSelected(auto);
@@ -841,6 +751,44 @@ public final class CustomThemeManager {
 			}
 		}
 		return null;
+	}
+
+	@NonNull
+	public static synchronized Palette resolveTodaySolarTermPalette(boolean auto) {
+		int termIndex = CuratedThemeCatalog.getCurrentSolarTermIndex();
+		String presetsRaw = MainActivityPrefs.get().getStringPref(MainActivityPrefs.CUSTOM_THEME_PRESETS);
+
+		if (cachedSolarTermPalette == null
+				|| cachedSolarTermIndex != termIndex
+				|| !Objects.equals(cachedSolarPresetsRaw, presetsRaw)) {
+			Palette resolved = CuratedThemeCatalog.getSolarTermPalette(termIndex);
+			// Respect user customizations if they edited & re-saved today's Solar Term preset
+			for (Palette saved : getSavedPresets()) {
+				if (saved.name.equalsIgnoreCase(resolved.name)) {
+					resolved = saved.copy();
+					break;
+				}
+			}
+			cachedSolarTermIndex = termIndex;
+			cachedSolarPresetsRaw = presetsRaw;
+			cachedSolarTermPalette = resolved;
+		}
+
+		if (auto) {
+			if (lastLoggedSolarIndexAa != termIndex) {
+				lastLoggedSolarIndexAa = termIndex;
+				Log.i("[CAR][THEME] Auto 24 Solar Term Selected | index=" + termIndex
+						+ " (" + cachedSolarTermPalette.name + ")");
+			}
+		} else {
+			if (lastLoggedSolarIndexMain != termIndex) {
+				lastLoggedSolarIndexMain = termIndex;
+				Log.i("[PHONE][THEME] Auto 24 Solar Term Selected | index=" + termIndex
+						+ " (" + cachedSolarTermPalette.name + ")");
+			}
+		}
+
+		return cachedSolarTermPalette;
 	}
 
 	@StyleRes
