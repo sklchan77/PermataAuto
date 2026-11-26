@@ -100,6 +100,14 @@
     <string name="custom_theme_reset_swatches">Reset 100</string>
     <string name="custom_theme_wheel_apply">Apply Color</string>
     <string name="custom_theme_wheel_back">Back to Swatches</string>
+<string name="custom_theme_restore_curated">Restore Curated Themes</string>
+    <string name="custom_theme_restore_curated_sub">Restore the 10 curated presets without removing yours</string>
+    <string name="custom_theme_curated_restored">Restored 10 curated themes</string>
+    <string name="custom_theme_delete_preset_sub">Remove a saved or curated theme preset</string>
+    <string name="custom_theme_preset_active">Active</string>
+    <string name="custom_theme_preset_builtin_tag">Built-in theme</string>
+    <string name="custom_theme_preset_curated_tag">Curated theme</string>
+    <string name="custom_theme_preset_saved_tag">Saved preset</string>
 
     <string name="nav_bar_pos">Navigation bar position</string>
     <string name="nav_bar_pos_sub">Current position: %1$s</string>
