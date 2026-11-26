@@ -125,6 +125,7 @@ import my.app.permata.media.pref.PlayableItemPrefs;
 import my.app.permata.media.pref.PlaybackControlPrefs;
 import my.app.permata.media.sub.SubGrid;
 import my.app.permata.media.sub.Subtitles;
+import my.app.permata.ui.activity.MainActivity;
 import my.app.permata.ui.view.VideoView;
 import my.app.utils.async.FutureSupplier;
 import my.app.utils.collection.CollectionUtils;
@@ -185,7 +186,7 @@ public class MediaSessionCallback extends MediaSessionCompat.Callback
 	private final BroadcastReceiver onCarConnection;
 	@Nullable
 	private final AsyncQueryHandler carConnectionQuery;
-	private boolean carConnected;
+	private volatile boolean carConnected;
 	private MediaEngine engine;
 	private boolean playOnPrepared;
 	private boolean playOnAudioFocus;
@@ -196,6 +197,8 @@ public class MediaSessionCallback extends MediaSessionCompat.Callback
 	private Queue<Prioritized<VideoView>> videoView;
 	private Queue<Prioritized<MediaSessionCallbackAssistant>> assistants;
 	private FutureSupplier<?> playerTask = completedVoid();
+	private FutureSupplier<?> startupPrepareTask = completedVoid();
+	private boolean startupPrepareAborted = false;
 	private MediaMetadataCompat metadata;
 
 	public MediaSessionCallback(PermataMediaService service, MediaSessionCompat session,
@@ -231,7 +234,7 @@ public class MediaSessionCallback extends MediaSessionCompat.Callback
 
 		currentState = new PlaybackStateCompat.Builder().setActions(SUPPORTED_ACTIONS).build();
 		setPlaybackState(currentState);
-		
+
 		session.setActive(false);
 
 		audioManager = (AudioManager) ctx.getSystemService(Context.AUDIO_SERVICE);
@@ -258,7 +261,6 @@ public class MediaSessionCallback extends MediaSessionCompat.Callback
 		};
 		ctx.registerReceiver(onNoisy, new IntentFilter(AudioManager.ACTION_AUDIO_BECOMING_NOISY));
 
-
 		if (BuildConfig.AUTO) {
 			// Switching the car off doesn't always end the car screen or send a pause, and the playback
 			// would carry on from the phone. Android Auto broadcasts the connection changes to car apps.
@@ -267,8 +269,22 @@ public class MediaSessionCallback extends MediaSessionCompat.Callback
 				@Override
 				protected void onQueryComplete(int token, Object cookie, Cursor c) {
 					boolean connected = isCarConnected(c);
-					if (carConnected && !connected) onPause();
+					boolean wasConnected = carConnected;
 					carConnected = connected;
+					if (wasConnected != connected) {
+						Log.i("[CAR][LIFECYCLE] CarConnectionState Changed | connected=" + connected);
+					}
+					if (wasConnected && !connected) {
+						boolean phoneUiActive = MainActivity.getActiveInstance() != null;
+						if (phoneUiActive) {
+							onPause();
+						} else {
+							Log.i("[CAR][DECISION] Car Disconnected (Phone UI Closed) | action=STOP_PLAYBACK");
+							playerTask.cancel();
+							onStop();
+						}
+					}
+					service.onCarConnectionChanged(connected);
 				}
 			};
 			onCarConnection = new BroadcastReceiver() {
@@ -285,6 +301,25 @@ public class MediaSessionCallback extends MediaSessionCompat.Callback
 			carConnectionQuery = null;
 			onCarConnection = null;
 		}
+	}
+
+	public boolean isCarConnected() {
+		return carConnected;
+	}
+
+	void refreshCarConnection() {
+		queryCarConnection();
+	}
+
+	void cancelPendingPrepare() {
+		startupPrepareAborted = true;
+		startupPrepareTask.cancel();
+	}
+
+	void stopImmediate() {
+		cancelPendingPrepare();
+		playerTask.cancel();
+		onStop(false);
 	}
 
 	private void queryCarConnection() {
@@ -369,7 +404,7 @@ public class MediaSessionCallback extends MediaSessionCompat.Callback
 
 		if (eng != null) {
 			PlayableItem i = eng.getSource();
-			if (i.isVideo()) eng.setVideoView(getVideoView());
+			if (i != null && i.isVideo()) eng.setVideoView(getVideoView());
 		}
 	}
 
@@ -467,34 +502,61 @@ public class MediaSessionCallback extends MediaSessionCompat.Callback
 		return handleKeyEvent(this, e, (i, ke) -> super.onMediaButtonEvent(mediaButtonEvent));
 	}
 
+	@Override
 	public void close() {
-		onStop();
-		session.setActive(false);
-		lib.getContext().unregisterReceiver(onNoisy);
-		if (onCarConnection != null) lib.getContext().unregisterReceiver(onCarConnection);
+		cancelPendingPrepare();
+		playerTask.cancel();
+		onStop(false);
+		try {
+			session.setActive(false);
+		} catch (Exception ignored) {}
+		try {
+			lib.getContext().unregisterReceiver(onNoisy);
+		} catch (Exception ignored) {}
+		if (onCarConnection != null) {
+			try {
+				lib.getContext().unregisterReceiver(onCarConnection);
+			} catch (Exception ignored) {}
+		}
 		if (carConnectionQuery != null) carConnectionQuery.cancelOperation(0);
 		removeBroadcastListeners();
 		metadata = null;
 	}
 
+	private boolean shouldAbortStartupPrepare() {
+		try {
+			if (startupPrepareAborted || session.isActive() || getEngine() != null) {
+				return true;
+			}
+		} catch (Exception ignored) {
+			return true;
+		}
+		int st = getPlaybackState().getState();
+		return (st != PlaybackState.STATE_NONE) && (st != PlaybackState.STATE_ERROR);
+	}
+
 	@Override
 	public void onPrepare() {
+		if (shouldAbortStartupPrepare()) return;
 		playerTask.cancel();
-		playerTask = prepare();
+		startupPrepareAborted = false;
+		startupPrepareTask = playerTask = prepare();
 	}
 
 	private FutureSupplier<Void> prepare() {
-		int st = getPlaybackState().getState();
-
-		if ((st != PlaybackState.STATE_NONE) && (st != PlaybackState.STATE_ERROR)) {
+		if (shouldAbortStartupPrepare()) {
 			return completedVoid();
 		}
 
 		return lib.getLastPlayedItem().then(this::prepareItem).then(i -> {
-			if (i == null) return completedVoid();
+			if (i == null || shouldAbortStartupPrepare()) return completedVoid();
 			if (i.isVideo() || !i.isSeekable()) {
 				setPlaybackState(createPlayingState(i, STATE_STOPPED, 0, 0, 1f));
-				return i.getMediaData().onSuccess(this::setMetadata).cast();
+				return i.getMediaData().main().onSuccess(md -> {
+					if (!startupPrepareAborted && !session.isActive() && getEngine() == null) {
+						setMetadata(md);
+					}
+				}).cast();
 			}
 
 			engine = getEngineManager().createEngine(engine, i, this);
@@ -511,6 +573,7 @@ public class MediaSessionCallback extends MediaSessionCompat.Callback
 
 	@Override
 	public void onPlay() {
+		cancelPendingPrepare();
 		playerTask.cancel();
 		playerTask = play();
 	}
@@ -531,15 +594,15 @@ public class MediaSessionCallback extends MediaSessionCompat.Callback
 				wakeCarUiAndRun(() -> {
 					lib.getLastPlayedItem().then(this::prepareItem).then(i -> {
 						if (i != null) {
-						playPreparedItem(i, lib.getLastPlayedPosition(i));
-					} else {
-						// Report it right away, rather than leaving the caller (e.g. Android Auto's autoplay) waiting
-						setMetadata(null);
-						setPlaybackState(new PlaybackStateCompat.Builder().setActions(SUPPORTED_ACTIONS)
-								.setState(STATE_ERROR, 0, 1.0f)
-								.setErrorMessage(PlaybackStateCompat.ERROR_CODE_NOT_SUPPORTED,
-										lib.getContext().getString(R.string.nothing_to_resume)).build());
-					}
+							playPreparedItem(i, lib.getLastPlayedPosition(i));
+						} else {
+							// Report it right away, rather than leaving the caller (e.g. Android Auto's autoplay) waiting
+							setMetadata(null);
+							setPlaybackState(new PlaybackStateCompat.Builder().setActions(SUPPORTED_ACTIONS)
+									.setState(STATE_ERROR, 0, 1.0f)
+									.setErrorMessage(PlaybackStateCompat.ERROR_CODE_NOT_SUPPORTED,
+											lib.getContext().getString(R.string.nothing_to_resume)).build());
+						}
 						p.complete(null);
 						return completedVoid();
 					});
@@ -569,9 +632,9 @@ public class MediaSessionCallback extends MediaSessionCompat.Callback
 							new PlaybackStateCompat.Builder(getPlaybackState()).setState(PlaybackStateCompat.STATE_PLAYING, pos,
 									speed).build();
 					setPlaybackState(newState);
-					
+
 					session.setActive(true);
-					
+
 					eng.setPosition(pos);
 					start(eng, speed);
 					p.complete(null);
@@ -587,6 +650,7 @@ public class MediaSessionCallback extends MediaSessionCompat.Callback
 
 	@Override
 	public void onPlayFromMediaId(String mediaId, Bundle extras) {
+		cancelPendingPrepare();
 		playerTask.cancel();
 		playerTask = playFromMediaId(mediaId, extras);
 	}
@@ -676,9 +740,10 @@ public class MediaSessionCallback extends MediaSessionCompat.Callback
 		if (setPosition && (eng != null)) {
 			PlayableItem i = eng.getSource();
 			// Without a source there is no position to save, and an engine whose page is gone may
-			// never answer
+			// never answer. Non-seekable live streams always resume from 0, so stop synchronously.
 			if ((i == null) || i.isExternal()) return onStop(eng, -1);
-			else return eng.getPosition().main().then(pos -> onStop(eng, pos));
+			if (i.isStream() || !i.isSeekable()) return onStop(eng, 0);
+			return eng.getPosition().main().then(pos -> onStop(eng, pos));
 		} else {
 			return onStop(eng, -1);
 		}
@@ -711,8 +776,10 @@ public class MediaSessionCallback extends MediaSessionCompat.Callback
 			setPlaybackState(state);
 		}
 
-		session.setQueue(null);
-		session.setActive(false);
+		try {
+			session.setQueue(null);
+			session.setActive(false);
+		} catch (Exception ignored) {}
 	}
 
 	@Override
@@ -782,7 +849,7 @@ public class MediaSessionCallback extends MediaSessionCompat.Callback
 		b.setState(next ? STATE_SKIPPING_TO_NEXT : STATE_SKIPPING_TO_PREVIOUS, pos,
 				state.getPlaybackSpeed());
 		setPlaybackState(b.build());
-		
+
 		wakeCarUiAndRun(() -> playPreparedItem(i, pos));
 	}
 
@@ -991,6 +1058,17 @@ public class MediaSessionCallback extends MediaSessionCompat.Callback
 
 	@Override
 	public void onEnginePrepared(MediaEngine engine) {
+		boolean sessionActive = false;
+		try {
+			sessionActive = session.isActive();
+		} catch (Exception ignored) {}
+
+		if (!playOnPrepared && (startupPrepareAborted || sessionActive)) {
+			engine.close();
+			if (this.engine == engine) this.engine = null;
+			return;
+		}
+
 		playerTask.cancel();
 		PlayableItem i = engine.getSource();
 		if (i != null) onEnginePrepared(engine, i);
@@ -1034,6 +1112,7 @@ public class MediaSessionCallback extends MediaSessionCompat.Callback
 
 	private void setPlayingState(MediaEngine engine, boolean playing, long pos, float speed) {
 		PlayableItem i = engine.getSource();
+		if (i == null) return;
 		BrowsableItemPrefs prefs = i.getParent().getPrefs();
 		int shuffle = prefs.getShufflePref() ? SHUFFLE_MODE_ALL : SHUFFLE_MODE_NONE;
 		int repeat;
@@ -1191,7 +1270,7 @@ public class MediaSessionCallback extends MediaSessionCompat.Callback
 
 		Log.w(ex, msg);
 
-		if (tryAnotherEngine && (engine.getSource() != null)) {
+		if (tryAnotherEngine && (i != null)) {
 			this.engine = getEngineManager().createAnotherEngine(engine, this);
 
 			if (this.engine != null) {
@@ -1250,7 +1329,9 @@ public class MediaSessionCallback extends MediaSessionCompat.Callback
 
 	private void setMetadata(MediaMetadataCompat metadata) {
 		this.metadata = metadata;
-		session.setMetadata(metadata);
+		try {
+			session.setMetadata(metadata);
+		} catch (Exception ignored) {}
 	}
 
 	@Override
@@ -1289,15 +1370,16 @@ public class MediaSessionCallback extends MediaSessionCompat.Callback
 	}
 
 	public void playItem(PlayableItem i, long pos) {
+		cancelPendingPrepare();
 		playerTask.cancel();
 		setLastPlayed(i, pos);
-		
+
 		// SURGICAL FIX: Android Auto 8-Second Watchdog Bypass
 		session.setActive(true);
 		PlaybackStateCompat state = new PlaybackStateCompat.Builder().setActions(SUPPORTED_ACTIONS)
 				.setState(STATE_PLAYING, 0, 1.0f).build();
 		setPlaybackState(state);
-		
+
 		wakeCarUiAndRun(() -> {
 			playerTask = prepareItem(i).onSuccess(pi -> playPreparedItem(i, pos));
 		});
@@ -1394,10 +1476,12 @@ public class MediaSessionCallback extends MediaSessionCompat.Callback
 
 	private void setPlaybackState(PlaybackStateCompat state) {
 		currentState = state;
-		if ((state.getState() == STATE_PLAYING) && !session.isActive()) {
-			session.setActive(true);
-		}
-		session.setPlaybackState(state);
+		try {
+			if ((state.getState() == STATE_PLAYING) && !session.isActive()) {
+				session.setActive(true);
+			}
+			session.setPlaybackState(state);
+		} catch (Exception ignored) {}
 		service.updateNotification(state.getState(), getCurrentItem());
 		fireBroadcastEvent(l -> l.onPlaybackStateChanged(this, state));
 
@@ -1408,7 +1492,7 @@ public class MediaSessionCallback extends MediaSessionCompat.Callback
 				return;
 			}
 			PlayableItem i = engine.getSource();
-			if (i.isTimerRequired()) startTimer(i, state.getPosition(), state.getPlaybackSpeed());
+			if (i != null && i.isTimerRequired()) startTimer(i, state.getPosition(), state.getPlaybackSpeed());
 		} else {
 			stopTimer();
 		}
