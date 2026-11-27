@@ -34,6 +34,7 @@ import androidx.media3.exoplayer.DefaultLoadControl;
 import androidx.media3.exoplayer.DefaultLivePlaybackSpeedControl;
 import androidx.media3.exoplayer.DefaultRenderersFactory;
 import androidx.media3.exoplayer.ExoPlayer;
+import androidx.media3.exoplayer.ExoTimeoutException;
 import androidx.media3.exoplayer.audio.AudioSink;
 import androidx.media3.exoplayer.audio.DefaultAudioSink;
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory;
@@ -131,6 +132,8 @@ public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener 
     private volatile boolean buffering;
     private volatile boolean isHls;
     private volatile boolean hasSuccessfullyRendered;
+    private volatile boolean hasVideoView;
+    private volatile boolean detachRecovered;
     private volatile Runnable drainBuffer;
 
     private final AtomicLong activeStreamId = new AtomicLong(0);
@@ -413,6 +416,7 @@ public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener 
             this.preparing = true;
             this.buffering = false;
             this.hasSuccessfullyRendered = false;
+            this.detachRecovered = false;
             
             this.pendingDelayBytes = 0;
 
@@ -546,8 +550,16 @@ public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener 
     public void setVideoView(@Nullable VideoView view) {
         synchronized (engineLock) {
             super.setVideoView(view);
+            this.hasVideoView = (view != null);
+            if (view != null) {
+                this.detachRecovered = false;
+            }
             if (player != null) {
-                player.setVideoSurfaceHolder(view == null ? null : view.getVideoSurface().getHolder());
+                if (view == null) {
+                    player.clearVideoSurface();
+                } else {
+                    player.setVideoSurfaceHolder(view.getVideoSurface().getHolder());
+                }
             }
         }
     }
@@ -735,6 +747,8 @@ public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener 
         synchronized (engineLock) {
             stop();
             super.close();
+            this.hasVideoView = false;
+            this.detachRecovered = false;
             this.drainBuffer = null;
             accessor.releasePlayerEngineReference();
             if (player != null) {
@@ -807,9 +821,46 @@ public class ExoPlayerEngine extends MediaEngineBase implements Player.Listener 
         Optional.ofNullable(listener).ifPresent(l -> l.onVideoSizeChanged(this, videoSize.width, videoSize.height));
     }
 
+    private static boolean isDetachSurfaceTimeout(@Nullable PlaybackException error) {
+        Throwable cause = (error == null) ? null : error.getCause();
+        for (int depth = 0; (cause != null) && (depth < 8); depth++, cause = cause.getCause()) {
+            if ((cause instanceof ExoTimeoutException te)
+                    && (te.timeoutOperation == ExoTimeoutException.TIMEOUT_OPERATION_DETACH_SURFACE)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     @Override
     public void onPlayerError(@NonNull PlaybackException error) {
         final long currentGeneration = activeStreamId.get();
+
+        if (isDetachSurfaceTimeout(error)) {
+            boolean recoverDetach = false;
+            synchronized (engineLock) {
+                if (!hasVideoView && (player != null) && (source != null) && !detachRecovered) {
+                    detachRecovered = true;
+                    this.preparing = false;
+                    this.buffering = false;
+                    recoverDetach = true;
+                }
+            }
+            if (recoverDetach) {
+                Log.w("ExoPlayerEngine", "Surface detach timed out while backgrounded; recovering pipeline without failover.");
+                my.app.utils.app.App.get().run(() -> {
+                    synchronized (engineLock) {
+                        if ((currentGeneration != activeStreamId.get()) || (player == null) || (source == null)) {
+                            return;
+                        }
+                        if (player.getPlaybackState() == Player.STATE_IDLE) {
+                            player.prepare();
+                        }
+                    }
+                });
+                return;
+            }
+        }
 
         asyncIoExecutor.execute(() -> {
             if (currentGeneration != activeStreamId.get()) return;
