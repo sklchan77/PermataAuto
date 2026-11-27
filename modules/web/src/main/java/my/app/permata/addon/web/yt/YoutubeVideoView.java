@@ -3,6 +3,7 @@ package my.app.permata.addon.web.yt;
 import static android.view.ViewGroup.LayoutParams.MATCH_PARENT;
 
 import android.content.Context;
+import android.graphics.Color;
 import android.util.AttributeSet;
 import android.view.SurfaceView;
 import android.widget.FrameLayout;
@@ -24,6 +25,7 @@ public class YoutubeVideoView extends VideoView {
 
 	@Override
 	protected void init(Context context) {
+		setBackgroundColor(Color.BLACK);
 		addView(new FrameLayout(context), new FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT));
 		addInfoView(context);
 	}
