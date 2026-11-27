@@ -2,7 +2,6 @@ package my.app.permata.addon.web;
 
 import static my.app.utils.ui.activity.ActivityListener.FRAGMENT_CONTENT_CHANGED;
 
-import android.content.Context;
 import android.graphics.Bitmap;
 import android.net.Uri;
 import android.os.SystemClock;
@@ -16,7 +15,6 @@ import androidx.webkit.WebViewClientCompat;
 
 import my.app.permata.addon.web.yt.YoutubeFragment;
 import my.app.permata.ui.activity.MainActivityDelegate;
-import my.app.utils.async.Completed;
 import my.app.utils.async.FutureSupplier;
 import my.app.utils.async.Promise;
 import my.app.utils.function.BooleanConsumer;
@@ -24,14 +22,28 @@ import my.app.utils.log.Log;
 
 public class PermataWebClient extends WebViewClientCompat {
     BooleanConsumer loading;
+    private Promise<Void> pageLoadPromise;
+
+    private void finishPageLoadPromise() {
+        Promise<Void> p = pageLoadPromise;
+        pageLoadPromise = null;
+        if (p != null) p.complete(null);
+    }
 
     @Override
     public void onPageStarted(WebView view, String url, Bitmap favicon) {
         if (loading != null) {
             loading.accept(true);
-        } else {
+        } else if (view.isShown()) {
+            finishPageLoadPromise();
+            Promise<Void> p = new Promise<>();
+            pageLoadPromise = p;
             MainActivityDelegate.getActivityDelegate(view.getContext())
-                    .onSuccess(a -> a.setContentLoading(new Promise<>()));
+                    .onSuccess(a -> {
+                        if ((pageLoadPromise == p) && view.isShown()) {
+                            a.setContentLoading(p);
+                        }
+                    });
         }
         super.onPageStarted(view, url, favicon);
     }
@@ -41,7 +53,7 @@ public class PermataWebClient extends WebViewClientCompat {
         PermataWebView v = (PermataWebView) view;
         FutureSupplier<MainActivityDelegate> f =
                 MainActivityDelegate.getActivityDelegate(v.getContext());
-        f.onSuccess(a -> a.setContentLoading(Completed.completedVoid()));
+        finishPageLoadPromise();
 
         if (loading != null) {
             loading.accept(false);
@@ -142,11 +154,11 @@ public class PermataWebClient extends WebViewClientCompat {
         }
     }
 
-	@Override
-	public void doUpdateVisitedHistory(WebView view, String url, boolean isReload) {
-		super.doUpdateVisitedHistory(view, url, isReload);
-		((PermataWebView) view).urlChanged(url);
-	}
+    @Override
+    public void doUpdateVisitedHistory(WebView view, String url, boolean isReload) {
+        super.doUpdateVisitedHistory(view, url, isReload);
+        ((PermataWebView) view).urlChanged(url);
+    }
 
     @Override
     public boolean shouldOverrideUrlLoading(@NonNull WebView view,
@@ -162,7 +174,7 @@ public class PermataWebClient extends WebViewClientCompat {
             float endY = isNext ? (view.getHeight() * 0.2f) : (view.getHeight() * 0.8f);
 
             long downTime = SystemClock.uptimeMillis();
-            
+
             MotionEvent downEvent = MotionEvent.obtain(downTime, downTime, MotionEvent.ACTION_DOWN, centerX, startY, 0);
             view.dispatchTouchEvent(downEvent);
             downEvent.recycle();
@@ -177,11 +189,11 @@ public class PermataWebClient extends WebViewClientCompat {
             view.dispatchTouchEvent(upEvent);
             upEvent.recycle();
 
-            return true; 
+            return true;
         }
 
         if (scheme != null && !scheme.startsWith("http") && !scheme.equals("file") && !scheme.equals("content") && !scheme.equals("permata")) {
-            return true; 
+            return true;
         }
 
         if (isYoutubeUri(url)) {
@@ -210,6 +222,9 @@ public class PermataWebClient extends WebViewClientCompat {
     @Override
     public void onReceivedError(@NonNull WebView view, @NonNull WebResourceRequest request,
                                 @NonNull WebResourceErrorCompat error) {
+        if (request.isForMainFrame()) {
+            finishPageLoadPromise();
+        }
         super.onReceivedError(view, request, error);
     }
 }
