@@ -9,6 +9,7 @@ import android.content.res.Resources;
 import android.media.AudioManager;
 import android.media.MediaMetadata;
 import android.support.v4.media.MediaMetadataCompat;
+import android.view.ViewGroup;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
@@ -19,8 +20,11 @@ import com.google.android.play.core.splitcompat.SplitCompat;
 
 import my.app.permata.BuildConfig;
 import my.app.permata.PermataApplication;
+import my.app.permata.addon.web.PermataChromeClient;
 import my.app.permata.addon.web.R;
 import my.app.permata.addon.web.yt.YoutubeAddon.VideoScale;
+import my.app.permata.auto.MainCarActivity;
+import my.app.permata.auto.MirrorDisplay;
 import my.app.permata.media.engine.MediaEngine;
 import my.app.permata.media.lib.ExtPlayable;
 import my.app.permata.media.lib.ExtRoot;
@@ -74,6 +78,14 @@ class YoutubeMediaEngine implements MediaEngine, OverlayMenu.SelectionHandler {
 		};
 	}
 
+	private boolean isYoutubeVisibleInCar() {
+		if (MainCarActivity.activeInstance == null) return false;
+		if (web.isShown()) return true;
+		PermataChromeClient chrome = web.getWebChromeClient();
+		ViewGroup fs = (chrome != null) ? chrome.getFullScreenView() : null;
+		return (fs != null) && fs.isShown();
+	}
+
 	void playing(String url) {
 		if (BuildConfig.AUTO && web.getAddon().skipAd()) {
 			web.loadUrl("javascript:\n" +
@@ -91,6 +103,13 @@ class YoutubeMediaEngine implements MediaEngine, OverlayMenu.SelectionHandler {
 			qualityUrl = url;
 			web.setHighestVideoQuality();
 		}
+
+		PermataApplication app = PermataApplication.get();
+		if (BuildConfig.AUTO && isYoutubeVisibleInCar() && app != null
+				&& app.isMirroringMode() && app.isConnectedToAuto()) {
+			MirrorDisplay.shutdownForCarMedia();
+		}
+
 		PermataApplication.setMediaCrown(PermataApplication.CROWN_IPTV);
 		cb.setEngine(this);
 		cb.onEngineStarted(this);
