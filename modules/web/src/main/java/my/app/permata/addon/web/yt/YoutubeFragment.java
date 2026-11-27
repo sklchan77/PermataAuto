@@ -132,8 +132,14 @@ public class YoutubeFragment extends WebBrowserFragment implements PermataServic
 
 	@Override
 	public void onPause() {
+		if (isHidden()) {
+			super.onPause();
+			return;
+		}
+
 		if ((getAddon() instanceof YoutubeAddon addon) && addon.pauseOnLeave()) {
 			MainActivityDelegate.getActivityDelegate(getContext()).onSuccess(a -> {
+				if (isHidden()) return;
 				PermataServiceUiBinder b = a.getMediaServiceBinder();
 				if (YoutubeMediaEngine.isYoutubeItem(b.getCurrentItem()) && b.isPlaying()) {
 					b.getMediaSessionCallback().onPause();
@@ -161,9 +167,10 @@ public class YoutubeFragment extends WebBrowserFragment implements PermataServic
 	@Override
 	public void onResume() {
 		super.onResume();
-		if (!playOnResume) return;
+		if (isHidden() || !playOnResume) return;
 		playOnResume = false;
 		MainActivityDelegate.getActivityDelegate(getContext()).onSuccess(a -> {
+			if (isHidden() || !isResumed()) return;
 			PermataServiceUiBinder b = a.getMediaServiceBinder();
 			if (YoutubeMediaEngine.isYoutubeItem(b.getCurrentItem())) {
 				b.getMediaSessionCallback().onPlay();
