@@ -155,6 +155,7 @@ public class WebBrowserFragment extends MainActivityFragment
 	@Override
 	public void onPause() {
 		super.onPause();
+		if (isHidden()) return;
 		
 		PermataWebView v = getWebView();
 		if (v != null) {
@@ -183,11 +184,12 @@ public class WebBrowserFragment extends MainActivityFragment
 	@Override
 	public void onResume() {
 		super.onResume();
-		if (!BuildConfig.AUTO || !fullScreenOnResume) return;
+		if (isHidden() || !BuildConfig.AUTO || !fullScreenOnResume) return;
 		PermataWebView v = getWebView();
 		if (v == null) return;
 		v.onResume();
 		MainActivityDelegate.getActivityDelegate(getContext()).onSuccess(a -> a.post(() -> {
+			if (isHidden() || !isResumed()) return;
 			PermataChromeClient chrome = v.getWebChromeClient();
 			if (chrome != null) chrome.enterFullScreen();
 		}));
@@ -225,6 +227,7 @@ public class WebBrowserFragment extends MainActivityFragment
 			}
 		} else if (BuildConfig.AUTO && fullScreenOnResume && v != null) {
 			MainActivityDelegate.getActivityDelegate(getContext()).onSuccess(a -> a.post(() -> {
+				if (isHidden() || !isResumed()) return;
 				PermataChromeClient chrome = v.getWebChromeClient();
 				if (chrome != null) chrome.enterFullScreen();
 			}));
