@@ -15,6 +15,8 @@ import android.content.Context;
 import android.content.Intent;
 import android.graphics.Color;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.view.MotionEvent;
 import android.view.SurfaceHolder;
 import android.view.SurfaceView;
@@ -40,9 +42,25 @@ import my.app.utils.concurrent.ReschedulableTask;
 import my.app.utils.log.Log;
 
 public class MirrorActivity extends CarActivity implements SurfaceHolder.Callback {
+	private static final long FS_HANDOFF_DELAY_MS = 150L;
+	static volatile boolean isForeground = false;
+
+	private final Handler mainHandler = new Handler(Looper.getMainLooper());
 	private MirrorDisplay md;
 	private SurfaceContainer sc;
 	private ToolBar tb;
+
+	private final Runnable handoffToFsRunnable = () -> {
+		SurfaceContainer fsSc = MirrorServiceFS.sc;
+		boolean handoffToFs = !isForeground
+				&& MainCarActivity.activeInstance == null
+				&& MirrorServiceFS.isScreenResumed
+				&& fsSc != null
+				&& md != null
+				&& !md.isDestroyed();
+		Log.i("[MIRROR][LIFECYCLE] MirrorActivity.onPause (150ms check) | handoffToFullScreen=" + handoffToFs);
+		if (handoffToFs) md.setSurface(fsSc);
+	};
 
 	@Override
 	public void onCreate(Bundle savedInstanceState) {
@@ -82,6 +100,8 @@ public class MirrorActivity extends CarActivity implements SurfaceHolder.Callbac
 	@Override
 	public void onDestroy() {
 		Log.i("[MIRROR][LIFECYCLE] MirrorActivity.onDestroy");
+		isForeground = false;
+		mainHandler.removeCallbacks(handoffToFsRunnable);
 		if (md != null) {
 			md.release();
 			md = null;
@@ -92,6 +112,8 @@ public class MirrorActivity extends CarActivity implements SurfaceHolder.Callbac
 	@Override
 	public void onResume() {
 		super.onResume();
+		isForeground = true;
+		mainHandler.removeCallbacks(handoffToFsRunnable);
 		Log.i("[MIRROR][LIFECYCLE] MirrorActivity.onResume");
 		PermataMediaService.requestFocusAndAnchor(this);
 
@@ -103,9 +125,10 @@ public class MirrorActivity extends CarActivity implements SurfaceHolder.Callbac
 	@Override
 	public void onPause() {
 		super.onPause();
-		boolean handoffToFs = (MirrorServiceFS.sc != null && md != null && !md.isDestroyed());
-		Log.i("[MIRROR][LIFECYCLE] MirrorActivity.onPause | handoffToFullScreen=" + handoffToFs);
-		if (handoffToFs) md.setSurface(MirrorServiceFS.sc);
+		isForeground = false;
+		Log.i("[MIRROR][LIFECYCLE] MirrorActivity.onPause | deferring FS handoff check (" + FS_HANDOFF_DELAY_MS + "ms)");
+		mainHandler.removeCallbacks(handoffToFsRunnable);
+		mainHandler.postDelayed(handoffToFsRunnable, FS_HANDOFF_DELAY_MS);
 	}
 
 	@Override
@@ -141,7 +164,7 @@ public class MirrorActivity extends CarActivity implements SurfaceHolder.Callbac
 			sc = null;
 		}
 
-		new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(() -> {
+		mainHandler.postDelayed(() -> {
 			if (!PermataApplication.get().isConnectedToAuto() && MirrorServiceFS.sc == null) {
 				Log.i("[MIRROR][DECISION] 5s Post-Destroy Check | autoConnected=false, fsSurface=null -> action=CLOSE_MIRROR");
 				MirrorDisplay.close();
