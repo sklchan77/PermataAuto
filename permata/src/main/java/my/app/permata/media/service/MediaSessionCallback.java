@@ -198,6 +198,7 @@ public class MediaSessionCallback extends MediaSessionCompat.Callback
 	private Queue<Prioritized<MediaSessionCallbackAssistant>> assistants;
 	private FutureSupplier<?> playerTask = completedVoid();
 	private FutureSupplier<?> startupPrepareTask = completedVoid();
+	private MediaEngine startupPrepareEngine;
 	private boolean startupPrepareAborted = false;
 	private MediaMetadataCompat metadata;
 
@@ -364,6 +365,7 @@ public class MediaSessionCallback extends MediaSessionCompat.Callback
 	}
 
 	public void setEngine(MediaEngine engine) {
+		if (this.startupPrepareEngine == engine) this.startupPrepareEngine = null;
 		if (this.engine == engine) return;
 		playerTask.cancel();
 		onStop();
@@ -507,6 +509,7 @@ public class MediaSessionCallback extends MediaSessionCompat.Callback
 		cancelPendingPrepare();
 		playerTask.cancel();
 		onStop(false);
+		startupPrepareEngine = null;
 		try {
 			session.setActive(false);
 		} catch (Exception ignored) {}
@@ -523,23 +526,32 @@ public class MediaSessionCallback extends MediaSessionCompat.Callback
 		metadata = null;
 	}
 
-	private boolean shouldAbortStartupPrepare() {
+	private boolean isSessionActiveSafe() {
 		try {
-			if (startupPrepareAborted || session.isActive() || getEngine() != null) {
-				return true;
-			}
+			return session.isActive();
 		} catch (Exception ignored) {
-			return true;
+			return false;
+		}
+	}
+
+	private boolean isIdleForStartupPrepare() {
+		if (isSessionActiveSafe() || (getEngine() != null)) {
+			return false;
 		}
 		int st = getPlaybackState().getState();
-		return (st != PlaybackState.STATE_NONE) && (st != PlaybackState.STATE_ERROR);
+		return (st == PlaybackState.STATE_NONE) || (st == PlaybackState.STATE_ERROR);
+	}
+
+	private boolean shouldAbortStartupPrepare() {
+		return startupPrepareAborted || !isIdleForStartupPrepare();
 	}
 
 	@Override
 	public void onPrepare() {
-		if (shouldAbortStartupPrepare()) return;
+		if (!isIdleForStartupPrepare()) return;
 		playerTask.cancel();
 		startupPrepareAborted = false;
+		startupPrepareEngine = null;
 		startupPrepareTask = playerTask = prepare();
 	}
 
@@ -553,7 +565,7 @@ public class MediaSessionCallback extends MediaSessionCompat.Callback
 			if (i.isVideo() || !i.isSeekable()) {
 				setPlaybackState(createPlayingState(i, STATE_STOPPED, 0, 0, 1f));
 				return i.getMediaData().main().onSuccess(md -> {
-					if (!startupPrepareAborted && !session.isActive() && getEngine() == null) {
+					if (!startupPrepareAborted && !isSessionActiveSafe() && getEngine() == null) {
 						setMetadata(md);
 					}
 				}).cast();
@@ -563,6 +575,7 @@ public class MediaSessionCallback extends MediaSessionCompat.Callback
 			Log.d("MediaEngine ", engine + " created for ", i);
 			if (engine == null) return completedVoid();
 
+			startupPrepareEngine = engine;
 			playOnPrepared = false;
 			if (i.isVideo() && (videoView != null)) engine.setVideoView(getVideoView());
 			tryAnotherEngine = true;
@@ -753,6 +766,7 @@ public class MediaSessionCallback extends MediaSessionCompat.Callback
 		boolean external = false;
 
 		if (eng != null) {
+			if (eng == startupPrepareEngine) startupPrepareEngine = null;
 			PlayableItem i = eng.getSource();
 			external = (i != null) && i.isExternal();
 			if ((pos != -1) && (i != null)) setLastPlayed(i, pos);
@@ -1051,6 +1065,10 @@ public class MediaSessionCallback extends MediaSessionCompat.Callback
 	@Override
 	public void onEngineBuffering(MediaEngine engine, int percent) {
 		if (isPlaying()) return;
+		if ((engine == startupPrepareEngine) && !playOnPrepared &&
+				(startupPrepareAborted || isSessionActiveSafe())) {
+			return;
+		}
 		PlaybackStateCompat state = new PlaybackStateCompat.Builder().setActions(SUPPORTED_ACTIONS)
 				.setState(STATE_BUFFERING, 0, 1.0f).build();
 		setPlaybackState(state);
@@ -1058,15 +1076,13 @@ public class MediaSessionCallback extends MediaSessionCompat.Callback
 
 	@Override
 	public void onEnginePrepared(MediaEngine engine) {
-		boolean sessionActive = false;
-		try {
-			sessionActive = session.isActive();
-		} catch (Exception ignored) {}
-
-		if (!playOnPrepared && (startupPrepareAborted || sessionActive)) {
-			engine.close();
-			if (this.engine == engine) this.engine = null;
-			return;
+		if (engine == startupPrepareEngine) {
+			startupPrepareEngine = null;
+			if (!playOnPrepared && (startupPrepareAborted || isSessionActiveSafe() || (this.engine != engine))) {
+				engine.close();
+				if (this.engine == engine) this.engine = null;
+				return;
+			}
 		}
 
 		playerTask.cancel();
@@ -1258,6 +1274,16 @@ public class MediaSessionCallback extends MediaSessionCompat.Callback
 
 	@Override
 	public void onEngineError(MediaEngine engine, Throwable ex) {
+		boolean wasStartupEngine = (engine == startupPrepareEngine);
+		if (wasStartupEngine) {
+			startupPrepareEngine = null;
+			if (!playOnPrepared && (startupPrepareAborted || isSessionActiveSafe() || (this.engine != engine))) {
+				engine.close();
+				if (this.engine == engine) this.engine = null;
+				return;
+			}
+		}
+
 		String msg;
 		PlayableItem i = engine.getSource();
 
@@ -1274,6 +1300,7 @@ public class MediaSessionCallback extends MediaSessionCompat.Callback
 			this.engine = getEngineManager().createAnotherEngine(engine, this);
 
 			if (this.engine != null) {
+				if (wasStartupEngine) startupPrepareEngine = this.engine;
 				Log.i("Trying another engine: ", this.engine);
 				tryAnotherEngine = false;
 				if (i.isVideo() && (videoView != null)) this.engine.setVideoView(getVideoView());
@@ -1407,6 +1434,7 @@ public class MediaSessionCallback extends MediaSessionCompat.Callback
 
 	private void playPreparedItem(MediaEngine eng, PlayableItem i, long pos, PlayableItem current,
 																long currentPos) {
+		startupPrepareEngine = null;
 		engine = eng = getEngineManager().createEngine(eng, i, this);
 
 		if (eng == null) {
