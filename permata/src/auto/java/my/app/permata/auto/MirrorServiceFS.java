@@ -24,18 +24,24 @@ import androidx.car.app.model.CarIcon;
 import androidx.car.app.model.Template;
 import androidx.car.app.navigation.model.NavigationTemplate;
 import androidx.car.app.validation.HostValidator;
+import androidx.lifecycle.DefaultLifecycleObserver;
+import androidx.lifecycle.LifecycleOwner;
 
 import java.util.Locale;
 
 import my.app.permata.PermataApplication;
 import my.app.permata.R;
+import my.app.permata.media.service.PermataMediaService;
 import my.app.utils.concurrent.HandlerExecutor;
 import my.app.utils.function.Cancellable;
 import my.app.utils.log.Log;
 
 public class MirrorServiceFS extends CarAppService {
+	private static final long RESUME_REBIND_DELAY_MS = 150L;
+
 	private MirrorDisplay md;
 	static SurfaceContainer sc;
+	static volatile boolean isScreenResumed = false;
 
 	@Override
 	public void onCreate() {
@@ -47,6 +53,7 @@ public class MirrorServiceFS extends CarAppService {
 	@Override
 	public void onDestroy() {
 		Log.i("[MIRROR_FS][LIFECYCLE] MirrorServiceFS.onDestroy");
+		isScreenResumed = false;
 		AccessibilityEventDispatcherService.abortActiveGesture();
 		if (md != null) {
 			md.release();
@@ -73,6 +80,7 @@ public class MirrorServiceFS extends CarAppService {
 			return;
 		}
 
+		isScreenResumed = false;
 		if (md != null) {
 			md.release();
 			md = null;
@@ -120,6 +128,7 @@ public class MirrorServiceFS extends CarAppService {
 		private long scrollDownTime;
 		private long scrollMoveTime;
 		private Cancellable scrollUp;
+		private Cancellable pendingResumeRebind;
 
 		// Persistent post-tap / Double-Tap / QuickScale / chained-drag anchor state
 		private float anchorX = -1f;
@@ -141,6 +150,48 @@ public class MirrorServiceFS extends CarAppService {
 		MirrorScreen(@NonNull CarContext ctx) {
 			super(ctx);
 			ctx.getCarService(AppManager.class).setSurfaceCallback(this);
+			getLifecycle().addObserver(new DefaultLifecycleObserver() {
+				@Override
+				public void onResume(@NonNull LifecycleOwner owner) {
+					isScreenResumed = true;
+					Log.i("[MIRROR_FS][LIFECYCLE] MirrorScreen.onResume | scPresent=" + (MirrorServiceFS.sc != null));
+					scheduleResumeRebind();
+				}
+
+				@Override
+				public void onPause(@NonNull LifecycleOwner owner) {
+					isScreenResumed = false;
+					cancelPendingResumeRebind();
+					Log.i("[MIRROR_FS][LIFECYCLE] MirrorScreen.onPause");
+				}
+
+				@Override
+				public void onDestroy(@NonNull LifecycleOwner owner) {
+					isScreenResumed = false;
+					cancelPendingResumeRebind();
+				}
+			});
+		}
+
+		private void scheduleResumeRebind() {
+			cancelPendingResumeRebind();
+			pendingResumeRebind = handler.schedule(() -> {
+				pendingResumeRebind = null;
+				SurfaceContainer curSc = MirrorServiceFS.sc;
+				if (!isScreenResumed || curSc == null) return;
+				if (MainCarActivity.activeInstance != null || MirrorActivity.isForeground) return;
+				Log.i("[MIRROR_FS][LIFECYCLE] MirrorScreen.onResume (" + RESUME_REBIND_DELAY_MS
+						+ "ms rebind) | action=REATTACH_AND_ANCHOR");
+				md();
+				PermataMediaService.requestFocusAndAnchor(MirrorServiceFS.this);
+			}, RESUME_REBIND_DELAY_MS);
+		}
+
+		private void cancelPendingResumeRebind() {
+			if (pendingResumeRebind != null) {
+				pendingResumeRebind.cancel();
+				pendingResumeRebind = null;
+			}
 		}
 
 		@Override
@@ -166,6 +217,7 @@ public class MirrorServiceFS extends CarAppService {
 		@Override
 		public void onSurfaceDestroyed(@NonNull SurfaceContainer localSc) {
 			Log.i("[MIRROR_FS][SURFACE] onSurfaceDestroyed | size=" + localSc.getWidth() + "x" + localSc.getHeight());
+			cancelPendingResumeRebind();
 			cancelPendingScale();
 			clearAnchor();
 			if (scrollUp != null) {
