@@ -43,6 +43,7 @@ public class YoutubeChromeClient extends PermataChromeClient {
 	}
 
 	protected void setFullScreen(MainActivityDelegate a, boolean fullScreen) {
+		if (a.getActiveFragmentId() != my.app.permata.R.id.youtube_fragment) return;
 		a.setVideoMode(fullScreen, getFullScreenView());
 	}
 
