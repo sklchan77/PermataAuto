@@ -18,6 +18,7 @@ import androidx.media.AudioFocusRequestCompat;
 import com.google.android.play.core.splitcompat.SplitCompat;
 
 import my.app.permata.BuildConfig;
+import my.app.permata.PermataApplication;
 import my.app.permata.addon.web.R;
 import my.app.permata.addon.web.yt.YoutubeAddon.VideoScale;
 import my.app.permata.media.engine.MediaEngine;
@@ -90,6 +91,7 @@ class YoutubeMediaEngine implements MediaEngine, OverlayMenu.SelectionHandler {
 			qualityUrl = url;
 			web.setHighestVideoQuality();
 		}
+		PermataApplication.setMediaCrown(PermataApplication.CROWN_IPTV);
 		cb.setEngine(this);
 		cb.onEngineStarted(this);
 		web.videoPlaying();
@@ -221,7 +223,7 @@ class YoutubeMediaEngine implements MediaEngine, OverlayMenu.SelectionHandler {
 				r.getString(R.string.video_quality)).setFutureSubmenu(this::videoQualityMenu);
 		b.addItem(my.app.permata.R.id.video_scaling,
 				ResourcesCompat.getDrawable(r, R.drawable.video_scaling, ctx.getTheme()),
-				r.getString(my.app.permata.R.string.video_scaling)).setSubmenu(this::videoScalingMenu);
+				r.getString(my.app.permata.R.id.video_scaling)).setSubmenu(this::videoScalingMenu);
 	}
 
 	private FutureSupplier<Void> videoQualityMenu(OverlayMenu.Builder b) {
