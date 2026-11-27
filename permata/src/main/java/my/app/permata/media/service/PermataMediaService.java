@@ -244,6 +244,12 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 		}
 	}
 
+	private boolean isActiveEnginePlayingNotMirroring() {
+		PermataApplication app = PermataApplication.get();
+		boolean mirroring = (app != null) && app.isMirroringMode();
+		return !mirroring && (callback != null) && (callback.getEngine() != null) && callback.isPlaying();
+	}
+
 	private String sessionTag() {
 		var app = PermataApplication.get();
 		if (app != null && app.isMirroringMode()) return "[MIRROR]";
@@ -769,6 +775,11 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 		if (audioHardwareExecutor == null || audioHardwareExecutor.isShutdown()) return;
 		if (isTeardownActive) return;
 
+		if (isActiveEnginePlayingNotMirroring()) {
+			Log.i(sessionTag() + "[DECISION] Silent Anchor Skipped | reason=ACTIVE_ENGINE_PLAYING");
+			return;
+		}
+
 		if (callback != null) {
 			callback.cancelPendingPrepare();
 		}
@@ -795,6 +806,10 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 								} else if (focusChange == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK) {
 									Log.i(sessionTag() + "[AUDIO] Focus Changed | state=LOSS_TRANSIENT_CAN_DUCK");
 								} else if (focusChange == AudioManager.AUDIOFOCUS_GAIN) {
+									if (isActiveEnginePlayingNotMirroring()) {
+										Log.i(sessionTag() + "[AUDIO] Focus Changed | state=GAIN -> action=SKIP_REANCHOR_ENGINE_PLAYING");
+										return;
+									}
 									Log.i(sessionTag() + "[AUDIO] Focus Changed | state=GAIN -> action=REANCHOR_SESSION");
 									if (session != null && !isTeardownActive) {
 										session.setActive(true);
