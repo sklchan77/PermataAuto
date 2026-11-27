@@ -32,18 +32,23 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import my.app.permata.PermataApplication;
+import my.app.permata.R;
 import my.app.permata.auto.AccessibilityEventDispatcherService;
 import my.app.permata.auto.EventDispatcher;
+import my.app.permata.media.engine.MediaEngine;
+import my.app.permata.media.pref.MediaPrefs;
 import my.app.permata.media.service.MediaSessionCallback;
 import my.app.permata.ui.activity.MainActivityDelegate;
 import my.app.utils.function.IntObjectFunction;
 import my.app.utils.log.Log;
+import my.app.utils.ui.UiUtils;
 import my.app.utils.ui.fragment.ActivityFragment;
 
 public class KeyEventHandler {
 
     private static final int DBL_CLICK_INTERVAL = 500;
     private static final int LONG_CLICK_INTERVAL = 1000;
+    private static final String YOUTUBE_WEBVIEW_CLASS = "my.app.permata.addon.web.yt.YoutubeWebView";
 
     public static final int TARGET_AUTO = 0;
     public static final int TARGET_MIRROR = 1;
@@ -89,6 +94,10 @@ public class KeyEventHandler {
     
     public static boolean isScrollerPackage(String pkgName) {
         return isStubbornScroller(pkgName) || isNativeBtScroller(pkgName);
+    }
+
+    private static boolean isYoutubeWebView(@Nullable View view) {
+        return view != null && YOUTUBE_WEBVIEW_CLASS.equals(view.getClass().getName());
     }
 
     private static String sessionTag(@Nullable MainActivityDelegate a) {
@@ -391,6 +400,25 @@ public class KeyEventHandler {
                     }
                 }
 
+                if (!isMirroring && currentCrown == PermataApplication.CROWN_WEB) {
+                    int activeFragId = (finalTargetActivity != null)
+                            ? finalTargetActivity.getActiveFragmentId()
+                            : UiUtils.ID_NULL;
+                    boolean isYoutubeTab = (activeFragId == R.id.youtube_fragment);
+                    boolean isWebBrowserTab = (activeFragId == R.id.web_browser_fragment);
+                    MediaEngine activeEngine = (cb != null) ? cb.getEngine() : null;
+                    boolean isYoutubeEnginePlaying = (activeEngine != null)
+                            && (activeEngine.getId() == MediaPrefs.MEDIA_ENG_YT)
+                            && cb.isPlaying();
+
+                    if (isYoutubeTab || (!isWebBrowserTab && isYoutubeEnginePlaying)) {
+                        String reason = isYoutubeTab ? "YOUTUBE_TAB_ACTIVE" : "YOUTUBE_ENGINE_PLAYING";
+                        Log.i(sTag + "[DECISION] Crown Correction | from=WEB -> to=IPTV, reason=" + reason);
+                        PermataApplication.setMediaCrown(PermataApplication.CROWN_IPTV);
+                        currentCrown = PermataApplication.CROWN_IPTV;
+                    }
+                }
+
                 // === [STRICT FIFO ROUTING: THE SNIPER RIFLE] ===
                 Log.i(sTag + "[DECISION] Steering Route | key=" + keyLabel + ", target=" + crownName(currentCrown));
 
@@ -587,15 +615,11 @@ public class KeyEventHandler {
     }
 
     private static WebView scanFragmentsForWebView(ActivityFragment activeFragment) {
-        if (activeFragment == null) return null;
+        if (activeFragment == null || activeFragment.getFragmentId() != R.id.web_browser_fragment) {
+            return null;
+        }
         try {
             Class<?> fragClass = activeFragment.getClass();
-            String className = fragClass.getSimpleName();
-            
-            if (className.equals("FavoritesFragment") || className.equals("FoldersFragment") || className.equals("SettingsFragment")) {
-                return null;
-            }
-
             Method getWebViewMethod = webViewMethodCache.get(fragClass);
             if (getWebViewMethod == null) {
                 getWebViewMethod = fragClass.getMethod("getWebView");
@@ -603,7 +627,7 @@ public class KeyEventHandler {
             }
             
             Object result = getWebViewMethod.invoke(activeFragment);
-            if (result instanceof WebView) return (WebView) result;
+            if (result instanceof WebView wv && !isYoutubeWebView(wv)) return wv;
         } catch (NoSuchMethodException ignored) {
         } catch (Exception e) {
             Log.e(e, "[REACTION] Discovery: Failed to scan for WebView.");
@@ -613,12 +637,13 @@ public class KeyEventHandler {
 
     private static WebView findTopVisibleWebView(MainActivityDelegate activity) {
         if (activity == null || activity.getWindow() == null) return null;
+        if (activity.getActiveFragmentId() != R.id.web_browser_fragment) return null;
         View decorView = activity.getWindow().getDecorView();
         return findWebViewRecursively(decorView);
     }
 
     private static WebView findWebViewRecursively(View view) {
-        if (view instanceof WebView && view.isShown() && view.getVisibility() == View.VISIBLE && view.getWidth() > 0) {
+        if (view instanceof WebView && !isYoutubeWebView(view) && view.isShown() && view.getVisibility() == View.VISIBLE && view.getWidth() > 0) {
             if (view.getAlpha() > 0.1f) {
                 return (WebView) view;
             }
