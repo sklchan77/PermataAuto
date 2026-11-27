@@ -84,10 +84,20 @@ public class MediaItemListViewAdapter extends MovableRecyclerViewAdapter<MediaIt
 					if (this.parent != parent) return;
 
 					if (fail != null) {
-						if (isCancellation(fail)) return;
+						if (isCancellation(fail)) {
+							Log.w("[UI_TELEMETRY] MediaItemListViewAdapter.setParent CANCELLED | parent="
+									+ parent.getClass().getSimpleName() + " (" + parent.getName()
+									+ "), userAction=" + userAction);
+							return;
+						}
 						Log.e(fail, "Failed to load children");
 						UiUtils.showAlert(activity.getContext(), fail.getLocalizedMessage());
 					} else {
+						Log.i("[UI_TELEMETRY] MediaItemListViewAdapter.setParent LOADED | parent="
+								+ parent.getClass().getSimpleName() + " (" + parent.getName()
+								+ "), children=" + (result != null ? result.size() : 0)
+								+ ", userAction=" + userAction
+								+ ", listViewShown=" + (listView != null && listView.isShown()));
 						setChildren(result);
 					}
 				});
