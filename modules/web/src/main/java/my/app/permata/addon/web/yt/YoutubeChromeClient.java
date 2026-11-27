@@ -47,12 +47,6 @@ public class YoutubeChromeClient extends PermataChromeClient {
 	}
 
 	@Override
-	public void onShowCustomView(View view, CustomViewCallback callback) {
-		getWebView().setVisibility(View.INVISIBLE);
-		super.onShowCustomView(view, callback);
-	}
-
-	@Override
 	public boolean canEnterFullScreen() {
 		MainActivityDelegate a = MainActivityDelegate.get(getWebView().getContext());
 		MediaSessionCallback cb = a.getMediaSessionCallback();
