@@ -79,6 +79,7 @@ public class ControlPanelView extends ConstraintLayout implements
     private final GestureDetectorCompat gestureDetector;
     private final ImageView showHideBars;
     private final int defaultBgColor;
+    private final float bothModeTapSlop;
 
     @DimenRes
     private final int size;
@@ -94,9 +95,14 @@ public class ControlPanelView extends ConstraintLayout implements
     private View gestureSource;
     private TextView playbackTimer;
     private long scrollStamp;
+    private boolean bothTapCandidate;
+    private float bothTapDownX;
+    private float bothTapDownY;
+    private long bothTapDownTime;
     public ControlPanelView(Context context, AttributeSet attrs) {
         super(context, attrs, R.attr.appControlPanelStyle);
         this.gestureDetector = new GestureDetectorCompat(context, this);
+        this.bothModeTapSlop = toIntPx(context, 24);
         inflate(context, R.layout.control_panel_view, this);
 
         TypedArray ta = context.obtainStyledAttributes(attrs,
@@ -344,6 +350,7 @@ public class ControlPanelView extends ConstraintLayout implements
             a.postDelayed(this.hideTimer, delay);
         }
         return a.interceptTouchEvent(e, me -> {
+            this.bothTapCandidate = false;
             this.gestureSource = this;
             this.gestureDetector.onTouchEvent(me);
             return super.onTouchEvent(me);
@@ -374,6 +381,9 @@ public class ControlPanelView extends ConstraintLayout implements
     }
     @Override
     public boolean onScroll(MotionEvent e1, MotionEvent e2, float distanceX, float distanceY) {
+        if (this.bothTapCandidate) {
+            return true;
+        }
         boolean horizontal = Math.abs(distanceX) >= Math.abs(distanceY);
         long time = System.currentTimeMillis();
         long diff;
@@ -479,6 +489,56 @@ public class ControlPanelView extends ConstraintLayout implements
     }
     public void onVideoViewTouch(VideoView view, MotionEvent e) {
         this.gestureSource = view;
+        MainActivityDelegate a = getActivity();
+        BodyLayout b = a.getBody();
+        boolean isBothVideo = (b != null) && (b.getMode() == BodyLayout.Mode.BOTH) && (view == b.getVideoView());
+
+        if (!isBothVideo) {
+            this.bothTapCandidate = false;
+            this.gestureDetector.onTouchEvent(e);
+            return;
+        }
+
+        switch (e.getActionMasked()) {
+            case MotionEvent.ACTION_DOWN -> {
+                this.bothTapCandidate = true;
+                this.bothTapDownX = e.getX();
+                this.bothTapDownY = e.getY();
+                this.bothTapDownTime = e.getEventTime();
+            }
+            case MotionEvent.ACTION_POINTER_DOWN -> this.bothTapCandidate = false;
+            case MotionEvent.ACTION_MOVE -> {
+                if (this.bothTapCandidate) {
+                    float dx = e.getX() - this.bothTapDownX;
+                    float dy = e.getY() - this.bothTapDownY;
+                    if ((dx * dx + dy * dy) > (this.bothModeTapSlop * this.bothModeTapSlop)) {
+                        this.bothTapCandidate = false;
+                    }
+                }
+            }
+            case MotionEvent.ACTION_CANCEL -> this.bothTapCandidate = false;
+            case MotionEvent.ACTION_UP -> {
+                if (this.bothTapCandidate) {
+                    this.bothTapCandidate = false;
+                    float dx = e.getX() - this.bothTapDownX;
+                    float dy = e.getY() - this.bothTapDownY;
+                    long elapsed = e.getEventTime() - this.bothTapDownTime;
+                    if ((dx * dx + dy * dy) <= (this.bothModeTapSlop * this.bothModeTapSlop)
+                            && elapsed >= 0L && elapsed < 500L) {
+                        MotionEvent cancel = MotionEvent.obtain(e);
+                        try {
+                            cancel.setAction(MotionEvent.ACTION_CANCEL);
+                            this.gestureDetector.onTouchEvent(cancel);
+                        } finally {
+                            cancel.recycle();
+                        }
+                        b.setMode(BodyLayout.Mode.VIDEO);
+                        return;
+                    }
+                }
+            }
+        }
+
         this.gestureDetector.onTouchEvent(e);
     }
 
@@ -1131,6 +1191,8 @@ public class ControlPanelView extends ConstraintLayout implements
             this.bgAnimator.cancel();
             this.bgAnimator = null;
         }
+
+        this.bothTapCandidate = false;
 
         // 1. Clear all callbacks scheduled on this specific view instance
         removeCallbacks(null); 
