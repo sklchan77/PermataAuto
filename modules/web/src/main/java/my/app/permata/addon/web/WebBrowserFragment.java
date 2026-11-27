@@ -185,6 +185,7 @@ public class WebBrowserFragment extends MainActivityFragment
 	public void onResume() {
 		super.onResume();
 		if (isHidden() || !BuildConfig.AUTO || !fullScreenOnResume) return;
+		fullScreenOnResume = false;
 		PermataWebView v = getWebView();
 		if (v == null) return;
 		v.onResume();
@@ -225,7 +226,9 @@ public class WebBrowserFragment extends MainActivityFragment
 			if (PermataApplication.getMediaCrown() == PermataApplication.CROWN_WEB) {
 				PermataApplication.setMediaCrown(PermataApplication.CROWN_IPTV);
 			}
-		} else if (BuildConfig.AUTO && fullScreenOnResume && v != null) {
+		} else if (BuildConfig.AUTO && fullScreenOnResume) {
+			fullScreenOnResume = false;
+			if (v == null) return;
 			MainActivityDelegate.getActivityDelegate(getContext()).onSuccess(a -> a.post(() -> {
 				if (isHidden() || !isResumed()) return;
 				PermataChromeClient chrome = v.getWebChromeClient();
