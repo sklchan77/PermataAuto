@@ -470,6 +470,11 @@ public class MainActivityDelegate extends ActivityDelegate
 		return (PermataActivity) super.getAppActivity();
 	}
 
+	@Override
+	protected boolean animateFragmentTransitions() {
+		return !getAppActivity().isCarActivity();
+	}
+
 	public boolean isCarActivity() {
 		return AUTO && getAppActivity().isCarActivity() || PermataApplication.get().isMirroringMode();
 	}
@@ -627,23 +632,48 @@ public class MainActivityDelegate extends ActivityDelegate
 			NavBarView nb = getNavBar();
 			boolean animateTb = (tb != null) && (tb.getMediator() != ToolBarView.Mediator.Invisible.instance);
 
-			if (barsHidden) {
-				if (animateTb) {
-					tb.animate().alpha(0f).setDuration(150).withEndAction(() -> tb.setVisibility(GONE)).start();
+			if (tb != null) tb.animate().withEndAction(null).cancel();
+			if (nb != null) nb.animate().withEndAction(null).cancel();
+
+			if (!animateFragmentTransitions()) {
+				if (tb != null) {
+					tb.setAlpha(1f);
+					if (animateTb) tb.setVisibility(barsHidden ? GONE : VISIBLE);
 				}
 				if (nb != null) {
-					nb.animate().alpha(0f).setDuration(150).withEndAction(() -> nb.setVisibility(GONE)).start();
+					nb.setAlpha(1f);
+					nb.setVisibility(barsHidden ? GONE : VISIBLE);
+				}
+				return;
+			}
+
+			if (barsHidden) {
+				if (animateTb) {
+					tb.animate().alpha(0f).setDuration(150).withEndAction(() -> {
+						if (this.barsHidden) tb.setVisibility(GONE);
+						tb.setAlpha(1f);
+					}).start();
+				} else if (tb != null) {
+					tb.setAlpha(1f);
+				}
+				if (nb != null) {
+					nb.animate().alpha(0f).setDuration(150).withEndAction(() -> {
+						if (this.barsHidden) nb.setVisibility(GONE);
+						nb.setAlpha(1f);
+					}).start();
 				}
 			} else {
 				if (animateTb) {
 					tb.setAlpha(0f);
 					tb.setVisibility(VISIBLE);
-					tb.animate().alpha(1f).setDuration(150).start();
+					tb.animate().alpha(1f).setDuration(150).withEndAction(null).start();
+				} else if (tb != null) {
+					tb.setAlpha(1f);
 				}
 				if (nb != null) {
 					nb.setAlpha(0f);
 					nb.setVisibility(VISIBLE);
-					nb.animate().alpha(1f).setDuration(150).start();
+					nb.animate().alpha(1f).setDuration(150).withEndAction(null).start();
 				}
 			}
 		});
@@ -691,9 +721,10 @@ public class MainActivityDelegate extends ActivityDelegate
 
 	private boolean checkMirroringMode(boolean clearFlags) {
 		if (!AUTO) return false;
+		var app = PermataApplication.get();
+		if (getAppActivity().isCarActivity()) return app.isMirroringMode();
 		var screenOnFlags =
 				FLAG_KEEP_SCREEN_ON | FLAG_TURN_SCREEN_ON | FLAG_DISMISS_KEYGUARD | FLAG_SHOW_WHEN_LOCKED;
-		var app = PermataApplication.get();
 		if (!app.isMirroringMode()) {
 			if (clearFlags) getWindow().clearFlags(screenOnFlags);
 			return false;
