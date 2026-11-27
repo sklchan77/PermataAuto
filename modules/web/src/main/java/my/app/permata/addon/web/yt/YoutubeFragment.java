@@ -130,9 +130,36 @@ public class YoutubeFragment extends WebBrowserFragment implements PermataServic
 		a.getMediaServiceBinder().removeBroadcastListener(this);
 	}
 
+	private void exitFullScreenIfNeeded() {
+		PermataWebView v = getWebView();
+		if (v == null) return;
+		PermataChromeClient chrome = v.getWebChromeClient();
+		if (chrome != null && chrome.isFullScreen()) {
+			chrome.exitFullScreen();
+		}
+	}
+
+	private void restoreWebViewSurface() {
+		YoutubeWebView v = getWebView();
+		if (v == null) return;
+		v.onResume();
+		PermataChromeClient chrome = v.getWebChromeClient();
+		if (chrome == null || !chrome.isFullScreen()) {
+			v.setVisibility(View.VISIBLE);
+			View root = getView();
+			if (root != null) {
+				View videoView = root.findViewById(R.id.ytVideoView);
+				if (videoView != null && videoView.getVisibility() != View.GONE) {
+					videoView.setVisibility(View.GONE);
+				}
+			}
+		}
+	}
+
 	@Override
 	public void onPause() {
 		if (isHidden()) {
+			exitFullScreenIfNeeded();
 			super.onPause();
 			return;
 		}
@@ -167,7 +194,9 @@ public class YoutubeFragment extends WebBrowserFragment implements PermataServic
 	@Override
 	public void onResume() {
 		super.onResume();
-		if (isHidden() || !playOnResume) return;
+		if (isHidden()) return;
+		restoreWebViewSurface();
+		if (!playOnResume) return;
 		playOnResume = false;
 		MainActivityDelegate.getActivityDelegate(getContext()).onSuccess(a -> {
 			if (isHidden() || !isResumed()) return;
@@ -182,6 +211,7 @@ public class YoutubeFragment extends WebBrowserFragment implements PermataServic
 	public void onHiddenChanged(boolean hidden) {
 		super.onHiddenChanged(hidden);
 		if (hidden) {
+			exitFullScreenIfNeeded();
 			if ((getAddon() instanceof YoutubeAddon addon) && addon.pauseOnLeave()) {
 				MainActivityDelegate.getActivityDelegate(getContext()).onSuccess(a -> {
 					PermataServiceUiBinder b = a.getMediaServiceBinder();
@@ -202,14 +232,17 @@ public class YoutubeFragment extends WebBrowserFragment implements PermataServic
 						"})();", null);
 				}
 			}
-		} else if (playOnResume) {
-			playOnResume = false;
-			MainActivityDelegate.getActivityDelegate(getContext()).onSuccess(a -> {
-				PermataServiceUiBinder b = a.getMediaServiceBinder();
-				if (YoutubeMediaEngine.isYoutubeItem(b.getCurrentItem())) {
-					b.getMediaSessionCallback().onPlay();
-				}
-			});
+		} else {
+			restoreWebViewSurface();
+			if (playOnResume) {
+				playOnResume = false;
+				MainActivityDelegate.getActivityDelegate(getContext()).onSuccess(a -> {
+					PermataServiceUiBinder b = a.getMediaServiceBinder();
+					if (YoutubeMediaEngine.isYoutubeItem(b.getCurrentItem())) {
+						b.getMediaSessionCallback().onPlay();
+					}
+				});
+			}
 		}
 	}
 
@@ -243,11 +276,14 @@ public class YoutubeFragment extends WebBrowserFragment implements PermataServic
 
 	@Override
 	public void onPlayableChanged(MediaLib.PlayableItem oldItem, MediaLib.PlayableItem newItem) {
+		if (YoutubeMediaEngine.isYoutubeItem(oldItem) && !YoutubeMediaEngine.isYoutubeItem(newItem)) {
+			exitFullScreenIfNeeded();
+			return;
+		}
 		if (isHidden()) return;
 
 		if (YoutubeMediaEngine.isYoutubeItem(newItem)) {
 			PermataWebView v = getWebView();
-			MainActivityDelegate a = MainActivityDelegate.get(getContext());
 			if (v == null) return;
 
 			PermataChromeClient chrome = v.getWebChromeClient();
@@ -255,11 +291,6 @@ public class YoutubeFragment extends WebBrowserFragment implements PermataServic
 
 			// Only while on screen: off screen, full screen would hide the page and pause the video
 			if (isResumed() && !DEFAULT_URLS.contains(getUrl())) chrome.enterFullScreen();
-		} else if (YoutubeMediaEngine.isYoutubeItem(oldItem)) {
-			PermataWebView v = getWebView();
-			if (v == null) return;
-			PermataChromeClient chrome = v.getWebChromeClient();
-			if (chrome != null) chrome.exitFullScreen();
 		}
 	}
 
