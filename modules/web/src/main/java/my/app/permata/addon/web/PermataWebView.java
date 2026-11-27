@@ -492,7 +492,7 @@ public class PermataWebView extends WebView
 	@SuppressLint("ClickableViewAccessibility")
 	@Override
 	public boolean onTouchEvent(MotionEvent event) {
-		if (event.getActionMasked() == MotionEvent.ACTION_DOWN) {
+		if (getClass() == PermataWebView.class && event.getActionMasked() == MotionEvent.ACTION_DOWN) {
 			my.app.permata.action.KeyEventHandler.manualTouchFocus = my.app.permata.action.KeyEventHandler.TARGET_WEB;
 			Log.i("[INPUT_TELEMETRY]", "PermataWebView touched (Action DOWN). Touch-Focus locked to TARGET_WEB.");
 		}
