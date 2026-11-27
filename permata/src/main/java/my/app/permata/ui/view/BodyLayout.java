@@ -43,6 +43,7 @@ public class BodyLayout extends SplitLayout
 		MainActivityListener, PermataServiceUiBinder.Listener, MediaSessionCallback.Listener {
 	private Mode mode;
 	private FutureSupplier<?> startingPlayback = completedVoid();
+	private long pendingPlaySeq;
 
 	public BodyLayout(@NonNull Context ctx, @Nullable AttributeSet attrs) {
 		super(ctx, attrs);
@@ -95,6 +96,7 @@ public class BodyLayout extends SplitLayout
 	public void setMode(Mode mode) {
 		Mode oldMode = this.mode;
 		this.mode = mode;
+		if (mode == Mode.FRAME) pendingPlaySeq++;
 		Guideline gl = getGuideline();
 		ConstraintLayout.LayoutParams lp = (ConstraintLayout.LayoutParams) gl.getLayoutParams();
 		MainActivityDelegate a = getActivity();
@@ -156,6 +158,8 @@ public class BodyLayout extends SplitLayout
 	@Override
 	public void onActivityEvent(MainActivityDelegate a, long e) {
 		if (handleActivityDestroyEvent(a, e)) {
+			pendingPlaySeq++;
+			startingPlayback.cancel();
 			PermataServiceUiBinder b = a.getMediaServiceBinder();
 			b.removeBroadcastListener(this);
 			b.getMediaSessionCallback().removeBroadcastListener(this);
@@ -187,6 +191,7 @@ public class BodyLayout extends SplitLayout
 	}
 
 	public void playItem(MediaLib.PlayableItem i) {
+		final long seq = ++pendingPlaySeq;
 		startingPlayback.cancel();
 		MainActivityDelegate a = getActivity();
 
@@ -194,7 +199,9 @@ public class BodyLayout extends SplitLayout
 				!a.getMediaSessionCallback().hasCustomEngineProvider()) {
 			Log.i(sessionTag(a) + "[SURFACE] BodyLayout.playItem | surfaceCreated=false -> waiting in Mode.VIDEO");
 			setMode(BodyLayout.Mode.VIDEO);
-			getVideoView().onSurfaceCreated(() -> playItem(i));
+			getVideoView().onSurfaceCreated(() -> {
+				if (seq == pendingPlaySeq) playItem(i);
+			});
 			return;
 		}
 
@@ -210,6 +217,7 @@ public class BodyLayout extends SplitLayout
 
 	@Override
 	public void onPlayableChanged(MediaLib.PlayableItem oldItem, MediaLib.PlayableItem newItem) {
+		pendingPlaySeq++;
 		startingPlayback.cancel();
 		MainActivityDelegate a = getActivity();
 		if (!(a.getActiveFragment() instanceof MainActivityFragment f)) return;
@@ -265,6 +273,7 @@ public class BodyLayout extends SplitLayout
 
 	@Override
 	public void onPlaybackStopped() {
+		pendingPlaySeq++;
 		startingPlayback.cancel();
 		var a = getActivity();
 		if (a.getActiveFragment() instanceof SubtitlesFragment) a.goToCurrent();
