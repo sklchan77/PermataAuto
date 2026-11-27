@@ -407,8 +407,12 @@ public abstract class ActivityDelegate implements EventBroadcaster<ActivityListe
 			View v = switchingTo.getView();
 			if (v != null) {
 				v.animate().cancel();
-				v.setAlpha(0f);
-				v.animate().alpha(1f).setDuration(150).start();
+				if (animateFragmentTransitions()) {
+					v.setAlpha(0f);
+					v.animate().alpha(1f).setDuration(150).start();
+				} else {
+					v.setAlpha(1f);
+				}
 			}
 			postBroadcastEvent(FRAGMENT_CHANGED);
 			return switchingTo;
@@ -417,6 +421,10 @@ public abstract class ActivityDelegate implements EventBroadcaster<ActivityListe
 			Log.d(err);
 			return null;
 		}
+	}
+
+	protected boolean animateFragmentTransitions() {
+		return true;
 	}
 
 	protected ActivityFragment createFragment(int id) {
