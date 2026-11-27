@@ -72,6 +72,7 @@ import my.app.permata.addon.AddonManager;
 import my.app.permata.addon.PermataAddon;
 import my.app.permata.addon.PermataMediaServiceAddon;
 import my.app.permata.auto.AccessibilityEventDispatcherService;
+import my.app.permata.auto.MainCarActivity;
 import my.app.permata.auto.MirrorDisplay;
 import my.app.permata.media.lib.DefaultMediaLib;
 import my.app.permata.media.lib.MediaLib;
@@ -244,10 +245,15 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 		}
 	}
 
-	private boolean isActiveEnginePlayingNotMirroring() {
+	private boolean isCarUiForeground() {
+		return MainCarActivity.activeInstance != null;
+	}
+
+	private boolean isActiveEnginePlayingForCar() {
 		PermataApplication app = PermataApplication.get();
 		boolean mirroring = (app != null) && app.isMirroringMode();
-		return !mirroring && (callback != null) && (callback.getEngine() != null) && callback.isPlaying();
+		return (callback != null) && (callback.getEngine() != null) && callback.isPlaying()
+				&& (!mirroring || isCarUiForeground());
 	}
 
 	private String sessionTag() {
@@ -718,9 +724,12 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 	private void onWebMediaPlaying() {
 		if (isTeardownActive) return;
 
+		boolean isCarUiFg = isCarUiForeground();
 		boolean isCarNotMirroring = PermataApplication.get().isConnectedToAuto() && !PermataApplication.get().isMirroringMode();
 		String activePkg = AccessibilityEventDispatcherService.getLastActivePackage();
-		boolean isPermataOrAA = isCarNotMirroring || (activePkg != null && (activePkg.startsWith("my.app.permata") || activePkg.equals("com.google.android.projection.gearhead")));
+		boolean isPermataOrAA = isCarUiFg || isCarNotMirroring
+				|| (activePkg != null && (activePkg.startsWith("my.app.permata")
+				|| activePkg.equals("com.google.android.projection.gearhead")));
 
 		if (!isPermataOrAA) {
 			Log.i(sessionTag() + "[DECISION] WebMedia PLAY Blocked | activePkg=" + activePkg);
@@ -755,9 +764,12 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 	private void onWebMediaPaused() {
 		if (isTeardownActive) return;
 
+		boolean isCarUiFg = isCarUiForeground();
 		boolean isCarNotMirroring = PermataApplication.get().isConnectedToAuto() && !PermataApplication.get().isMirroringMode();
 		String activePkg = AccessibilityEventDispatcherService.getLastActivePackage();
-		boolean isPermataOrAA = isCarNotMirroring || (activePkg != null && (activePkg.startsWith("my.app.permata") || activePkg.equals("com.google.android.projection.gearhead")));
+		boolean isPermataOrAA = isCarUiFg || isCarNotMirroring
+				|| (activePkg != null && (activePkg.startsWith("my.app.permata")
+				|| activePkg.equals("com.google.android.projection.gearhead")));
 
 		if (!isPermataOrAA) {
 			Log.i(sessionTag() + "[DECISION] WebMedia PAUSE Blocked | activePkg=" + activePkg);
@@ -775,9 +787,18 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 		if (audioHardwareExecutor == null || audioHardwareExecutor.isShutdown()) return;
 		if (isTeardownActive) return;
 
-		if (isActiveEnginePlayingNotMirroring()) {
+		if (isActiveEnginePlayingForCar()) {
 			Log.i(sessionTag() + "[DECISION] Silent Anchor Skipped | reason=ACTIVE_ENGINE_PLAYING");
 			return;
+		}
+
+		PermataApplication app = PermataApplication.get();
+		boolean mirroring = (app != null) && app.isMirroringMode();
+		if (mirroring && !isCarUiForeground() && (callback != null) && (callback.getEngine() != null)) {
+			Log.i(sessionTag() + "[AUDIO] Stopping Active Engine Before Mirror Anchor | reason=PREVENT_ASYNC_SESSION_DEACTIVATE");
+			try {
+				callback.stopImmediate();
+			} catch (Exception ignored) {}
 		}
 
 		if (callback != null) {
@@ -806,7 +827,7 @@ public class PermataMediaService extends MediaBrowserServiceCompat {
 								} else if (focusChange == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK) {
 									Log.i(sessionTag() + "[AUDIO] Focus Changed | state=LOSS_TRANSIENT_CAN_DUCK");
 								} else if (focusChange == AudioManager.AUDIOFOCUS_GAIN) {
-									if (isActiveEnginePlayingNotMirroring()) {
+									if (isActiveEnginePlayingForCar()) {
 										Log.i(sessionTag() + "[AUDIO] Focus Changed | state=GAIN -> action=SKIP_REANCHOR_ENGINE_PLAYING");
 										return;
 									}
