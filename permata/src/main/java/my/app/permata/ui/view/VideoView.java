@@ -105,6 +105,10 @@ public class VideoView extends FrameLayout
 		});
 	}
 
+	private String sessionTag(@Nullable MainActivityDelegate a) {
+		return (a != null && a.isCarActivity()) ? "[CAR]" : "[PHONE]";
+	}
+
 	protected void init(Context context) {
 		setBackgroundColor(Color.BLACK);
 		addView(new SurfaceView(getContext()) {
@@ -249,13 +253,16 @@ public class VideoView extends FrameLayout
 			SurfaceView sv = getVideoSurface();
 			if (sv == null) return;
 			var h = sv.getHolder();
+			if (!h.getSurface().isValid()) return;
 			var c = h.lockCanvas();
-			try {
-				c.drawColor(Color.TRANSPARENT, PorterDuff.Mode.CLEAR);
-			} catch (Exception err) {
-				Log.e(err);
-			} finally {
-				h.unlockCanvasAndPost(c);
+			if (c != null) {
+				try {
+					c.drawColor(Color.TRANSPARENT, PorterDuff.Mode.CLEAR);
+				} catch (Exception err) {
+					Log.e(err);
+				} finally {
+					h.unlockCanvasAndPost(c);
+				}
 			}
 
 			h.removeCallback(this);
@@ -270,7 +277,9 @@ public class VideoView extends FrameLayout
 			SurfaceView sv = getSubtitleSurface();
 			if (sv == null) return;
 			var h = sv.getHolder();
+			if (!h.getSurface().isValid()) return;
 			var c = h.lockCanvas();
+			if (c == null) return;
 			try {
 				c.drawColor(Color.TRANSPARENT, PorterDuff.Mode.CLEAR);
 			} catch (Exception err) {
@@ -283,14 +292,18 @@ public class VideoView extends FrameLayout
 
 	private void drawSubtitles() {
 		createSurface.onSuccess(v -> {
+			SubDrawer drawer = subDrawer;
+			if (drawer == null) return;
 			SurfaceView sv = getSubtitleSurface();
 			if (sv == null) return;
 			var h = sv.getHolder();
+			if (!h.getSurface().isValid()) return;
 			var c = h.lockCanvas();
+			if (c == null) return;
 			var cs = c.save();
 			try {
-				subDrawer.clr(c);
-				subDrawer.draw(c);
+				drawer.clr(c);
+				drawer.draw(c);
 			} catch (Exception err) {
 				Log.e(err);
 			} finally {
@@ -376,9 +389,18 @@ public class VideoView extends FrameLayout
 
 	@Override
 	public void surfaceCreated(@NonNull SurfaceHolder holder) {
-		if (!getVideoSurface().getHolder().getSurface().isValid()) return;
-		SurfaceView s = getSubtitleSurface();
-		if ((s != null) && !s.getHolder().getSurface().isValid()) return;
+		SurfaceView videoSv = getVideoSurface();
+		if ((videoSv == null) || (holder != videoSv.getHolder())) {
+			SurfaceView subSv = getSubtitleSurface();
+			if ((subSv != null) && (holder == subSv.getHolder()) && (subDrawer != null)) {
+				drawSubtitles();
+			}
+			return;
+		}
+		if (!holder.getSurface().isValid()) return;
+		SurfaceView subSv = getSubtitleSurface();
+		boolean subValid = (subSv != null) && subSv.getHolder().getSurface().isValid();
+		Log.i(sessionTag(getActivity().peek()) + "[SURFACE] VideoView.surfaceCreated | videoValid=true, subValid=" + subValid);
 		getActivity().onSuccess(
 				a -> a.getMediaSessionCallback().addVideoView(this, a.isCarActivityNotMirror() ? 0 : 1));
 		if (createSurface instanceof Promise<?> p) {
@@ -389,6 +411,9 @@ public class VideoView extends FrameLayout
 
 	@Override
 	public void surfaceDestroyed(@NonNull SurfaceHolder holder) {
+		SurfaceView videoSv = getVideoSurface();
+		if ((videoSv != null) && (holder != videoSv.getHolder())) return;
+		Log.i(sessionTag(getActivity().peek()) + "[SURFACE] VideoView.surfaceDestroyed");
 		createSurface = new Promise<>();
 		getActivity().onSuccess(a -> a.getMediaSessionCallback().removeVideoView(this));
 	}
