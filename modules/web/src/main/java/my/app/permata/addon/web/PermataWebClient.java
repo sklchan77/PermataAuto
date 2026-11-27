@@ -53,7 +53,7 @@ public class PermataWebClient extends WebViewClientCompat {
         v.pageLoaded(url);
         f.onSuccess(a -> a.fireBroadcastEvent(FRAGMENT_CONTENT_CHANGED));
 
-        if (!isYoutubeUri(Uri.parse(url))) {
+        if (view.getClass() == PermataWebView.class && url != null && !isYoutubeUri(Uri.parse(url))) {
             String js = "try { " +
                 "  if (!window.__permataFrame) { " +
                 "    window.__permataFrame = document.createElement('iframe'); " +
