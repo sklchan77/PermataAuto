@@ -52,7 +52,7 @@ public class BodyLayout extends SplitLayout
 		srl.setId(R.id.swiperefresh);
 		srl.setOnRefreshListener(this);
 		srl.setOnChildScrollUpCallback(this);
-		setMode(Mode.FRAME);
+		setMode(Mode.FRAME, true);
 
 		MainActivityDelegate.getActivityDelegate(ctx).onSuccess(a -> {
 			PermataServiceUiBinder b = a.getMediaServiceBinder();
@@ -94,7 +94,14 @@ public class BodyLayout extends SplitLayout
 	}
 
 	public void setMode(Mode mode) {
+		setMode(mode, false);
+	}
+
+	public void setMode(Mode mode, boolean force) {
+		if (mode == null) return;
 		Mode oldMode = this.mode;
+		if (!force && (oldMode == mode)) return;
+
 		this.mode = mode;
 		if (mode == Mode.FRAME) pendingPlaySeq++;
 		Guideline gl = getGuideline();
@@ -130,7 +137,8 @@ public class BodyLayout extends SplitLayout
 				getSplitLine().setVisibility(VISIBLE);
 				getSplitHandle().setVisibility(VISIBLE);
 				getSwipeRefresh().setVisibility(VISIBLE);
-				lp.guidePercent = a.getPrefs().getFloatPref(getSplitPercentPref(isPortrait()));
+				float split = a.getPrefs().getFloatPref(getSplitPercentPref(isPortrait()));
+				lp.guidePercent = Math.max(0.1f, Math.min(0.9f, split));
 				vv.showVideo(true);
 				a.setVideoMode(true, vv);
 				MediaItemListView.focusActive(getContext(), vv);
@@ -152,7 +160,7 @@ public class BodyLayout extends SplitLayout
 	@Override
 	protected void onConfigurationChanged(Configuration newConfig) {
 		super.onConfigurationChanged(newConfig);
-		setMode(getMode());
+		setMode(getMode(), true);
 	}
 
 	@Override
