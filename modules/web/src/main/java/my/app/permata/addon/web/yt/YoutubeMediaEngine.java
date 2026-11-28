@@ -9,7 +9,6 @@ import android.content.res.Resources;
 import android.media.AudioManager;
 import android.media.MediaMetadata;
 import android.support.v4.media.MediaMetadataCompat;
-import android.view.ViewGroup;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
@@ -20,7 +19,6 @@ import com.google.android.play.core.splitcompat.SplitCompat;
 
 import my.app.permata.BuildConfig;
 import my.app.permata.PermataApplication;
-import my.app.permata.addon.web.PermataChromeClient;
 import my.app.permata.addon.web.R;
 import my.app.permata.addon.web.yt.YoutubeAddon.VideoScale;
 import my.app.permata.auto.MainCarActivity;
@@ -67,9 +65,39 @@ class YoutubeMediaEngine implements MediaEngine, OverlayMenu.SelectionHandler {
 		this.web = web;
 		cb = a.getMediaSessionCallback();
 		mediaRoot = new ExtRoot("youtube", a.getLib());
-		next = new YoutubeItem(NEXT_ID, mediaRoot, GenericFileSystem.getInstance().create("http://youtube.com/next"));
-		prev = new YoutubeItem(PREV_ID, mediaRoot, GenericFileSystem.getInstance().create("http://youtube.com/prev"));
+		next = new YoutubeItem(NEXT_ID, mediaRoot, GenericFileSystem.getInstance().create("http://youtube.com/next")) {
+			@NonNull
+			@Override
+			public FutureSupplier<PlayableItem> getPrevPlayable() {
+				return completed(prev);
+			}
+
+			@NonNull
+			@Override
+			public FutureSupplier<PlayableItem> getNextPlayable() {
+				return completed(this);
+			}
+		};
+		prev = new YoutubeItem(PREV_ID, mediaRoot, GenericFileSystem.getInstance().create("http://youtube.com/prev")) {
+			@NonNull
+			@Override
+			public FutureSupplier<PlayableItem> getPrevPlayable() {
+				return completed(this);
+			}
+
+			@NonNull
+			@Override
+			public FutureSupplier<PlayableItem> getNextPlayable() {
+				return completed(next);
+			}
+		};
 		end = new YoutubeItem(END_ID, mediaRoot, GenericFileSystem.getInstance().create("http://youtube.com/end")) {
+			@NonNull
+			@Override
+			public FutureSupplier<PlayableItem> getPrevPlayable() {
+				return completed(prev);
+			}
+
 			@NonNull
 			@Override
 			public FutureSupplier<PlayableItem> getNextPlayable() {
@@ -79,14 +107,30 @@ class YoutubeMediaEngine implements MediaEngine, OverlayMenu.SelectionHandler {
 	}
 
 	private boolean isYoutubeVisibleInCar() {
-		if (MainCarActivity.activeInstance == null) return false;
-		if (web.isShown()) return true;
-		PermataChromeClient chrome = web.getWebChromeClient();
-		ViewGroup fs = (chrome != null) ? chrome.getFullScreenView() : null;
-		return (fs != null) && fs.isShown();
+		return (MainCarActivity.activeInstance != null) && web.isVideoUiVisible();
 	}
 
-	void playing(String url) {
+	void playing(@Nullable String url) {
+		PermataApplication app = PermataApplication.get();
+		boolean visibleInCar = isYoutubeVisibleInCar();
+		boolean visibleUi = web.isVideoUiVisible();
+
+		if (BuildConfig.AUTO && (app != null) && app.isMirroringMode()) {
+			if (visibleInCar && app.isConnectedToAuto()) {
+				MirrorDisplay.shutdownForCarMedia();
+			} else {
+				Log.i("[YT][DECISION] Hidden YouTube PLAY blocked during Mirroring -> pausing WebView");
+				web.pause();
+				return;
+			}
+		}
+
+		if (!visibleUi && (PermataApplication.getMediaCrown() == PermataApplication.CROWN_WEB)) {
+			Log.i("[YT][DECISION] Hidden YouTube PLAY blocked while CROWN_WEB active -> pausing WebView");
+			web.pause();
+			return;
+		}
+
 		if (BuildConfig.AUTO && web.getAddon().skipAd()) {
 			web.loadUrl("javascript:\n" +
 					"if (document.querySelectorAll('.ad-showing').length > 0) {\n" +
@@ -95,19 +139,14 @@ class YoutubeMediaEngine implements MediaEngine, OverlayMenu.SelectionHandler {
 					"}");
 		}
 
-		if (url.startsWith("blob:")) url = url.substring(5);
-		current = new Current(url);
+		String safeUrl = (url == null) ? "" : url;
+		if (safeUrl.startsWith("blob:")) safeUrl = safeUrl.substring(5);
+		current = new Current(safeUrl);
 		if (!web.getAddon().autoHighestQuality()) {
 			qualityUrl = null;
-		} else if (!url.isEmpty() && !url.equals(qualityUrl)) {
-			qualityUrl = url;
+		} else if (!safeUrl.isEmpty() && !safeUrl.equals(qualityUrl)) {
+			qualityUrl = safeUrl;
 			web.setHighestVideoQuality();
-		}
-
-		PermataApplication app = PermataApplication.get();
-		if (BuildConfig.AUTO && isYoutubeVisibleInCar() && app != null
-				&& app.isMirroringMode() && app.isConnectedToAuto()) {
-			MirrorDisplay.shutdownForCarMedia();
 		}
 
 		PermataApplication.setMediaCrown(PermataApplication.CROWN_IPTV);
@@ -117,6 +156,7 @@ class YoutubeMediaEngine implements MediaEngine, OverlayMenu.SelectionHandler {
 	}
 
 	void ended() {
+		if (cb.getEngine() != this) return;
 		current = end;
 		qualityUrl = null;
 		cb.onEngineEnded(this);
@@ -131,9 +171,13 @@ class YoutubeMediaEngine implements MediaEngine, OverlayMenu.SelectionHandler {
 	}
 
 	void paused() {
+		if ((cb.getEngine() != this) || (current == null)) return;
 		ignorePause = true;
-		cb.onPause();
-		ignorePause = false;
+		try {
+			cb.onPause();
+		} finally {
+			ignorePause = false;
+		}
 	}
 
 	@Override
@@ -159,7 +203,6 @@ class YoutubeMediaEngine implements MediaEngine, OverlayMenu.SelectionHandler {
 
 	@Override
 	public void stop() {
-		if ((current == null) || (current == end)) return;
 		current = null;
 		qualityUrl = null;
 		web.stop();
@@ -242,7 +285,7 @@ class YoutubeMediaEngine implements MediaEngine, OverlayMenu.SelectionHandler {
 				r.getString(R.string.video_quality)).setFutureSubmenu(this::videoQualityMenu);
 		b.addItem(my.app.permata.R.id.video_scaling,
 				ResourcesCompat.getDrawable(r, R.drawable.video_scaling, ctx.getTheme()),
-				r.getString(my.app.permata.R.id.video_scaling)).setSubmenu(this::videoScalingMenu);
+				r.getString(my.app.permata.R.string.video_scaling)).setSubmenu(this::videoScalingMenu);
 	}
 
 	private FutureSupplier<Void> videoQualityMenu(OverlayMenu.Builder b) {
