@@ -99,6 +99,7 @@ import my.app.permata.addon.PermataActivityAddon;
 import my.app.permata.addon.PermataAddon;
 import my.app.permata.addon.PermataFragmentAddon;
 import my.app.permata.addon.MediaLibAddon;
+import my.app.permata.media.engine.MediaEngine;
 import my.app.permata.media.engine.MediaEngineManager;
 import my.app.permata.media.lib.AtvInterface;
 import my.app.permata.media.lib.DefaultMediaLib;
@@ -199,6 +200,21 @@ public class MainActivityDelegate extends ActivityDelegate
 			if (entry != null) return entry.toUpperCase(Locale.US);
 		} catch (Exception ignored) {}
 		return "ID_0x" + Integer.toHexString(id);
+	}
+
+	private boolean isMediaLibFragmentId(int id) {
+		if (id == R.id.folders_fragment || id == R.id.favorites_fragment || id == R.id.playlists_fragment) {
+			return true;
+		}
+		if (getMediaLibFragment(id) != null) {
+			return true;
+		}
+		for (PermataAddon a : AddonManager.get().getAddons()) {
+			if ((a instanceof MediaLibAddon mla) && (mla.getFragmentId() == id)) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	@NonNull
@@ -688,7 +704,7 @@ public class MainActivityDelegate extends ActivityDelegate
 			this.videoMode = true;
 			setSystemUiVisibility();
 			keepScreenOn(true);
-			cp.enableVideoMode(v);
+			if (cp != null) cp.enableVideoMode(v);
 		} else {
 			this.videoMode = false;
 			setSystemUiVisibility();
@@ -796,12 +812,22 @@ public class MainActivityDelegate extends ActivityDelegate
 		Log.i(sessionTag() + "[NAV] Page Switch | from=" + from + " -> to=" + to);
 
 		BodyLayout b = getBody();
-		if (b.isVideoMode()) {
-			Log.i(sessionTag() + "[DECISION] Page Switch from Fullscreen Video | action=SWITCH_BODY_TO_BOTH");
-			b.setMode(BodyLayout.Mode.BOTH);
+		if (b != null && b.isVideoMode()) {
+			MediaSessionCallback cb = getMediaSessionCallback();
+			MediaEngine eng = (cb != null) ? cb.getEngine() : null;
+			boolean canSplit = isMediaLibFragmentId(id)
+					&& (eng != null)
+					&& eng.isSplitModeSupported()
+					&& (cb.getVideoView() == b.getVideoView());
+			BodyLayout.Mode targetMode = canSplit ? BodyLayout.Mode.BOTH : BodyLayout.Mode.FRAME;
+			Log.i(sessionTag() + "[DECISION] Page Switch from Fullscreen Video | action="
+					+ (canSplit ? "SWITCH_BODY_TO_BOTH" : "SWITCH_BODY_TO_FRAME"));
+			b.setMode(targetMode);
 		}
 		ActivityFragment frag = super.showFragment(id, input);
-		post(() -> CustomThemeManager.applyIfCustom(this));
+		if (frag != null) {
+			post(() -> CustomThemeManager.applyIfCustom(this));
+		}
 		return frag;
 	}
 
