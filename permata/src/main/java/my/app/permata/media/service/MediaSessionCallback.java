@@ -2,6 +2,7 @@ package my.app.permata.media.service;
 
 import static android.media.AudioManager.ACTION_AUDIO_BECOMING_NOISY;
 import static android.media.AudioManager.AUDIOFOCUS_GAIN;
+import static android.media.AudioManager.AUDIOFOCUS_LOSS;
 import static android.media.AudioManager.AUDIOFOCUS_LOSS_TRANSIENT;
 import static android.media.AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK;
 import static android.support.v4.media.MediaMetadataCompat.METADATA_KEY_ALBUM_ART;
@@ -49,6 +50,7 @@ import static my.app.permata.media.pref.MediaPrefs.EQ_BANDS;
 import static my.app.permata.media.pref.MediaPrefs.EQ_ENABLED;
 import static my.app.permata.media.pref.MediaPrefs.EQ_PRESET;
 import static my.app.permata.media.pref.MediaPrefs.EQ_USER_PRESETS;
+import static my.app.permata.media.pref.MediaPrefs.MEDIA_ENG_YT;
 import static my.app.permata.media.pref.MediaPrefs.VIRT_ENABLED;
 import static my.app.permata.media.pref.MediaPrefs.VIRT_MODE;
 import static my.app.permata.media.pref.MediaPrefs.VIRT_STRENGTH;
@@ -256,6 +258,7 @@ public class MediaSessionCallback extends MediaSessionCompat.Callback
 			public void onReceive(Context context, Intent intent) {
 				if (ACTION_AUDIO_BECOMING_NOISY.equals(intent.getAction())) {
 					Log.i("Received ACTION_AUDIO_BECOMING_NOISY event");
+					playOnAudioFocus = false;
 					onPause();
 				}
 			}
@@ -278,6 +281,7 @@ public class MediaSessionCallback extends MediaSessionCompat.Callback
 					if (wasConnected && !connected) {
 						boolean phoneUiActive = MainActivity.getActiveInstance() != null;
 						if (phoneUiActive) {
+							playOnAudioFocus = false;
 							onPause();
 						} else {
 							Log.i("[CAR][DECISION] Car Disconnected (Phone UI Closed) | action=STOP_PLAYBACK");
@@ -320,7 +324,67 @@ public class MediaSessionCallback extends MediaSessionCompat.Callback
 	void stopImmediate() {
 		cancelPendingPrepare();
 		playerTask.cancel();
+		playOnAudioFocus = false;
+		isMuted = false;
+		stopTimer();
 		onStop(false);
+	}
+
+	/**
+	 * Stops and closes any active engine cleanly before WebBrowser or Mirroring takes over the
+	 * MediaSession anchor, without deactivating MediaSessionCompat or broadcasting an intermediate
+	 * STATE_STOPPED flap to Android Auto / BT AVRCP.
+	 */
+	void stopEngineForAnchorTransfer() {
+		cancelPendingPrepare();
+		playerTask.cancel();
+		playOnAudioFocus = false;
+		isMuted = false;
+		stopTimer();
+		MediaEngine prev = this.engine;
+		this.engine = null;
+		startupPrepareEngine = null;
+
+		boolean hadEngine = (prev != null);
+		if (prev != null) {
+			savePositionSnapshotIfReady(prev);
+			try { prev.stop(); } catch (Exception ignored) {}
+			try { prev.releaseAudioFocus(audioManager, audioFocusReq); } catch (Exception ignored) {}
+			try { prev.close(); } catch (Exception ignored) {}
+		}
+
+		currentState = new PlaybackStateCompat.Builder().setActions(SUPPORTED_ACTIONS)
+				.setState(STATE_STOPPED, 0, 1.0f).build();
+		if (hadEngine) {
+			service.updateNotification(STATE_STOPPED, null);
+			fireBroadcastEvent(l -> l.onPlaybackStateChanged(this, currentState));
+		}
+	}
+
+	public void restorePlayingStateIfSkipping(@NonNull MediaEngine expectedEngine) {
+		if (this.engine != expectedEngine) return;
+		int st = currentState.getState();
+		if ((st == STATE_SKIPPING_TO_NEXT) || (st == STATE_SKIPPING_TO_PREVIOUS)) {
+			float speed = currentState.getPlaybackSpeed() > 0f ? currentState.getPlaybackSpeed() : 1.0f;
+			PlaybackStateCompat restored = new PlaybackStateCompat.Builder(currentState)
+					.setState(STATE_PLAYING, currentState.getPosition(), speed)
+					.build();
+			setPlaybackState(restored);
+		}
+	}
+
+	private void savePositionSnapshotIfReady(@NonNull MediaEngine eng) {
+		PlayableItem item = eng.getSource();
+		if ((item == null) || item.isExternal()) return;
+		if (item.isStream() || !item.isSeekable()) {
+			setLastPlayed(item, 0);
+		} else {
+			FutureSupplier<Long> posFuture = eng.getPosition();
+			if (posFuture.isDone() && !posFuture.isFailed()) {
+				Long pos = posFuture.peek();
+				if (pos != null) setLastPlayed(item, pos);
+			}
+		}
 	}
 
 	private void queryCarConnection() {
@@ -367,9 +431,26 @@ public class MediaSessionCallback extends MediaSessionCompat.Callback
 	public void setEngine(MediaEngine engine) {
 		if (this.startupPrepareEngine == engine) this.startupPrepareEngine = null;
 		if (this.engine == engine) return;
+
+		MediaEngine prev = this.engine;
+		cancelPendingPrepare();
 		playerTask.cancel();
-		onStop();
+		playOnAudioFocus = false;
+		isMuted = false;
+		stopTimer();
 		this.engine = engine;
+
+		if (prev != null) {
+			if (prev == startupPrepareEngine) startupPrepareEngine = null;
+			savePositionSnapshotIfReady(prev);
+			try { prev.stop(); } catch (Exception ignored) {}
+			try { prev.releaseAudioFocus(audioManager, audioFocusReq); } catch (Exception ignored) {}
+			try { prev.close(); } catch (Exception ignored) {}
+		}
+
+		if (engine == null) {
+			stopped();
+		}
 	}
 
 	@Nullable
@@ -508,6 +589,9 @@ public class MediaSessionCallback extends MediaSessionCompat.Callback
 	public void close() {
 		cancelPendingPrepare();
 		playerTask.cancel();
+		playOnAudioFocus = false;
+		isMuted = false;
+		stopTimer();
 		onStop(false);
 		startupPrepareEngine = null;
 		try {
@@ -587,6 +671,7 @@ public class MediaSessionCallback extends MediaSessionCompat.Callback
 	@Override
 	public void onPlay() {
 		cancelPendingPrepare();
+		playOnAudioFocus = false;
 		playerTask.cancel();
 		playerTask = play();
 	}
@@ -664,6 +749,7 @@ public class MediaSessionCallback extends MediaSessionCompat.Callback
 	@Override
 	public void onPlayFromMediaId(String mediaId, Bundle extras) {
 		cancelPendingPrepare();
+		playOnAudioFocus = false;
 		playerTask.cancel();
 		playerTask = playFromMediaId(mediaId, extras);
 	}
@@ -744,6 +830,8 @@ public class MediaSessionCallback extends MediaSessionCompat.Callback
 
 	@Override
 	public void onStop() {
+		playOnAudioFocus = false;
+		isMuted = false;
 		onStop(true);
 	}
 
@@ -764,6 +852,7 @@ public class MediaSessionCallback extends MediaSessionCompat.Callback
 
 	private FutureSupplier<?> onStop(MediaEngine eng, long pos) {
 		boolean external = false;
+		boolean replaced = (eng != null) && (this.engine != null) && (this.engine != eng);
 
 		if (eng != null) {
 			if (eng == startupPrepareEngine) startupPrepareEngine = null;
@@ -777,6 +866,13 @@ public class MediaSessionCallback extends MediaSessionCompat.Callback
 			if (eng == engine) engine = null;
 		}
 
+		if (replaced) {
+			return completedVoid();
+		}
+
+		playOnAudioFocus = false;
+		isMuted = false;
+		stopTimer();
 		stopped();
 		// An external item (e.g. a web video) can't be resumed from here, don't keep showing it
 		if (external) setMetadata(null);
@@ -812,22 +908,26 @@ public class MediaSessionCallback extends MediaSessionCompat.Callback
 
 	@Override
 	public void onSkipToPrevious() {
+		playOnAudioFocus = false;
 		playerTask.cancel();
 		playerTask = skipTo(false, false);
 	}
 
 	public void onSkipToPreviousFolder() {
+		playOnAudioFocus = false;
 		playerTask.cancel();
 		playerTask = skipTo(false, true);
 	}
 
 	@Override
 	public void onSkipToNext() {
+		playOnAudioFocus = false;
 		playerTask.cancel();
 		playerTask = skipTo(true, false);
 	}
 
 	public void onSkipToNextFolder() {
+		playOnAudioFocus = false;
 		playerTask.cancel();
 		playerTask = skipTo(true, true);
 	}
@@ -1003,6 +1103,7 @@ public class MediaSessionCallback extends MediaSessionCompat.Callback
 		PlayableItem pi = getCurrentItem();
 		if (pi == null) return;
 
+		playOnAudioFocus = false;
 		playerTask.cancel();
 		playerTask = skipToQueueItem(pi, queueId);
 	}
@@ -1127,6 +1228,7 @@ public class MediaSessionCallback extends MediaSessionCompat.Callback
 	}
 
 	private void setPlayingState(MediaEngine engine, boolean playing, long pos, float speed) {
+		if (this.engine != engine) return;
 		PlayableItem i = engine.getSource();
 		if (i == null) return;
 		BrowsableItemPrefs prefs = i.getParent().getPrefs();
@@ -1224,6 +1326,7 @@ public class MediaSessionCallback extends MediaSessionCompat.Callback
 
 	@Override
 	public void onEngineEnded(MediaEngine engine) {
+		if (this.engine != engine) return;
 		playerTask.cancel();
 		playerTask = engineEnded(engine);
 	}
@@ -1386,18 +1489,25 @@ public class MediaSessionCallback extends MediaSessionCompat.Callback
 					eng.mute(getContext());
 					return;
 				}
+				playOnAudioFocus = true;
+				onPause();
+				break;
+			case AUDIOFOCUS_LOSS:
 			default:
+				// Permanent loss (Spotify, TikTok, WebBrowser, another media player):
+				// pause cleanly and do NOT arm auto-resume on future focus gains.
+				playOnAudioFocus = false;
+				isMuted = false;
 				if (isPlaying()) {
-					playOnAudioFocus = true;
 					onPause();
 				}
-
 				break;
 		}
 	}
 
 	public void playItem(PlayableItem i, long pos) {
 		cancelPendingPrepare();
+		playOnAudioFocus = false;
 		playerTask.cancel();
 		setLastPlayed(i, pos);
 
@@ -1552,6 +1662,11 @@ public class MediaSessionCallback extends MediaSessionCompat.Callback
 				engine.getClass().getSimpleName());
 		if (BuildConfig.AUTO && PermataApplication.get().isMirroringMode() && PermataApplication.get().isConnectedToAuto()) {
 			my.app.permata.auto.MirrorDisplay.shutdownForCarMedia();
+		}
+		if (engine.getId() != MEDIA_ENG_YT) {
+			// Native engine streams real PCM on STREAM_MUSIC & owns MediaSessionCompat directly;
+			// yield the 16kHz silent anchor off the main thread to avoid dual-rate AA audio backlog.
+			service.pauseSilentAudioAnchorForNativePlayback();
 		}
 		engine.setSpeed(speed);
 		engine.start();
