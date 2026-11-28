@@ -369,12 +369,18 @@ public abstract class ActivityDelegate implements EventBroadcaster<ActivityListe
 
 		if (id == activeId) {
 			var f = getActiveFragment();
-			if (input != null) f.setInput(input);
-			return f;
+			if (f != null) {
+				if (input != null) f.setInput(input);
+				return f;
+			}
 		}
 
 		var fm = getSupportFragmentManager();
-		var tr = fm.beginTransaction();
+		if (fm.isDestroyed()) {
+			Log.w("ActivityDelegate.showFragment ignored: FragmentManager is destroyed");
+			return null;
+		}
+
 		ActivityFragment switchingFrom = null;
 		ActivityFragment switchingTo = null;
 
@@ -382,28 +388,35 @@ public abstract class ActivityDelegate implements EventBroadcaster<ActivityListe
 			if (!(f instanceof ActivityFragment af)) continue;
 			int afid = af.getFragmentId();
 			if (afid == id) {
-				tr.show(f);
 				switchingTo = af;
 			} else if (afid == activeId) {
 				switchingFrom = af;
-				tr.hide(f);
-			} else {
-				tr.hide(f);
 			}
 		}
 
-		if (switchingTo == null) {
+		boolean isNewFragment = (switchingTo == null);
+		if (isNewFragment) {
 			switchingTo = createFragment(id);
-			tr.add(getFrameContainerId(), switchingTo);
-			tr.show(switchingTo);
 		}
 
+		var tr = buildShowTransaction(fm, switchingTo, isNewFragment);
+		int prevActiveId = activeFragmentId;
 		activeFragmentId = switchingTo.getFragmentId();
 		if (switchingFrom != null) switchingFrom.switchingTo(switchingTo);
 		switchingTo.switchingFrom(switchingFrom);
 		if (input != null) switchingTo.setInput(input);
+
 		try {
-			tr.commitNow();
+			if (fm.isStateSaved()) {
+				tr.commitAllowingStateLoss();
+			} else {
+				try {
+					tr.commitNow();
+				} catch (IllegalStateException nestedOrStateErr) {
+					Log.w(nestedOrStateErr, "ActivityDelegate.showFragment commitNow fallback to commitAllowingStateLoss");
+					buildShowTransaction(fm, switchingTo, isNewFragment).commitAllowingStateLoss();
+				}
+			}
 			View v = switchingTo.getView();
 			if (v != null) {
 				v.animate().cancel();
@@ -417,10 +430,27 @@ public abstract class ActivityDelegate implements EventBroadcaster<ActivityListe
 			postBroadcastEvent(FRAGMENT_CHANGED);
 			return switchingTo;
 		} catch (IllegalStateException err) {
-			activeFragmentId = ID_NULL;
-			Log.d(err);
+			activeFragmentId = prevActiveId;
+			Log.w(err, "ActivityDelegate.showFragment failed; restored activeFragmentId");
 			return null;
 		}
+	}
+
+	@NonNull
+	private FragmentTransaction buildShowTransaction(@NonNull FragmentManager fm,
+													 @NonNull ActivityFragment switchingTo,
+													 boolean isNewFragment) {
+		var tr = fm.beginTransaction();
+		for (var f : fm.getFragments()) {
+			if (!(f instanceof ActivityFragment)) continue;
+			if (f == switchingTo) tr.show(f);
+			else tr.hide(f);
+		}
+		if (isNewFragment) {
+			tr.add(getFrameContainerId(), switchingTo);
+			tr.show(switchingTo);
+		}
+		return tr;
 	}
 
 	protected boolean animateFragmentTransitions() {
