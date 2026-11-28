@@ -42,6 +42,7 @@ import android.view.Display;
 import android.view.Gravity;
 import android.view.InputDevice;
 import android.view.MotionEvent;
+import android.view.Surface;
 import android.view.View;
 import android.view.WindowManager;
 import android.widget.FrameLayout;
@@ -81,7 +82,6 @@ public class MirrorDisplay {
 	private final float scaleDiff;
 	private WakeLock wakeLock;
 
-	private static final ExecutorService bgExecutor = Executors.newSingleThreadExecutor();
 	private static final ExecutorService touchExecutor = Executors.newSingleThreadExecutor();
 
 	private static final Object lifecycleLock = new Object();
@@ -101,6 +101,7 @@ public class MirrorDisplay {
 
 	private FutureSupplier<Session> session = Completed.cancelled();
 	private SurfaceContainer sc;
+	@Nullable private Runnable pendingRetryRunnable;
 
 	private Overlay overlay;
 	private View rotationAnchor;
@@ -133,6 +134,19 @@ public class MirrorDisplay {
 		for (int i = 0; i < 10; i++) {
 			reusableProps[i] = new MotionEvent.PointerProperties();
 			reusableCoords[i] = new MotionEvent.PointerCoords();
+		}
+	}
+
+	private static boolean isSurfaceUsable(@Nullable SurfaceContainer container) {
+		if (container == null) return false;
+		if (container.getWidth() <= 0 || container.getHeight() <= 0) return false;
+		Surface s = container.getSurface();
+		return (s != null) && s.isValid();
+	}
+
+	private static void stopProjectionQuietly(@Nullable MediaProjection mp) {
+		if (mp != null) {
+			try { mp.stop(); } catch (Exception ignored) {}
 		}
 	}
 
@@ -271,6 +285,10 @@ public class MirrorDisplay {
 	public void setSurface(@NonNull SurfaceContainer sc) {
 		synchronized (lifecycleLock) {
 			if (isDestroyed) return;
+			if (!isSurfaceUsable(sc)) {
+				Log.w("[MIRROR][SURFACE] setSurface ignored | surface invalid or zero-sized");
+				return;
+			}
 			var oldSc = this.sc;
 			if (oldSc != null && oldSc.getSurface() == sc.getSurface()
 					&& oldSc.getWidth() == sc.getWidth() && oldSc.getHeight() == sc.getHeight()) {
@@ -294,6 +312,9 @@ public class MirrorDisplay {
 					var s = this.session.getOrThrow();
 					if (oldSc != null) {
 						s.renderer.detachOutputSurfaceSync();
+					}
+					if (!isSurfaceUsable(this.sc)) {
+						return;
 					}
 					int[] vdSize = computeVirtualDisplaySize();
 					s.vd.resize(vdSize[0], vdSize[1], sc.getDpi());
@@ -319,6 +340,7 @@ public class MirrorDisplay {
 			if (oldSc != sc) return;
 			Log.i("[MIRROR][SURFACE] releaseSurface | size=" + sc.getWidth() + "x" + sc.getHeight());
 			this.sc = null;
+			cancelPendingRetryLocked();
 
 			restoreBrightness(PermataApplication.get(), true);
 			restoreAccelRotation(PermataApplication.get(), true);
@@ -694,7 +716,7 @@ public class MirrorDisplay {
 
 	@SuppressLint("UnspecifiedRegisterReceiverFlag")
 	private void started() {
-		if (sc == null || isDestroyed) return;
+		if (!isSurfaceUsable(sc) || isDestroyed) return;
 		var app = PermataApplication.get();
 		var mode = sc.getWidth() >= sc.getHeight() ? 1 : 2;
 		String layoutType = (mode == 1) ? "LANDSCAPE" : "PORTRAIT";
@@ -803,6 +825,7 @@ public class MirrorDisplay {
 		isDestroyed = true;
 		Log.i("[MIRROR][LIFECYCLE] Mirroring Session Closing | action=FULL_CLEANUP");
 
+		cancelPendingRetryLocked();
 		AccessibilityEventDispatcherService.abortActiveGesture();
 		noSession();
 		var app = PermataApplication.get();
@@ -858,20 +881,35 @@ public class MirrorDisplay {
 		instance = null;
 	}
 
+	private void cancelPendingRetryLocked() {
+		if (pendingRetryRunnable != null) {
+			mainHandler.removeCallbacks(pendingRetryRunnable);
+			pendingRetryRunnable = null;
+		}
+	}
+
 	private void noSession() {
-		if (session.isDoneNotFailed()) session.getOrThrow().close();
-		else session.cancel();
+		cancelPendingRetryLocked();
+		if (session.isDoneNotFailed()) {
+			try {
+				Session old = session.getOrThrow();
+				if (old != null) old.close();
+			} catch (Exception ignored) {}
+		} else {
+			session.cancel();
+		}
 		session = Completed.cancelled();
 	}
 
 	private void createSession() {
+		if (isDestroyed || !isSurfaceUsable(sc)) return;
 		if (!session.isDone()) return;
 		var p = new Promise<Session>();
 		session = p;
 		createSession(p);
 		p.onSuccess(s -> {
 			synchronized (lifecycleLock) {
-				if (isDestroyed) {
+				if (isDestroyed || session != p || !isSurfaceUsable(sc)) {
 					s.close();
 					return;
 				}
@@ -882,38 +920,30 @@ public class MirrorDisplay {
 	}
 
 	private void createSession(Promise<Session> p) {
-		if (session != p) return;
-		if (sc == null) {
-			noSession();
-			return;
+		synchronized (lifecycleLock) {
+			if (isDestroyed || session != p || p.isDone()) return;
+			if (!isSurfaceUsable(sc)) {
+				noSession();
+				return;
+			}
 		}
-
-		if (session.isDoneNotFailed()) {
-			try {
-				Session oldSession = session.getOrThrow();
-				if (oldSession != null) oldSession.close();
-			} catch (Exception e) {}
-			session = Completed.cancelled();
-		}
-
-		if (p.isDone()) return;
 
 		ProjectionService.start().onCompletion((mp, err) -> {
 			synchronized (lifecycleLock) {
-				if (isDestroyed || session != p) {
-					if (mp != null) {
-						try { mp.stop(); } catch (Exception ignored) {}
-					}
+				if (isDestroyed || session != p || p.isDone()) {
+					stopProjectionQuietly(mp);
 					return;
 				}
 
-				if (sc == null) {
+				if (!isSurfaceUsable(sc)) {
+					Log.w("[MIRROR][SURFACE] Projection completed after surface loss -> stopping MediaProjection");
+					stopProjectionQuietly(mp);
 					noSession();
 					return;
 				}
-				if (p.isDone()) return;
 
 				if (err != null) {
+					stopProjectionQuietly(mp);
 					if (isCancellation(err)) {
 						Log.i("[MIRROR][LIFECYCLE] Screen Capture Rejected by User | action=CLEANUP");
 						cleanUpLocked();
@@ -925,8 +955,9 @@ public class MirrorDisplay {
 				} else {
 					try {
 						p.complete(new Session(mp, MirrorDisplay.this));
-					} catch (Exception ex) {
-						Log.e(ex, "[MIRROR][LIFECYCLE] Session creation failed, retrying");
+					} catch (Throwable ex) {
+						Log.e(ex, "[MIRROR][LIFECYCLE] Session creation failed, stopping MediaProjection and retrying");
+						stopProjectionQuietly(mp);
 						retryCreateSession(p);
 					}
 				}
@@ -935,10 +966,28 @@ public class MirrorDisplay {
 	}
 
 	private void retryCreateSession(Promise<Session> p) {
-		PermataApplication.get().getHandler().schedule(() -> {
-			if (p.isDone()) return;
-			createSession(p);
-		}, 3000);
+		synchronized (lifecycleLock) {
+			if (isDestroyed || session != p || p.isDone()) return;
+			if (!isSurfaceUsable(sc)) {
+				Log.w("[MIRROR][LIFECYCLE] Retry aborted | reason=SURFACE_INVALID_OR_GONE");
+				noSession();
+				return;
+			}
+			cancelPendingRetryLocked();
+			Runnable retry = () -> {
+				synchronized (lifecycleLock) {
+					pendingRetryRunnable = null;
+					if (isDestroyed || session != p || p.isDone()) return;
+					if (!isSurfaceUsable(sc)) {
+						noSession();
+						return;
+					}
+					createSession(p);
+				}
+			};
+			pendingRetryRunnable = retry;
+			mainHandler.postDelayed(retry, 3000);
+		}
 	}
 
 	private void drawMsg(@StringRes int msg) {
@@ -951,7 +1000,7 @@ public class MirrorDisplay {
 
 	@Nullable
 	private Metrics metrics() {
-		if (sc == null || !session.isDoneNotFailed() || isDestroyed) return null;
+		if (!isSurfaceUsable(sc) || !session.isDoneNotFailed() || isDestroyed) return null;
 
 		final Point size = new Point();
 		defaultDisplay.getRealSize(size);
@@ -1016,20 +1065,37 @@ public class MirrorDisplay {
 		Session(MediaProjection mp, MirrorDisplay md) {
 			this.mp = mp;
 			var sc = md.sc;
+			if (!isSurfaceUsable(sc)) {
+				throw new IllegalStateException("Mirror surface is null or invalid");
+			}
 			var app = PermataApplication.get();
 			var name = app.getString(R.string.mirror_service_name);
 			int[] vdSize = md.computeVirtualDisplaySize();
 
-			renderer = new GlMirrorRenderer(vdSize[0], vdSize[1], md.isActiveFillMode());
-			renderer.setOutputSurface(sc.getSurface(), sc.getWidth(), sc.getHeight());
+			GlMirrorRenderer createdRenderer = null;
+			boolean callbackRegistered = false;
+			try {
+				createdRenderer = new GlMirrorRenderer(vdSize[0], vdSize[1], md.isActiveFillMode());
+				createdRenderer.setOutputSurface(sc.getSurface(), sc.getWidth(), sc.getHeight());
 
-			mp.registerCallback(this, app.getHandler());
-			vd = mp.createVirtualDisplay(name, vdSize[0], vdSize[1], sc.getDpi(),
-					DisplayManager.VIRTUAL_DISPLAY_FLAG_OWN_CONTENT_ONLY,
-					renderer.getInputSurface(), null, null);
-			if (vd == null) {
-				renderer.release();
-				throw new RuntimeException("Failed to create VirtualDisplay");
+				mp.registerCallback(this, app.getHandler());
+				callbackRegistered = true;
+				VirtualDisplay createdVd = mp.createVirtualDisplay(name, vdSize[0], vdSize[1], sc.getDpi(),
+						DisplayManager.VIRTUAL_DISPLAY_FLAG_OWN_CONTENT_ONLY,
+						createdRenderer.getInputSurface(), null, null);
+				if (createdVd == null) {
+					throw new RuntimeException("Failed to create VirtualDisplay");
+				}
+				this.renderer = createdRenderer;
+				this.vd = createdVd;
+			} catch (Throwable err) {
+				if (callbackRegistered) {
+					try { mp.unregisterCallback(this); } catch (Exception ignored) {}
+				}
+				if (createdRenderer != null) {
+					try { createdRenderer.release(); } catch (Exception ignored) {}
+				}
+				throw err;
 			}
 		}
 
@@ -1052,9 +1118,7 @@ public class MirrorDisplay {
 			if (renderer != null) {
 				renderer.release();
 			}
-			if (mp != null) {
-				try { mp.stop(); } catch (Exception ignored) {}
-			}
+			stopProjectionQuietly(mp);
 		}
 	}
 
