@@ -14,7 +14,10 @@ import android.content.Context;
 import android.os.SystemClock;
 import android.support.v4.media.session.PlaybackStateCompat;
 import android.util.AttributeSet;
+import android.view.ViewGroup;
 import android.webkit.CookieManager;
+import android.webkit.WebBackForwardList;
+import android.webkit.WebHistoryItem;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
@@ -23,6 +26,7 @@ import org.json.JSONException;
 import org.json.JSONTokener;
 
 import java.util.List;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import my.app.permata.BuildConfig;
 import my.app.permata.addon.web.PermataChromeClient;
@@ -39,6 +43,8 @@ import my.app.utils.pref.PreferenceStore;
  * @author sklchan77
  */
 public class YoutubeWebView extends PermataWebView {
+	private static final long SKIP_VERIFY_DELAY_MS = 550L;
+	private static final long SKIP_SETTLE_DELAY_MS = 1200L;
 	private static final String CLEAR_HIGHEST_VIDEO_QUALITY_JS =
 			"function clearPermataQ() {\n" +
 					"  if (!window.__permataQ) return;\n" +
@@ -49,6 +55,11 @@ public class YoutubeWebView extends PermataWebView {
 					"  window.__permataQ = null;\n" +
 					"}\n";
 	private YoutubeJsInterface js;
+	private YoutubeMediaEngine engine;
+	private final AtomicInteger skipSeq = new AtomicInteger(0);
+	@Nullable private Runnable pendingSkipVerifyRunnable;
+	@Nullable private Runnable pendingSkipSettleRunnable;
+	@Nullable private String lastObservedVideoId;
 	// Reported by the page: the bare video, which has no YouTube controls, is what's in full screen
 	boolean videoFullScreen;
 	// The video of a page that went with its screen, for the next car screen to open again
@@ -79,7 +90,8 @@ public class YoutubeWebView extends PermataWebView {
 	@Override
 	protected PermataJsInterface createJsInterface() {
 		MainActivityDelegate a = MainActivityDelegate.get(getContext());
-		return js = new YoutubeJsInterface(this, new YoutubeMediaEngine(this, a));
+		engine = new YoutubeMediaEngine(this, a);
+		return js = new YoutubeJsInterface(this, engine);
 	}
 
 	@Override
@@ -107,9 +119,16 @@ public class YoutubeWebView extends PermataWebView {
 
 	@Override
 	public void goBack() {
+		cancelPendingSkipTimers();
 		MediaSessionCallback cb = MainActivityDelegate.get(getContext()).getMediaSessionCallback();
 		if (cb.getEngine() instanceof YoutubeMediaEngine) cb.onStop();
 		super.goBack();
+	}
+
+	@Override
+	protected void onDetachedFromWindow() {
+		cancelPendingSkipTimers();
+		super.onDetachedFromWindow();
 	}
 
 	@Override
@@ -117,6 +136,7 @@ public class YoutubeWebView extends PermataWebView {
 		// The page is gone with its activity (e.g. Permata Auto exited from Android Auto), and nothing
 		// can continue its playback. Switching to another section only detaches it until it's shown again.
 		if ((e == ACTIVITY_DESTROY) && (js != null)) {
+			cancelPendingSkipTimers();
 			// Only a car screen's video: a phone screen restores its own from its saved state.
 			// Its playback stops here, so it reopens paused rather than start playing out of the blue.
 			Video v = a.isCarActivity() ? getVideo(a.getMediaSessionCallback()) : null;
@@ -124,6 +144,26 @@ public class YoutubeWebView extends PermataWebView {
 			js.pageRemoved();
 		}
 		super.onActivityEvent(a, e);
+	}
+
+	public boolean isOnVideoPage() {
+		String url = getUrl();
+		return videoFullScreen || YoutubeUrls.isVideoUrl(url);
+	}
+
+	public boolean isVideoUiVisible() {
+		if (isShown() || videoFullScreen) return true;
+		PermataChromeClient chrome = getWebChromeClient();
+		ViewGroup fs = (chrome != null) ? chrome.getFullScreenView() : null;
+		return (fs != null) && fs.isShown();
+	}
+
+	public void skipNext() {
+		next();
+	}
+
+	public void skipPrev() {
+		prev();
 	}
 
 	/**
@@ -201,11 +241,18 @@ public class YoutubeWebView extends PermataWebView {
 	@Override
 	protected void urlChanged(String url) {
 		if (YoutubeUrls.isVideoUrl(url)) {
+			String vid = YoutubeUrls.videoId(url);
+			if (vid != null && !vid.isEmpty() && !vid.equals(lastObservedVideoId)) {
+				lastObservedVideoId = vid;
+				cancelPendingSkipTimers();
+			}
 			// Another video opened before the reopened one started
 			if ((reopening != null) &&
 					!YoutubeUrls.videoId(url).equals(YoutubeUrls.videoId(reopening.url()))) reopening = null;
 			return;
 		}
+		lastObservedVideoId = null;
+		cancelPendingSkipTimers();
 		// Leaving the video within the page (e.g. YouTube's own back button) leaves it like goBack(),
 		// even though YouTube keeps playing it as a muted preview
 		MediaSessionCallback cb = MainActivityDelegate.get(getContext()).getMediaSessionCallback();
@@ -353,6 +400,7 @@ public class YoutubeWebView extends PermataWebView {
 	}
 
 	void stop() {
+		cancelPendingSkipTimers();
 		loadUrl("javascript:var v = document.querySelector('video');\n" +
 				"if (v != null) { v.currentTime = 0; v.pause(); }");
 	}
@@ -365,26 +413,246 @@ public class YoutubeWebView extends PermataWebView {
 		prevNext(true);
 	}
 
+	private void cancelPendingSkipTimers() {
+		skipSeq.incrementAndGet();
+		if (pendingSkipVerifyRunnable != null) {
+			removeCallbacks(pendingSkipVerifyRunnable);
+			pendingSkipVerifyRunnable = null;
+		}
+		if (pendingSkipSettleRunnable != null) {
+			removeCallbacks(pendingSkipSettleRunnable);
+			pendingSkipSettleRunnable = null;
+		}
+	}
+
+	private void scheduleSkipSettle(int seq, long delayMs) {
+		if (pendingSkipSettleRunnable != null) {
+			removeCallbacks(pendingSkipSettleRunnable);
+		}
+		Runnable r = () -> {
+			pendingSkipSettleRunnable = null;
+			if (!isAttachedToWindow() || seq != skipSeq.get()) return;
+			restorePlayingStateIfStillSkipping();
+		};
+		pendingSkipSettleRunnable = r;
+		postDelayed(r, delayMs);
+	}
+
+	private void restorePlayingStateIfStillSkipping() {
+		if (engine == null) return;
+		MainActivityDelegate a = MainActivityDelegate.getActivityDelegate(getContext()).peek();
+		if (a != null) {
+			a.getMediaSessionCallback().restorePlayingStateIfSkipping(engine);
+		}
+	}
+
+	private static String unquoteJs(@Nullable String raw) {
+		if (raw == null) return "";
+		String s = raw.trim();
+		if (s.length() >= 2 && s.startsWith("\"") && s.endsWith("\"")) {
+			return s.substring(1, s.length() - 1);
+		}
+		return s;
+	}
+
 	private void prevNext(boolean next) {
+		if (!isAttachedToWindow()) {
+			restorePlayingStateIfStillSkipping();
+			return;
+		}
+		cancelPendingSkipTimers();
+		final int seq = skipSeq.get();
+
 		evaluateJavascript("""
 				(function() {
+				  window.__permataSkipSeq = %d;
+				  const isNext = %s;
+				  const isShorts = /^\\/shorts\\//.test(location.pathname);
 				  const p = document.querySelector('#movie_player') || document.querySelector('.html5-video-player');
-				  const fn = '%s';
-				  if (!p || (typeof p[fn] !== 'function')) return false;
-				  p[fn]();
-				  return true;
+				  const v = document.querySelector('video');
+				  function getVid() {
+				    try {
+				      const d = p && p.getVideoData && p.getVideoData();
+				      if (d && d.video_id) return d.video_id;
+				    } catch (e) {}
+				    try {
+				      const u = new URL(location.href);
+				      return u.searchParams.get('v') || location.pathname;
+				    } catch (e) { return location.pathname || ''; }
+				  }
+				  window.__permataSkipBeforeVid = getVid();
+				  window.__permataSkipBeforeSnap = window.__permataSkipBeforeVid + '|' + (v && v.currentSrc ? v.currentSrc : '');
+				  if (isShorts) {
+				    const sel = isNext
+				      ? '#navigation-button-down button, button[aria-label*="Next"], [aria-label*="Next video"]'
+				      : '#navigation-button-up button, button[aria-label*="Previous"], [aria-label*="Previous video"]';
+				    const btn = document.querySelector(sel);
+				    if (btn && !btn.disabled) { btn.click(); return 'SHORTS_BTN'; }
+				    const key = isNext ? 'ArrowDown' : 'ArrowUp';
+				    const kc = isNext ? 40 : 38;
+				    document.dispatchEvent(new KeyboardEvent('keydown', { key: key, code: key, keyCode: kc, which: kc, bubbles: true }));
+				    return 'SHORTS_KEY';
+				  }
+				  const fn = isNext ? 'nextVideo' : 'previousVideo';
+				  if (p && (typeof p[fn] === 'function')) {
+				    try { p[fn](); return 'API_CALLED'; } catch (e) {}
+				  }
+				  return 'NO_API';
 				})();
-				""".formatted(next ? "nextVideo" : "previousVideo"), r -> {
-			if ("true".equals(r)) return;
-			// Player API not available, fall back to the page's prev/next buttons
-			PermataChromeClient chrome = getWebChromeClient();
-			if (chrome == null) return;
-			chrome.exitFullScreen().thenRun(() -> evaluateJavascript("""
-					setTimeout(() => {
-					  const buttons = document.querySelectorAll('button.player-middle-controls-prev-next-button');
-					  if (buttons.length > %1$d) buttons[%1$d].click();
-					}, 600);
-					""".formatted(next ? 1 : 0), null));
+				""".formatted(seq, next ? "true" : "false"), r -> {
+			if (!isAttachedToWindow() || seq != skipSeq.get()) return;
+			String res = unquoteJs(r);
+			if ("NO_API".equals(res)) {
+				runSkipFallback(next, seq);
+				return;
+			}
+
+			Runnable verify = () -> {
+				pendingSkipVerifyRunnable = null;
+				if (!isAttachedToWindow() || seq != skipSeq.get()) return;
+				evaluateJavascript("""
+						(function() {
+						  if (window.__permataSkipSeq !== %d) return 'STALE';
+						  const p = document.querySelector('#movie_player') || document.querySelector('.html5-video-player');
+						  const v = document.querySelector('video');
+						  let vid = '';
+						  try {
+						    const d = p && p.getVideoData && p.getVideoData();
+						    if (d && d.video_id) vid = d.video_id;
+						  } catch (e) {}
+						  if (!vid) {
+						    try {
+						      const u = new URL(location.href);
+						      vid = u.searchParams.get('v') || location.pathname;
+						    } catch (e) { vid = location.pathname || ''; }
+						  }
+						  const snap = vid + '|' + (v && v.currentSrc ? v.currentSrc : '');
+						  return (snap && snap !== window.__permataSkipBeforeSnap) ? 'CHANGED' : 'UNCHANGED';
+						})();
+						""".formatted(seq), vr -> {
+					if (!isAttachedToWindow() || seq != skipSeq.get()) return;
+					String vRes = unquoteJs(vr);
+					if ("CHANGED".equals(vRes)) {
+						scheduleSkipSettle(seq, SKIP_SETTLE_DELAY_MS);
+					} else if ("UNCHANGED".equals(vRes)) {
+						Log.i("[YT][SKIP] Player API no-op (" + (next ? "NEXT" : "PREV") + ") -> running fallback");
+						runSkipFallback(next, seq);
+					}
+				});
+			};
+			pendingSkipVerifyRunnable = verify;
+			postDelayed(verify, SKIP_VERIFY_DELAY_MS);
+		});
+	}
+
+	private void runSkipFallback(boolean next, int seq) {
+		if (!isAttachedToWindow() || seq != skipSeq.get()) return;
+
+		if (!next) {
+			WebBackForwardList bf = copyBackForwardList();
+			if (bf != null) {
+				int prevIdx = bf.getCurrentIndex() - 1;
+				if (prevIdx >= 0) {
+					WebHistoryItem item = bf.getItemAtIndex(prevIdx);
+					if (item != null && YoutubeUrls.isVideoUrl(item.getUrl())) {
+						Log.i("[YT][SKIP] PREV fallback -> WebView history previous video");
+						super.goBack();
+						scheduleSkipSettle(seq, SKIP_SETTLE_DELAY_MS);
+						return;
+					}
+				}
+			}
+		}
+
+		evaluateJavascript("""
+				(function() {
+				  if (window.__permataSkipSeq !== %d) return 'STALE';
+				  const isNext = %s;
+				  const isShorts = /^\\/shorts\\//.test(location.pathname);
+				  if (isShorts) {
+				    const scroller = document.querySelector('ytd-shorts, #shorts-container, ytm-shorts-lockup-view-model') || window;
+				    try {
+				      if (scroller === window) window.scrollBy(0, isNext ? window.innerHeight : -window.innerHeight);
+				      else scroller.scrollBy(0, isNext ? scroller.clientHeight : -scroller.clientHeight);
+				      return 'SHORTS_SCROLL';
+				    } catch (e) {}
+				  }
+				  const midBtns = document.querySelectorAll('button.player-middle-controls-prev-next-button');
+				  const midIdx = isNext ? 1 : 0;
+				  if (midBtns.length > midIdx && !midBtns[midIdx].disabled && midBtns[midIdx].getAttribute('aria-disabled') !== 'true') {
+				    midBtns[midIdx].click();
+				    return 'DOM_BTN';
+				  }
+				  const directBtn = document.querySelector(isNext
+				    ? '.ytp-next-button[href], a.ytp-next-button, button[aria-label="Next video"], button[aria-label="Next"]'
+				    : '.ytp-prev-button[href], a.ytp-prev-button, button[aria-label="Previous video"], button[aria-label="Previous"]');
+				  if (directBtn && !directBtn.disabled && directBtn.getAttribute('aria-disabled') !== 'true') {
+				    directBtn.click();
+				    return 'DIRECT_BTN';
+				  }
+				  if (isNext) {
+				    const curVid = window.__permataSkipBeforeVid || '';
+				    const selectors = [
+				      'ytm-compact-video-renderer a[href*="/watch?v="]',
+				      'ytm-video-with-context-renderer a[href*="/watch?v="]',
+				      '.compact-media-item a[href*="/watch?v="]',
+				      'a[href*="/watch?v="]'
+				    ];
+				    for (let s = 0; s < selectors.length; s++) {
+				      const links = document.querySelectorAll(selectors[s]);
+				      for (let i = 0; i < links.length; i++) {
+				        const a = links[i];
+				        const href = a.getAttribute('href') || '';
+				        const m = href.match(/[?&]v=([^&]+)/);
+				        if (m && m[1] && m[1] !== curVid) {
+				          a.click();
+				          return 'UP_NEXT_LINK';
+				        }
+				      }
+				    }
+				  } else {
+				    const p = document.querySelector('#movie_player') || document.querySelector('.html5-video-player');
+				    const v = document.querySelector('video');
+				    if (v && v.currentTime > 3) {
+				      if (p && typeof p.seekTo === 'function') p.seekTo(0, true);
+				      else v.currentTime = 0;
+				      return 'RESTARTED';
+				    }
+				  }
+				  return 'NONE';
+				})();
+				""".formatted(seq, next ? "true" : "false"), fr -> {
+			if (!isAttachedToWindow() || seq != skipSeq.get()) return;
+			String fRes = unquoteJs(fr);
+			if ("NONE".equals(fRes)) {
+				PermataChromeClient chrome = getWebChromeClient();
+				if (chrome != null && videoFullScreen) {
+					chrome.exitFullScreen().thenRun(() -> {
+						if (!isAttachedToWindow() || seq != skipSeq.get()) return;
+						postDelayed(() -> {
+							if (!isAttachedToWindow() || seq != skipSeq.get()) return;
+							evaluateJavascript("""
+									(function() {
+									  const buttons = document.querySelectorAll('button.player-middle-controls-prev-next-button');
+									  const idx = %d;
+									  if (buttons.length > idx && !buttons[idx].disabled) { buttons[idx].click(); return true; }
+									  return false;
+									})();
+									""".formatted(next ? 1 : 0), exitRes -> {
+								if (!isAttachedToWindow() || seq != skipSeq.get()) return;
+								if (!"true".equals(exitRes)) restorePlayingStateIfStillSkipping();
+								else scheduleSkipSettle(seq, SKIP_SETTLE_DELAY_MS);
+							});
+						}, 450L);
+					});
+					return;
+				}
+				restorePlayingStateIfStillSkipping();
+			} else if ("RESTARTED".equals(fRes)) {
+				restorePlayingStateIfStillSkipping();
+			} else {
+				scheduleSkipSettle(seq, SKIP_SETTLE_DELAY_MS);
+			}
 		});
 	}
 
