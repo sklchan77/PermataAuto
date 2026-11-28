@@ -10,6 +10,7 @@ import android.content.Context;
 import android.content.ContextWrapper;
 import android.content.Intent;
 import android.net.Uri;
+import android.os.Looper;
 import android.util.DisplayMetrics;
 import android.view.InputDevice;
 import android.view.KeyEvent;
@@ -61,7 +62,7 @@ public class KeyEventHandler {
     private static final java.util.concurrent.atomic.AtomicLong lastGlobalActionTime = new java.util.concurrent.atomic.AtomicLong(0L);
     
     // Reusable Main Thread Handler to prevent UI thread crashes
-    private static final android.os.Handler mainThreadHandler = new android.os.Handler(android.os.Looper.getMainLooper());
+    private static final android.os.Handler mainThreadHandler = new android.os.Handler(Looper.getMainLooper());
     
     private static final AtomicBoolean isHardwareSwiping = new AtomicBoolean(false);
     
@@ -100,6 +101,11 @@ public class KeyEventHandler {
         return view != null && YOUTUBE_WEBVIEW_CLASS.equals(view.getClass().getName());
     }
 
+    private static boolean isPermataUiForeground() {
+        return (my.app.permata.auto.MainCarActivity.activeInstance != null)
+                || (my.app.permata.ui.activity.MainActivity.getActiveInstance() != null);
+    }
+
     private static String sessionTag(@Nullable MainActivityDelegate a) {
         if (PermataApplication.get().isMirroringMode()) return "[MIRROR]";
         return (a != null && a.isCarActivity()) ? "[CAR]" : "[PHONE]";
@@ -111,6 +117,7 @@ public class KeyEventHandler {
     }
     
     private static final Map<Class<?>, Method> webViewMethodCache = new ConcurrentHashMap<>();
+    private static final Map<String, Method> reflectedMethodCache = new ConcurrentHashMap<>();
     private static final Map<View, Long> scrollTimestamps = Collections.synchronizedMap(new WeakHashMap<>());
 
     private static final String JS_UNIVERSAL_PAYLOAD = "(function(){" +
@@ -362,10 +369,78 @@ public class KeyEventHandler {
 
         final MainActivityDelegate finalTargetActivity = targetActivity;
         final String sTag = sessionTag(finalTargetActivity);
+        final boolean isMirroring = PermataApplication.get().isMirroringMode();
+        final boolean isCarActive = PermataApplication.get().isConnectedToAuto();
+        final boolean isPermataUiFg = isPermataUiForeground();
+        final String activePkg = AccessibilityEventDispatcherService.getLastActivePackage();
+        final boolean isPermataPkg = activePkg != null && activePkg.startsWith("my.app.permata");
 
-        if (event.getAction() == ACTION_DOWN) {
-            if (code == KeyEvent.KEYCODE_MEDIA_NEXT || code == KeyEvent.KEYCODE_MEDIA_PREVIOUS) {
-                
+        // === [TRANSPORT PLAY/PAUSE GUARD FOR WEBBROWSER, YOUTUBE & NATIVE/MIRROR ANCHOR] ===
+        if (code == KeyEvent.KEYCODE_MEDIA_PLAY
+                || code == KeyEvent.KEYCODE_MEDIA_PAUSE
+                || code == KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE) {
+            int crown = resolveEffectiveCrown(cb, finalTargetActivity, isMirroring, isCarActive,
+                    isPermataUiFg, isPermataPkg, activePkg, sTag, false);
+            int activeFragId = (finalTargetActivity != null)
+                    ? finalTargetActivity.getActiveFragmentId()
+                    : UiUtils.ID_NULL;
+
+            // 1. WebBrowser Douyin / HTML5 active: toggle primary <video> via JS; never wake background engines
+            if (!isMirroring && isPermataUiFg && (activeFragId == R.id.web_browser_fragment)
+                    && (crown == PermataApplication.CROWN_WEB || cb == null || !cb.isPlaying())) {
+                WebView webView = resolveVisibleWebBrowserView(finalTargetActivity);
+                if (webView != null) {
+                    if (event.getAction() == ACTION_DOWN) {
+                        long now = android.os.SystemClock.uptimeMillis();
+                        if (now - lastGlobalActionTime.get() >= 250) {
+                            lastGlobalActionTime.set(now);
+                            if (crown != PermataApplication.CROWN_WEB) {
+                                PermataApplication.setMediaCrown(PermataApplication.CROWN_WEB);
+                            }
+                            Log.i(sTag + "[DECISION] WebBrowser Transport Route | key=" + KeyEvent.keyCodeToString(code));
+                            dispatchWebVideoPlayPause(webView, code);
+                        }
+                    }
+                    return true;
+                }
+            }
+
+            // 2. Native scroller (BT-only TikTok/Douyin) or Mirroring with no Permata engine:
+            //    do NOT fall through to MediaSessionCallback.play() and resurrect old MP3/IPTV.
+            if ((isMirroring || crown == PermataApplication.CROWN_NATIVE)
+                    && (cb == null || cb.getEngine() == null)) {
+                if (event.getAction() == ACTION_DOWN) {
+                    Log.i(sTag + "[DECISION] Transport Blocked | key=" + KeyEvent.keyCodeToString(code)
+                            + ", crown=" + crownName(crown) + ", reason=NO_PERMATA_ENGINE_ACTIVE");
+                }
+                return true;
+            }
+
+            // 3. Foreground YouTube video page when no engine is attached: toggle YouTube <video> directly
+            if (!isMirroring && isPermataUiFg && (activeFragId == R.id.youtube_fragment)
+                    && (cb == null || cb.getEngine() == null)) {
+                WebView ytWeb = resolveYoutubeWebView(finalTargetActivity);
+                if (ytWeb != null && invokeYoutubeBool(ytWeb, "isVideoUiVisible")
+                        && invokeYoutubeBool(ytWeb, "isOnVideoPage")) {
+                    if (event.getAction() == ACTION_DOWN) {
+                        long now = android.os.SystemClock.uptimeMillis();
+                        if (now - lastGlobalActionTime.get() >= 250) {
+                            lastGlobalActionTime.set(now);
+                            Log.i(sTag + "[DECISION] Foreground YouTube Transport Route | key=" + KeyEvent.keyCodeToString(code));
+                            dispatchWebVideoPlayPause(ytWeb, code);
+                        }
+                    }
+                    return true;
+                }
+            }
+        }
+
+        // === [STEERING NEXT / PREVIOUS ROUTING] ===
+        if (code == KeyEvent.KEYCODE_MEDIA_NEXT || code == KeyEvent.KEYCODE_MEDIA_PREVIOUS) {
+            if (event.getAction() == ACTION_UP) {
+                return true;
+            }
+            if (event.getAction() == ACTION_DOWN) {
                 long currentUptime = android.os.SystemClock.uptimeMillis();
                 long lastTime = lastGlobalActionTime.get();
                 if (currentUptime - lastTime < 250) {
@@ -375,49 +450,12 @@ public class KeyEventHandler {
                 boolean isNext = (code == KeyEvent.KEYCODE_MEDIA_NEXT);
                 String keyLabel = isNext ? "MEDIA_NEXT" : "MEDIA_PREVIOUS";
 
-                boolean isMirroring = PermataApplication.get().isMirroringMode();
-                boolean isCarActive = PermataApplication.get().isConnectedToAuto();
-                String activePkg = AccessibilityEventDispatcherService.getLastActivePackage();
-                boolean isPermata = activePkg != null && activePkg.startsWith("my.app.permata");
-
                 int currentCrown = PermataApplication.getMediaCrown();
                 Log.i(sTag + "[INPUT] Steering/Media Key | key=" + keyLabel + ", crown=" + crownName(currentCrown)
                         + ", activePkg=" + activePkg + ", mirroring=" + isMirroring);
-                
-                // === [SMART CROWN CORRECTION] ===
-                if (isPermata || (isCarActive && !isMirroring)) {
-                    if (currentCrown == PermataApplication.CROWN_NATIVE) {
-                        String reason = isPermata ? "RETURNED_TO_PERMATA" : "CAR_ACTIVE_NOT_MIRRORING";
-                        Log.i(sTag + "[DECISION] Crown Correction | from=NATIVE -> to=IPTV, reason=" + reason);
-                        PermataApplication.setMediaCrown(PermataApplication.CROWN_IPTV);
-                        currentCrown = PermataApplication.CROWN_IPTV;
-                    }
-                } else if (activePkg != null && isScrollerPackage(activePkg)) {
-                    if (currentCrown != PermataApplication.CROWN_NATIVE) {
-                        Log.i(sTag + "[DECISION] Crown Correction | from=" + crownName(currentCrown) + " -> to=NATIVE, reason=SCROLLER_ACTIVE(" + activePkg + ")");
-                        PermataApplication.setMediaCrown(PermataApplication.CROWN_NATIVE);
-                        currentCrown = PermataApplication.CROWN_NATIVE;
-                    }
-                }
 
-                if (!isMirroring && currentCrown == PermataApplication.CROWN_WEB) {
-                    int activeFragId = (finalTargetActivity != null)
-                            ? finalTargetActivity.getActiveFragmentId()
-                            : UiUtils.ID_NULL;
-                    boolean isYoutubeTab = (activeFragId == R.id.youtube_fragment);
-                    boolean isWebBrowserTab = (activeFragId == R.id.web_browser_fragment);
-                    MediaEngine activeEngine = (cb != null) ? cb.getEngine() : null;
-                    boolean isYoutubeEnginePlaying = (activeEngine != null)
-                            && (activeEngine.getId() == MediaPrefs.MEDIA_ENG_YT)
-                            && cb.isPlaying();
-
-                    if (isYoutubeTab || (!isWebBrowserTab && isYoutubeEnginePlaying)) {
-                        String reason = isYoutubeTab ? "YOUTUBE_TAB_ACTIVE" : "YOUTUBE_ENGINE_PLAYING";
-                        Log.i(sTag + "[DECISION] Crown Correction | from=WEB -> to=IPTV, reason=" + reason);
-                        PermataApplication.setMediaCrown(PermataApplication.CROWN_IPTV);
-                        currentCrown = PermataApplication.CROWN_IPTV;
-                    }
-                }
+                currentCrown = resolveEffectiveCrown(cb, finalTargetActivity, isMirroring, isCarActive,
+                        isPermataUiFg, isPermataPkg, activePkg, sTag, true);
 
                 // === [STRICT FIFO ROUTING: THE SNIPER RIFLE] ===
                 Log.i(sTag + "[DECISION] Steering Route | key=" + keyLabel + ", target=" + crownName(currentCrown));
@@ -427,11 +465,8 @@ public class KeyEventHandler {
                         try {
                             boolean webHandled = false;
                             if (finalTargetActivity != null) {
-                                WebView resolvedWebView = scanFragmentsForWebView(finalTargetActivity.getActiveFragment());
-                                if (resolvedWebView == null || !resolvedWebView.isShown()) {
-                                    resolvedWebView = findTopVisibleWebView(finalTargetActivity);
-                                }
-                                if (resolvedWebView != null && resolvedWebView.isShown()) {
+                                WebView resolvedWebView = resolveVisibleWebBrowserView(finalTargetActivity);
+                                if (resolvedWebView != null) {
                                     webHandled = true;
                                     String currentUrl = resolvedWebView.getUrl();
                                     String host = "unknown";
@@ -486,7 +521,7 @@ public class KeyEventHandler {
                         Log.i(sTag + "[DECISION] Native Route | action=SCROLLER_SWIPE, pkg=" + activePkg);
                         executeNativeAppSwipe(!isNext, activePkg);
                         handledByAccessibility = true;
-                    } else if (activePkg == null && !isPermata) {
+                    } else if (activePkg == null && !isPermataPkg) {
                         Log.i(sTag + "[DECISION] Native Route | action=FALLBACK_SWIPE, pkg=null");
                         executeNativeAppSwipe(!isNext, "unknown_native");
                         handledByAccessibility = true;
@@ -503,6 +538,31 @@ public class KeyEventHandler {
                     
                     if (isMirroring) executeMirrorSwipe(!isNext, finalTargetActivity);
                     return true; 
+                }
+
+                // Foreground YouTube takeover when user is viewing a YouTube video page,
+                // but cb.getEngine() is null or still points to a stale non-YT engine.
+                if (!isMirroring && isPermataUiFg && finalTargetActivity != null
+                        && finalTargetActivity.getActiveFragmentId() == R.id.youtube_fragment) {
+                    MediaEngine activeEngine = (cb != null) ? cb.getEngine() : null;
+                    boolean isYtEngineActive = (activeEngine != null)
+                            && (activeEngine.getId() == MediaPrefs.MEDIA_ENG_YT)
+                            && (activeEngine.getSource() != null);
+                    if (!isYtEngineActive) {
+                        WebView ytWeb = resolveYoutubeWebView(finalTargetActivity);
+                        if (ytWeb != null && invokeYoutubeBool(ytWeb, "isVideoUiVisible")
+                                && invokeYoutubeBool(ytWeb, "isOnVideoPage")) {
+                            Log.i(sTag + "[DECISION] Foreground YouTube Skip Takeover | action="
+                                    + (isNext ? "NEXT" : "PREV") + ", staleEngine="
+                                    + (activeEngine != null ? activeEngine.getClass().getSimpleName() : "null"));
+                            if (cb != null && activeEngine != null) {
+                                cb.setEngine(null);
+                            }
+                            final String methodName = isNext ? "skipNext" : "skipPrev";
+                            mainThreadHandler.post(() -> invokeYoutubeVoid(ytWeb, methodName));
+                            return true;
+                        }
+                    }
                 }
 
                 // IF WE REACH HERE, CROWN_IPTV IS ACTIVE. FIRE TO NATIVE MEDIA.
@@ -556,6 +616,189 @@ public class KeyEventHandler {
 
         worker = new Worker(cb, finalTargetActivity, k, clickAction, dblClickAction, longClickAction);
         return true;
+    }
+
+    private static int resolveEffectiveCrown(@Nullable MediaSessionCallback cb,
+                                             @Nullable MainActivityDelegate finalTargetActivity,
+                                             boolean isMirroring,
+                                             boolean isCarActive,
+                                             boolean isPermataUiFg,
+                                             boolean isPermataPkg,
+                                             @Nullable String activePkg,
+                                             String sTag,
+                                             boolean logChanges) {
+        int currentCrown = PermataApplication.getMediaCrown();
+
+        if (isPermataPkg || (!isMirroring && (isCarActive || isPermataUiFg))) {
+            if (currentCrown == PermataApplication.CROWN_NATIVE) {
+                String reason = isPermataPkg ? "RETURNED_TO_PERMATA"
+                        : (isCarActive ? "CAR_ACTIVE_NOT_MIRRORING" : "PERMATA_UI_FOREGROUND");
+                if (logChanges) {
+                    Log.i(sTag + "[DECISION] Crown Correction | from=NATIVE -> to=IPTV, reason=" + reason);
+                }
+                PermataApplication.setMediaCrown(PermataApplication.CROWN_IPTV);
+                currentCrown = PermataApplication.CROWN_IPTV;
+            }
+        } else if (activePkg != null && isScrollerPackage(activePkg)) {
+            if (currentCrown != PermataApplication.CROWN_NATIVE) {
+                if (logChanges) {
+                    Log.i(sTag + "[DECISION] Crown Correction | from=" + crownName(currentCrown)
+                            + " -> to=NATIVE, reason=SCROLLER_ACTIVE(" + activePkg + ")");
+                }
+                PermataApplication.setMediaCrown(PermataApplication.CROWN_NATIVE);
+                currentCrown = PermataApplication.CROWN_NATIVE;
+            }
+        }
+
+        if (!isMirroring && isPermataUiFg && finalTargetActivity != null) {
+            int activeFragId = finalTargetActivity.getActiveFragmentId();
+            boolean isYoutubeTab = (activeFragId == R.id.youtube_fragment);
+            boolean isWebBrowserTab = (activeFragId == R.id.web_browser_fragment);
+
+            if (currentCrown == PermataApplication.CROWN_WEB) {
+                MediaEngine activeEngine = (cb != null) ? cb.getEngine() : null;
+                boolean isYoutubeEnginePlaying = (activeEngine != null)
+                        && (activeEngine.getId() == MediaPrefs.MEDIA_ENG_YT)
+                        && cb.isPlaying();
+
+                if (isYoutubeTab || (!isWebBrowserTab && isYoutubeEnginePlaying)) {
+                    String reason = isYoutubeTab ? "YOUTUBE_TAB_ACTIVE" : "YOUTUBE_ENGINE_PLAYING";
+                    if (logChanges) {
+                        Log.i(sTag + "[DECISION] Crown Correction | from=WEB -> to=IPTV, reason=" + reason);
+                    }
+                    PermataApplication.setMediaCrown(PermataApplication.CROWN_IPTV);
+                    currentCrown = PermataApplication.CROWN_IPTV;
+                }
+            } else if (currentCrown == PermataApplication.CROWN_IPTV && isWebBrowserTab
+                    && (cb == null || !cb.isPlaying())) {
+                WebView visibleWeb = resolveVisibleWebBrowserView(finalTargetActivity);
+                if (visibleWeb != null) {
+                    if (logChanges) {
+                        Log.i(sTag + "[DECISION] Crown Correction | from=IPTV -> to=WEB, reason=WEBBROWSER_VISIBLE_IDLE");
+                    }
+                    PermataApplication.setMediaCrown(PermataApplication.CROWN_WEB);
+                    currentCrown = PermataApplication.CROWN_WEB;
+                }
+            }
+        }
+
+        return currentCrown;
+    }
+
+    private static void dispatchWebVideoPlayPause(final WebView wv, final int keyCode) {
+        final String mode = (keyCode == KeyEvent.KEYCODE_MEDIA_PLAY) ? "PLAY"
+                : (keyCode == KeyEvent.KEYCODE_MEDIA_PAUSE ? "PAUSE" : "TOGGLE");
+        mainThreadHandler.post(() -> {
+            if (wv == null || !wv.isAttachedToWindow()) return;
+            String js = "(function(){" +
+                    "const vids = Array.from(document.querySelectorAll('video'));" +
+                    "if (!vids.length) return 'NO_VIDEO';" +
+                    "const wh = window.innerHeight || 1000;" +
+                    "let primary = null; let bestVis = -1;" +
+                    "vids.forEach(function(v){" +
+                    "  const r = v.getBoundingClientRect();" +
+                    "  const vis = Math.max(0, Math.min(r.bottom, wh) - Math.max(r.top, 0));" +
+                    "  if (vis > bestVis) { bestVis = vis; primary = v; }" +
+                    "});" +
+                    "if (!primary) primary = vids.find(v => !v.paused) || vids[0];" +
+                    "const mode = '" + mode + "';" +
+                    "if (mode === 'PAUSE' || (mode === 'TOGGLE' && !primary.paused)) {" +
+                    "  primary.pause(); return 'PAUSED';" +
+                    "} else {" +
+                    "  primary.muted = false;" +
+                    "  const p = primary.play(); if (p && p.catch) p.catch(function(){});" +
+                    "  return 'PLAYING';" +
+                    "}" +
+                    "})();";
+            try {
+                wv.evaluateJavascript(js, null);
+            } catch (Exception ignored) {}
+        });
+    }
+
+    @Nullable
+    private static WebView resolveVisibleWebBrowserView(@Nullable MainActivityDelegate activity) {
+        if (activity == null) return null;
+        WebView wv = scanFragmentsForWebView(activity.getActiveFragment());
+        if (wv != null && wv.isShown()) return wv;
+        return findTopVisibleWebView(activity);
+    }
+
+    @Nullable
+    private static WebView resolveYoutubeWebView(@Nullable MainActivityDelegate activity) {
+        if (activity == null) return null;
+        ActivityFragment activeFragment = activity.getActiveFragment();
+        if (activeFragment == null || activeFragment.getFragmentId() != R.id.youtube_fragment) {
+            return null;
+        }
+        try {
+            Class<?> fragClass = activeFragment.getClass();
+            Method getWebViewMethod = webViewMethodCache.get(fragClass);
+            if (getWebViewMethod == null) {
+                getWebViewMethod = fragClass.getMethod("getWebView");
+                webViewMethodCache.put(fragClass, getWebViewMethod);
+            }
+            Object result = getWebViewMethod.invoke(activeFragment);
+            if (result instanceof WebView wv && isYoutubeWebView(wv)) return wv;
+        } catch (NoSuchMethodException ignored) {
+        } catch (Exception e) {
+            Log.d(e, "Failed to resolve YoutubeWebView via getWebView()");
+        }
+        View root = activeFragment.getView();
+        if (root != null) {
+            WebView wv = findYoutubeWebViewRecursively(root);
+            if (wv != null) return wv;
+        }
+        if (activity.getWindow() != null) {
+            return findYoutubeWebViewRecursively(activity.getWindow().getDecorView());
+        }
+        return null;
+    }
+
+    @Nullable
+    private static WebView findYoutubeWebViewRecursively(@Nullable View view) {
+        if (view == null) return null;
+        if (view instanceof WebView wv && isYoutubeWebView(wv)) {
+            return wv;
+        }
+        if (view instanceof ViewGroup vg) {
+            for (int i = vg.getChildCount() - 1; i >= 0; i--) {
+                WebView res = findYoutubeWebViewRecursively(vg.getChildAt(i));
+                if (res != null) return res;
+            }
+        }
+        return null;
+    }
+
+    private static boolean invokeYoutubeBool(@Nullable WebView wv, String methodName) {
+        if (wv == null) return false;
+        try {
+            String key = wv.getClass().getName() + "#" + methodName;
+            Method m = reflectedMethodCache.get(key);
+            if (m == null) {
+                m = wv.getClass().getMethod(methodName);
+                reflectedMethodCache.put(key, m);
+            }
+            Object res = m.invoke(wv);
+            return Boolean.TRUE.equals(res);
+        } catch (Exception ignored) {
+            return false;
+        }
+    }
+
+    private static void invokeYoutubeVoid(@Nullable WebView wv, String methodName) {
+        if (wv == null || !wv.isAttachedToWindow()) return;
+        try {
+            String key = wv.getClass().getName() + "#" + methodName;
+            Method m = reflectedMethodCache.get(key);
+            if (m == null) {
+                m = wv.getClass().getMethod(methodName);
+                reflectedMethodCache.put(key, m);
+            }
+            m.invoke(wv);
+        } catch (Exception e) {
+            Log.w(e, "Failed invoking YoutubeWebView." + methodName);
+        }
     }
 
     private static void executeMirrorSwipe(boolean up, MainActivityDelegate finalTargetActivity) {
