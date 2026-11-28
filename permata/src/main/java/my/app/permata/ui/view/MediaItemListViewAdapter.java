@@ -36,12 +36,33 @@ import my.app.utils.ui.view.MovableRecyclerViewAdapter;
  */
 public class MediaItemListViewAdapter extends MovableRecyclerViewAdapter<MediaItemViewHolder>
 		implements OnClickListener, Item.ChangeListener {
+	private static final int MAX_DEFERRED_NOTIFY_RETRIES = 3;
 	private final MainActivityDelegate activity;
 	private BrowsableItem parent;
 	private String filterText = "";
 	private Pattern filter;
 	private MediaItemListView listView;
 	private List<MediaItemWrapper> list = Collections.emptyList();
+	private boolean notifyPending;
+	private int notifyRetries;
+	private final Runnable deferredNotifyRunnable = new Runnable() {
+		@Override
+		public void run() {
+			notifyPending = false;
+			if ((listView != null) && listView.isComputingLayout() && (notifyRetries < MAX_DEFERRED_NOTIFY_RETRIES)) {
+				notifyRetries++;
+				notifyPending = true;
+				App.get().getHandler().post(this);
+				return;
+			}
+			notifyRetries = 0;
+			if ((listView != null) && listView.isLayoutSuppressed()) {
+				Log.w("[UI_TELEMETRY] MediaItemListViewAdapter.notifyChanged | layout suppressed -> unsuppressing");
+				listView.suppressLayout(false);
+			}
+			notifyDataSetChanged();
+		}
+	};
 
 	public MediaItemListViewAdapter(MainActivityDelegate activity) {
 		this.activity = activity;
@@ -109,10 +130,11 @@ public class MediaItemListViewAdapter extends MovableRecyclerViewAdapter<MediaIt
 	@CallSuper
 	protected void setChildren(List<? extends Item> children) {
 		ensureMainThread(true);
+		List<? extends Item> safeChildren = (children != null) ? children : Collections.emptyList();
 		var filter = this.filter;
 
 		if (filter == null) {
-			list = CollectionUtils.map(children, MediaItemWrapper::new);
+			list = CollectionUtils.map(safeChildren, MediaItemWrapper::new);
 		} else {
 			var l = list = new ArrayList<>();
 			var app = App.get();
@@ -128,11 +150,12 @@ public class MediaItemListViewAdapter extends MovableRecyclerViewAdapter<MediaIt
 						}
 						if (matches) {
 							app.run(() -> {
+								if (l != list) return;
 								l.add(new MediaItemWrapper(c));
 								notifyItemInserted(l.size() - 1);
 							});
 						}
-					}), children);
+					}), safeChildren);
 		}
 		notifyChanged();
 	}
@@ -172,8 +195,10 @@ public class MediaItemListViewAdapter extends MovableRecyclerViewAdapter<MediaIt
 	@CallSuper
 	@Override
 	protected void onItemDismiss(int position) {
+		if (position < 0 || position >= list.size()) return;
 		list.remove(position);
-		getParent().updateTitles().main().thenRun(this::refresh);
+		BrowsableItem p = getParent();
+		if (p != null) p.updateTitles().main().thenRun(this::refresh);
 	}
 
 	@CallSuper
@@ -223,6 +248,11 @@ public class MediaItemListViewAdapter extends MovableRecyclerViewAdapter<MediaIt
 			if (h != null) h.recycled();
 		}
 		setParent(null, false);
+		if (notifyPending) {
+			App.get().getHandler().removeCallbacks(deferredNotifyRunnable);
+			notifyPending = false;
+			notifyRetries = 0;
+		}
 	}
 
 	@Override
@@ -290,8 +320,28 @@ public class MediaItemListViewAdapter extends MovableRecyclerViewAdapter<MediaIt
 	}
 
 	private void notifyChanged() {
-		if ((listView != null) && listView.isComputingLayout())
-			App.get().getHandler().post(this::notifyDataSetChanged);
-		else notifyDataSetChanged();
+		if (listView != null) {
+			if (listView.isLayoutSuppressed()) {
+				Log.w("[UI_TELEMETRY] MediaItemListViewAdapter.notifyChanged | layout suppressed -> unsuppressing");
+				listView.suppressLayout(false);
+			}
+			if (listView.getLayoutManager() == null) {
+				Log.w("[UI_TELEMETRY] MediaItemListViewAdapter.notifyChanged | layoutManager=null");
+			}
+			if (listView.isComputingLayout()) {
+				if (!notifyPending) {
+					notifyPending = true;
+					notifyRetries = 0;
+					App.get().getHandler().post(deferredNotifyRunnable);
+				}
+				return;
+			}
+		}
+		if (notifyPending) {
+			App.get().getHandler().removeCallbacks(deferredNotifyRunnable);
+			notifyPending = false;
+			notifyRetries = 0;
+		}
+		notifyDataSetChanged();
 	}
 }
