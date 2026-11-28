@@ -72,6 +72,7 @@ import com.google.android.material.progressindicator.BaseProgressIndicator;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
+import java.lang.ref.WeakReference;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -83,6 +84,7 @@ import java.util.Objects;
 import java.util.Random;
 import java.util.Set;
 import java.util.WeakHashMap;
+import java.util.concurrent.ConcurrentHashMap;
 
 import my.app.permata.PermataApplication;
 import my.app.permata.R;
@@ -212,8 +214,14 @@ public final class CustomThemeManager {
 
 	private static final Set<View> HOOKED_ROOTS = Collections.newSetFromMap(new WeakHashMap<>());
 	private static final Set<RecyclerView> HOOKED_RECYCLERS = Collections.newSetFromMap(new WeakHashMap<>());
+	private static final Set<RecyclerView> PENDING_RV_STYLE = Collections.newSetFromMap(new WeakHashMap<>());
 	private static final Set<View> HOOKED_MENUS = Collections.newSetFromMap(new WeakHashMap<>());
 	private static final Map<View, Integer> STYLED_SURFACE_HASH = new WeakHashMap<>();
+	private static final Map<View, Integer> STYLED_WIDGET_HASH = new WeakHashMap<>();
+	private static final Map<View, Integer> STYLED_LAYER_TINT = new WeakHashMap<>();
+	private static final Map<Window, Integer> STYLED_WINDOW_BG = new WeakHashMap<>();
+	private static final Map<Integer, Boolean> SUBTITLE_ID_CACHE = new ConcurrentHashMap<>();
+	private static final Map<Integer, Boolean> NAV_EXT_ID_CACHE = new ConcurrentHashMap<>();
 
 	private static Integer sessionRandomThemeMain;
 	private static Palette sessionRandomCustomMain;
@@ -809,17 +817,25 @@ public final class CustomThemeManager {
 
 		View root = delegate.findViewById(R.id.main_activity);
 		if (root != null && HOOKED_ROOTS.add(root)) {
+			final WeakReference<MainActivityDelegate> delegateRef = new WeakReference<>(delegate);
+			final WeakReference<View> rootRef = new WeakReference<>(root);
 			final boolean[] pending = new boolean[]{false};
 			root.getViewTreeObserver().addOnGlobalLayoutListener(() -> {
 				if (pending[0]) return;
-				Palette active = resolveEffectiveCustomPalette(delegate.isCarActivity());
-				if (active == null) return;
+				MainActivityDelegate d = delegateRef.get();
+				View r = rootRef.get();
+				if (d == null || r == null || !r.isAttachedToWindow()) return;
+				if (resolveEffectiveCustomPalette(d.isCarActivity()) == null) return;
 				pending[0] = true;
-				root.post(() -> {
+				r.post(() -> {
 					pending[0] = false;
-					Palette latest = resolveEffectiveCustomPalette(delegate.isCarActivity());
+					MainActivityDelegate latestDelegate = delegateRef.get();
+					View latestRoot = rootRef.get();
+					if (latestDelegate == null || latestRoot == null || !latestRoot.isAttachedToWindow()) return;
+					if (latestRoot.isInLayout()) return;
+					Palette latest = resolveEffectiveCustomPalette(latestDelegate.isCarActivity());
 					if (latest != null) {
-						applyDynamicLayers(delegate, latest);
+						applyDynamicLayers(latestDelegate, latest);
 					}
 				});
 			});
@@ -832,21 +848,29 @@ public final class CustomThemeManager {
 		try {
 			Window w = delegate.getWindow();
 			if (w != null) {
-				w.setBackgroundDrawable(new ColorDrawable(p.windowBg));
+				Integer prevWinBg = STYLED_WINDOW_BG.get(w);
+				if (prevWinBg == null || prevWinBg != p.windowBg) {
+					w.setBackgroundDrawable(new ColorDrawable(p.windowBg));
+					STYLED_WINDOW_BG.put(w, p.windowBg);
+				}
 				if (!auto) {
-					w.setStatusBarColor(p.primaryBars);
-					w.setNavigationBarColor(p.primaryBars);
+					if (w.getStatusBarColor() != p.primaryBars) {
+						w.setStatusBarColor(p.primaryBars);
+					}
+					if (w.getNavigationBarColor() != p.primaryBars) {
+						w.setNavigationBarColor(p.primaryBars);
+					}
 				}
 			}
 
 			View root = delegate.findViewById(R.id.main_activity);
-			if (root != null) root.setBackgroundColor(p.windowBg);
+			if (root != null) setBackgroundColorIfChanged(root, p.windowBg);
 
 			View body = delegate.getBody();
-			if (body != null) body.setBackgroundColor(p.windowBg);
+			if (body != null) setBackgroundColorIfChanged(body, p.windowBg);
 
 			View frame = delegate.findViewById(R.id.frame_layout);
-			if (frame != null) frame.setBackgroundColor(p.windowBg);
+			if (frame != null) setBackgroundColorIfChanged(frame, p.windowBg);
 
 			View loadingBar = delegate.findViewById(R.id.content_loading_progress);
 			if (loadingBar != null) {
@@ -855,12 +879,17 @@ public final class CustomThemeManager {
 
 			View fb = delegate.getFloatingButton();
 			if (fb != null) {
-				fb.setBackgroundTintList(ColorStateList.valueOf(p.primaryBars));
-				if (fb instanceof FloatingActionButton fab) {
-					fab.setSupportImageTintList(ColorStateList.valueOf(p.barsIcons));
-					fab.setRippleColor(ColorStateList.valueOf(p.accent));
-				} else if (fb instanceof ImageView iv) {
-					ImageViewCompat.setImageTintList(iv, ColorStateList.valueOf(p.barsIcons));
+				int fbHash = Objects.hash(410, p.primaryBars, p.barsIcons, p.accent);
+				Integer prevFb = STYLED_WIDGET_HASH.get(fb);
+				if (prevFb == null || prevFb != fbHash) {
+					fb.setBackgroundTintList(ColorStateList.valueOf(p.primaryBars));
+					if (fb instanceof FloatingActionButton fab) {
+						fab.setSupportImageTintList(ColorStateList.valueOf(p.barsIcons));
+						fab.setRippleColor(ColorStateList.valueOf(p.accent));
+					} else if (fb instanceof ImageView iv) {
+						ImageViewCompat.setImageTintList(iv, ColorStateList.valueOf(p.barsIcons));
+					}
+					STYLED_WIDGET_HASH.put(fb, fbHash);
 				}
 			}
 
@@ -878,7 +907,7 @@ public final class CustomThemeManager {
 
 			View frame = delegate.findViewById(R.id.frame_layout);
 			if (frame != null) {
-				frame.setBackgroundColor(p.windowBg);
+				setBackgroundColorIfChanged(frame, p.windowBg);
 				styleContentZone(delegate, frame, p);
 			}
 
@@ -893,6 +922,21 @@ public final class CustomThemeManager {
 		} catch (Exception ex) {
 			Log.w(ex, "CustomThemeManager: Failed applying dynamic layers");
 		}
+	}
+
+	private static void setBackgroundColorIfChanged(@NonNull View v, @ColorInt int color) {
+		Drawable bg = v.getBackground();
+		if (bg instanceof ColorDrawable cd && cd.getColor() == color) {
+			return;
+		}
+		v.setBackgroundColor(color);
+	}
+
+	private static void setCardBackgroundColorIfChanged(@NonNull CardView cv, @ColorInt int color) {
+		if (cv.getCardBackgroundColor().getDefaultColor() == color) {
+			return;
+		}
+		cv.setCardBackgroundColor(color);
 	}
 
 	private static void discoverAndStyleOverlayMenus(@NonNull MainActivityDelegate delegate,
@@ -915,18 +959,24 @@ public final class CustomThemeManager {
 
 	private static void hookOverlayMenu(@NonNull MainActivityDelegate delegate, @NonNull View menuView) {
 		if (!HOOKED_MENUS.add(menuView)) return;
+		final WeakReference<MainActivityDelegate> delegateRef = new WeakReference<>(delegate);
+		final boolean[] pending = new boolean[]{false};
 		menuView.addOnLayoutChangeListener((v, l, t, r, b, ol, ot, or, ob) -> {
-			if (v.getVisibility() != View.VISIBLE) return;
-			Palette active = resolveEffectiveCustomPalette(delegate.isCarActivity());
-			if (active != null) {
-				styleMenuZone(delegate, v, active);
-				v.post(() -> {
-					Palette latest = resolveEffectiveCustomPalette(delegate.isCarActivity());
-					if (latest != null && v.getVisibility() == View.VISIBLE) {
-						styleMenuZone(delegate, v, latest);
-					}
-				});
-			}
+			if (v.getVisibility() != View.VISIBLE || pending[0]) return;
+			MainActivityDelegate d = delegateRef.get();
+			if (d == null) return;
+			if (resolveEffectiveCustomPalette(d.isCarActivity()) == null) return;
+			// Defer background/padding mutation strictly past the active layout pass
+			pending[0] = true;
+			v.post(() -> {
+				pending[0] = false;
+				MainActivityDelegate latestDelegate = delegateRef.get();
+				if (latestDelegate == null || !v.isAttachedToWindow() || v.getVisibility() != View.VISIBLE) return;
+				Palette latest = resolveEffectiveCustomPalette(latestDelegate.isCarActivity());
+				if (latest != null) {
+					styleMenuZone(latestDelegate, v, latest);
+				}
+			});
 		});
 	}
 
@@ -934,7 +984,7 @@ public final class CustomThemeManager {
 									  @Nullable View bar,
 									  @NonNull Palette p) {
 		if (bar == null) return;
-		bar.setBackgroundColor(p.primaryBars);
+		setBackgroundColorIfChanged(bar, p.primaryBars);
 		styleBarChildSurfaces(delegate, bar, p, p.primaryBars, p.barsText);
 		tintZoneRecursive(delegate, bar, p, Zone.BARS);
 	}
@@ -943,7 +993,7 @@ public final class CustomThemeManager {
 											  @Nullable View panel,
 											  @NonNull Palette p) {
 		if (panel == null) return;
-		panel.setBackgroundColor(p.controlPanelBg);
+		setBackgroundColorIfChanged(panel, p.controlPanelBg);
 		styleBarChildSurfaces(delegate, panel, p, p.controlPanelBg, p.controlPanelText);
 		tintZoneRecursive(delegate, panel, p, Zone.CONTROL_PANEL);
 	}
@@ -973,7 +1023,7 @@ public final class CustomThemeManager {
 			return;
 		}
 		if (v instanceof CardView cv) {
-			cv.setCardBackgroundColor(barBg);
+			setCardBackgroundColorIfChanged(cv, barBg);
 		} else if (v instanceof ViewGroup vg) {
 			boolean isExtPanel = isNavExtensionContainer(vg);
 			Drawable bg = vg.getBackground();
@@ -983,7 +1033,7 @@ public final class CustomThemeManager {
 						() -> makeRoundedBox(barBg, UiUtils.toIntPx(vg.getContext(), 10), border,
 								Math.max(1, UiUtils.toIntPx(vg.getContext(), 1))));
 			} else if (bg instanceof ColorDrawable cd && Color.alpha(cd.getColor()) >= 200) {
-				vg.setBackgroundColor(barBg);
+				setBackgroundColorIfChanged(vg, barBg);
 			} else if (bg != null
 					&& !(bg instanceof RippleDrawable)
 					&& !(bg instanceof StateListDrawable)
@@ -1007,17 +1057,18 @@ public final class CustomThemeManager {
 	private static boolean isNavExtensionContainer(@NonNull ViewGroup vg) {
 		if (vg instanceof RecyclerView) return true;
 		int id = vg.getId();
-		if (id != View.NO_ID) {
-			try {
-				String name = vg.getResources().getResourceEntryName(id).toLowerCase(Locale.US);
-				if (name.contains("ext") || name.contains("overflow") || name.contains("popup")
-						|| name.contains("menu") || name.contains("more")) {
-					return true;
-				}
-			} catch (Exception ignored) {
-			}
+		if (id == View.NO_ID) return false;
+		Boolean cached = NAV_EXT_ID_CACHE.get(id);
+		if (cached != null) return cached;
+		boolean match = false;
+		try {
+			String name = vg.getResources().getResourceEntryName(id).toLowerCase(Locale.US);
+			match = name.contains("ext") || name.contains("overflow") || name.contains("popup")
+					|| name.contains("menu") || name.contains("more");
+		} catch (Exception ignored) {
 		}
-		return false;
+		NAV_EXT_ID_CACHE.put(id, match);
+		return match;
 	}
 
 	private static void styleMenuZone(@NonNull MainActivityDelegate delegate,
@@ -1033,13 +1084,13 @@ public final class CustomThemeManager {
 		if (isProtectedView(v)) return;
 
 		if (v instanceof CardView cv) {
-			cv.setCardBackgroundColor(p.surfaceMenu);
+			setCardBackgroundColorIfChanged(cv, p.surfaceMenu);
 		} else if (v instanceof ViewGroup vg) {
 			Drawable bg = vg.getBackground();
 			if (bg instanceof ColorDrawable cd) {
 				// Preserve transparent/translucent dim scrims; replace opaque menu panel fills
 				if (Color.alpha(cd.getColor()) >= 220) {
-					vg.setBackgroundColor(p.surfaceMenu);
+					setBackgroundColorIfChanged(vg, p.surfaceMenu);
 				}
 			} else if (bg != null
 					&& !(bg instanceof RippleDrawable)
@@ -1066,18 +1117,24 @@ public final class CustomThemeManager {
 	private static void styleContentZone(@NonNull MainActivityDelegate delegate,
 										 @NonNull View root,
 										 @NonNull Palette p) {
-		styleContentSurfacesRecursive(root, p);
+		styleContentSurfacesRecursive(delegate, root, p);
 		tintZoneRecursive(delegate, root, p, Zone.CONTENT);
 	}
 
-	private static void styleContentSurfacesRecursive(@NonNull View v, @NonNull Palette p) {
+	private static void styleContentSurfacesRecursive(@NonNull MainActivityDelegate delegate,
+													  @NonNull View v,
+													  @NonNull Palette p) {
 		if (isProtectedView(v) || v instanceof OverlayMenu) return;
 
 		if (v instanceof CardView cv) {
-			cv.setCardBackgroundColor(p.surfaceMenu);
+			setCardBackgroundColorIfChanged(cv, p.surfaceMenu);
 		} else if (v instanceof RecyclerView rv) {
 			// Ensure Folders, IPTV (TV), Favorites, Playlists & Settings list backdrop uses windowBg
-			rv.setBackgroundColor(p.windowBg);
+			setBackgroundColorIfChanged(rv, p.windowBg);
+			if (rv.isComputingLayout()) {
+				scheduleDeferredRecyclerStyle(delegate, rv, Zone.CONTENT);
+				return;
+			}
 			for (int i = 0; i < rv.getChildCount(); i++) {
 				styleContentListRow(rv.getChildAt(i), p);
 			}
@@ -1085,13 +1142,13 @@ public final class CustomThemeManager {
 		} else if (v instanceof ViewGroup vg) {
 			Drawable bg = vg.getBackground();
 			if (bg instanceof ColorDrawable cd && Color.alpha(cd.getColor()) >= 200) {
-				vg.setBackgroundColor(p.windowBg);
+				setBackgroundColorIfChanged(vg, p.windowBg);
 			}
 		}
 
 		if (v instanceof ViewGroup vg) {
 			for (int i = 0; i < vg.getChildCount(); i++) {
-				styleContentSurfacesRecursive(vg.getChildAt(i), p);
+				styleContentSurfacesRecursive(delegate, vg.getChildAt(i), p);
 			}
 		}
 	}
@@ -1099,7 +1156,7 @@ public final class CustomThemeManager {
 	private static void styleContentListRow(@NonNull View row, @NonNull Palette p) {
 		if (isProtectedView(row)) return;
 		if (row instanceof CardView cv) {
-			cv.setCardBackgroundColor(ColorUtils.blendARGB(p.windowBg, p.listText, 0.06f));
+			setCardBackgroundColorIfChanged(cv, ColorUtils.blendARGB(p.windowBg, p.listText, 0.06f));
 			return;
 		}
 		if (row.getBackground() == null) return;
@@ -1149,7 +1206,10 @@ public final class CustomThemeManager {
 		int pr = v.getPaddingRight();
 		int pb = v.getPaddingBottom();
 		v.setBackground(factory.get());
-		v.setPadding(pl, pt, pr, pb);
+		if (v.getPaddingLeft() != pl || v.getPaddingTop() != pt
+				|| v.getPaddingRight() != pr || v.getPaddingBottom() != pb) {
+			v.setPadding(pl, pt, pr, pb);
+		}
 		STYLED_SURFACE_HASH.put(v, hash);
 	}
 
@@ -1168,45 +1228,82 @@ public final class CustomThemeManager {
 		return gd;
 	}
 
+	private static void scheduleDeferredRecyclerStyle(@NonNull MainActivityDelegate delegate,
+													  @NonNull RecyclerView rv,
+													  @NonNull Zone zone) {
+		if (!PENDING_RV_STYLE.add(rv)) return;
+		final WeakReference<MainActivityDelegate> delegateRef = new WeakReference<>(delegate);
+		final WeakReference<RecyclerView> rvRef = new WeakReference<>(rv);
+		final int[] retries = new int[]{0};
+		rv.post(new Runnable() {
+			@Override
+			public void run() {
+				RecyclerView targetRv = rvRef.get();
+				if (targetRv == null) return;
+				if (!targetRv.isAttachedToWindow()) {
+					PENDING_RV_STYLE.remove(targetRv);
+					return;
+				}
+				if (targetRv.isComputingLayout()) {
+					if (retries[0]++ < 3) {
+						targetRv.post(this);
+					} else {
+						PENDING_RV_STYLE.remove(targetRv);
+					}
+					return;
+				}
+				PENDING_RV_STYLE.remove(targetRv);
+				MainActivityDelegate d = delegateRef.get();
+				if (d == null) return;
+				Palette active = resolveEffectiveCustomPalette(d.isCarActivity());
+				if (active == null) return;
+				for (int i = 0; i < targetRv.getChildCount(); i++) {
+					View child = targetRv.getChildAt(i);
+					if (zone == Zone.CONTENT) {
+						styleContentListRow(child, active);
+					}
+					tintZoneRecursive(d, child, active, zone);
+				}
+			}
+		});
+	}
+
 	private static void hookRecyclerView(@NonNull MainActivityDelegate delegate,
 										 @NonNull RecyclerView rv,
 										 @NonNull Zone zone) {
 		if (!HOOKED_RECYCLERS.add(rv)) return;
 
+		final WeakReference<MainActivityDelegate> delegateRef = new WeakReference<>(delegate);
+		final WeakReference<RecyclerView> rvRef = new WeakReference<>(rv);
+
 		rv.addOnChildAttachStateChangeListener(new RecyclerView.OnChildAttachStateChangeListener() {
 			@Override
 			public void onChildViewAttachedToWindow(@NonNull View child) {
-				Runnable applyRow = () -> {
-					Palette active = resolveEffectiveCustomPalette(delegate.isCarActivity());
-					if (active == null) return;
-					if (zone == Zone.CONTENT) {
-						styleContentListRow(child, active);
+				final int[] retries = new int[]{0};
+				Runnable applyRow = new Runnable() {
+					@Override
+					public void run() {
+						MainActivityDelegate d = delegateRef.get();
+						RecyclerView parentRv = rvRef.get();
+						if (d == null || parentRv == null || !child.isAttachedToWindow()) return;
+						if (parentRv.isComputingLayout()) {
+							if (retries[0]++ < 3) child.post(this);
+							return;
+						}
+						Palette active = resolveEffectiveCustomPalette(d.isCarActivity());
+						if (active == null) return;
+						if (zone == Zone.CONTENT) {
+							styleContentListRow(child, active);
+						}
+						tintZoneRecursive(d, child, active, zone);
 					}
-					tintZoneRecursive(delegate, child, active, zone);
 				};
-				applyRow.run();
-				// Second pass catches post-attach onBindViewHolder tints (e.g. watched folder icons)
+				// Never call setBackground/setPadding synchronously inside RecyclerView.dispatchLayout()
 				child.post(applyRow);
 			}
 
 			@Override
 			public void onChildViewDetachedFromWindow(@NonNull View child) {
-			}
-		});
-
-		rv.addOnScrollListener(new RecyclerView.OnScrollListener() {
-			@Override
-			public void onScrolled(@NonNull RecyclerView recyclerView, int dx, int dy) {
-				if (dx == 0 && dy == 0) return;
-				Palette active = resolveEffectiveCustomPalette(delegate.isCarActivity());
-				if (active == null) return;
-				for (int i = 0; i < recyclerView.getChildCount(); i++) {
-					View child = recyclerView.getChildAt(i);
-					if (zone == Zone.CONTENT) {
-						styleContentListRow(child, active);
-					}
-					tintZoneRecursive(delegate, child, active, zone);
-				}
 			}
 		});
 	}
@@ -1258,64 +1355,112 @@ public final class CustomThemeManager {
 		int accent = p.accent;
 
 		if (v instanceof SeekBar sb) {
-			sb.setThumbTintList(ColorStateList.valueOf(accent));
-			sb.setProgressTintList(ColorStateList.valueOf(accent));
-			sb.setSecondaryProgressTintList(ColorStateList.valueOf(ColorUtils.setAlphaComponent(accent, 120)));
+			int h = Objects.hash(401, accent);
+			Integer prev = STYLED_WIDGET_HASH.get(sb);
+			if (prev == null || prev != h) {
+				ColorStateList accentCsl = ColorStateList.valueOf(accent);
+				sb.setThumbTintList(accentCsl);
+				sb.setProgressTintList(accentCsl);
+				sb.setSecondaryProgressTintList(ColorStateList.valueOf(ColorUtils.setAlphaComponent(accent, 120)));
+				STYLED_WIDGET_HASH.put(sb, h);
+			}
 		} else if (v instanceof BaseProgressIndicator<?> bpi) {
-			bpi.setIndicatorColor(accent);
+			int h = Objects.hash(402, accent);
+			Integer prev = STYLED_WIDGET_HASH.get(bpi);
+			if (prev == null || prev != h) {
+				bpi.setIndicatorColor(accent);
+				STYLED_WIDGET_HASH.put(bpi, h);
+			}
 		} else if (v instanceof ProgressBar pb) {
-			pb.setIndeterminateTintList(ColorStateList.valueOf(accent));
-			pb.setProgressTintList(ColorStateList.valueOf(accent));
+			int h = Objects.hash(403, accent);
+			Integer prev = STYLED_WIDGET_HASH.get(pb);
+			if (prev == null || prev != h) {
+				ColorStateList accentCsl = ColorStateList.valueOf(accent);
+				pb.setIndeterminateTintList(accentCsl);
+				pb.setProgressTintList(accentCsl);
+				STYLED_WIDGET_HASH.put(pb, h);
+			}
 		} else if (v instanceof SwitchCompat sw) {
-			ColorStateList thumbCsl = new ColorStateList(
-					new int[][]{new int[]{android.R.attr.state_checked}, new int[]{}},
-					new int[]{accent, iconTint});
-			ColorStateList trackCsl = new ColorStateList(
-					new int[][]{new int[]{android.R.attr.state_checked}, new int[]{}},
-					new int[]{ColorUtils.setAlphaComponent(accent, 130), ColorUtils.setAlphaComponent(textColor, 80)});
-			sw.setThumbTintList(thumbCsl);
-			sw.setTrackTintList(trackCsl);
-			sw.setTextColor(textColor);
+			int h = Objects.hash(404, accent, iconTint, textColor);
+			Integer prev = STYLED_WIDGET_HASH.get(sw);
+			if (prev == null || prev != h) {
+				ColorStateList thumbCsl = new ColorStateList(
+						new int[][]{new int[]{android.R.attr.state_checked}, new int[]{}},
+						new int[]{accent, iconTint});
+				ColorStateList trackCsl = new ColorStateList(
+						new int[][]{new int[]{android.R.attr.state_checked}, new int[]{}},
+						new int[]{ColorUtils.setAlphaComponent(accent, 130), ColorUtils.setAlphaComponent(textColor, 80)});
+				sw.setThumbTintList(thumbCsl);
+				sw.setTrackTintList(trackCsl);
+				sw.setTextColor(textColor);
+				STYLED_WIDGET_HASH.put(sw, h);
+			}
 		} else if (v instanceof Switch sw) {
-			ColorStateList thumbCsl = new ColorStateList(
-					new int[][]{new int[]{android.R.attr.state_checked}, new int[]{}},
-					new int[]{accent, iconTint});
-			ColorStateList trackCsl = new ColorStateList(
-					new int[][]{new int[]{android.R.attr.state_checked}, new int[]{}},
-					new int[]{ColorUtils.setAlphaComponent(accent, 130), ColorUtils.setAlphaComponent(textColor, 80)});
-			sw.setThumbTintList(thumbCsl);
-			sw.setTrackTintList(trackCsl);
-			sw.setTextColor(textColor);
+			int h = Objects.hash(405, accent, iconTint, textColor);
+			Integer prev = STYLED_WIDGET_HASH.get(sw);
+			if (prev == null || prev != h) {
+				ColorStateList thumbCsl = new ColorStateList(
+						new int[][]{new int[]{android.R.attr.state_checked}, new int[]{}},
+						new int[]{accent, iconTint});
+				ColorStateList trackCsl = new ColorStateList(
+						new int[][]{new int[]{android.R.attr.state_checked}, new int[]{}},
+						new int[]{ColorUtils.setAlphaComponent(accent, 130), ColorUtils.setAlphaComponent(textColor, 80)});
+				sw.setThumbTintList(thumbCsl);
+				sw.setTrackTintList(trackCsl);
+				sw.setTextColor(textColor);
+				STYLED_WIDGET_HASH.put(sw, h);
+			}
 		} else if (v instanceof CompoundButton cb) {
-			ColorStateList btnCsl = new ColorStateList(
-					new int[][]{new int[]{android.R.attr.state_checked}, new int[]{}},
-					new int[]{accent, iconTint});
-			CompoundButtonCompat.setButtonTintList(cb, btnCsl);
-			cb.setTextColor(textColor);
+			int h = Objects.hash(406, accent, iconTint, textColor);
+			Integer prev = STYLED_WIDGET_HASH.get(cb);
+			if (prev == null || prev != h) {
+				ColorStateList btnCsl = new ColorStateList(
+						new int[][]{new int[]{android.R.attr.state_checked}, new int[]{}},
+						new int[]{accent, iconTint});
+				CompoundButtonCompat.setButtonTintList(cb, btnCsl);
+				cb.setTextColor(textColor);
+				STYLED_WIDGET_HASH.put(cb, h);
+			}
 		} else if (v instanceof EditText et) {
-			et.setTextColor(textColor);
-			et.setHintTextColor(subtitleColor);
-			ViewCompat.setBackgroundTintList(et, ColorStateList.valueOf(accent));
+			if (et.getCurrentTextColor() != textColor) et.setTextColor(textColor);
+			if (et.getCurrentHintTextColor() != subtitleColor) et.setHintTextColor(subtitleColor);
+			ColorStateList bgTint = ViewCompat.getBackgroundTintList(et);
+			if (bgTint == null || bgTint.getDefaultColor() != accent) {
+				ViewCompat.setBackgroundTintList(et, ColorStateList.valueOf(accent));
+			}
 		} else if (v instanceof Button btn) {
-			btn.setTextColor(isMenuOverlay ? accent : textColor);
+			int targetColor = isMenuOverlay ? accent : textColor;
+			if (btn.getCurrentTextColor() != targetColor) btn.setTextColor(targetColor);
 			tintCompoundDrawables(btn, iconTint);
 		} else if (v instanceof TextView tv) {
-			tv.setTextColor(isSubtitleTextView(tv) ? subtitleColor : textColor);
+			int targetColor = isSubtitleTextView(tv) ? subtitleColor : textColor;
+			if (tv.getCurrentTextColor() != targetColor) tv.setTextColor(targetColor);
 			tintCompoundDrawables(tv, iconTint);
 		} else if (v instanceof ImageView iv) {
 			if (shouldTintImageView(iv, zone, isContentArea)) {
-				iv.clearColorFilter();
-				ImageViewCompat.setImageTintList(iv, ColorStateList.valueOf(iconTint));
+				ColorStateList cur = ImageViewCompat.getImageTintList(iv);
+				if (iv.getColorFilter() != null || cur == null || cur.getDefaultColor() != iconTint) {
+					iv.clearColorFilter();
+					ImageViewCompat.setImageTintList(iv, ColorStateList.valueOf(iconTint));
+				}
 			}
 		} else if (v.getClass().getName().contains("MediaRouteButton")) {
 			// Safely tint Cast button without compile-time dependency on cast module
-			Paint tintPaint = new Paint();
-			tintPaint.setColorFilter(new PorterDuffColorFilter(iconTint, PorterDuff.Mode.SRC_IN));
-			v.setLayerType(View.LAYER_TYPE_HARDWARE, tintPaint);
+			Integer prevTint = STYLED_LAYER_TINT.get(v);
+			if (prevTint == null || prevTint != iconTint || v.getLayerType() != View.LAYER_TYPE_HARDWARE) {
+				Paint tintPaint = new Paint();
+				tintPaint.setColorFilter(new PorterDuffColorFilter(iconTint, PorterDuff.Mode.SRC_IN));
+				v.setLayerType(View.LAYER_TYPE_HARDWARE, tintPaint);
+				STYLED_LAYER_TINT.put(v, iconTint);
+			}
 		}
 
 		if (v instanceof RecyclerView rv) {
 			hookRecyclerView(delegate, rv, zone);
+			if (rv.isComputingLayout()) {
+				scheduleDeferredRecyclerStyle(delegate, rv, zone);
+				return;
+			}
 			for (int i = 0; i < rv.getChildCount(); i++) {
 				View child = rv.getChildAt(i);
 				if (zone == Zone.CONTENT) {
@@ -1339,16 +1484,21 @@ public final class CustomThemeManager {
 			return true;
 		}
 		if (id != View.NO_ID) {
-			try {
-				String entry = tv.getResources().getResourceEntryName(id).toLowerCase(Locale.US);
-				if (entry.contains("sub") || entry.contains("summary") || entry.contains("desc")
-						|| entry.contains("detail") || entry.contains("secondary") || entry.contains("info")
-						|| entry.contains("duration") || entry.contains("artist") || entry.contains("album")
-						|| entry.contains("hint")) {
-					return true;
+			Boolean cached = SUBTITLE_ID_CACHE.get(id);
+			if (cached == null) {
+				boolean match = false;
+				try {
+					String entry = tv.getResources().getResourceEntryName(id).toLowerCase(Locale.US);
+					match = entry.contains("sub") || entry.contains("summary") || entry.contains("desc")
+							|| entry.contains("detail") || entry.contains("secondary") || entry.contains("info")
+							|| entry.contains("duration") || entry.contains("artist") || entry.contains("album")
+							|| entry.contains("hint");
+				} catch (Exception ignored) {
 				}
-			} catch (Exception ignored) {
+				SUBTITLE_ID_CACHE.put(id, match);
+				cached = match;
 			}
+			if (cached) return true;
 		}
 		if (tv.getParent() instanceof ViewGroup parent) {
 			float mySize = tv.getTextSize();
@@ -1411,7 +1561,10 @@ public final class CustomThemeManager {
 			}
 		}
 		if (hasTintable) {
-			TextViewCompat.setCompoundDrawableTintList(tv, ColorStateList.valueOf(iconTint));
+			ColorStateList cur = TextViewCompat.getCompoundDrawableTintList(tv);
+			if (cur == null || cur.getDefaultColor() != iconTint) {
+				TextViewCompat.setCompoundDrawableTintList(tv, ColorStateList.valueOf(iconTint));
+			}
 		}
 	}
 
