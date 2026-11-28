@@ -50,15 +50,23 @@ public class MediaItemListView extends RecyclerView implements PreferenceStore.L
 
 	private void configure(Configuration cfg) {
 		Context ctx = getContext();
-		MainActivityDelegate.getActivityDelegate(getContext()).onSuccess(a -> {
+		MainActivityDelegate.getActivityDelegate(ctx).onSuccess(a -> {
 			MainActivityPrefs prefs = a.getPrefs();
-			grid = a.isGridView();
+			boolean newGrid = a.isGridView();
+			LayoutManager currentLm = getLayoutManager();
+			grid = newGrid;
 
-			if (grid) {
+			if (newGrid) {
 				float scale = prefs.getTextIconSizePref(a);
 				int span = (int) Math.max(cfg.screenWidthDp / (128 * scale), 2);
+				if ((currentLm instanceof GridLayoutManager glm) && (glm.getSpanCount() == span)) {
+					return;
+				}
 				setLayoutManager(new GridLayoutManager(ctx, span));
 			} else {
+				if ((currentLm instanceof LinearLayoutManager) && !(currentLm instanceof GridLayoutManager)) {
+					return;
+				}
 				setLayoutManager(new LinearLayoutManager(ctx));
 			}
 		});
@@ -92,15 +100,15 @@ public class MediaItemListView extends RecyclerView implements PreferenceStore.L
 
 	public void refresh() {
 		for (int childCount = getChildCount(), i = 0; i < childCount; ++i) {
-			MediaItemViewHolder h = (MediaItemViewHolder) getChildViewHolder(getChildAt(i));
-			h.getItemView().refresh();
+			ViewHolder vh = getChildViewHolder(getChildAt(i));
+			if (vh instanceof MediaItemViewHolder h) h.getItemView().refresh();
 		}
 	}
 
 	public void refreshState() {
 		for (int childCount = getChildCount(), i = 0; i < childCount; ++i) {
-			MediaItemViewHolder h = (MediaItemViewHolder) getChildViewHolder(getChildAt(i));
-			h.getItemView().refresh();
+			ViewHolder vh = getChildViewHolder(getChildAt(i));
+			if (vh instanceof MediaItemViewHolder h) h.getItemView().refresh();
 		}
 	}
 
@@ -193,8 +201,10 @@ public class MediaItemListView extends RecyclerView implements PreferenceStore.L
 			LinearLayoutManager lm = (LinearLayoutManager) lv.getLayoutManager();
 			if (lm != null) {
 				int pos = lm.findFirstVisibleItemPosition();
-				if (pos != RecyclerView.NO_POSITION) {
-					return lv.getAdapter().getList().get(pos).getView();
+				List<MediaItemWrapper> list = lv.getAdapter().getList();
+				if ((pos != RecyclerView.NO_POSITION) && (pos < list.size())) {
+					View v = list.get(pos).getView();
+					if (v != null) return v;
 				}
 			}
 			View first = lv.getChildAt(0);
@@ -379,8 +389,8 @@ public class MediaItemListView extends RecyclerView implements PreferenceStore.L
 				MediaLib.BrowsableItem i = getAdapter().getParent();
 
 				if (i != null) {
-					i.getLastPlayedItem().onSuccess(pi -> {
-						if (pi != null) f.revealItem(pi);
+					i.getLastPlayedItem().main().onSuccess(pi -> {
+						if ((pi != null) && isAttachedToWindow() && !f.isHidden()) f.revealItem(pi);
 					});
 				}
 			}
